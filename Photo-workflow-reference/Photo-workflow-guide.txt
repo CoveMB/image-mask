@@ -1,0 +1,181 @@
+Local photo masking workflow
+
+Recap and implementation planning guide
+
+11 October 2026  |  Reference handoff
+
+Use the planning prompt together with the curated reference ZIP. The prompt explains what the next agent should design; the ZIP preserves the tested methods, examples and checks. The next step is an implementation plan for your own computer. The existing scripts need adaptation before they can become a reliable local tool.
+
+The result to aim for
+
+The first priority is a clean, beautiful result; the second is minimal time and manual effort. Automate the routine work while keeping uncertain artistic choices easy to review.
+
+Create natural black-background photographs while retaining the real subject, the details you choose to keep, and useful editable layers. Preserve legs, antennae, hairs, web strands, soft edges and transparent wings. Keep the original capture untouched. Make corrections from evidence in the photograph; do not redraw anatomy, invent texture or generate replacement detail.
+
+The workflow must support per-photo instructions and repeated review. Examples include keeping a bee with its flower, an insect with a chosen portion of leaf or branch, a spider with its web, or a dragonfly with partially transparent wings. Subject selection is a creative decision that should stay editable.
+
+What the tests established
+
+The first ten-photo batch used automatic BiRefNet matting. It produced useful starting masks, but missed some insect detail and left some solid subject areas too transparent. It is a comparison baseline, not the preferred answer for every photo.
+
+The guided dragonfly and spider tests combined SAM2 subject selection with an editable three-zone trimap and native-pixel ViTMatte tiles. They used two full guided passes, followed by local corrections where needed. This is the recommended direction for the local tool.
+
+The spider needed an additional targeted repair for photographed background left in gaps around its legs. Its final package also has a separately labeled foreground-color correction. Mask-only and color-corrected results remain distinct.
+
+Optional inward edge shading was tested on the dahlia and grasshopper at 0%, 12% and 24% maximum strength. It is an adjustable finishing effect. Your possible preference for 24% should remain a per-photo choice, not a fixed batch default.
+
+How to start the next agent
+
+Unzip Photo-workflow-reference.zip on your computer, then give the agent that folder and Planning-prompt.txt. Ask it to inspect the reference and propose a phased local implementation plan. Review that plan before authorizing installations, model downloads, coding or photo processing.
+
+1 Preserve the source and develop it carefully
+
+Separate capture, development, masking and appearance changes. A RAW file holds capture data; the mask is applied to an aligned developed image. Writing a 16-bit TIFF or mask does not make the camera a 16-bit sensor, and a native-size export does not prove the model worked at native resolution.
+
+Capture and alignment
+
+Record the actual file format, source hash, native dimensions, orientation, crop, color profile and available RAW metadata. Do not rely on the extension: the supplied spider RAW had a .jpg filename but contained DNG data.
+
+Keep the original read-only in practice, with its hash recorded before and after processing. Save new versions separately. Record every rotation, crop or transform, and apply exactly the same geometry to RGB, trimap, alpha and effect masks.
+
+Develop RAW at the intended full resolution before masking. Keep a higher-precision master and a convenient preview. Avoid clipping useful highlights; verify shadow detail, white balance and color appearance against the photograph and any trusted reference.
+
+The Pixel DNG white balance pitfall
+
+The ten-image batch decoder reported unusable camera white-balance coefficients, including zeros, although the DNGs contained AsShotWhiteXY metadata. Blindly enabling camera white balance produced a bad color cast. The corrected batch explicitly used LibRaw daylight coefficients. This was a documented baseline, not an exact reconstruction of the phone JPEG or your previous edits.
+
+That batch used rawpy 0.27.1 with LibRaw 0.22.1, AHD demosaicing, sRGB output, gamma parameters 2.4 and 12.92, 16-bit TIFF output and an auto-bright threshold of 0.01. Nine developed images were 3072 × 4080; the caterpillar was 2974 × 3950. LibRaw applied orientation; the DNG default crop was not additionally applied. PNG references were rounded to 8-bit.
+
+The spider was developed separately at 1536 × 2040 using approximate metadata-derived white balance and an auto-bright threshold of 0.0001. Its recorded recipe must not be silently replaced with the ten-image batch recipe. The dragonfly source was a 2047 × 2048 RGB image.
+
+What the final baseline actually ran
+
+The final BiRefNet batch used 1157 × 1536 content for nine images and 1156 × 1536 for the caterpillar, all padded to 1184 × 1536. It removed padding and bilinearly resized alpha to the developed dimensions. The script default and earlier 1024-pixel pilot differ from this final run. These full-size masks were inferred at the smaller model resolution.
+
+Both prototypes processed 8-bit RGB even where 16-bit RAW masters and 16-bit masks were retained. End-to-end high-precision foreground processing remains a proposed implementation task.
+
+For the proposed tool, preserve the recorded recipes and make changes explicit. If RAW color or geometry cannot be validated, stop that photo for review before judging its mask.
+
+2 Build and refine the subject mask
+
+Use a coarse subject-selection stage to express what belongs in the picture, then a fine matting stage for edge coverage. Keep those decisions visible and editable so a request such as “keep this leg but remove the leaf behind it” becomes a local change rather than a complete restart.
+
+Guided selection and three zone trimap
+
+The tested selection model was SAM2.1 hiera-small, using a 1024-pixel overview. Use positive and negative points, boxes or editable groups to describe what to keep and remove. Separate groups can represent the main insect, flower, leaf section, branch, web or wing. The tool should let the user change these instructions between passes.
+
+Convert the selection into a conservative trimap: confirmed background is 0, uncertain pixels are 128, and confirmed opaque foreground is 255. Lock only genuinely solid cores. Leave fine edges, hairs, translucent wings and unresolved web areas uncertain. Never turn an entire transparent wing into opaque foreground just because it belongs to the subject.
+
+Native pixel matting
+
+The tested fine stage was ViTMatte-small-composition-1k on 1024 × 1024 native-pixel tiles, with 256-pixel overlap and sine-squared blending. It locked the trimap’s confirmed foreground and background. The source image was not shrunk for this matting step. Maintain a common coordinate system, account for boundary tiles, and inspect overlap disagreement and seams.
+
+The local implementation should make tile size, overlap, memory use and device choice explicit. Validate any CPU, CUDA or Apple Silicon backend on the actual computer; the reference CPU tests do not establish equivalent speed or output on another backend.
+
+The review loop is part of the workflow
+
+Review the whole image, then native crops of difficult edges. Confirm the chosen subject groups, solid-body opacity, empty gaps, wing transparency and connected web paths.
+
+The proposed agent should translate plain-language feedback into object selections or guide edits, then handle model passes, checks and targeted reruns. Ask you about ambiguous artistic choices, without requiring you to trace every edge. Save the instruction and resulting version. This natural-language control is a proposed feature, not a capability of the current scripts.
+
+Compare the same crop before and after. Retain accepted regions and avoid changes outside the repair support. Escalate ambiguous boundaries to the user instead of silently removing detail.
+
+In the dragonfly test, two full passes were followed by an additional 1024-pixel crop with an opacity-increase-only local merge. In the spider repair, five visually confirmed background cores guided a new 1024 × 1024 crop. Four measured gap regions fell from roughly 10%, 21%, 24% and 31% median opacity to zero. Opaque anatomy and the web outside the local support stayed unchanged.
+
+Example correction request
+
+“Keep the spider and visible web. Remove the remaining photographed background between these legs. Preserve opaque body pixels and the web outside this crop. Show the same native crop before and after, plus the alpha on gray.”
+
+3 Keep color cleanup and shading separate
+
+A mask decides coverage. Foreground-color cleanup changes RGB. Shading changes the appearance of retained pixels. Keep all three independently editable, with a baseline that can always be recovered.
+
+Optional foreground color cleanup
+
+Soft edge pixels may contain both subject and photographed background color. A better alpha alone may not remove that color spill. The spider’s final local repair used an approximate nearby-background estimate and a bounded inverse-mixture adjustment in selected partial-coverage pixels. It changed 152,580 RGB pixels; it was not a mask-only operation. Opaque RGB and the web outside the repair support were preserved exactly.
+
+Retain SOURCE_ALIGNED separately from FOREGROUND_COLOR_REPAIRED. Use the first for mask-only mode and the second only when the correction is wanted. Preserve the support mask and settings. This estimate cannot recover missing photographic detail or prove the true color of a mixed pixel.
+
+Optional inward edge shading
+
+The finishing study used a smooth inward black overlay: a 48-source-pixel band on the grasshopper and an 88-pixel band on the dahlia, both at 3072 × 4080. A 14-pixel thickness protection heuristic reduced the effect on isolated narrow details. Side and lower edges received more weight; top-facing edges and bright highlights received less.
+
+The tested maximum layer strengths were 12% and 24%. The median effective opacity across affected edges was about 3% and 6%, respectively. The effect mask brought the measured maxima to about 11.8–11.9% and 23.7–23.9%. These are variable local weights, not uniform darkening. The tests used encoded sRGB; a linear-light editor or another compositing setting can look different at the same numeric opacity.
+
+Allow 0% to disable the effect, and let opacity, inward width, direction and protection change per photo. Do not scale the tested pixel widths blindly to a different resolution. Protect antennae, hairs, web strands, petal tips, genuine highlights and the central bee. A generic dark ring can erase fragile details or make a natural edge look artificial.
+
+Editable layer arrangement
+
+Use a foreground group with the base subject alpha applied once to the group. Inside it, retain the developed RGB or the separately labeled corrected RGB.
+
+Place a solid black layer above that RGB in Normal blend mode, with the shadow-weight mask and chosen layer opacity. Put a solid black background below the foreground group.
+
+If using the supplied convenience RGBA overlay instead, its 12% or 24% maximum strength is already baked into its alpha. Use it at 100% layer opacity unless intentionally reducing the effect. Do not apply the base subject mask twice.
+
+Review baseline, 12% and 24% on the exact same crop, preferably with a labeled toggle GIF as well as full-frame previews. Label the actual strength and any color correction. The tested antenna crop and central bee crop were unchanged even at 24%. Shade only after the mask is acceptable; it cannot repair missing legs, residue or optical blur.
+
+4 Design a small local tool with clear outputs
+
+Start with the smallest architecture that supports your actual review process. A folder-based pipeline, a CLI or a simple local interface may be enough. A large web application, cloud service or generalized photo editor is outside the initial need.
+
+Questions the planning agent should settle
+
+Which operating system, CPU, RAM and GPU are available? Which photo editor, RAW developer and Python environment are already installed? What disk space is available for models, masters and cached tiles?
+
+Do you prefer folders and a command line, a simple local interface, or an editable handoff into your current photo editor? Which layer or sidecar formats can that editor preserve reliably?
+
+What is the typical batch size, desired output size and review process? Which representative photos should form the first acceptance set? Ask only for details that cannot be established from supplied files or authorized read-only checks.
+
+Suggested staged architecture
+
+Plan separate stages for ingest and validation, RAW development, subject guidance, trimap creation, native-tile matting, review and local repair, optional color cleanup, optional shading, and export. Each stage should have saved inputs, settings, outputs and a clear success or review-needed status.
+
+Cache developed sources, model results and tiles so a local correction does not repeat unrelated work. Resume interrupted batches, skip verified unchanged stages, and isolate a failed photo so the remaining batch can continue. Cache keys should include source hashes, geometry, model revision and relevant settings.
+
+Versioned per photo output contract
+
+Original source reference and hash; aligned full-resolution developed master; documented development, color profile, crop and orientation.
+
+16-bit base alpha; editable trimap and keep/remove guides; local correction supports; all accepted versions and the instructions that produced them.
+
+Optional corrected foreground RGB as a separate asset, plus optional 16-bit shadow-weight mask and its opacity, width, direction and protection settings.
+
+Black-background preview, transparent convenience export when needed, contact sheet and labeled native-crop comparisons. Keep precise masters separate from 8-bit viewing files.
+
+A short README and machine-readable configuration with file roles, dimensions, hashes, model and package versions, recipe, compositing space, status and validation results. Never overwrite the original or silently replace an accepted version.
+
+Keep the package honest
+
+The reference ZIP contains experimental scripts and example outputs, with some fixed paths and photo-specific coordinates. It is evidence for planning, not an installer or portable application. Model weights and environments are excluded. Preserve the separate environment snapshots rather than presenting them as a tested universal lockfile. The plan must verify official sources, pinned versions, licenses and local compatibility before recommending installation.
+
+5 Define acceptance before implementation
+
+The planning agent should return a concrete, phased plan with components, dependencies, proposed file structure, milestones, effort estimates, risks and open decisions. Estimates should be conditional on the actual hardware and pilot results. Include tests and a review checkpoint for each phase; stop for your approval before implementation begins.
+
+Minimum acceptance checks
+
+Integrity: original hashes are unchanged; versions are recoverable; cached results match their inputs. Mask-only mode preserves developed RGB. Optional RGB corrections are labeled and bounded.
+
+Geometry: source, alpha, trimap and effects have matching dimensions and registration. Record model input dimensions separately from output dimensions. Verify rotations, crops and tile coordinates.
+
+Matting: confirmed opaque cores stay opaque, confirmed background stays empty, and fine detail is not lost merely because it is narrow. Check semi-transparent wings and connected web paths visually against the source.
+
+Tiles and composites: inspect seams and overlap disagreement. Rebuild previews from saved RGB and masks and compare numerically. Avoid applying alpha twice. Keep alpha and effect masks as scalar coverage data, not color-graded images.
+
+Appearance: inspect on black, mid-gray and white at native pixel scale and at the intended print size. Review edge spill, dark fringes, halos, residual background, unwanted holes and color clipping.
+
+Shading: compare exactly aligned baseline, subtle and stronger crops with actual strength labels. Check protected features and the interior beyond the chosen band. Changing shading must not change the base cutout mask.
+
+Recovery: test low memory, unavailable models, corrupt files, interrupted runs, missing profiles and ambiguous guidance. A failed or uncertain result must be flagged rather than quietly exported as final.
+
+Proposed implementation phases
+
+1. Audit the local computer and references; settle the input/output contract. 2. Build and validate ingest, development and versioned exports on one photo. 3. Add guided selection, editable trimaps and native-tile matting. 4. Add the review loop and localized repairs. 5. Add optional color cleanup and shading. 6. Test the representative set, then batch processing, resume behavior and performance. Each phase needs a working acceptance check before the next depends on it.
+
+Limits and permissions
+
+No single-photo method can guarantee recovery of details absent from the capture or perfectly separate all translucent foreground from its background. Keep an explicit manual-review route. Do not upload photos to external services, replace originals, install software, download models or begin implementation until the relevant plan and actions are approved. The proposed workflow should process photographs locally.
+
+Where the reference evidence lives
+
+In the ZIP, start with README.txt, TECHNICAL_REFERENCE.txt and INPUT_OUTPUT_CONTRACT.txt. The final baseline is in mask_test/deliverables/manifest.json. Guided versions, trimaps, tiles and spider checks are under guided_mask_test/. Shading settings and preservation checks are under edge_shadow_evaluation/. Use Planning-prompt.txt to instruct the next agent.

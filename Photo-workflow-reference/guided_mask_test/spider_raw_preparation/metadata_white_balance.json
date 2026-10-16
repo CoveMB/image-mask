@@ -1,0 +1,14 @@
+{
+  "white_balance": "AsShotWhiteXY converted using camera calibration1 + color matrix1 (Standard A illuminant), analog balance included",
+  "xy": [
+    0.474496,
+    0.411128
+  ],
+  "multipliers": [
+    1.184668677583271,
+    1.0,
+    2.6280525030098163,
+    1.0
+  ],
+  "caveat": "Approximate metadata-based WB using warm calibration endpoint; not a full DNG profile rendering."
+}

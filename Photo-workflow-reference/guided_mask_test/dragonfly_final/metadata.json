@@ -1,0 +1,138 @@
+{
+  "source_dimensions": [
+    2047,
+    2048
+  ],
+  "source_rgb_preserved": true,
+  "composite_verified": true,
+  "alpha_bits": 16,
+  "foreground_fraction_at_0_5": 0.19366899349658037,
+  "source_sha256": "17dcd4553ee0f05db1e5a3ba88e644a0a74d1f63f0c9ec71726f97a7fb1b8793",
+  "method": "SAM2 guided trimap then native-pixel ViTMatte overlapping crops",
+  "matte_no_downsampling": true,
+  "tile_size": 1024,
+  "overlap": 256,
+  "tiles": [
+    {
+      "crop_xyxy": [
+        0,
+        0,
+        1024,
+        1024
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 6.52
+    },
+    {
+      "crop_xyxy": [
+        768,
+        0,
+        1792,
+        1024
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 4.3
+    },
+    {
+      "crop_xyxy": [
+        1023,
+        0,
+        2047,
+        1024
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 4.15
+    },
+    {
+      "crop_xyxy": [
+        0,
+        768,
+        1024,
+        1792
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 4.25
+    },
+    {
+      "crop_xyxy": [
+        768,
+        768,
+        1792,
+        1792
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 6.11
+    },
+    {
+      "crop_xyxy": [
+        1023,
+        768,
+        2047,
+        1792
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 6.05
+    },
+    {
+      "crop_xyxy": [
+        0,
+        1024,
+        1024,
+        2048
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 5.77
+    },
+    {
+      "crop_xyxy": [
+        768,
+        1024,
+        1792,
+        2048
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 6.43
+    },
+    {
+      "crop_xyxy": [
+        1023,
+        1024,
+        2047,
+        2048
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 6.0
+    }
+  ],
+  "overlap_unknown_disagreement_p95": 0.10046256333589554,
+  "total_seconds": 56.41,
+  "limitations": "Mask only; source RGB, focus, geometry and background contamination inside translucent material are unchanged. No foreground colour decontamination.",
+  "localized_correction": {
+    "method": "One additional native1024x1024 ViTMatte crop using source-verified opaque head crescent and body-backed wing-root guides. Only opacity increases within feathered correction regions were merged; all other alpha unchanged.",
+    "crop_xyxy": [
+      200,
+      0,
+      1224,
+      1024
+    ],
+    "full_passes": 2,
+    "additional_local_passes": 1,
+    "correction_bounds": "Source-localized head crescent aroundx619-681,y405-620; wing-root body aroundx744-834,y765-913;35px uncertainty expansion,20px merge feather."
+  },
+  "localized_samples": {
+    "(640, 470)": 1.0,
+    "(630, 580)": 1.0,
+    "(790, 825)": 1.0,
+    "(805, 850)": 1.0
+  },
+  "pixels_with_increased_opacity": 38199
+}

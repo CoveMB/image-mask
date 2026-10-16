@@ -1,0 +1,758 @@
+{
+  "model": "ZhengPeng7/BiRefNet_dynamic-matting",
+  "model_revision": "074df545be87034e74a96bf71566ecbbc4c15f0a",
+  "model_weights_sha256": "ae177d331c79dcb849ef5b8aea39cea6effd6ca0df36b5a41431658f990e9ee7",
+  "raw_recipe": {
+    "rawpy": "0.27.1",
+    "libraw": [
+      0,
+      22,
+      1
+    ],
+    "demosaic": "AHD",
+    "white_balance": "Explicit LibRaw daylight baseline; camera white balance disabled",
+    "output_space": "sRGB",
+    "gamma": [
+      2.4,
+      12.92
+    ],
+    "output_bits": 16,
+    "auto_bright": true,
+    "auto_bright_threshold": 0.01,
+    "brightness_multiplier": 1,
+    "noise_reduction_or_sharpening": "none added",
+    "note": "One consistent development recipe, not a reproduction of the Pixel embedded JPEG or the user's prior editing. PNG reference is rounded to 8-bit from the 16-bit TIFF."
+  },
+  "photos": [
+    {
+      "index": 1,
+      "subject": "Grasshopper",
+      "source_file": "1000036098(1).dng",
+      "source_sha256": "d8f8d3321decaf819517b11a7f3de75eceea28aadc6bdc11305ea4a93fcc5655",
+      "stem": "01_1000036098",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/01_1000036098_developed.png",
+      "master_tiff16": "masters_tiff16/01_1000036098_developed.tif",
+      "raw_render_seconds": 11.37,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/01_1000036098_soft-mask16.png",
+      "black_png": "black_composites/01_1000036098_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65533,
+      "alpha_soft_fraction": 0.02587,
+      "foreground_fraction_at_0_5": 0.05696,
+      "inference_and_export_seconds": 50.3,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 2,
+      "subject": "Red bug on leaf",
+      "source_file": "1000036073(1).dng",
+      "source_sha256": "43d70041d21c5f4a65dc9052ba926a6ab2ec5f0f2893f01298d892bad5789564",
+      "stem": "02_1000036073",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/02_1000036073_developed.png",
+      "master_tiff16": "masters_tiff16/02_1000036073_developed.tif",
+      "raw_render_seconds": 11.68,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/02_1000036073_soft-mask16.png",
+      "black_png": "black_composites/02_1000036073_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65534,
+      "alpha_soft_fraction": 0.01474,
+      "foreground_fraction_at_0_5": 0.02248,
+      "inference_and_export_seconds": 58.35,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 3,
+      "subject": "Red and black bug on stem",
+      "source_file": "1000036053(1).dng",
+      "source_sha256": "079209f29361c63f0fe795624f7687c705ad6cc8abdcee0d6f193045c0a9ebf3",
+      "stem": "03_1000036053",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/03_1000036053_developed.png",
+      "master_tiff16": "masters_tiff16/03_1000036053_developed.tif",
+      "raw_render_seconds": 11.06,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/03_1000036053_soft-mask16.png",
+      "black_png": "black_composites/03_1000036053_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65532,
+      "alpha_soft_fraction": 0.02578,
+      "foreground_fraction_at_0_5": 0.04565,
+      "inference_and_export_seconds": 54.8,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 4,
+      "subject": "Hairy caterpillar",
+      "source_file": "1000036043(1).dng",
+      "source_sha256": "069ea5ce2f1bc515ad935d067cb57e8acf13b1c99996d0517c929b9f09130293",
+      "stem": "04_1000036043",
+      "raw_sizes": {
+        "raw_height": 2974,
+        "raw_width": 3950,
+        "height": 2974,
+        "width": 3950,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 2974,
+        "iwidth": 3950,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 3934,
+        "crop_height": 2958
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        2974,
+        3950
+      ],
+      "master_png": "masters_png/04_1000036043_developed.png",
+      "master_tiff16": "masters_tiff16/04_1000036043_developed.tif",
+      "raw_render_seconds": 10.18,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1156,
+        1536
+      ],
+      "padding_right_bottom": [
+        28,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1156,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/04_1000036043_soft-mask16.png",
+      "black_png": "black_composites/04_1000036043_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65515,
+      "alpha_soft_fraction": 0.20646,
+      "foreground_fraction_at_0_5": 0.1017,
+      "inference_and_export_seconds": 52.4,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 5,
+      "subject": "Pink dahlia with bee",
+      "source_file": "1000035853.dng",
+      "source_sha256": "13e0e069bbf21633037ace971f9e2c6783ae14d3f9ec0bccf6beba66becf2e12",
+      "stem": "05_1000035853",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/05_1000035853_developed.png",
+      "master_tiff16": "masters_tiff16/05_1000035853_developed.tif",
+      "raw_render_seconds": 11.14,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/05_1000035853_soft-mask16.png",
+      "black_png": "black_composites/05_1000035853_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65535,
+      "alpha_soft_fraction": 0.01404,
+      "foreground_fraction_at_0_5": 0.22883,
+      "inference_and_export_seconds": 51.2,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 6,
+      "subject": "Green insect on bark",
+      "source_file": "1000035291.dng",
+      "source_sha256": "961e1470f07fd4ef8f4395ab0c63b9f2cb7f9a73af0802a6dbea8f1fd790466b",
+      "stem": "06_1000035291",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/06_1000035291_developed.png",
+      "master_tiff16": "masters_tiff16/06_1000035291_developed.tif",
+      "raw_render_seconds": 11.4,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/06_1000035291_soft-mask16.png",
+      "black_png": "black_composites/06_1000035291_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65534,
+      "alpha_soft_fraction": 0.00947,
+      "foreground_fraction_at_0_5": 0.04719,
+      "inference_and_export_seconds": 48.02,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 7,
+      "subject": "Red and yellow flower",
+      "source_file": "1000035086.dng",
+      "source_sha256": "d8208b090a6c76228179d1537e1ea62c621a8c66d275b4b35a4428b4fd7430e1",
+      "stem": "07_1000035086",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/07_1000035086_developed.png",
+      "master_tiff16": "masters_tiff16/07_1000035086_developed.tif",
+      "raw_render_seconds": 12.81,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/07_1000035086_soft-mask16.png",
+      "black_png": "black_composites/07_1000035086_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65535,
+      "alpha_soft_fraction": 0.03713,
+      "foreground_fraction_at_0_5": 0.20987,
+      "inference_and_export_seconds": 53.3,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 8,
+      "subject": "Orange zinnia",
+      "source_file": "1000034163.dng",
+      "source_sha256": "b0180b49f105dd855b7e35ff2ad4c84ca0965e5a9c85fc67830652464a914127",
+      "stem": "08_1000034163",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/08_1000034163_developed.png",
+      "master_tiff16": "masters_tiff16/08_1000034163_developed.tif",
+      "raw_render_seconds": 12.42,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/08_1000034163_soft-mask16.png",
+      "black_png": "black_composites/08_1000034163_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65535,
+      "alpha_soft_fraction": 0.01308,
+      "foreground_fraction_at_0_5": 0.26127,
+      "inference_and_export_seconds": 53.77,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 9,
+      "subject": "Bee close-up on yellow flower",
+      "source_file": "1000034131.dng",
+      "source_sha256": "e010bd1df8b74d8262e4f5ba7ece78a3bb96fe66938378349cfd7e19bc602160",
+      "stem": "09_1000034131",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/09_1000034131_developed.png",
+      "master_tiff16": "masters_tiff16/09_1000034131_developed.tif",
+      "raw_render_seconds": 10.06,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/09_1000034131_soft-mask16.png",
+      "black_png": "black_composites/09_1000034131_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 58466,
+      "alpha_soft_fraction": 0.12793,
+      "foreground_fraction_at_0_5": 0.01237,
+      "inference_and_export_seconds": 51.69,
+      "peak_process_rss_mb": 6233.1
+    },
+    {
+      "index": 10,
+      "subject": "Yellow flower",
+      "source_file": "1000034128.dng",
+      "source_sha256": "af5c3c492b01e820caf0f4bf5d88c5bd851e100921e202c3c21f28ff59286007",
+      "stem": "10_1000034128",
+      "raw_sizes": {
+        "raw_height": 3072,
+        "raw_width": 4080,
+        "height": 3072,
+        "width": 4080,
+        "top_margin": 0,
+        "left_margin": 0,
+        "iheight": 3072,
+        "iwidth": 4080,
+        "pixel_aspect": 1.0,
+        "flip": 6,
+        "crop_left_margin": 8,
+        "crop_top_margin": 8,
+        "crop_width": 4064,
+        "crop_height": 3056
+      },
+      "camera_whitebalance_reported": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "effective_whitebalance": [
+        2.1836830483309853,
+        1.0,
+        1.4368763282907762,
+        1.0
+      ],
+      "white_balance_source": "LibRaw daylight coefficients; AsShotWhiteXY present but camera coefficients unavailable in this decoder",
+      "source_exif_orientation": 6,
+      "orientation_applied": "LibRaw automatic EXIF orientation (90 degrees clockwise for source orientation 6)",
+      "crop": "No additional crop; LibRaw visible image, default postprocess sizing. DNG DefaultCropSize not applied separately.",
+      "final_dimensions_wh": [
+        3072,
+        4080
+      ],
+      "master_png": "masters_png/10_1000034128_developed.png",
+      "master_tiff16": "masters_tiff16/10_1000034128_developed.tif",
+      "raw_render_seconds": 10.73,
+      "inference_dimensions_wh": [
+        1184,
+        1536
+      ],
+      "inference_content_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "padding_right_bottom": [
+        27,
+        0
+      ],
+      "model_mask_dimensions_wh": [
+        1157,
+        1536
+      ],
+      "inference_dtype": "float32",
+      "mask_resampling": "Remove right/bottom padding then bilinear resize to developed native dimensions. This is not native-resolution inference.",
+      "mask_png": "masks/10_1000034128_soft-mask16.png",
+      "black_png": "black_composites/10_1000034128_black.png",
+      "alpha_bits": 16,
+      "alpha_min": 0,
+      "alpha_max": 65535,
+      "alpha_soft_fraction": 0.03424,
+      "foreground_fraction_at_0_5": 0.31134,
+      "inference_and_export_seconds": 56.78,
+      "peak_process_rss_mb": 6233.1
+    }
+  ]
+}

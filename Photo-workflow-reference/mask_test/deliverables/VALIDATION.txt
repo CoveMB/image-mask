@@ -1,0 +1,22 @@
+VALIDATION — 11 October 2026
+
+All ten photographs completed model inference at 1184×1536 padded input size.
+Content before padding: 1157×1536 for the nine standard photos; 1156×1536 for the caterpillar.
+Final masks/composites/reference dimensions: 3072×4080 for nine photos; 2974×3950 for the caterpillar.
+
+Automated checks passed:
+- Exactly ten final photo records, masks, composites and matching reference renders.
+- All ten original DNG SHA-256 hashes unchanged from before processing.
+- Every mask is aligned to the corresponding reference and composite dimensions.
+- Soft masks retain more than 256 alpha levels (16-bit grayscale PNG).
+- Every composite pixel exactly equals round(reference_RGB × mask16 / 65535).
+- Fully opaque pixels equal the reference exactly; fully transparent pixels are black.
+- Explicit daylight white-balance recipe and positive effective multipliers checked for every file.
+- Each supplied 8-bit PNG reference exactly matches rounding of the corresponding retained 16-bit TIFF; geometry and orientation agree.
+
+Three contract tests passed. No test failure remains in the final batch.
+An initial RAW camera-white-balance interpretation issue was detected and corrected before final inference. Final files use the explicitly described daylight test baseline throughout.
+
+Corrected-batch inference plus mask/composite export: 530.61 seconds total on CPU, excluding RAW rendering, setup and visual review. Peak measured inference process memory: 6233.1 MiB.
+
+Visual review includes a full-frame overview and native-pixel crops. The automated checks establish file/geometry/pixel consistency, not the artistic correctness of a mask. See EVALUATION.txt for the genuine masking failures retained in this unretouched test.

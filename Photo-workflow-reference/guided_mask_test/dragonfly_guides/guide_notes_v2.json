@@ -1,0 +1,11 @@
+{
+  "source_dimensions": [
+    2047,
+    2048
+  ],
+  "sam_source": "whole_dragonfly candidate1 + separate upper/lower wings candidate1 + body candidate1",
+  "method": "More selective SAM wing silhouettes exclude inter-wing background; filled tiny gaps then 30px uncertainty; smaller conservative body opaque core; source-observed lower-left defocused wing extension unknown",
+  "known_background_fraction": 0.3622238241176111,
+  "known_foreground_fraction": 0.06354048989374694,
+  "uncertain_fraction": 0.5742356859886419
+}

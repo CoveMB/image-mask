@@ -1,0 +1,86 @@
+{
+  "source_dimensions": [
+    1536,
+    2040
+  ],
+  "source_rgb_preserved": true,
+  "composite_verified": true,
+  "alpha_bits": 16,
+  "foreground_fraction_at_0_5": 0.059308300142973856,
+  "source_sha256": "eee52c615438f68604b2b999657e4a906f5d3f59436ef24b079d5659999ce718",
+  "method": "SAM2 guided trimap then native-pixel ViTMatte overlapping crops",
+  "matte_no_downsampling": true,
+  "tile_size": 1024,
+  "overlap": 256,
+  "tiles": [
+    {
+      "crop_xyxy": [
+        0,
+        0,
+        1024,
+        1024
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 24.6
+    },
+    {
+      "crop_xyxy": [
+        512,
+        0,
+        1536,
+        1024
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 7.5
+    },
+    {
+      "crop_xyxy": [
+        0,
+        768,
+        1024,
+        1792
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 5.88
+    },
+    {
+      "crop_xyxy": [
+        512,
+        768,
+        1536,
+        1792
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 6.02
+    },
+    {
+      "crop_xyxy": [
+        0,
+        1016,
+        1024,
+        2040
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 5.43
+    },
+    {
+      "crop_xyxy": [
+        512,
+        1016,
+        1536,
+        2040
+      ],
+      "native_pixels": true,
+      "inferred": true,
+      "seconds": 5.2
+    }
+  ],
+  "overlap_unknown_disagreement_p95": 0.051132164895534515,
+  "total_seconds": 61.6,
+  "limitations": "Mask only; source RGB, focus, geometry and background contamination inside translucent material are unchanged. No foreground colour decontamination."
+}

@@ -1,0 +1,64 @@
+[
+  {
+    "name": "birefnet",
+    "repo": "ZhengPeng7/BiRefNet_dynamic-matting",
+    "revision": "074df545be87034e74a96bf71566ecbbc4c15f0a",
+    "license_label": "MIT",
+    "files": {
+      "model.safetensors": {
+        "bytes": 444473596,
+        "sha256": "ae177d331c79dcb849ef5b8aea39cea6effd6ca0df36b5a41431658f990e9ee7"
+      }
+    },
+    "custom_code_required": true,
+    "custom_code_bundled": false
+  },
+  {
+    "name": "sam2",
+    "repo": "facebook/sam2.1-hiera-small",
+    "revision": "ee5bba1d82bb8749febdf90f45e84b687142ba03",
+    "files": {
+      "processor_config.json": {
+        "bytes": 95,
+        "sha256": "f8a68e865cfad115c1c2763f3d93eca7b1c622da06da2a9273eb437fb2389b6d"
+      },
+      "model.safetensors": {
+        "bytes": 184305280,
+        "sha256": "0a4067b11ce1e23d5229203f11c718a823060d15a4b23fa2372a7d4b77cbbc60"
+      },
+      "config.json": {
+        "bytes": 5698,
+        "sha256": "97ff9f65b76d107acda4247885f0a5555d0048850ae3c5f97183df289aaecde9"
+      },
+      "preprocessor_config.json": {
+        "bytes": 683,
+        "sha256": "6ebf229ee259368ce4a8d4f2fe893a72b053023710853e257253939e601f583d"
+      }
+    },
+    "remote_code": false,
+    "implementation": "installed transformers==4.57.6",
+    "license_label": "Apache-2.0"
+  },
+  {
+    "name": "vitmatte",
+    "repo": "hustvl/vitmatte-small-composition-1k",
+    "revision": "6a58ad7646403c1df626fbd746900aec7361ea1d",
+    "files": {
+      "model.safetensors": {
+        "bytes": 103294572,
+        "sha256": "bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb"
+      },
+      "config.json": {
+        "bytes": 837,
+        "sha256": "ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f"
+      },
+      "preprocessor_config.json": {
+        "bytes": 284,
+        "sha256": "0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0"
+      }
+    },
+    "remote_code": false,
+    "implementation": "installed transformers==4.57.6",
+    "license_label": "Apache-2.0"
+  }
+]

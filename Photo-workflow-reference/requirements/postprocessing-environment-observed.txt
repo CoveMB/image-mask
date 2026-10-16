@@ -1,0 +1,5 @@
+# Observed existing host environment, not a portable lockfile.
+# Python 3.12.14
+numpy==2.3.5
+scipy==1.17.0
+Pillow==12.3.0

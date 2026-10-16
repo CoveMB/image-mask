@@ -1,0 +1,72 @@
+{
+  "dimensions": [
+    1536,
+    2040
+  ],
+  "untouched_source_rgb_exact": true,
+  "opaque_rgb_exact": true,
+  "opaque_alpha_exact": true,
+  "web_outside_local_support_alpha_exact": true,
+  "web_outside_local_support_rgb_exact": true,
+  "composite_from_saved_files_exact": true,
+  "changed_alpha_pixels": 175533,
+  "changed_color_pixels": 152580,
+  "gap_samples": {
+    "upper_left_loop": {
+      "before_alpha_median": 0.30923170824750135,
+      "after_alpha_median": 0.0,
+      "before_rgb_median": [
+        30.0,
+        29.0,
+        28.0
+      ],
+      "after_rgb_median": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "left_gap": {
+      "before_alpha_median": 0.20700389105058364,
+      "after_alpha_median": 0.0,
+      "before_rgb_median": [
+        20.0,
+        18.0,
+        18.0
+      ],
+      "after_rgb_median": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "lower_left_triangle": {
+      "before_alpha_median": 0.24025329976348517,
+      "after_alpha_median": 0.0,
+      "before_rgb_median": [
+        22.0,
+        20.0,
+        21.0
+      ],
+      "after_rgb_median": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "upper_triangle": {
+      "before_alpha_median": 0.10218966964217593,
+      "after_alpha_median": 0.0,
+      "before_rgb_median": [
+        12.0,
+        12.0,
+        12.0
+      ],
+      "after_rgb_median": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  }
+}

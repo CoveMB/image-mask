@@ -1,0 +1,61 @@
+{
+  "source": "/path/to/photo-workflow-reference/guided_mask_test/fullres_inputs/replacement2/292a860a-a0f5-4e37-8959-4f0026b7101c-1_all_18108.jpg",
+  "sha256": "0de55ba74d1a663dbabbd7c78880c47e5b96ae24206276135acc2d77a926b42b",
+  "raw_sizes": {
+    "raw_height": 1536,
+    "raw_width": 2040,
+    "height": 1536,
+    "width": 2040,
+    "top_margin": 0,
+    "left_margin": 0,
+    "iheight": 1536,
+    "iwidth": 2040,
+    "pixel_aspect": 1.0,
+    "flip": 6,
+    "crop_left_margin": 8,
+    "crop_top_margin": 8,
+    "crop_width": 2024,
+    "crop_height": 1520
+  },
+  "camera_wb_invalid": [
+    0.0,
+    1.0,
+    0.0,
+    0.0
+  ],
+  "white_balance": "AsShotWhiteXY converted using camera calibration1 + color matrix1 (Standard A illuminant), analog balance included",
+  "daylight_coefficients": [
+    2.1100056171417236,
+    0.9662600159645081,
+    1.388396143913269,
+    0.0
+  ],
+  "orientation": "LibRaw automatic EXIF orientation 6",
+  "native_render_dimensions_wh": [
+    1536,
+    2040
+  ],
+  "crop": "No extra crop; full visible raw raster",
+  "auto_bright": true,
+  "auto_bright_threshold": 0.0001,
+  "gamma": [
+    2.4,
+    12.92
+  ],
+  "output_space": "sRGB",
+  "output_bits": 16,
+  "sharpening": "none",
+  "noise_reduction": "none added",
+  "xy": [
+    0.474496,
+    0.411128
+  ],
+  "multipliers": [
+    1.184668677583271,
+    1.0,
+    2.6280525030098163,
+    1.0
+  ],
+  "caveat": "Approximate metadata-based WB using warm calibration endpoint; not a full DNG profile rendering.",
+  "chosen_source": "spider_native_source.png"
+}

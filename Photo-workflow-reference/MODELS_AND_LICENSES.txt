@@ -1,0 +1,49 @@
+MODELS, UPSTREAM SOURCES AND LICENSE INFORMATION
+Verified against local pinned manifests/configs and official public model cards on 11 October 2026. This is provenance information, not a legal assessment. No weights or third-party model implementation code are redistributed in this archive. Installed dependency license metadata and upstream conditions still need review when producing a distributable application.
+
+BiRefNet baseline
+Repository: ZhengPeng7/BiRefNet_dynamic-matting
+Revision:074df545be87034e74a96bf71566ecbbc4c15f0a
+Weight SHA256:ae177d331c79dcb849ef5b8aea39cea6effd6ca0df36b5a41431658f990e9ee7
+Weight size:444473596bytes
+Official model card labels checkpoint MIT: https://huggingface.co/ZhengPeng7/BiRefNet_dynamic-matting
+Official project: https://github.com/ZhengPeng7/BiRefNet
+Upstream license: https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE
+Reviewed custom-code hashes expected by infer_masks.py:
+birefnet.py:2a45b4e0ece72d7c4212bca1a988e7d7e52bfe9f98ec59c58b8809c8a8b7a831
+BiRefNet_config.py:e7b8c2a74f6cea6a59553d517f71d47f2c1d90e670a13416af17c25fe2f3dc52
+These code files must be sourced at the pinned revision and inspected; they are not bundled. Local config deliberately uses bb_pretrained=False to avoid an additional backbone fetch. Record and review any config difference from upstream.
+
+SAM2.1
+Repository:facebook/sam2.1-hiera-small
+Revision:ee5bba1d82bb8749febdf90f45e84b687142ba03
+Weight SHA256:0a4067b11ce1e23d5229203f11c718a823060d15a4b23fa2372a7d4b77cbbc60
+Weight size:184305280bytes
+Official model card labels checkpoint Apache-2.0: https://huggingface.co/facebook/sam2.1-hiera-small
+Official project: https://github.com/facebookresearch/sam2
+Upstream license: https://github.com/facebookresearch/sam2/blob/main/LICENSE
+Implementation used: installed transformers 4.57.6 Sam2Model/Sam2Processor, not the standalone SAM2 repository.
+
+ViTMatte
+Repository:hustvl/vitmatte-small-composition-1k
+Revision:6a58ad7646403c1df626fbd746900aec7361ea1d
+Weight SHA256:bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb
+Weight size:103294572bytes
+Official model card labels this checkpoint Apache-2.0: https://huggingface.co/hustvl/vitmatte-small-composition-1k
+Official project: https://github.com/hustvl/ViTMatte
+Project code license is separately published here: https://github.com/hustvl/ViTMatte/blob/main/LICENSE
+Do not conflate a project's code license with a separately packaged checkpoint's label. Implementation used: installed transformers 4.57.6 VitMatteForImageMatting/VitMatteImageProcessor.
+
+Known weight download total for all three:732073448bytes, about698MiB, before environments/caches/intermediate images. Installing every stage is not automatically necessary; the local plan should decide what to retain.
+
+Core implementation dependencies and documentation
+https://pytorch.org/
+https://huggingface.co/docs/transformers/v4.57.1/en/model_doc/sam2
+https://huggingface.co/docs/transformers/v4.57.1/en/model_doc/vitmatte
+https://github.com/letmaik/rawpy
+https://www.libraw.org/
+https://numpy.org/
+https://scipy.org/
+https://pillow.readthedocs.io/
+https://github.com/cgohlke/tifffile
+The observed requirements snapshots are evidence, not an instruction to fetch unverified or incompatible packages. Links are source pointers; the local agent should use current official compatibility documentation when planning installation.

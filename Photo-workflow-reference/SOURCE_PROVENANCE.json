@@ -1,0 +1,513 @@
+[
+  {
+    "source_relative": "mask_test/render_raw.py",
+    "archive_relative": "mask_test/render_raw.py",
+    "source_sha256": "f0824d6b7411a00831f044adf3923bc6c2b0c1692427a2226b39387bdc5d1fc7",
+    "archive_sha256": "f0824d6b7411a00831f044adf3923bc6c2b0c1692427a2226b39387bdc5d1fc7",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/infer_masks.py",
+    "archive_relative": "mask_test/infer_masks.py",
+    "source_sha256": "634dafa11029cfe8b7b96b47b11f67acdca01f706e1ec749e01567458ecda17e",
+    "archive_sha256": "634dafa11029cfe8b7b96b47b11f67acdca01f706e1ec749e01567458ecda17e",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/test_output_contract.py",
+    "archive_relative": "mask_test/test_output_contract.py",
+    "source_sha256": "17a9e9a1bc118cc9dfb925fe9bfd8d8348ccf4cbbadc677983e3eb86f652ef76",
+    "archive_sha256": "17a9e9a1bc118cc9dfb925fe9bfd8d8348ccf4cbbadc677983e3eb86f652ef76",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/environment.txt",
+    "archive_relative": "mask_test/environment.txt",
+    "source_sha256": "42ed9307696e65562e8f7a1b0d03dc2d8746d4ac70be9d79c75ee75765438820",
+    "archive_sha256": "42ed9307696e65562e8f7a1b0d03dc2d8746d4ac70be9d79c75ee75765438820",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/deliverables/README.txt",
+    "archive_relative": "mask_test/deliverables/README.txt",
+    "source_sha256": "16119a68595bc3fd4f113a0756d8174cb79a1025dc5c1c4e6f36eb24feaf48d1",
+    "archive_sha256": "16119a68595bc3fd4f113a0756d8174cb79a1025dc5c1c4e6f36eb24feaf48d1",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/deliverables/EVALUATION.txt",
+    "archive_relative": "mask_test/deliverables/EVALUATION.txt",
+    "source_sha256": "7ca27db94c89ced9753a1124fbde1349997f79660973861cf42c576a8fb2d4cb",
+    "archive_sha256": "7ca27db94c89ced9753a1124fbde1349997f79660973861cf42c576a8fb2d4cb",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/deliverables/VALIDATION.txt",
+    "archive_relative": "mask_test/deliverables/VALIDATION.txt",
+    "source_sha256": "c7604c59df437e847342a1056957c713c81477754ec8efc922f0f9e7793966c9",
+    "archive_sha256": "c7604c59df437e847342a1056957c713c81477754ec8efc922f0f9e7793966c9",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/deliverables/manifest.json",
+    "archive_relative": "mask_test/deliverables/manifest.json",
+    "source_sha256": "bed24572ed4c6329052784594f82adb052f374213cab346028e90e07a0928973",
+    "archive_sha256": "bed24572ed4c6329052784594f82adb052f374213cab346028e90e07a0928973",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/original_checksums.json",
+    "archive_relative": "mask_test/original_checksums.json",
+    "source_sha256": "bd1a64d6364913b60053e874a3646294e8756be49bba27977c1c540c7a214408",
+    "archive_sha256": "bd1a64d6364913b60053e874a3646294e8756be49bba27977c1c540c7a214408",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/model_review/config.json",
+    "archive_relative": "mask_test/model_review/config.json",
+    "source_sha256": "e4fa685fa1e366deaf966aa5c066fd24147821eafc061d5aa73261237b7df6f2",
+    "archive_sha256": "e4fa685fa1e366deaf966aa5c066fd24147821eafc061d5aa73261237b7df6f2",
+    "modification": "None"
+  },
+  {
+    "source_relative": "mask_test/model_review/weights.sha256",
+    "archive_relative": "mask_test/model_review/weights.sha256",
+    "source_sha256": "7d80cb33cceb8e92b1b5d0dd050f355c54e6fbcec64193f3e234daa187898d45",
+    "archive_sha256": "7d80cb33cceb8e92b1b5d0dd050f355c54e6fbcec64193f3e234daa187898d45",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/run_guided.py",
+    "archive_relative": "guided_mask_test/run_guided.py",
+    "source_sha256": "68607086e4c00e38fe886406e1d7d0633d12cf8a8e860ef5958682673cd30986",
+    "archive_sha256": "68607086e4c00e38fe886406e1d7d0633d12cf8a8e860ef5958682673cd30986",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/make_dragonfly_trimap_v2.py",
+    "archive_relative": "guided_mask_test/make_dragonfly_trimap_v2.py",
+    "source_sha256": "a58a5094de18c6e3aeea74cc2eb09d43163b7569f1401942c8d66c9b7ae58008",
+    "archive_sha256": "d2d6b65eae1a13b6a61300c49204c95e2321e0d2bbaf407020b2cf48c7b263cd",
+    "modification": "Absolute original workspace prefix replaced by an explicit placeholder; no algorithm changes."
+  },
+  {
+    "source_relative": "guided_mask_test/prepare_dragonfly_core_correction.py",
+    "archive_relative": "guided_mask_test/prepare_dragonfly_core_correction.py",
+    "source_sha256": "544235084ee8f320f968b626325937cf0e17b419bbd05c3ba4b2b4e949a1bbe4",
+    "archive_sha256": "310cc61f273775e941fecc013a9e4a85be6faeedea4851b88cd30898033ec0a6",
+    "modification": "Absolute original workspace prefix replaced by an explicit placeholder; no algorithm changes."
+  },
+  {
+    "source_relative": "guided_mask_test/merge_dragonfly_core_correction.py",
+    "archive_relative": "guided_mask_test/merge_dragonfly_core_correction.py",
+    "source_sha256": "342176e45694b714c49ac77fdb9ca4464020c3853107fab2627fd14303704201",
+    "archive_sha256": "37bd075805ad9c1865a93c7c667b096b8083c7ea4a7af4e39fb70e942cb8c5f1",
+    "modification": "Absolute original workspace prefix replaced by an explicit placeholder; no algorithm changes."
+  },
+  {
+    "source_relative": "guided_mask_test/spider_guides/build_guides_v2.py",
+    "archive_relative": "guided_mask_test/spider_guides/build_guides_v2.py",
+    "source_sha256": "b6e7c14492f3b11c71a67e47c3266ea789b91c2d04cbdc3f95696a55cea49a5a",
+    "archive_sha256": "596ae099b3a94233d73c8b35a6bebd366c81644bdcfd78342b4f059b913c002e",
+    "modification": "Absolute original workspace prefix replaced by an explicit placeholder; no algorithm changes."
+  },
+  {
+    "source_relative": "guided_mask_test/spider_guides/filament_paths_v2.json",
+    "archive_relative": "guided_mask_test/spider_guides/filament_paths_v2.json",
+    "source_sha256": "b17c891ed1d1cecad8ccd8269f6bc69ee782d00aa2f6afd798ad9433e9e22e36",
+    "archive_sha256": "b17c891ed1d1cecad8ccd8269f6bc69ee782d00aa2f6afd798ad9433e9e22e36",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_guides/guide_metadata_v2.json",
+    "archive_relative": "guided_mask_test/spider_guides/guide_metadata_v2.json",
+    "source_sha256": "f3c782375a3520cb39db19ad26a485fe89f10d25b0a5a8a1ce4126f455ecfc06",
+    "archive_sha256": "b568549841b7dbf7dcff6d34127cd8f4b8cb773e0982cac6626a05258643f0ad",
+    "modification": "Absolute original workspace prefix replaced by an explicit placeholder; no algorithm changes."
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_prompts.json",
+    "archive_relative": "guided_mask_test/dragonfly_prompts.json",
+    "source_sha256": "0e50b41ca12613cb728044ef66e5840a100cc39d44e469c3112fcfc06aa2320b",
+    "archive_sha256": "0e50b41ca12613cb728044ef66e5840a100cc39d44e469c3112fcfc06aa2320b",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_prompts.json",
+    "archive_relative": "guided_mask_test/spider_prompts.json",
+    "source_sha256": "acd0d3b890fb6004c3d360e94fb240606c513119ff316e4b334305bc37b66da4",
+    "archive_sha256": "acd0d3b890fb6004c3d360e94fb240606c513119ff316e4b334305bc37b66da4",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/models/model_manifest.json",
+    "archive_relative": "guided_mask_test/models/model_manifest.json",
+    "source_sha256": "e02eaee70f7c7ca63ebfe105c0848f5e0b6dea27b612b4b348a3112240fd6444",
+    "archive_sha256": "e02eaee70f7c7ca63ebfe105c0848f5e0b6dea27b612b4b348a3112240fd6444",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/prepare_local_matte.py",
+    "archive_relative": "guided_mask_test/spider_repair_v3/prepare_local_matte.py",
+    "source_sha256": "6bf9c32b5d0c0fbf546537da43605c0b0e2ab95cfde0fb949e60b15f793846ef",
+    "archive_sha256": "6bf9c32b5d0c0fbf546537da43605c0b0e2ab95cfde0fb949e60b15f793846ef",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/finalize_repair.py",
+    "archive_relative": "guided_mask_test/spider_repair_v3/finalize_repair.py",
+    "source_sha256": "0a8e416f94c716945ba14e3fb38c1c43c5acefd19f4c84e639294141ecba86c5",
+    "archive_sha256": "0a8e416f94c716945ba14e3fb38c1c43c5acefd19f4c84e639294141ecba86c5",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/gap_polygons.json",
+    "archive_relative": "guided_mask_test/spider_repair_v3/gap_polygons.json",
+    "source_sha256": "fe9e6a06d24d7848c7967ebff9da172d9d21bebe57efde8f1afce0e2ba85aa05",
+    "archive_sha256": "fe9e6a06d24d7848c7967ebff9da172d9d21bebe57efde8f1afce0e2ba85aa05",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/repair_validation.json",
+    "archive_relative": "guided_mask_test/spider_repair_v3/repair_validation.json",
+    "source_sha256": "cb8bdf7a53a22c244deef6b3cbf9a08997350160be127d98063be156e794f0b1",
+    "archive_sha256": "cb8bdf7a53a22c244deef6b3cbf9a08997350160be127d98063be156e794f0b1",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_final/metadata.json",
+    "archive_relative": "guided_mask_test/dragonfly_final/metadata.json",
+    "source_sha256": "159221c220f0cc6170b4c7f09be17d038fa79f4dcdf22c6b3c219d17431ea258",
+    "archive_sha256": "159221c220f0cc6170b4c7f09be17d038fa79f4dcdf22c6b3c219d17431ea258",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_pass2/metadata.json",
+    "archive_relative": "guided_mask_test/spider_pass2/metadata.json",
+    "source_sha256": "de8849d8bd59fa1eaf2e1ff1c03ed1a62b743b6fc7649200f3ea86589997621e",
+    "archive_sha256": "de8849d8bd59fa1eaf2e1ff1c03ed1a62b743b6fc7649200f3ea86589997621e",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_raw_preparation/final_development.json",
+    "archive_relative": "guided_mask_test/spider_raw_preparation/final_development.json",
+    "source_sha256": "8cebd3c11db008e37d8d8ba4fb4cd23f5bebe5e2bc07bb3bf38d0d0a07f46b22",
+    "archive_sha256": "7bd864274d7d7f2e16de6242a374eeff48ea458589b45c21996a38bdb6fd4011",
+    "modification": "Absolute original workspace prefix replaced by an explicit placeholder; no algorithm changes."
+  },
+  {
+    "source_relative": "guided_mask_test/spider_raw_preparation/metadata_white_balance.json",
+    "archive_relative": "guided_mask_test/spider_raw_preparation/metadata_white_balance.json",
+    "source_sha256": "3c05792915e602b956e10a61c0325e1c6921f4ce62befd9878febd2ee1b5852b",
+    "archive_sha256": "3c05792915e602b956e10a61c0325e1c6921f4ce62befd9878febd2ee1b5852b",
+    "modification": "None"
+  },
+  {
+    "source_relative": "edge_shadow_evaluation/probe.py",
+    "archive_relative": "edge_shadow_evaluation/probe.py",
+    "source_sha256": "aa60f09ecd4913ad9dc82dd1dcdefd850fc9c45e175073d847093822ce0297f5",
+    "archive_sha256": "aa60f09ecd4913ad9dc82dd1dcdefd850fc9c45e175073d847093822ce0297f5",
+    "modification": "None"
+  },
+  {
+    "source_relative": "edge_shadow_evaluation/README.txt",
+    "archive_relative": "edge_shadow_evaluation/README.txt",
+    "source_sha256": "70cb1e4e233fbcf55e68765a91ed129c0df77759cfdc600888cce313a96e61a7",
+    "archive_sha256": "70cb1e4e233fbcf55e68765a91ed129c0df77759cfdc600888cce313a96e61a7",
+    "modification": "None"
+  },
+  {
+    "source_relative": "edge_shadow_evaluation/evaluation_checks.json",
+    "archive_relative": "edge_shadow_evaluation/evaluation_checks.json",
+    "source_sha256": "99ee05a7ee8c48aed81917e8dd69ccac3a44c03f1f390b644d5f43d3c86f4c72",
+    "archive_sha256": "99ee05a7ee8c48aed81917e8dd69ccac3a44c03f1f390b644d5f43d3c86f4c72",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/models/sam2/processor_config.json",
+    "archive_relative": "guided_mask_test/models/sam2/processor_config.json",
+    "source_sha256": "f8a68e865cfad115c1c2763f3d93eca7b1c622da06da2a9273eb437fb2389b6d",
+    "archive_sha256": "f8a68e865cfad115c1c2763f3d93eca7b1c622da06da2a9273eb437fb2389b6d",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/models/sam2/config.json",
+    "archive_relative": "guided_mask_test/models/sam2/config.json",
+    "source_sha256": "97ff9f65b76d107acda4247885f0a5555d0048850ae3c5f97183df289aaecde9",
+    "archive_sha256": "97ff9f65b76d107acda4247885f0a5555d0048850ae3c5f97183df289aaecde9",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/models/sam2/preprocessor_config.json",
+    "archive_relative": "guided_mask_test/models/sam2/preprocessor_config.json",
+    "source_sha256": "6ebf229ee259368ce4a8d4f2fe893a72b053023710853e257253939e601f583d",
+    "archive_sha256": "6ebf229ee259368ce4a8d4f2fe893a72b053023710853e257253939e601f583d",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/models/vitmatte/config.json",
+    "archive_relative": "guided_mask_test/models/vitmatte/config.json",
+    "source_sha256": "ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f",
+    "archive_sha256": "ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/models/vitmatte/preprocessor_config.json",
+    "archive_relative": "guided_mask_test/models/vitmatte/preprocessor_config.json",
+    "source_sha256": "0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0",
+    "archive_sha256": "0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_sam/body_candidate1.png",
+    "archive_relative": "guided_mask_test/dragonfly_sam/body_candidate1.png",
+    "source_sha256": "5ec3804646fe8f8fda9e5057fd3c8123026d8158b6287f7c879308550aa82e8a",
+    "archive_sha256": "5ec3804646fe8f8fda9e5057fd3c8123026d8158b6287f7c879308550aa82e8a",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_sam/whole_dragonfly_candidate1.png",
+    "archive_relative": "guided_mask_test/dragonfly_sam/whole_dragonfly_candidate1.png",
+    "source_sha256": "d8f6d2a293be1dc08cdced2aa18989600d630e66a524bae5df403a673a37432a",
+    "archive_sha256": "d8f6d2a293be1dc08cdced2aa18989600d630e66a524bae5df403a673a37432a",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_sam/upper_right_wing_candidate1.png",
+    "archive_relative": "guided_mask_test/dragonfly_sam/upper_right_wing_candidate1.png",
+    "source_sha256": "588ec8cd6133fed62d083a98c1a3807339db07f4f6df64027b07719c172de36a",
+    "archive_sha256": "588ec8cd6133fed62d083a98c1a3807339db07f4f6df64027b07719c172de36a",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_sam/lower_right_wing_candidate1.png",
+    "archive_relative": "guided_mask_test/dragonfly_sam/lower_right_wing_candidate1.png",
+    "source_sha256": "eea1c9cde55bc618504bdea556b719c9b856f53f59f6126dc61a0d35d0264ed8",
+    "archive_sha256": "eea1c9cde55bc618504bdea556b719c9b856f53f59f6126dc61a0d35d0264ed8",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_sam/sam_metadata.json",
+    "archive_relative": "guided_mask_test/dragonfly_sam/sam_metadata.json",
+    "source_sha256": "edeee53ca26d769bdf8fad1d585f562714c8eee164dced33f81f3dded76df142",
+    "archive_sha256": "edeee53ca26d769bdf8fad1d585f562714c8eee164dced33f81f3dded76df142",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_sam/spider_and_prey_candidate1.png",
+    "archive_relative": "guided_mask_test/spider_sam/spider_and_prey_candidate1.png",
+    "source_sha256": "d63aaba7a441f4b2bb4edfcaf87aa50ba3a20f7afadb8376644798d59fc0db7c",
+    "archive_sha256": "d63aaba7a441f4b2bb4edfcaf87aa50ba3a20f7afadb8376644798d59fc0db7c",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_sam/sam_metadata.json",
+    "archive_relative": "guided_mask_test/spider_sam/sam_metadata.json",
+    "source_sha256": "67ba11b0d7881e9ccc18b04457f3a0c76df52c96d3dc9b8b165f695b0cd60cbe",
+    "archive_sha256": "67ba11b0d7881e9ccc18b04457f3a0c76df52c96d3dc9b8b165f695b0cd60cbe",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_guides/trimap_v2.png",
+    "archive_relative": "guided_mask_test/spider_guides/trimap_v2.png",
+    "source_sha256": "c82a07f9ee64ee274d4f24d418c0b6a12ca5655364ff323bc740dbed21c2777d",
+    "archive_sha256": "c82a07f9ee64ee274d4f24d418c0b6a12ca5655364ff323bc740dbed21c2777d",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_guides/sam_selected.png",
+    "archive_relative": "guided_mask_test/spider_guides/sam_selected.png",
+    "source_sha256": "d63aaba7a441f4b2bb4edfcaf87aa50ba3a20f7afadb8376644798d59fc0db7c",
+    "archive_sha256": "d63aaba7a441f4b2bb4edfcaf87aa50ba3a20f7afadb8376644798d59fc0db7c",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_guides/web_corridors_v2.png",
+    "archive_relative": "guided_mask_test/spider_guides/web_corridors_v2.png",
+    "source_sha256": "381e081d4d7294d687f6330a072c1422c07225440b4c0d3f0c67310e61c47879",
+    "archive_sha256": "381e081d4d7294d687f6330a072c1422c07225440b4c0d3f0c67310e61c47879",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_guides/trimap_v2.png",
+    "archive_relative": "guided_mask_test/dragonfly_guides/trimap_v2.png",
+    "source_sha256": "9bd7b9066b47c4a55be5389c877cd66507c7ff99277d4803a47c13022d3aaa16",
+    "archive_sha256": "9bd7b9066b47c4a55be5389c877cd66507c7ff99277d4803a47c13022d3aaa16",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_guides/guide_notes_v2.json",
+    "archive_relative": "guided_mask_test/dragonfly_guides/guide_notes_v2.json",
+    "source_sha256": "b93f5336d441f6b39bd3591e99a3d9e77a39f5beda5fa5bdb28d7b06f88c5f25",
+    "archive_sha256": "b93f5336d441f6b39bd3591e99a3d9e77a39f5beda5fa5bdb28d7b06f88c5f25",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_local_correction/corrected_full_trimap.png",
+    "archive_relative": "guided_mask_test/dragonfly_local_correction/corrected_full_trimap.png",
+    "source_sha256": "9a6e504ea1baa2ff08c9ba628333bb80fa19763b26fa6e8116affd690c5f8e5b",
+    "archive_sha256": "9a6e504ea1baa2ff08c9ba628333bb80fa19763b26fa6e8116affd690c5f8e5b",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_local_correction/localized_opaque_guides.png",
+    "archive_relative": "guided_mask_test/dragonfly_local_correction/localized_opaque_guides.png",
+    "source_sha256": "383f6f80dd9b7424c639b6ee4d66884928f3563443d79cd7c6e2e543a3258860",
+    "archive_sha256": "383f6f80dd9b7424c639b6ee4d66884928f3563443d79cd7c6e2e543a3258860",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_local_correction/matted/mask16.png",
+    "archive_relative": "guided_mask_test/dragonfly_local_correction/matted/mask16.png",
+    "source_sha256": "b7c1cd1a6eb4a500e527893b86805042fb0e1587eb62c721386d9ee5aa71fd4f",
+    "archive_sha256": "b7c1cd1a6eb4a500e527893b86805042fb0e1587eb62c721386d9ee5aa71fd4f",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_local_correction/matted/metadata.json",
+    "archive_relative": "guided_mask_test/dragonfly_local_correction/matted/metadata.json",
+    "source_sha256": "4825b4e97aa6c28543247cb1b85faa53426f60081566a89779b6712cf998342d",
+    "archive_sha256": "4825b4e97aa6c28543247cb1b85faa53426f60081566a89779b6712cf998342d",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/local_matte/mask16.png",
+    "archive_relative": "guided_mask_test/spider_repair_v3/local_matte/mask16.png",
+    "source_sha256": "99631217aedcb23a65e603c2acc3fd8cce94d495a4f30a3180666b5c136c1c30",
+    "archive_sha256": "99631217aedcb23a65e603c2acc3fd8cce94d495a4f30a3180666b5c136c1c30",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/local_matte/metadata.json",
+    "archive_relative": "guided_mask_test/spider_repair_v3/local_matte/metadata.json",
+    "source_sha256": "7c3fc3cf241266c0e7494f64805d82c81acc0fa870646f54783bf20c2b14e366",
+    "archive_sha256": "7c3fc3cf241266c0e7494f64805d82c81acc0fa870646f54783bf20c2b14e366",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/gap_cores.png",
+    "archive_relative": "guided_mask_test/spider_repair_v3/gap_cores.png",
+    "source_sha256": "8d4e4dfd58b6e18ddadf66e84124f463009c4a975bd125ae5367f3ac36f27640",
+    "archive_sha256": "8d4e4dfd58b6e18ddadf66e84124f463009c4a975bd125ae5367f3ac36f27640",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/final/SOURCE_ALIGNED.png",
+    "archive_relative": "examples/spider-repair-v3/SOURCE_ALIGNED.png",
+    "source_sha256": "0d7bbfb68c0ba5a23e39ec0f190b857245381e76420ad3269440d7471e7eb4d4",
+    "archive_sha256": "0d7bbfb68c0ba5a23e39ec0f190b857245381e76420ad3269440d7471e7eb4d4",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/final/FOREGROUND_COLOR_REPAIRED.png",
+    "archive_relative": "examples/spider-repair-v3/FOREGROUND_COLOR_REPAIRED.png",
+    "source_sha256": "290d21319070ff834019e72c9803c7f20775b52d330d274a929f3573df066365",
+    "archive_sha256": "290d21319070ff834019e72c9803c7f20775b52d330d274a929f3573df066365",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/final/MASK_16BIT.png",
+    "archive_relative": "examples/spider-repair-v3/MASK_16BIT.png",
+    "source_sha256": "e59a54556711400fc2fc634142bbdd8613dc8d8037d5ad815aaef9b0830eb2f0",
+    "archive_sha256": "e59a54556711400fc2fc634142bbdd8613dc8d8037d5ad815aaef9b0830eb2f0",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/final/BLACK_COMPOSITE.png",
+    "archive_relative": "examples/spider-repair-v3/BLACK_COMPOSITE.png",
+    "source_sha256": "4e92157926368d97d540fd0812a484b094f55cecbf55f6b328c471c968e38492",
+    "archive_sha256": "4e92157926368d97d540fd0812a484b094f55cecbf55f6b328c471c968e38492",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/final/TRIMAP.png",
+    "archive_relative": "examples/spider-repair-v3/TRIMAP.png",
+    "source_sha256": "d431de05c7dd87ce0b274e2346097515aa3aed082ec275c4ad9c62145e79e10e",
+    "archive_sha256": "d431de05c7dd87ce0b274e2346097515aa3aed082ec275c4ad9c62145e79e10e",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/final/LOCAL_REPAIR_SUPPORT.png",
+    "archive_relative": "examples/spider-repair-v3/LOCAL_REPAIR_SUPPORT.png",
+    "source_sha256": "13f9e5d43d928ff1cea5cce8576e6a9ff9e69355cbd575a4f83a8f7288f92ed4",
+    "archive_sha256": "13f9e5d43d928ff1cea5cce8576e6a9ff9e69355cbd575a4f83a8f7288f92ed4",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/final/README.txt",
+    "archive_relative": "examples/spider-repair-v3/README.txt",
+    "source_sha256": "ba4698e19ecb2f3046fa1b4a82a5b81e950d524dacdd2d2e9f377818b0893dd7",
+    "archive_sha256": "c074f607574344d1296d6ae581cb7858f89517da2e28e364299173ef71fccd00",
+    "modification": "Added a scope note identifying omitted historical workflow assets; original result description retained."
+  },
+  {
+    "source_relative": "guided_mask_test/spider_pass2/mask16.png",
+    "archive_relative": "examples/spider-repair-v3/PREVIOUS_MASK_16BIT.png",
+    "source_sha256": "cbfd95d1c2f55b8c3915610be916f0d4fbf208e231087ec2ce0e4b0bedd01c9d",
+    "archive_sha256": "cbfd95d1c2f55b8c3915610be916f0d4fbf208e231087ec2ce0e4b0bedd01c9d",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/inputs/dragonfly_source/292a860a-a0f5-4e37-8959-4f0026b7101c-1_all_14037.jpg",
+    "archive_relative": "examples/dragonfly/SOURCE_JPEG.jpg",
+    "source_sha256": "17dcd4553ee0f05db1e5a3ba88e644a0a74d1f63f0c9ec71726f97a7fb1b8793",
+    "archive_sha256": "17dcd4553ee0f05db1e5a3ba88e644a0a74d1f63f0c9ec71726f97a7fb1b8793",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/dragonfly_final/mask16.png",
+    "archive_relative": "examples/dragonfly/MASK_16BIT.png",
+    "source_sha256": "980fe3ee773bef8103ee1b6462bac9b26438de03c9a57835831cd19925813a9d",
+    "archive_sha256": "980fe3ee773bef8103ee1b6462bac9b26438de03c9a57835831cd19925813a9d",
+    "modification": "None"
+  },
+  {
+    "source_relative": "edge_shadow_evaluation/assets/Pink-dahlia/SHADOW_WEIGHT_16BIT.png",
+    "archive_relative": "examples/shading/DAHLIA_SHADOW_WEIGHT_16BIT.png",
+    "source_sha256": "1ffed09c0658004521df9c7c3b7b7fc5af919ead66db736455ce24e027551451",
+    "archive_sha256": "1ffed09c0658004521df9c7c3b7b7fc5af919ead66db736455ce24e027551451",
+    "modification": "None"
+  },
+  {
+    "source_relative": "edge_shadow_evaluation/assets/Pink-dahlia/BASE_SUBJECT_MASK_16BIT.png",
+    "archive_relative": "examples/shading/DAHLIA_BASE_SUBJECT_MASK_16BIT.png",
+    "source_sha256": "4fc446599a0829cfc6c713bd0abccd34abe58472fc04e37a5746aa1ba4b492ab",
+    "archive_sha256": "4fc446599a0829cfc6c713bd0abccd34abe58472fc04e37a5746aa1ba4b492ab",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/deliverables/Guided-mask-comparison.jpg",
+    "archive_relative": "previews/Guided-mask-comparison.jpg",
+    "source_sha256": "913d91115ad4b8d1886fcb2d5fcc61df1c7ae8e63b9d4d15de2b9c51dbc2dbe8",
+    "archive_sha256": "913d91115ad4b8d1886fcb2d5fcc61df1c7ae8e63b9d4d15de2b9c51dbc2dbe8",
+    "modification": "None"
+  },
+  {
+    "source_relative": "guided_mask_test/spider_repair_v3/Spider-repair-before-after.jpg",
+    "archive_relative": "previews/Spider-repair-before-after.jpg",
+    "source_sha256": "1bf4334eea8457aecdf2049151f49a27c8444348c8bb4bb25232ef411dbb1be7",
+    "archive_sha256": "1bf4334eea8457aecdf2049151f49a27c8444348c8bb4bb25232ef411dbb1be7",
+    "modification": "None"
+  },
+  {
+    "source_relative": "edge_shadow_evaluation/Edge-shadow-comparison.jpg",
+    "archive_relative": "previews/Edge-shadow-comparison.jpg",
+    "source_sha256": "393a3b16978a0c71085281b2a355af9b25f678407b7dec7ac36e1127482b53ff",
+    "archive_sha256": "393a3b16978a0c71085281b2a355af9b25f678407b7dec7ac36e1127482b53ff",
+    "modification": "None"
+  },
+  {
+    "source_relative": "edge_shadow_evaluation/Pink-dahlia-native-crop.png",
+    "archive_relative": "previews/Pink-dahlia-native-crop.png",
+    "source_sha256": "36aeba85f7545bfc949917bb723cb9dcde8b8227cc9a444f26e325d172b8f4b0",
+    "archive_sha256": "36aeba85f7545bfc949917bb723cb9dcde8b8227cc9a444f26e325d172b8f4b0",
+    "modification": "None"
+  },
+  {
+    "source_relative": "edge_shadow_evaluation/visibility_verification.json",
+    "archive_relative": "edge_shadow_evaluation/visibility_verification.json",
+    "source_sha256": "aa7112461b0d6007615563b7b97d83d53bba6ded6b5eb9bf636fcea36d2006e6",
+    "archive_sha256": "aa7112461b0d6007615563b7b97d83d53bba6ded6b5eb9bf636fcea36d2006e6",
+    "modification": "None"
+  }
+]

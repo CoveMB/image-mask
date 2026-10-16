@@ -1,0 +1,76 @@
+[
+  {
+    "stem": "01_1000036098",
+    "name": "Grasshopper",
+    "width": 48,
+    "protect": 14,
+    "crop": [
+      1450,
+      1390,
+      1962,
+      1902
+    ],
+    "dimensions": [
+      3072,
+      4080
+    ],
+    "source_filename": "01_1000036098_developed.png",
+    "source_sha256": "f5b610f9e365b1bc846c7804bd57ecf85a49ad0cf383034dc303bbc437f93dc3",
+    "base_mask_sha256": "afaf9c44ba3a9f67c0e2f845db82f864ad6a8544cd7a1cad7f8c459c3c64fcbc",
+    "strengths": [
+      0,
+      0.12,
+      0.24
+    ],
+    "maximum_effect_weight": 0.9874418377876282,
+    "protected_detail_box": [
+      2000,
+      1230,
+      2520,
+      1580
+    ],
+    "protected_detail_max_channel_difference": 0,
+    "original_files_unchanged": true,
+    "background_unchanged": true,
+    "interior_beyond_band_unchanged": true,
+    "protected_detail_max_shadow_weight16": 0,
+    "protected_detail_subject_nonzero_pixels": 170963
+  },
+  {
+    "stem": "05_1000035853",
+    "name": "Pink-dahlia",
+    "width": 88,
+    "protect": 14,
+    "crop": [
+      365,
+      1900,
+      877,
+      2412
+    ],
+    "dimensions": [
+      3072,
+      4080
+    ],
+    "source_filename": "05_1000035853_developed.png",
+    "source_sha256": "5d6c531a29e3f81f7d0a785bd3df5af48f781fb21e592c9dd7eb68f81556d99f",
+    "base_mask_sha256": "4fc446599a0829cfc6c713bd0abccd34abe58472fc04e37a5746aa1ba4b492ab",
+    "strengths": [
+      0,
+      0.12,
+      0.24
+    ],
+    "maximum_effect_weight": 0.9945525527000427,
+    "protected_detail_box": [
+      1080,
+      1880,
+      1680,
+      2480
+    ],
+    "protected_detail_max_channel_difference": 0,
+    "original_files_unchanged": true,
+    "background_unchanged": true,
+    "interior_beyond_band_unchanged": true,
+    "protected_detail_max_shadow_weight16": 0,
+    "protected_detail_subject_nonzero_pixels": 360000
+  }
+]

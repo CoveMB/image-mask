@@ -1,0 +1,20 @@
+{
+  "source": "/path/to/photo-workflow-reference/guided_mask_test/spider_raw_preparation/spider_native_source.png",
+  "dimensions": [
+    1536,
+    2040
+  ],
+  "sam_candidate": 1,
+  "opaque_erosion_px": 12,
+  "uncertain_dilation_px": 25,
+  "value_counts": {
+    "0": 2425232,
+    "128": 592713,
+    "255": 115495
+  },
+  "notes": [
+    "Web corridor line drawing marks only unknown trimap regions. No visible foreground strands are synthesized.",
+    "Large overlapping rear-leg areas changed from SAM foreground to unknown because mask includes background gaps.",
+    "Foreground stems require both a hand-guided center corridor and >=5 px SAM interior."
+  ]
+}

@@ -1,0 +1,11 @@
+from pathlib import Path
+from PIL import Image
+import numpy as np,json,shutil
+r=Path('/path/to/photo-workflow-reference/guided_mask_test');src=r/'dragonfly_pass2';out=r/'dragonfly_final';out.mkdir(exist_ok=True)
+source=Image.open(src/'aligned_source.png').convert('RGB');rgb=np.array(source);a=np.asarray(Image.open(src/'mask16.png')).astype(float)/65535
+p=np.asarray(Image.open(r/'dragonfly_local_correction/matted/mask16.png')).astype(float)/65535;w=np.load(r/'dragonfly_local_correction/correction_weight.npy');region=a[:1024,200:1224];local_w=w[:1024,200:1224]
+region[:]=region+np.maximum(0,p-region)*local_w
+mask=np.rint(np.clip(a,0,1)*65535).astype(np.uint16);Image.fromarray(mask).save(out/'mask16.png');source.save(out/'aligned_source.png');black=np.rint(rgb.astype(float)*(mask.astype(float)/65535)[...,None]).astype(np.uint8);Image.fromarray(black).save(out/'black.png');Image.fromarray(np.dstack([rgb,np.rint(mask/257).astype(np.uint8)])).save(out/'transparent.png')
+shutil.copy2(r/'dragonfly_local_correction/corrected_full_trimap.png',out/'trimap.png')
+meta=json.loads((src/'metadata.json').read_text());meta['localized_correction']={'method':'One additional native1024x1024 ViTMatte crop using source-verified opaque head crescent and body-backed wing-root guides. Only opacity increases within feathered correction regions were merged; all other alpha unchanged.','crop_xyxy':[200,0,1224,1024],'full_passes':2,'additional_local_passes':1,'correction_bounds':'Source-localized head crescent aroundx619-681,y405-620; wing-root body aroundx744-834,y765-913;35px uncertainty expansion,20px merge feather.'};meta['localized_samples']={str((x,y)):float(mask[y,x])/65535 for x,y in [(640,470),(630,580),(790,825),(805,850)]};meta['source_rgb_preserved']=True;meta['composite_verified']=True
+assert np.array_equal(black,np.rint(rgb.astype(float)*(mask.astype(float)/65535)[...,None]).astype(np.uint8));assert np.all(mask>=np.asarray(Image.open(src/'mask16.png')).astype(np.uint16));meta['pixels_with_increased_opacity']=int(np.count_nonzero(mask>np.asarray(Image.open(src/'mask16.png')).astype(np.uint16)));(out/'metadata.json').write_text(json.dumps(meta,indent=2));print(json.dumps(meta['localized_samples']))

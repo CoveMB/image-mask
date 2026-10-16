@@ -1,0 +1,24 @@
+INPUT / OUTPUT CONTRACT: OBSERVED AND PROPOSED
+
+Observed runner inputs
+- A deliberately selected, already developed/oriented RGB image. run_guided.py calls convert('RGB'); it does not robustly detect RAW formats, apply EXIF orientation, manage arbitrary ICC profiles or preserve16-bit RGB itself.
+- SAM prompt JSON: list of objects with name, points[[x,y],...], labels[1 foreground /0 background,...], optional box[x0,y0,x1,y1]. Pixel coordinates are in the chosen native aligned source, never the preview coordinate system.
+- Matting trimap: same width/height as source, grayscale values exactly0/128/255. Opaque cores must be conservative and source-backed. Point selection alone does not produce an approved trimap.
+- Reviewed model files at the expected local directories; inference scripts set offline flags and use local_files_only=True.
+
+Observed outputs
+- SOURCE_ALIGNED/aligned_source PNG: exact decoded RGB input used by the mask.
+- MASK_16BIT/mask16 grayscale PNG: scalar coverage0..65535, not gamma-encoded display luminance.
+- BLACK_COMPOSITE/black PNG: encoded-sRGB source-times-alpha result, or clearly labeled repaired-color-times-alpha for spider v3.
+- TRANSPARENT/transparent PNG: source/repaired RGB with8-bit straight alpha; do not substitute its alpha for the16-bit master mask.
+- TRIMAP: categorical guidance, plus optional local support mask, tile disagreement diagnostic and JSON parameters.
+- FOREGROUND_COLOR_REPAIRED: optional, separately stored from source; geometry and opaque pixels preserved in tested spider repair.
+- SHADOW_WEIGHT_16BIT: optional separate shading intensity. Base subject coverage is unchanged.
+
+Expected future local design, not yet implemented
+For each photo, keep an immutable original with checksum and record its format, native dimensions, orientation, color/development recipe and aligned master identity. Require an explicit keep-group description: insect only, insect+supporting leaf/stem, flower+bee, spider+prey+web, etc. Save source-visible correction requests and revision history. Do not infer that every foreground-looking object should be retained.
+Use separate per-photo revision directories (for example photo-id/rev-001, rev-002), never silently overwrite a prior mask. Record parent revision, request, keep groups, prompt/trimap version, checkpoint hashes, runtime version, device/dtype, tile settings, transformations, precision and checksums. The naming convention is proposed, not supplied by the prototype.
+Retain aligned developed source/master, base subject mask, optional edge decontamination layer/settings, optional shading layer/settings, preview composites and machine-readable manifest as separate reversible deliverables. A layered editor file may be useful but no PSD/ORA/other native editor project is currently implemented. The source must remain recoverable and auditable.
+
+Acceptance checks for the plan
+No input mutation; coordinate alignment and orientation; no hidden crop/scale; exact expected composite arithmetic under declared color space;16-bit mask retained; opaque source pixels unchanged unless the user explicitly requests an edit; BG cores empty; fine hairs/antennae/web and intentionally soft edges reviewed against source; no invented strands or removed legitimate support; tile seams inspected at100%; black/white/gray/checkerboard views; optional stages can be set tozero/disabled; revisions reproducible from recorded inputs/settings. Pixel consistency does not prove artistic or biological correctness of a mask.

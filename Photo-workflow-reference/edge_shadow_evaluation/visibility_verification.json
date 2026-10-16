@@ -1,0 +1,136 @@
+[
+  {
+    "name": "Grasshopper",
+    "total_pixels": 12533760,
+    "subject_pixels": 3435226,
+    "edge_pixels": 281528,
+    "edge_percent_photo": 2.246157577614379,
+    "meaningful_edge_pixels": 214585,
+    "baseline_vs_existing_max_channel_diff": 1,
+    "variants": {
+      "SUBTLE": {
+        "reproduction_maxdiff": 0,
+        "opacity_max_percent": 11.849302053451538,
+        "opacity_median_affected_edge_percent": 2.9806362465023994,
+        "opacity_p90_affected_edge_percent": 9.855177998542786,
+        "overlay_alpha_max_255": 30,
+        "changed_pixels": 235370,
+        "changed_photo_percent": 1.8778881995506536,
+        "rgb_max_channel_change": 21,
+        "rgb_mean_abs_whole_photo": 0.09509131072133714,
+        "rgb_mean_abs_affected_edge": 4.233510225152265,
+        "luma_mean_change_whole_photo": 0.0988686412696589,
+        "luma_mean_change_affected_edge": 4.401678771560911,
+        "luma_median_change_affected_edge": 3.9278,
+        "luma_p90_change_affected_edge": 10.4934,
+        "luma_max_change": 17.345,
+        "outside_shadow_max_channel_diff": 0,
+        "original_crop": {
+          "mean_rgb_abs": 1.2064590454101562,
+          "max_channel": 20,
+          "mean_luma_change": 1.2486458206176758,
+          "changed_percent": 23.029327392578125
+        },
+        "visible_edge_median_opacity_percent": 3.466605767607689,
+        "visible_edge_mean_luma_change": 5.381619932427709,
+        "8bit_overlay_vs_16bit_preview_max_channel_diff": 1
+      },
+      "MODERATE": {
+        "reproduction_maxdiff": 0,
+        "opacity_max_percent": 23.698604106903076,
+        "opacity_median_affected_edge_percent": 5.961272493004799,
+        "opacity_p90_affected_edge_percent": 19.71035599708557,
+        "overlay_alpha_max_255": 60,
+        "changed_pixels": 243284,
+        "changed_photo_percent": 1.9410296670751634,
+        "rgb_max_channel_change": 42,
+        "rgb_mean_abs_whole_photo": 0.1899322044355937,
+        "rgb_mean_abs_affected_edge": 8.455871766455438,
+        "luma_mean_change_whole_photo": 0.19750085238587625,
+        "luma_mean_change_affected_edge": 8.792831560626295,
+        "luma_median_change_affected_edge": 7.280799999999999,
+        "luma_p90_change_affected_edge": 21.4132,
+        "luma_max_change": 34.2728,
+        "outside_shadow_max_channel_diff": 0,
+        "original_crop": {
+          "mean_rgb_abs": 2.4053967793782554,
+          "max_channel": 39,
+          "mean_luma_change": 2.4900996116638185,
+          "changed_percent": 23.900604248046875
+        },
+        "visible_edge_median_opacity_percent": 6.933211535215378,
+        "visible_edge_mean_luma_change": 10.749408090034251,
+        "8bit_overlay_vs_16bit_preview_max_channel_diff": 1
+      }
+    },
+    "source_hash_unchanged": true,
+    "mask_hash_unchanged": true
+  },
+  {
+    "name": "Pink-dahlia",
+    "total_pixels": 12533760,
+    "subject_pixels": 3772226,
+    "edge_pixels": 659982,
+    "edge_percent_photo": 5.265634574142157,
+    "meaningful_edge_pixels": 577371,
+    "baseline_vs_existing_max_channel_diff": 1,
+    "variants": {
+      "SUBTLE": {
+        "reproduction_maxdiff": 0,
+        "opacity_max_percent": 11.934630572795868,
+        "opacity_median_affected_edge_percent": 2.930830791592598,
+        "opacity_p90_affected_edge_percent": 9.535888582468033,
+        "overlay_alpha_max_255": 30,
+        "changed_pixels": 555575,
+        "changed_photo_percent": 4.432628357332517,
+        "rgb_max_channel_change": 24,
+        "rgb_mean_abs_whole_photo": 0.28682422513276146,
+        "rgb_mean_abs_affected_edge": 5.44709704204054,
+        "luma_mean_change_whole_photo": 0.2673035515918607,
+        "luma_mean_change_affected_edge": 5.076378693358303,
+        "luma_median_change_affected_edge": 4.2126,
+        "luma_p90_change_affected_edge": 11.922600000000001,
+        "luma_max_change": 20.2074,
+        "outside_shadow_max_channel_diff": 0,
+        "original_crop": {
+          "mean_rgb_abs": 1.3599408467610676,
+          "max_channel": 24,
+          "mean_luma_change": 1.2797567573547364,
+          "changed_percent": 20.749282836914062
+        },
+        "visible_edge_median_opacity_percent": 3.177477791905403,
+        "visible_edge_mean_luma_change": 5.698543177263839,
+        "8bit_overlay_vs_16bit_preview_max_channel_diff": 1
+      },
+      "MODERATE": {
+        "reproduction_maxdiff": 0,
+        "opacity_max_percent": 23.869261145591736,
+        "opacity_median_affected_edge_percent": 5.861661583185196,
+        "opacity_p90_affected_edge_percent": 19.071777164936066,
+        "overlay_alpha_max_255": 61,
+        "changed_pixels": 577382,
+        "changed_photo_percent": 4.606614455678105,
+        "rgb_max_channel_change": 48,
+        "rgb_mean_abs_whole_photo": 0.5733382214648012,
+        "rgb_mean_abs_affected_edge": 10.888302509260354,
+        "luma_mean_change_whole_photo": 0.53430947760289,
+        "luma_mean_change_affected_edge": 10.147105160443768,
+        "luma_median_change_affected_edge": 8.4974,
+        "luma_p90_change_affected_edge": 23.845200000000002,
+        "luma_max_change": 40.202200000000005,
+        "outside_shadow_max_channel_diff": 0,
+        "original_crop": {
+          "mean_rgb_abs": 2.716815948486328,
+          "max_channel": 47,
+          "mean_luma_change": 2.556989770507812,
+          "changed_percent": 21.561813354492188
+        },
+        "visible_edge_median_opacity_percent": 6.354955583810806,
+        "visible_edge_mean_luma_change": 11.390937118767654,
+        "8bit_overlay_vs_16bit_preview_max_channel_diff": 1
+      }
+    },
+    "source_hash_unchanged": true,
+    "mask_hash_unchanged": true
+  }
+]

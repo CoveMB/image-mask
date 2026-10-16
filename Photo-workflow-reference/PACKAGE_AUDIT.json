@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-11",
+  "scope": "Curated reference packaging only; not a fresh install or inference run.",
+  "python_scripts_parse_success": [
+    "mask_test/infer_masks.py",
+    "mask_test/render_raw.py",
+    "mask_test/test_output_contract.py",
+    "edge_shadow_evaluation/probe.py",
+    "guided_mask_test/run_guided.py",
+    "guided_mask_test/prepare_dragonfly_core_correction.py",
+    "guided_mask_test/make_dragonfly_trimap_v2.py",
+    "guided_mask_test/merge_dragonfly_core_correction.py",
+    "guided_mask_test/spider_guides/build_guides_v2.py",
+    "guided_mask_test/spider_repair_v3/prepare_local_matte.py",
+    "guided_mask_test/spider_repair_v3/finalize_repair.py"
+  ],
+  "plaintext_and_docx_xml_scanned": 74,
+  "secret_or_private_workflow_marker_findings": [],
+  "audit_limit": "Pattern scanning and allowlist review are not a formal security certification. Image fixtures are only user-supplied nature photographs and derived masks.",
+  "original_baseline_contract_suite": {
+    "tests": 3,
+    "passed": 3,
+    "execution_seconds": 26.014,
+    "original_dng_hashes_unchanged": 10,
+    "where": "Original complete experiment project, not trimmed archive"
+  },
+  "spider_fixture": {
+    "dimensions_wh": [
+      1536,
+      2040
+    ],
+    "composite_exact": true,
+    "original_developed_rgb_exact": true,
+    "opaque_color_exact": true,
+    "opaque_alpha_exact": true,
+    "outside_saved_support_mask_alpha_exact": true,
+    "outside_saved_support_mask_rgb_exact": true
+  },
+  "dragonfly_fixture": {
+    "dimensions_wh": [
+      2047,
+      2048
+    ],
+    "decoded_jpeg_equals_aligned_source": true,
+    "mask_alignment": true,
+    "jpeg_exif_present": false,
+    "jpeg_info_keys": [
+      "jfif",
+      "jfif_version",
+      "jfif_unit",
+      "jfif_density"
+    ]
+  },
+  "included_model_config_checks": [
+    {
+      "path": "guided_mask_test/models/sam2/processor_config.json",
+      "sha256_matches_pinned_manifest": true
+    },
+    {
+      "path": "guided_mask_test/models/sam2/config.json",
+      "sha256_matches_pinned_manifest": true
+    },
+    {
+      "path": "guided_mask_test/models/sam2/preprocessor_config.json",
+      "sha256_matches_pinned_manifest": true
+    },
+    {
+      "path": "guided_mask_test/models/vitmatte/config.json",
+      "sha256_matches_pinned_manifest": true
+    },
+    {
+      "path": "guided_mask_test/models/vitmatte/preprocessor_config.json",
+      "sha256_matches_pinned_manifest": true
+    }
+  ],
+  "biRefNet_original_reviewed_custom_code_hashes_match": true,
+  "no_weights_or_environments_included": true,
+  "no_image_metadata_exif_in_dragonfly_fixture": true,
+  "not_tested": [
+    "Fresh-environment installation",
+    "macOS Apple Silicon or Intel",
+    "MPS or CUDA execution",
+    "Generalized interactive keep-group workflow",
+    "End-to-end16bit RGB processing",
+    "Production batch/revision manager"
+  ]
+}

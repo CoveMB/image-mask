@@ -1,0 +1,52 @@
+AUTOMATIC MASK REVIEW: TEN PHOTOS
+
+Reviewed the corrected daylight-white-balance run only, using each developed PNG, its black composite at reduced full-frame size, and selected native-pixel edge crops. The model inferred at a 1536-pixel long edge with padding; masks were projected back to native image dimensions. This is a qualitative review, not a ground-truth accuracy benchmark. A native-size output does not mean inference occurred at native resolution.
+
+SUMMARY
+The dahlia (05) and orange zinnia (08) are the cleanest automatic first passes. Several insects need appendage or background-residue cleanup. The red/yellow flower (07) needs internal opacity repair as well as edge review. The close-up bee (09) is a severe mask failure: much of the bee itself is transparent, independently of whether its flower should have been retained.
+
+PER-PHOTO FINDINGS
+01 Grasshopper — Useful first pass.
+Body and the long visible right-reaching antenna are retained continuously. Feet fade strongly against black, and the defocused rear/body boundary has a soft pale rim. The source itself is very soft in those areas. A faint upright line behind the head is ambiguous, so it is not counted as a missing antenna.
+
+02 Red bug on leaf — Needs cleanup.
+The insect is selected rather than the large leaf, with recognizable antennae and legs. Warm leaf-colored residue remains near some leg gaps, especially around the upper/right legs, and fine appendage tips soften or fade. Removing the leaf is a subject-scope choice; residual leaf patches are a separate masking defect.
+
+03 Red and black bug on stem — Needs cleanup.
+The body and main antennae survive, and both stems are removed. The dark proximal section of the forward leg is lost while its pale distal section remains, making that section appear detached. Long leg tips also fade. Whether to retain a supporting stem is an artistic choice; losing a section of the insect is not.
+
+04 Hairy caterpillar — Needs cleanup.
+The body, yellow tufts, and many fine head hairs are retained. Faint leaf-colored haze/trails remain below the caterpillar and between defocused tufts. Some finest pale hair tips fade. The original's shallow depth of field limits how distinctly the rear hairs can be resolved.
+
+05 Pink dahlia with bee — Useful first pass; among the strongest.
+The full flower and bee remain, distracting foliage/other flowers are removed, and the lower-right petal notch remains open. The outer contours are softly feathered where the source is defocused. No major omission was obvious in the inspected petal crops. The bee lies inside the flower silhouette, so preserved bee detail here does not demonstrate isolated hair/wing matting quality.
+
+06 Green insect on bark — Useful first pass with minor cleanup.
+The wing/body outline and long upper legs are retained. A small bright bark fleck to the right of the head remains as a floating speck. Some leg tips are soft, and the lower body edge is mildly feathered.
+
+07 Red and yellow flower — Needs cleanup.
+The five-petal outline and large inter-petal gaps are convincing, and the other flower is removed. However, lower central florets are partly made transparent and darkened. This is an internal foreground-opacity defect, not just a choice about opening background gaps. See measured evidence below.
+
+08 Orange zinnia — Useful first pass; among the strongest.
+The whole flower is retained without obvious unwanted foliage. In the inspected upper-left and lower outline crops, no major missing petal was evident. Outer petal contours remain soft where the source was already defocused; tiny scallops should still be checked for exacting final use.
+
+09 Bee close-up on yellow flower — Failed mask; major foreground-opacity loss.
+The model chooses the bee alone and removes the flower. Even under that interpretation, the bee's lower face/body, legs, and wing become nearly transparent; mainly the upper thorax/hair mass remains clearly visible. The result needs substantial remasking rather than simple edge cleanup. Keeping or removing the flower cannot explain this loss of opaque bee detail.
+
+10 Yellow flower — Useful first pass, with support-retention decision.
+The flower silhouette, major petal notches and central structures are retained. A narrow green stem remains down toward the lower frame, unlike the fully isolated flower heads in 05/08. Remove it if the intended subject is the flower head alone. Out-of-focus top/right petal edges remain soft and slightly smoothed.
+
+MEASURED ALPHA EVIDENCE
+Coordinates are zero-based (x,y) in the native developed PNG. Alpha is mask16 / 65535; 1 means fully retained, 0 means removed. RGB values are read from the PNG files, not the JPEG review previews. These are local opacity measurements, not accuracy percentages.
+
+07: A yellow center-floret pixel at (1480,2349) has alpha 27348/65535 = 0.4173. Its developed RGB is [223,139,0]; the black composite is [93,58,0]. The small region x=[1476,1485), y=[2345,2354) has median alpha 0.4570 (range 0.1527–0.7582). The reference shows solid yellow floret material there. Adjacent true inter-petal gaps are a different case.
+
+09: A solid bee eye/face pixel at (1420,2450) has alpha 5464/65535 = 0.0834. Developed RGB [51,41,28] becomes [4,3,2]. The eye-region x=[1408,1433), y=[2438,2463) has median alpha 0.0898 (range 0.0770–0.1200). This demonstrates removal of opaque subject detail, rather than merely dark original coloration or translucent wing material.
+
+REVIEW FILES
+review_crops/KEY_ALPHA_EVIDENCE.png is the compact native-pixel evidence board for 07/09, showing developed reference, black composite and mask, with measured regions marked.
+review_crops/alpha_evidence.json stores the exact measurements.
+review_crops/*_overview.jpg show every developed reference beside its automatic black composite.
+review_crops/*_native.jpg show selected native-pixel comparisons for antennae, legs, hairs, wings and petal boundaries. View at 100% for pixel-scale inspection. JPEG review images are previews; the delivered PNG masks/composites remain authoritative.
+
+No masks were edited or corrected during this review. No generative editing, retouching or additional model inference was performed by the review step. Soft focus in the original images must not be mistaken for detail the mask can reconstruct. Artistic decisions about retaining flowers, stems and leaves remain separate from missing foreground anatomy or unwanted residual background.
