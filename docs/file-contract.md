@@ -139,3 +139,42 @@ input/crop/trimap, model/config/package, backend/dtype/geometry/preprocessing.
 Malformed/unknown entries miss. A backend switch starts the whole fresh stage in
 its own namespace. Accepted layers are outside cache. Retained temporary hard links
 and failed-stage directories are diagnostic, not accepted or resume authority.
+
+
+## Saved scoped repairs and restore
+
+Schema-1 repair revisions extend complete matte revisions; earlier saved matte
+and prepared revisions remain readable. Preparation carries parental
+`base_alpha16.png` and `foreground_rgb16.tif` unchanged. Repair requires a current
+human-reviewed prepared revision with a complete same-master parental matte,
+verified immutable ancestry and exact current draft digest. No repeated guide
+edits are accepted on a repair request.
+
+Every repair contains `repair/parent_alpha16.png`,
+`repair/candidate_alpha16.png`, `repair/support16.png` and `repair/merge.json`.
+Scalar operands are full-master grayscale16 PNG. The candidate contains the
+quantized native context prediction and parent samples elsewhere. Metadata binds
+parent/master/manifest, native half-open context and scope, origin/dimensions at
+scale 1, directional policy/rationale and ordered float64 ties-to-even arithmetic.
+The existing protection/lock/trimap files are reused. All operands are hashed in
+the revision manifest. Replay checks parent bindings and validates its result
+against `base_alpha16.png`; accepted/review/export routes use the same check.
+Context is part of cropped inference cache identity even if repeated image/guide
+bytes would otherwise match a different native crop.
+
+Repair uses the existing foreground/alpha renderer and final human acceptance
+control. Preparing/repairing/restoring does not advance final acceptance. Restore
+replaces working drafts only under the shared lock and snapshot rechecks;
+unsaved text requires explicit `--replace-drafts`. Before any replacement,
+`recovery/restore-*/` retains previous recipe/guides/state/source bytes and the
+restore request. Preserve these records after interrupted restore. No automatic
+deletion or rollback changes an accepted pointer.
+
+Restore also supports existing revisions whose saved guides were normalized while
+the draft digest binds the original editable bytes. In that case it restores
+the exact hashed `inputs/recipe.toml`/`inputs/guides.json` snapshots only after
+verifying their digest and saved target validity. It never substitutes current
+mutable text. Default unsaved-edit checks bind the captured bytes, so an edit
+between initial inspection and snapshot cannot be silently replaced. Explicit
+`--replace-drafts` can recover malformed current draft text; immutable state,
+source, master and revision validation remains mandatory.

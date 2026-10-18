@@ -16,15 +16,14 @@
 - **Interrupted/incomplete creation:** retain the capture and diagnostic project.
   No state means no published usable project; no incomplete master can be approved.
   Create at a new empty location. Inspect retained files before any separately
-  authorized cleanup. Resume/revision recovery arrives later.
+  authorized cleanup. Resume remains future work; saved working revisions can be restored.
 - **Failed approval:** reopen the project and inspect its actual state. Before
   atomic replacement, failure preserves old state. After replacement, the update
   may be visible even if a later directory sync fails; never infer success/failure
   solely from the CLI exit. Reopen validates assets and actual acceptance state.
-- **Stale identity/corrupt master/malformed draft:** do not bypass validation.
+- **Stale identity/corrupt master:** do not bypass validation.
   Restore an independently retained correct copy or create a fresh project from
-  the unchanged capture; human acceptance never follows from restore. No general
-  repair command is implemented.
+  the unchanged capture; human acceptance never follows from restore. Scoped alpha repair does not repair corrupt master/project data.
 - **Moved capture:** reopen uses retained master; locate the original by SHA-256
   before future source-dependent recomputation. Same filename is insufficient.
 
@@ -76,3 +75,29 @@ A publication collision means another tool/editor created a project asset while 
 - **Export collision:** keep prior delivery; identical output reuses it. Different
   bytes or an incomplete directory fail without overwrite. A newer candidate has a
   different revision; explicit unaccepted output must use `--revision ... --draft`.
+
+
+## Repair and restore recovery
+
+- Repair support must be the current prepared revision's returned support asset.
+  Use its exact returned absolute path or project-relative equivalent. Prepare
+  edited guidance first, approve its trimap, then submit repair without repeated
+  guide edits. An unrelated or symlinked support file is rejected.
+- Feathered support cannot change a confirmed core. Revise support explicitly
+  inside the authorized scope, or correct a genuinely erroneous core through
+  typed guide edits and new trimap review. Never expand scope or remove locks
+  merely to make a request pass.
+- Stale draft/reference/parent errors preserve newer text and final acceptance.
+  Inspect actual state before a new operation. Failed temporary revisions and
+  cache work are retained; there is no automatic cleanup or resume command.
+- `replay --revision` verifies saved repair operands without models or cache.
+  Missing or modified immutable operands/dependencies are errors; restore from
+  your independent backup, never regenerate accepted operands with a model.
+- Restore rejects unsaved draft text by default. Explicit `--replace-drafts`
+  retains old bytes, including malformed current TOML/JSON, in the returned
+  `recovery/restore-*/` directory. Saved target drafts and immutable master/source/
+  state/revisions must still validate. On failure,
+  final acceptance is unchanged but working drafts may be partly restored.
+  Preserve that recovery directory, inspect its request and saved files, then
+  explicitly restore a validated revision or recover your text. Restoring a
+  revision does not accept it; final photographic acceptance is separate.

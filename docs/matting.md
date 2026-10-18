@@ -124,3 +124,81 @@ CPU inference peaked near 7.86 GB RSS on the tested host; this is an observation
 not a memory bound for every photo. Retain independent backups. Source-required
 spider/dragonfly native photographic comparisons, private RAW development review,
 final acceptance and regular-use evaluation remain human obligations.
+
+
+## Scoped repair and exact replay
+
+First identify a source-visible defect and explicitly choose its native context
+and allowed write scope. Context can exceed the support; the tool cannot decide
+photographic improvement for you. Create typed support/core/lock guide edits with
+the existing preparation route, run `prepare`, inspect the returned assets and
+explicitly approve that prepared trimap. Preparation preserves parental alpha and
+foreground RGB and remains ineligible for final acceptance.
+
+Copy the actual returned revision, master, digest and `support_file` into a repair
+request. Both the exact returned absolute support path and its project-relative
+form are supported. Other assets and aliases are rejected. Do not include
+`guide_edits_file` again. A schema-1 request has the common identity fields plus:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "repair",
+  "base_revision": "ACTUAL_PREPARED_REVISION",
+  "master_id": "ACTUAL_MASTER_ID",
+  "inputs_digest": "ACTUAL_RETURNED_DIGEST",
+  "context_xyxy": [7, 5, 76, 46],
+  "scope_xyxy": [10, 10, 60, 35],
+  "support_file": "ACTUAL_RETURNED_SUPPORT_FILE",
+  "merge_policy": "replace",
+  "reason": "Describe the source-visible defect and requested bounded correction"
+}
+```
+
+These rectangles illustrate native half-open coordinates; choose your own from
+the actual source. Support must be nonempty, full-master grayscale16 and zero
+outside both rectangles. A known core requiring a change needs full-strength
+support, and its requested change must be compatible with the merge policy.
+Contradictions fail before inference. Existing persistent locks apply throughout;
+outside support and inside locks, partial alpha and applicable foreground RGB
+are preserved exactly. Inconsistent outside-scope lock bindings are rejected.
+
+```sh
+.venv/bin/blackmask run /path/to/project --request /path/to/project/repair.json --model-cache /path/to/installed-vitmatte
+.venv/bin/blackmask review /path/to/project --revision ACTUAL_REPAIR_REVISION
+.venv/bin/blackmask replay /path/to/project --revision ACTUAL_REPAIR_REVISION
+```
+
+The returned review manifest and saved `review-before/manifest.json` use the same
+native context for source, before, after and alpha viewing panels. The default
+`review` command retains those saved crops; `--crops` explicitly overrides them. Inspect saved
+RGB16/alpha16 separately for precision; the panels are labelled RGB8 viewing
+approximations. Final acceptance remains a separate human action using `accept
+--revision`, and the existing accepted export stays available during repair.
+
+Repair saves and reloads parent P, candidate C and support16 before merging.
+Replace uses D=C; increase-only uses max(P,C); decrease-only uses min(P,C).
+Directional requests need an explicit rationale in `reason`. With
+w=support16/65535, the single arithmetic owner computes
+`rint(P*(1-w)+D*w)` in float64 with ties-to-even, then copies saved locks exactly.
+P=1000, C=3000, support=21845 gives 1667. The replay command validates immutable
+hashes, parent bindings, crop mapping, order and exact published pixels without
+loading either model or reading inference cache. Preserve saved operands and
+their revision dependencies; cache is never their only copy.
+
+## Restore working inputs
+
+```sh
+.venv/bin/blackmask restore /path/to/project --revision ACTUAL_SAVED_REVISION
+```
+
+Restore selects that revision's exact effective recipe/guides and working head under the
+shared writer lock. It never assigns `accepted_revision`. Unsaved draft text is
+rejected by default. To deliberately replace it, add `--replace-drafts`; all
+previous draft/state bytes are retained in the returned recovery directory,
+including malformed TOML/JSON. Immutable master/source/state/revision checks remain
+strict; only current mutable draft parsing is deferred for this explicit recovery.
+Draft files are atomic individually, followed by the working pointer. An
+interruption between those writes can leave partial working drafts; the recovery
+record retains their original bytes. Reopen and inspect before retrying. This
+is recovery preservation, not resumability or a multi-file atomic transaction.

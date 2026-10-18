@@ -54,7 +54,10 @@ def saved_layers(
     project: Path, revision: str, master_id: str
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     manifest = read_revision(project, revision, master_id)
-    if manifest.get("kind") != "matte" or manifest.get("final_acceptable") is not True:
+    if (
+        manifest.get("kind") not in {"matte", "repair"}
+        or manifest.get("final_acceptable") is not True
+    ):
         raise ProjectError("Export/review requires a complete matte, not prepared-only state")
     with tifffile.TiffFile(_asset(project, f"revisions/{revision}/foreground_rgb16.tif")) as image:
         page = image.pages[0]
@@ -93,6 +96,10 @@ def saved_layers(
         or not np.array_equal(alpha[protection != 0], locked[protection != 0])
     ):
         raise ProjectError("Saved matte core/lock validation failed")
+    if manifest.get("kind") == "repair":
+        from .repair import replay_repair
+
+        replay_repair(project, revision)
     return foreground, alpha, manifest
 
 

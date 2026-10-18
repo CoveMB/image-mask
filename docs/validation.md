@@ -141,3 +141,43 @@ Pending human evidence: selected private RAW orientation/WB/clipping; source-bac
 trimap cores/corridors; spider/dragonfly wing/web/detail and native seams on black/
 gray/white; explicit final photographic acceptance and regular-use pilot. No
 private pixels were uploaded or inspected by an assistant during these checks.
+
+
+## Scoped repair and working restore
+
+I04 deterministic verification: 179 tests passed, with three unchanged model/setup
+integration tests deselected. Ruff/format and mypy passed; the sandboxed mypy run
+used a writable isolated cache. New checks cover all merge policies, independent
+1667/directional sentinels, saved feathered operands, nonempty changed/outside/partial
+lock sets, exact RGB preservation, fresh-process replay with zero observed model
+calls and an empty isolated cache, later full-rerun locks, restore without new
+acceptance, unsaved-text recovery, stale/invalid inputs, low disk and publication
+faults. Real CLI processes contend on the same OS lock while reads remain available;
+a killed synthetic repair writer preserved source/acceptance and released its lock.
+These fixture approvals are not human photographic acceptance. A moved-crop cache
+mutation is rejected by its test (one model call instead of the required two).
+
+Actual installed CPU float32 ViTMatte processed a 69×41 native crop at origin (7,5)
+from a 97×65 synthetic source, with narrower feathered support and a partial lock.
+The processor padded to 96×64 and returned registered native pixels. The measured
+operation including loading/validation took about 4.21 seconds; process peak RSS
+was 514,703,360 bytes. Exact source/accepted-state/partial-lock preservation and
+saved replay passed. This small synthetic measurement is not a full-photo timing
+or photographic-quality claim. Existing unchanged I03 CPU/MPS/backend evidence
+remains separate; no new backend or dependency was introduced.
+
+Human source-backed defect/scope/trimap, private RAW development, spider/dragonfly
+detail/seam comparisons, final photographic acceptance and regular-use observations
+remain pending. Viewer, effects, resumability and autonomous defect detection are
+not implemented by this increment. Restore retains recovery bytes and accepted
+state; interrupted draft replacement can require explicit text recovery.
+
+Independent review and controller reproduction found four bounded issues in the
+first candidate: malformed current drafts blocked explicit recovery, normalized
+saved guides could disagree with their draft digest, a default restore could
+capture an intervening text edit without rejecting it, and default review lost
+the saved repair crop. Eight failing regressions reproduced these defects;
+eleven focused cases now pass, including invalid immutable-asset controls.
+Restore uses validated exact input snapshots where needed, preserves malformed
+text during explicit replacement, binds default checks to captured bytes and
+retains saved crop geometry. The repaired full suite and static checks passed.

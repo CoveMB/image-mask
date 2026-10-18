@@ -72,7 +72,7 @@ def main() -> int:
     setup.add_argument("--model-cache", type=Path, required=True)
     setup.add_argument("--model", choices=("sam", "vitmatte"), default="sam")
     running = commands.add_parser(
-        "run", help="Prepare guidance or run native matte from a typed request"
+        "run", help="Prepare guidance, run native matte or apply scoped repair from a typed request"
     )
     running.add_argument("project", type=Path)
     running.add_argument("--request", type=Path, required=True)
@@ -91,6 +91,19 @@ def main() -> int:
     exported.add_argument("project", type=Path)
     exported.add_argument("--revision")
     exported.add_argument("--draft", action="store_true")
+    restored = commands.add_parser(
+        "restore", help="Restore saved working inputs; retain acceptance"
+    )
+    restored.add_argument("project", type=Path)
+    restored.add_argument("--revision", required=True)
+    restored.add_argument(
+        "--replace-drafts",
+        action="store_true",
+        help="Explicitly replace unsaved drafts; retain prior bytes in recovery",
+    )
+    replayed = commands.add_parser("replay", help="Verify saved repair alpha without models/cache")
+    replayed.add_argument("project", type=Path)
+    replayed.add_argument("--revision", required=True)
     arguments = parser.parse_args()
     try:
         if arguments.command == "open":
@@ -142,6 +155,22 @@ def main() -> int:
             result = export_project(
                 arguments.project, revision=arguments.revision, draft=arguments.draft
             )
+        elif arguments.command == "restore":
+            from .operations import restore_revision
+
+            result = restore_revision(
+                arguments.project, arguments.revision, replace_drafts=arguments.replace_drafts
+            )
+        elif arguments.command == "replay":
+            from .repair import replay_repair
+
+            alpha = replay_repair(arguments.project, arguments.revision)
+            result = {
+                "revision": arguments.revision,
+                "exact_replay": True,
+                "dimensions_wh": [alpha.shape[1], alpha.shape[0]],
+                "model_calls": 0,
+            }
         elif arguments.command == "run":
             result = apply_operation(
                 arguments.project,

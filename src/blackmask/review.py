@@ -13,6 +13,7 @@ from .project import (
     ProjectError,
     _asset,
     _json_bytes,
+    _read_json,
     _root,
     check_space,
     digest,
@@ -109,7 +110,19 @@ def review_project(
         foreground, alpha, _ = saved_layers(project, revision, state["master_id"])
         source, _ = load_master(project, state["master_id"])
         height, width = alpha.shape
-        selected = crops if crops is not None else [[0, 0, width, height]]
+        if crops is None:
+            saved_review = _read_json(project, f"revisions/{revision}/review/manifest.json")
+            saved_crops = saved_review.get("crops")
+            if (
+                saved_review.get("master_id") != state["master_id"]
+                or saved_review.get("revision") != revision
+                or not isinstance(saved_crops, list)
+                or any(not isinstance(crop, dict) for crop in saved_crops)
+            ):
+                raise ProjectError("Invalid saved review crop identity")
+            selected = [crop.get("crop_xyxy") for crop in saved_crops]
+        else:
+            selected = crops
         if not isinstance(selected, list) or not selected:
             raise ProjectError("Review crops must be a nonempty list")
         selected = [coordinates(c, width, height, box=True) for c in selected]

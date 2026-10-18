@@ -96,12 +96,27 @@ def _atomic_json(
     replace_existing: bool = True,
     validate_before_replace: Callable[[], None] | None = None,
 ) -> None:
+    _atomic_bytes(
+        path,
+        _json_bytes(value),
+        replace_existing=replace_existing,
+        validate_before_replace=validate_before_replace,
+    )
+
+
+def _atomic_bytes(
+    path: Path,
+    value: bytes,
+    *,
+    replace_existing: bool = True,
+    validate_before_replace: Callable[[], None] | None = None,
+) -> None:
     if path.is_symlink():
         raise ProjectError("Refusing symlink state publication")
     descriptor, temporary = tempfile.mkstemp(prefix=".state-", suffix=".tmp", dir=path.parent)
     # Failed temporary files are retained for diagnosis and never read as state.
     with os.fdopen(descriptor, "wb") as stream:
-        stream.write(_json_bytes(value))
+        stream.write(value)
         stream.flush()
         os.fsync(stream.fileno())
     if validate_before_replace is not None:
@@ -241,7 +256,9 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
     return project
 
 
-def _validate_assets(project: Path, state: dict[str, Any]) -> tuple[RGB16, dict[str, Any]]:
+def _validate_assets(
+    project: Path, state: dict[str, Any], *, validate_drafts: bool = True
+) -> tuple[RGB16, dict[str, Any]]:
     master_id = state.get("master_id")
     if not isinstance(master_id, str) or re.fullmatch("[0-9a-f]{64}", master_id) is None:
         raise ProjectError("Invalid master identity")
@@ -271,16 +288,18 @@ def _validate_assets(project: Path, state: dict[str, Any]) -> tuple[RGB16, dict[
             or _master_identity(pixels, metadata) != master_id
         ):
             raise ProjectError("Master sample/metadata identity mismatch")
-        recipe = tomllib.loads(_asset(project, "recipe.toml").read_text())
-        Recipe.from_dict(recipe, master_id, max_margin_px=max(pixels.shape[:2]))
-        guides = _read_json(project, "guides.json")
-        validate_guides(guides, master_id, pixels.shape[1], pixels.shape[0])
+        if validate_drafts:
+            recipe = tomllib.loads(_asset(project, "recipe.toml").read_text())
+            Recipe.from_dict(recipe, master_id, max_margin_px=max(pixels.shape[:2]))
+            guides = _read_json(project, "guides.json")
+            validate_guides(guides, master_id, pixels.shape[1], pixels.shape[0])
     except (OSError, ValueError, TypeError, KeyError, tifffile.TiffFileError) as error:
         raise ProjectError(f"Invalid project master or recipe: {error}") from error
     return pixels, metadata
 
 
-def read_project(project: Path) -> dict[str, Any]:
+def read_project(project: Path, *, validate_drafts: bool = True) -> dict[str, Any]:
+    """Validate state/immutable assets; draft parsing may be deferred for explicit restore only."""
     project = _root(project)
     state = _read_json(project, "state.json")
     expected = {
@@ -307,13 +326,13 @@ def read_project(project: Path) -> dict[str, Any]:
         )
     ):
         raise ProjectError("Invalid project state")
-    _validate_assets(project, state)
+    _validate_assets(project, state, validate_drafts=validate_drafts)
     if state["working_revision"] is not None:
         read_revision(project, state["working_revision"], state["master_id"])
     if state["accepted_revision"] is not None:
         accepted = read_revision(project, state["accepted_revision"], state["master_id"])
         if (
-            accepted.get("kind") != "matte"
+            accepted.get("kind") not in {"matte", "repair"}
             or accepted.get("final_acceptable") is not True
             or not state["development_approved"]
         ):
@@ -385,7 +404,7 @@ def read_revision(project: Path, revision: str, master_id: str) -> dict[str, Any
         "supports/lock_values16.png",
     } <= set(manifest["files"]):
         raise ProjectError("Incomplete prepared revision files")
-    if manifest.get("kind") == "matte" and (
+    if manifest.get("kind") in {"matte", "repair"} and (
         not {
             "base_alpha16.png",
             "foreground_rgb16.tif",
@@ -397,4 +416,11 @@ def read_revision(project: Path, revision: str, master_id: str) -> dict[str, Any
         or manifest.get("final_acceptable") is not True
     ):
         raise ProjectError("Incomplete matte revision files")
+    if manifest.get("kind") == "repair" and not {
+        "repair/parent_alpha16.png",
+        "repair/candidate_alpha16.png",
+        "repair/support16.png",
+        "repair/merge.json",
+    } <= set(manifest["files"]):
+        raise ProjectError("Incomplete repair operands")
     return manifest
