@@ -1,4 +1,4 @@
-"""Synthetic recorded J2 extensions; fixture approvals are not photographic evidence."""
+"""Synthetic recorded repair workflow; fixture approvals are not photographic evidence."""
 
 import json
 from pathlib import Path
@@ -140,7 +140,7 @@ def alpha_at(project, revision):
         ("decrease-only", 0.1, 6554),
     ],
 )
-def test_j2_roundtrip_replay_full_rerun_locks_and_restore(tmp_path, policy, level, expected):
+def test_repair_roundtrip_replay_full_rerun_locks_and_restore(tmp_path, policy, level, expected):
     from blackmask.ingest import write_master
     from blackmask.repair import replay_repair
 
@@ -718,7 +718,7 @@ def test_restore_noncanonical_valid_guide_text_from_immutable_input_snapshot(tmp
     else:
         target = run_repair(project, repair_request(project, prepared, [0, 0, 5, 4], [1, 1, 3, 3]))
     assert (project / "guides.json").read_bytes() == original
-    # Existing I02/I03 revisions may store normalized guides but hash original draft bytes.
+    # Existing saved revisions may store normalized guides but hash original draft bytes.
     directory = Path(target["manifest_file"]).parent
     assert (directory / "guides.json").read_bytes() != original
     result = operations.restore_revision(project, target["revision"])

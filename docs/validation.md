@@ -145,11 +145,10 @@ private pixels were uploaded or inspected by an assistant during these checks.
 
 ## Scoped repair and working restore
 
-I04 deterministic verification: 179 tests passed, with three unchanged model/setup
-integration tests deselected. Ruff/format and mypy passed; the sandboxed mypy run
-used a writable isolated cache. New checks cover all merge policies, independent
-1667/directional sentinels, saved feathered operands, nonempty changed/outside/partial
-lock sets, exact RGB preservation, fresh-process replay with zero observed model
+Recorded deterministic verification: 179 tests passed, with three unchanged
+model/setup integration tests deselected. Ruff/format and mypy passed. New checks
+cover all merge policies, independent 1667/directional sentinels, saved feathered
+operands, nonempty changed/outside/partial lock sets, exact RGB preservation, fresh-process replay with zero observed model
 calls and an empty isolated cache, later full-rerun locks, restore without new
 acceptance, unsaved-text recovery, stale/invalid inputs, low disk and publication
 faults. Real CLI processes contend on the same OS lock while reads remain available;
@@ -163,19 +162,19 @@ The processor padded to 96×64 and returned registered native pixels. The measur
 operation including loading/validation took about 4.21 seconds; process peak RSS
 was 514,703,360 bytes. Exact source/accepted-state/partial-lock preservation and
 saved replay passed. This small synthetic measurement is not a full-photo timing
-or photographic-quality claim. Existing unchanged I03 CPU/MPS/backend evidence
-remains separate; no new backend or dependency was introduced.
+or photographic-quality claim. Existing unchanged native matting CPU/MPS/backend
+evidence remains separate; no new backend or dependency was introduced.
 
 Human source-backed defect/scope/trimap, private RAW development, spider/dragonfly
 detail/seam comparisons, final photographic acceptance and regular-use observations
 remain pending. Viewer, effects, resumability and autonomous defect detection are
-not implemented by this increment. Restore retains recovery bytes and accepted
-state; interrupted draft replacement can require explicit text recovery.
+outside the scoped-repair implementation. Restore retains recovery bytes and
+accepted state; interrupted draft replacement can require explicit text recovery.
 
-Independent review and controller reproduction found four bounded issues in the
-first candidate: malformed current drafts blocked explicit recovery, normalized
-saved guides could disagree with their draft digest, a default restore could
-capture an intervening text edit without rejecting it, and default review lost
+Independent review and separate reproduction found four bounded issues in the
+initial scoped-repair candidate: malformed current drafts blocked explicit recovery,
+normalized saved guides could disagree with their draft digest, a default restore
+could capture an intervening text edit without rejecting it, and default review lost
 the saved repair crop. Eight failing regressions reproduced these defects;
 eleven focused cases now pass, including invalid immutable-asset controls.
 Restore uses validated exact input snapshots where needed, preserves malformed
