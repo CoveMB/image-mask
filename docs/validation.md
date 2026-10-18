@@ -349,7 +349,7 @@ are labelled and match their actual saved base layers; no differing historical R
 can expand repair scope. No unchanged model or browser check was repeated.
 
 
-## I09 protected inward shading — 2026-10-18
+## Protected inward shading validation — 2026-10-18
 
 The settled deterministic suite passed **311 tests**, with three unchanged real-model
 integrations deselected. Ruff lint/format, source mypy and installed dependency
@@ -388,15 +388,17 @@ User RAW/third input, live assisted, closed-assistant manual, physical offline,
 accessibility and regular-use acceptance obligations remain open.
 
 
-I09 review repairs renewed **110 affected effects/viewer/page/review/repair tests**,
-all passing, plus lint/format/source typing. The earlier full 311-test run remains
+Follow-up fixes passed **110 affected effects/viewer/page/review/repair tests**,
+with lint/format/source typing also passing. The earlier full 311-test run remains
 earlier evidence; this is not a new full 314-test run. Three new regressions and
-the strengthened existing J6 cover first shading enablement directly from locally
-authored saved-value guide protection, effective historical/BASE/stale/loading
-labels bound to matching images, and nonempty partial RGB locks inside/outside
+the strengthened both-effects repair-and-rebuild journey cover first shading
+enablement directly from locally authored saved-value guide protection, effective
+historical/BASE/stale/loading labels bound to matching images, and nonempty
+partial RGB locks inside/outside
 repair support with independently derived decoded BASE pixels on both sides,
 exact alpha and replay. The original first-use and page cases failed before
-repair; the stronger J6 passed the existing correct processing behavior.
+repair; the stronger both-effects journey passed the existing correct processing
+behavior.
 Categorical8 authored protection normalizes losslessly to separately saved
 categorical16 without changing the scalar16 precision contract. No unchanged
 model/dependency/full-suite rerun was needed. Human acceptance limits above remain.
