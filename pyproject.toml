@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools==83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackmask"
+version = "0.1.0"
+description = "Local single-photo trusted RGB16 project"
+requires-python = ">=3.12,<3.13"
+dependencies = ["numpy==2.3.5", "Pillow==12.3.0", "tifffile==2026.10.15", "rawpy==0.27.1", "tomli-w==1.2.0"]
+
+[project.scripts]
+blackmask = "blackmask.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
