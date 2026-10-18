@@ -14,7 +14,14 @@ import rawpy
 from .export import export_project
 from .ingest import IngestError
 from .models import setup_sam, setup_vitmatte, verify_sam, verify_vitmatte
-from .operations import accept_revision, accept_trimap, apply_operation, draft_digest
+from .operations import (
+    accept_revision,
+    accept_trimap,
+    apply_operation,
+    draft_digest,
+    operation_status,
+    resume_operation,
+)
 from .project import ProjectError, accept_development, create_project, read_project
 from .review import review_project
 
@@ -104,6 +111,15 @@ def main() -> int:
     replayed = commands.add_parser("replay", help="Verify saved repair alpha without models/cache")
     replayed.add_argument("project", type=Path)
     replayed.add_argument("--revision", required=True)
+    resumed = commands.add_parser("resume", help="Resume verified interrupted matte/repair work")
+    resumed.add_argument("project", type=Path)
+    resumed.add_argument("--operation", required=True)
+    resumed.add_argument("--model-cache", type=Path)
+    resumed.add_argument(
+        "--source", type=Path, help="Optional moved capture; must match recorded hash"
+    )
+    status = commands.add_parser("status", help="Read recovery status without waiting for a writer")
+    status.add_argument("project", type=Path)
     arguments = parser.parse_args()
     try:
         if arguments.command == "open":
@@ -171,6 +187,15 @@ def main() -> int:
                 "dimensions_wh": [alpha.shape[1], alpha.shape[0]],
                 "model_calls": 0,
             }
+        elif arguments.command == "resume":
+            result = resume_operation(
+                arguments.project,
+                arguments.operation,
+                model_cache=arguments.model_cache,
+                source=arguments.source,
+            )
+        elif arguments.command == "status":
+            result = operation_status(arguments.project)
         elif arguments.command == "run":
             result = apply_operation(
                 arguments.project,

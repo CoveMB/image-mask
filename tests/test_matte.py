@@ -5,6 +5,26 @@ import numpy as np
 import pytest
 
 
+def cache_identity():
+    return {
+        "master_id": "a" * 64,
+        "model": "synthetic-only",
+        "revision": "b" * 40,
+        "hashes": {
+            "config.json": "c" * 64,
+            "preprocessor_config.json": "d" * 64,
+            "model.safetensors": "e" * 64,
+        },
+        "packages": {
+            name: "test-version"
+            for name in ("torch", "torchvision", "transformers", "safetensors", "numpy", "Pillow")
+        },
+        "preprocessing": "test-native-v1",
+        "dtype": "float32",
+        "attention": "eager",
+    }
+
+
 def engine():
     return importlib.import_module("blackmask.matte")
 
@@ -91,20 +111,20 @@ def test_tile_cache_hash_validation_and_device_separation(tmp_path):
         return np.full(guide.shape, 0.4), {"device": device}
 
     first, _ = matte.native_matte(
-        rgb, guide, predict, "cpu", cache_dir=tmp_path, cache_identity={"master": "a", "pins": "b"}
+        rgb, guide, predict, "cpu", cache_dir=tmp_path, cache_identity=cache_identity()
     )
     second, record = matte.native_matte(
-        rgb, guide, predict, "cpu", cache_dir=tmp_path, cache_identity={"master": "a", "pins": "b"}
+        rgb, guide, predict, "cpu", cache_dir=tmp_path, cache_identity=cache_identity()
     )
     assert calls == ["cpu", "cpu"] and record["reused_tiles"] == 2
     np.testing.assert_array_equal(first, second)
     next(tmp_path.glob("*.npz")).write_bytes(b"corrupt")
     matte.native_matte(
-        rgb, guide, predict, "cpu", cache_dir=tmp_path, cache_identity={"master": "a", "pins": "b"}
+        rgb, guide, predict, "cpu", cache_dir=tmp_path, cache_identity=cache_identity()
     )
     assert len(calls) == 3
     matte.native_matte(
-        rgb, guide, predict, "mps", cache_dir=tmp_path, cache_identity={"master": "a", "pins": "b"}
+        rgb, guide, predict, "mps", cache_dir=tmp_path, cache_identity=cache_identity()
     )
     assert calls[-2:] == ["mps", "mps"]
 

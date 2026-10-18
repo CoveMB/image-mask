@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+import uuid
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -40,6 +41,61 @@ def _axis_weights(length: int, origin: int, total: int) -> np.ndarray:
     return weights
 
 
+def _complete_cache_identity(identity: dict[str, Any] | None) -> bool:
+    required = {
+        "master_id",
+        "model",
+        "revision",
+        "hashes",
+        "packages",
+        "preprocessing",
+        "dtype",
+        "attention",
+    }
+    if not isinstance(identity, dict) or not required <= identity.keys():
+        return False
+    hashes, packages = identity["hashes"], identity["packages"]
+    return (
+        all(
+            isinstance(identity[name], str) and identity[name]
+            for name in required - {"hashes", "packages"}
+        )
+        and isinstance(hashes, dict)
+        and {"config.json", "preprocessor_config.json", "model.safetensors"} <= hashes.keys()
+        and all(isinstance(value, str) and len(value) == 64 for value in hashes.values())
+        and isinstance(packages, dict)
+        and {"torch", "torchvision", "transformers", "safetensors", "numpy", "Pillow"}
+        <= packages.keys()
+        and all(isinstance(value, str) and value for value in packages.values())
+    )
+
+
+def _cache_generation(cache: Path, backend: str) -> str:
+    from .project import _atomic_json, check_space
+
+    if cache.resolve() != cache.absolute():
+        raise ValueError("Unsafe matte cache path")
+    cache.mkdir(parents=True, exist_ok=True)
+    marker = cache / "backend.json"
+    try:
+        if marker.is_symlink():
+            raise ValueError("Unsafe matte backend marker")
+        record = json.loads(marker.read_bytes())
+        if (
+            set(record) == {"backend", "generation"}
+            and record["backend"] == backend
+            and isinstance(record["generation"], str)
+            and len(record["generation"]) == 32
+        ):
+            return record["generation"]
+    except (OSError, ValueError, TypeError):
+        pass
+    check_space(cache, 1024**2)
+    generation = uuid.uuid4().hex
+    _atomic_json(marker, {"backend": backend, "generation": generation})
+    return generation
+
+
 def native_matte(
     pixels: np.ndarray,
     trimap: np.ndarray,
@@ -64,6 +120,11 @@ def native_matte(
     ys, xs = tile_origins(height), tile_origins(width)
 
     def stage(selected: str) -> tuple[np.ndarray, dict[str, Any]]:
+        generation = (
+            _cache_generation(cache_dir, selected)
+            if cache_dir is not None and _complete_cache_identity(cache_identity)
+            else None
+        )
         accumulated = np.zeros(trimap.shape, dtype=np.float64)
         total_weight = np.zeros(trimap.shape, dtype=np.float64)
         records = []
@@ -83,7 +144,8 @@ def native_matte(
                                 "crop": [x, y, x + w, y + h],
                                 "tile_size": TILE_SIZE,
                                 "overlap": OVERLAP,
-                                "version": 1,
+                                "version": 2,
+                                "generation": generation,
                             },
                             sort_keys=True,
                         ).encode()
@@ -92,7 +154,7 @@ def native_matte(
                     ).hexdigest()
                     entry = (
                         cache_dir / f"{key}.npz"
-                        if cache_dir is not None and cache_identity
+                        if cache_dir is not None and generation is not None
                         else None
                     )
                     cached = None
@@ -105,6 +167,7 @@ def native_matte(
                                 if (
                                     candidate.dtype in (np.dtype("float32"), np.dtype("float64"))
                                     and isinstance(metadata, dict)
+                                    and str(data["key"]) == key
                                     and candidate.shape == guide.shape
                                     and np.isfinite(candidate).all()
                                     and hashlib.sha256(
@@ -146,7 +209,11 @@ def native_matte(
                             ).hexdigest()
                             with os.fdopen(descriptor, "wb") as stream:
                                 np.savez(
-                                    stream, alpha=prediction, metadata=serialized, sha256=checksum
+                                    stream,
+                                    alpha=prediction,
+                                    metadata=serialized,
+                                    sha256=checksum,
+                                    key=key,
                                 )
                                 stream.flush()
                                 os.fsync(stream.fileno())

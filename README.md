@@ -19,8 +19,8 @@ opt-in native-margin morphology proposals for separate source review. Native
 ViTMatte processing provides separate trimap/final acceptance controls, native
 same-crop review assets and accepted RGB16 black/alpha16 plus labelled PNG8 exports.
 Scoped native repair now saves quantized operands for model-free replay; restore
-selects saved working inputs without changing final acceptance. The viewer,
-resumability and appearance effects remain future work.
+selects saved working inputs without changing final acceptance. Interrupted matte/repair now resumes verified tiles or completed stages through
+`status` and `resume`. The viewer and appearance effects remain future work.
 Prepared revisions require explicit human trimap review before matting.
 
 A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
@@ -120,7 +120,7 @@ The public implementation history contains no photographs, private planning or
 reference archives. Local planning and frozen reference material, when supplied
 separately, stay ignored and are not required to install or operate the tool.
 The maintained public docs describe the behavior currently implemented. Future
-review-window, resumability and appearance features require separate implementation
+review-window and appearance features require separate implementation
 and human photographic validation.
 
 ## Licensing

@@ -91,6 +91,8 @@ def test_public_returned_absolute_support_path_and_exact_outside(tmp_path):
 
 
 def test_moved_native_context_invalidates_identical_crop_bytes(tmp_path):
+    from test_matte import cache_identity
+
     _, project, _ = parent_project(tmp_path)
     calls = []
 
@@ -98,8 +100,10 @@ def test_moved_native_context_invalidates_identical_crop_bytes(tmp_path):
         calls.append((rgb.copy(), guide.copy()))
         return np.full(guide.shape, 0.75), {}
 
+    identity = cache_identity()
+    identity.pop("master_id")
     with (
-        patch.object(StubSession, "identity", {"fixture": "moved-context"}),
+        patch.object(StubSession, "identity", identity),
         patch.object(StubSession, "predict", side_effect=prediction),
     ):
         first = repair_guides(project, [1, 1, 2, 2])

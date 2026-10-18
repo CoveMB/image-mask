@@ -29,6 +29,7 @@ from .project import (
     _root,
     _sync_directory,
     _validate_assets,
+    _validate_revision_directory,
     check_space,
     digest,
     load_master,
@@ -232,7 +233,7 @@ def apply_operation(
     with project_lock(project):
         try:
             if isinstance(operation, dict) and operation.get("kind") in {"matte", "repair"}:
-                return _matte(project, operation, model_cache, request_file)
+                return _run_matte(project, operation, model_cache, request_file)
             return _prepare(project, operation, model_cache, request_file)
         except (ValueError, KeyError, TypeError) as error:
             if isinstance(error, ProjectError):
@@ -542,8 +543,277 @@ def _prepare(
     }
 
 
+def _save_matte_request(
+    project: Path,
+    operation: dict[str, Any],
+    snapshots: dict[str, bytes],
+    dependencies: dict[str, str],
+    request_file: Path | None,
+    request_bytes: bytes | None,
+) -> Path:
+    requests = _asset(project, "requests")
+    requests.mkdir(exist_ok=True)
+    check_space(project, sum(map(len, snapshots.values())) * 3 + 1024**2)
+    directory = Path(tempfile.mkdtemp(prefix="matte-", dir=requests))
+    (directory / "inputs").mkdir()
+    for name, data in snapshots.items():
+        _atomic_bytes(directory / "inputs" / name, data, replace_existing=False)
+    _atomic_json(directory / "operation.json", operation, replace_existing=False)
+    _atomic_json(
+        directory / "manifest.json",
+        {
+            "schema_version": 1,
+            "operation_sha256": digest(
+                _asset(project, f"requests/{directory.name}/operation.json").read_bytes()
+            ),
+            "inputs": {name: digest(data) for name, data in snapshots.items()},
+            "dependencies": dependencies,
+            "request_file": str(request_file.absolute()) if request_file else None,
+            "request_sha256": digest(request_bytes) if request_bytes is not None else None,
+        },
+        replace_existing=False,
+    )
+    _sync_directory(directory)
+    return directory
+
+
+def _verify_matte_request(
+    project: Path, directory: Path, *, completed_revision: str | None = None
+) -> dict[str, Any]:
+    manifest = json.loads(_asset(project, f"requests/{directory.name}/manifest.json").read_bytes())
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != 1
+        or set(manifest.get("inputs", {}))
+        != {"state.json", "source.json", "recipe.toml", "guides.json"}
+        or not isinstance(manifest.get("dependencies"), dict)
+        or not manifest["dependencies"]
+        or digest(_asset(project, f"requests/{directory.name}/operation.json").read_bytes())
+        != manifest.get("operation_sha256")
+    ):
+        raise ProjectError("Invalid recovery snapshot; restart from current reviewed inputs")
+    operation = json.loads(
+        _asset(project, f"requests/{directory.name}/operation.json").read_bytes()
+    )
+    for name, checksum in manifest["inputs"].items():
+        saved = _asset(project, f"requests/{directory.name}/inputs/{name}").read_bytes()
+        if digest(saved) != checksum:
+            raise ProjectError(
+                "Recovery snapshot hash mismatch; restart from current reviewed inputs"
+            )
+        if name == "state.json" and completed_revision is not None:
+            continue
+        if _asset(project, name).read_bytes() != saved:
+            raise ProjectError(f"Stale recovery input {name}; restart from current reviewed inputs")
+    for name, checksum in manifest["dependencies"].items():
+        if digest(_input_file(project, name).read_bytes()) != checksum:
+            raise ProjectError(
+                f"Stale recovery dependency hash: {name}; restart from current reviewed inputs"
+            )
+    if manifest["request_file"] is not None:
+        path = Path(manifest["request_file"])
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or digest(path.read_bytes()) != manifest["request_sha256"]
+        ):
+            raise ProjectError("Stale original request; restart with current reviewed inputs")
+    state = read_project(project)
+    if state["master_id"] != operation["master_id"] or (
+        completed_revision is None and state["working_revision"] != operation["base_revision"]
+    ):
+        raise ProjectError("Stale recovery master/parent; restart from current reviewed inputs")
+    return operation
+
+
+def _run_matte(
+    project: Path,
+    operation: dict[str, Any],
+    model_cache: Path | None,
+    request_file: Path | None,
+    directory: Path | None = None,
+) -> dict[str, Any]:
+    recovery: list[Path] = [] if directory is None else [directory]
+    try:
+        result = _matte(project, operation, model_cache, request_file, recovery)
+        _atomic_json(
+            recovery[0] / "progress.json",
+            {
+                "status": "review_needed",
+                "phase": "complete",
+                "revision": result["revision"],
+            },
+        )
+        return dict(result, operation_id=recovery[0].name)
+    except BaseException as error:
+        if recovery:
+            try:
+                _atomic_json(
+                    recovery[0] / "progress.json",
+                    {
+                        "status": "failed",
+                        "phase": "interrupted",
+                        "error": str(error),
+                    },
+                )
+            except (OSError, ProjectError):
+                pass  # Preserve the original failure; previous progress remains inspectable.
+        raise
+
+
+def resume_operation(
+    project: Path, operation_id: str, *, model_cache: Path | None = None, source: Path | None = None
+) -> dict[str, Any]:
+    try:
+        return _resume_operation(project, operation_id, model_cache=model_cache, source=source)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        if isinstance(error, ProjectError):
+            raise
+        raise ProjectError(
+            f"Invalid recovery record: {error}; restart from current reviewed inputs"
+        ) from error
+
+
+def _resume_operation(
+    project: Path, operation_id: str, *, model_cache: Path | None = None, source: Path | None = None
+) -> dict[str, Any]:
+    """Resume the same snapshotted matte/repair under the canonical writer lock."""
+    project = _root(project)
+    if not isinstance(operation_id, str) or re.fullmatch(r"matte-[a-z0-9_]+", operation_id) is None:
+        raise ProjectError("Invalid recovery operation identity")
+    with project_lock(project):
+        directory = _asset(project, f"requests/{operation_id}")
+        if source is not None:
+            record = json.loads(_asset(project, "source.json").read_bytes())
+            if digest(source.read_bytes()) != record["source_sha256"]:
+                raise ProjectError("Moved source hash differs from recorded capture")
+        completion = directory / "completion.json"
+        if completion.is_file():
+            completed = json.loads(
+                _asset(project, f"requests/{directory.name}/completion.json").read_bytes()
+            )
+            revision = completed["revision"]
+            if not isinstance(revision, str) or re.fullmatch(r"rev-[0-9]{3,}", revision) is None:
+                raise ProjectError("Invalid recovery completion revision")
+            state = read_project(project)
+            already_current = state["working_revision"] == revision
+            operation = _verify_matte_request(
+                project, directory, completed_revision=revision if already_current else None
+            )
+            destination = _asset(project, f"revisions/{revision}")
+            stage_name = completed["stage"]
+            if (
+                not isinstance(stage_name, str)
+                or re.fullmatch(r"\.matte-[a-z0-9_]+", stage_name) is None
+            ):
+                raise ProjectError("Invalid recovery stage")
+            retained = (
+                destination if destination.exists() else _asset(project, f"revisions/{stage_name}")
+            )
+            manifest = _validate_revision_directory(
+                project, revision, operation["master_id"], f"revisions/{retained.name}"
+            )
+            if (
+                digest((retained / "manifest.json").read_bytes()) != completed["manifest_sha256"]
+                or manifest["parent"] != operation["base_revision"]
+                or manifest["draft_digest"] != operation["inputs_digest"]
+            ):
+                raise ProjectError(
+                    "Invalid completed recovery manifest; restart from current inputs"
+                )
+
+            def recheck():
+                _verify_matte_request(
+                    project, directory, completed_revision=revision if already_current else None
+                )
+                _validate_revision_directory(
+                    project, revision, operation["master_id"], f"revisions/{retained.name}"
+                )
+
+            check_space(project, 1024**2)
+            recheck()
+            if retained != destination:
+                _publish_new_directory(retained, destination)
+                retained = destination
+                _sync_directory(destination.parent)
+            if not already_current:
+                state.update(working_revision=revision, status="review_needed")
+                _atomic_json(_asset(project, "state.json"), state, validate_before_replace=recheck)
+            result = json.loads((destination / "result.json").read_bytes())
+            _atomic_json(
+                directory / "progress.json",
+                {"status": "review_needed", "phase": "complete", "revision": revision},
+            )
+            return dict(result, operation_id=operation_id, resumed_completed_stage=True)
+        operation = _verify_matte_request(project, directory)
+        manifest = json.loads(
+            _asset(project, f"requests/{directory.name}/manifest.json").read_bytes()
+        )
+        return _run_matte(
+            project,
+            operation,
+            model_cache,
+            Path(manifest["request_file"]) if manifest["request_file"] else None,
+            directory,
+        )
+
+
+def operation_status(project: Path) -> dict[str, Any]:
+    """Read saved pointers and recovery records without waiting for a writer."""
+    project = _root(project)
+    state = read_project(project, validate_drafts=False)
+    busy = False
+    try:
+        with project_lock(project):
+            pass
+    except ProjectError as error:
+        if "busy" not in str(error):
+            raise
+        busy = True
+    records: list[dict[str, Any]] = []
+    for path in sorted(_asset(project, "requests").glob("matte-*/manifest.json")):
+        directory = _asset(project, str(path.parent.relative_to(project)))
+        try:
+            progress = json.loads(
+                _asset(project, f"requests/{directory.name}/progress.json").read_bytes()
+            )
+            status = progress["status"]
+            if status == "running" and not busy:
+                status = "failed"
+                progress["error"] = (
+                    "Writer interrupted; resume verified work or restart from current inputs"
+                )
+            completion = directory / "completion.json"
+            revision = (
+                json.loads(
+                    _asset(project, f"requests/{directory.name}/completion.json").read_bytes()
+                )["revision"]
+                if completion.is_file()
+                else None
+            )
+            _verify_matte_request(
+                project,
+                directory,
+                completed_revision=revision if revision == state["working_revision"] else None,
+            )
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            status, progress = (
+                "stale",
+                {
+                    "error": str(error),
+                    "recovery": "Restart from current reviewed inputs; retained artifacts are preserved",
+                },
+            )
+        records.append(dict(progress, operation_id=directory.name, status=status))
+    return dict(state, writer_busy=busy, operations=records)
+
+
 def _matte(
-    project: Path, operation: dict[str, Any], model_cache: Path | None, request_file: Path | None
+    project: Path,
+    operation: dict[str, Any],
+    model_cache: Path | None,
+    request_file: Path | None,
+    recovery: list[Path],
 ) -> dict[str, Any]:
     import tifffile
 
@@ -722,6 +992,25 @@ def _matte(
         raise ProjectError(
             "Unknown pixels require explicit local ViTMatte model cache; no downloads"
         )
+    if not recovery:
+        dependencies = {f"approvals/{parent}-trimap.json": digest(approval_bytes)}
+        for saved_revision in {parent, *lock_hashes, *ancestor_hashes}:
+            saved_manifest = read_revision(project, saved_revision, state["master_id"])
+            dependencies[f"revisions/{saved_revision}/manifest.json"] = digest(
+                _asset(project, f"revisions/{saved_revision}/manifest.json").read_bytes()
+            )
+            dependencies.update(
+                {
+                    f"revisions/{saved_revision}/{name}": checksum
+                    for name, checksum in saved_manifest["files"].items()
+                }
+            )
+        recovery.append(
+            _save_matte_request(
+                project, operation, snapshots, dependencies, request_file, request_bytes
+            )
+        )
+    _atomic_json(recovery[0] / "progress.json", {"status": "running", "phase": "tiles"})
     session = VitMatteSession(cache) if np.any(local_trimap == 128) and cache else None
 
     def predict(rgb, guide, device):
@@ -883,6 +1172,14 @@ def _matte(
     for path in sorted((p for p in stage.rglob("*") if p.is_dir()), reverse=True):
         _sync_directory(path)
     _sync_directory(stage)
+    _atomic_json(
+        recovery[0] / "completion.json",
+        {
+            "revision": revision,
+            "stage": stage.name,
+            "manifest_sha256": digest((stage / "manifest.json").read_bytes()),
+        },
+    )
 
     def recheck():
         if support_path is not None and support_path.read_bytes() != support_bytes:
@@ -911,6 +1208,7 @@ def _matte(
             if digest(_asset(project, f"revisions/{rev}/manifest.json").read_bytes()) != expected:
                 raise ProjectError("Stale saved lock values")
 
+    _verify_matte_request(project, recovery[0])
     recheck()
     destination = revisions / revision
     if destination.exists():

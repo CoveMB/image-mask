@@ -375,7 +375,14 @@ def read_revision(project: Path, revision: str, master_id: str) -> dict[str, Any
     """Validate application-immutable saved dependencies before reuse; never infer pointers."""
     if not isinstance(revision, str) or re.fullmatch(r"rev-[0-9]{3,}", revision) is None:
         raise ProjectError("Invalid saved revision identity")
-    manifest = _read_json(project, f"revisions/{revision}/manifest.json")
+    return _validate_revision_directory(project, revision, master_id, f"revisions/{revision}")
+
+
+def _validate_revision_directory(
+    project: Path, revision: str, master_id: str, directory: str
+) -> dict[str, Any]:
+    """Same immutable contract for a retained completed stage and a published revision."""
+    manifest = _read_json(project, f"{directory}/manifest.json")
     if (
         manifest.get("revision") != revision
         or manifest.get("master_id") != master_id
@@ -387,7 +394,7 @@ def read_revision(project: Path, revision: str, master_id: str) -> dict[str, Any
         relative = Path(name)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
             raise ProjectError("Invalid revision asset path")
-        path = _asset(project, f"revisions/{revision}/{name}")
+        path = _asset(project, f"{directory}/{name}")
         try:
             if digest(path.read_bytes()) != expected_hash:
                 raise ProjectError(f"Saved revision hash mismatch: {revision}/{name}")

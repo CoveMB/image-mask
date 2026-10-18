@@ -95,9 +95,9 @@ filesystem transaction or hostile-writer exclusion is claimed.
 
 Only state owns pointers. A directory name or complete orphan does not make it
 working or accepted. Incomplete `.prepare-*` directories are diagnostic remnants,
-never inference cache or accepted dependencies. No resume/restore/automatic
-cleanup is implemented yet. Later writers must reuse these transaction and
-identity owners and use current state validation for complete matte acceptance.
+never inference cache or accepted dependencies. Preparation does not resume and no automatic cleanup is implemented. Matte/repair
+resume and saved working-revision restore use these same transaction/identity
+owners; complete matte acceptance still validates current state.
 
 
 Optional per-group `morphology` saves explicit native foreground erosion and
@@ -178,3 +178,24 @@ mutable text. Default unsaved-edit checks bind the captured bytes, so an edit
 between initial inspection and snapshot cannot be silently replaced. Explicit
 `--replace-drafts` can recover malformed current draft text; immutable state,
 source, master and revision validation remains mandatory.
+
+
+## Interrupted matte/repair records
+
+`requests/matte-*/operation.json` and `inputs/` retain the original typed request
+and exact state/source/recipe/guides snapshots. Their immutable recovery manifest
+binds snapshot and consumed parent/support/lock/approval hashes and the original
+request file, if supplied. `progress.json` describes calculation progress/errors;
+`completion.json` references only a validated complete temporary/published
+revision. These records never own working or accepted pointers: `state.json`
+remains the sole authority. Older projects need no migration; records are optional.
+Resume checks dependencies again immediately before publication/pointer replacement.
+Accepted data remains outside cache. Complete stage reuse validates the same
+revision contract as normal publication; incomplete or corrupt work is retained
+for inspection, never promoted by directory presence alone.
+
+Tile cache format v2 also binds the complete identity and exact key inside each
+entry. Missing master/model/config/package/dtype/preprocessing identity disables
+reuse. `cache/matte/backend.json` selects a backend generation; a device change
+abandons the entire previous generation without removing its files. Legacy cache
+entries safely miss. Saved accepted layers and exact operand replay are unaffected.

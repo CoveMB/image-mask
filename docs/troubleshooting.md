@@ -16,7 +16,7 @@
 - **Interrupted/incomplete creation:** retain the capture and diagnostic project.
   No state means no published usable project; no incomplete master can be approved.
   Create at a new empty location. Inspect retained files before any separately
-  authorized cleanup. Resume remains future work; saved working revisions can be restored.
+  authorized cleanup. Initial creation cannot resume; saved working revisions can be restored.
 - **Failed approval:** reopen the project and inspect its actual state. Before
   atomic replacement, failure preserves old state. After replacement, the update
   may be visible even if a later directory sync fails; never infer success/failure
@@ -48,7 +48,7 @@ A publication collision means another tool/editor created a project asset while 
 - **Interrupted/failed prepare:** reopen actual state. The prior working revision
   remains authoritative until state advances. `.prepare-*` or a complete orphan is
   not accepted/working solely because it exists. Inspect retained diagnostics;
-  retry with current identities. Resume/restore/automatic cleanup are unavailable.
+  retry with current identities. Preparation cannot resume; saved revisions can be restored. No automatic cleanup.
   A failed pointer write may leave effective root guides updated; inspect them.
 - **MPS failure:** retry explicitly with recipe device `cpu`, preserving geometry.
   Auto remains CPU; upstream implicit MPS fallback must be disabled. One synthetic
@@ -68,8 +68,8 @@ A publication collision means another tool/editor created a project asset while 
 - **MPS/non-finite failure:** explicit MPS fails visibly; retry a newly prepared and
   reviewed CPU request with identical geometry. Auto stays CPU. No resolution reduction.
 - **Interrupted matte:** reopen state; accepted layers remain separate and usable.
-  `.matte-*` and complete orphans are not pointer authority. Submit a fresh current
-  request; verified cache can help, but resumability/restore are not yet supported.
+  `.matte-*` and complete orphans are not pointer authority. Use `status` then `resume --operation` as described below; stale input requires
+  a fresh current reviewed request.
 - **Final acceptance rejected:** require current complete matte and unchanged drafts,
   master/development and saved review assets. Prepared-only state never qualifies.
 - **Export collision:** keep prior delivery; identical output reuses it. Different
@@ -89,7 +89,7 @@ A publication collision means another tool/editor created a project asset while 
   merely to make a request pass.
 - Stale draft/reference/parent errors preserve newer text and final acceptance.
   Inspect actual state before a new operation. Failed temporary revisions and
-  cache work are retained; there is no automatic cleanup or resume command.
+  cache work are retained; there is no automatic cleanup. Use the supported resume command for unchanged inputs.
 - `replay --revision` verifies saved repair operands without models or cache.
   Missing or modified immutable operands/dependencies are errors; restore from
   your independent backup, never regenerate accepted operands with a model.
@@ -101,3 +101,37 @@ A publication collision means another tool/editor created a project asset while 
   Preserve that recovery directory, inspect its request and saved files, then
   explicitly restore a validated revision or recover your text. Restoring a
   revision does not accept it; final photographic acceptance is separate.
+
+
+## Resume interrupted matte or repair
+
+```sh
+.venv/bin/blackmask status /path/to/project
+.venv/bin/blackmask resume /path/to/project --operation ACTUAL_RETURNED_OPERATION_ID --model-cache /path/to/installed-vitmatte
+```
+
+`status` returns saved working/accepted pointers, `writer_busy`, and retained
+operation IDs with progress/errors. It does not wait for the writer. A saved
+`running` operation without a writer is reported `failed` with interruption
+recovery guidance. `stale` means saved inputs/dependencies no longer match;
+finish current edits, prepare/review them and start a new request. Resume never
+replaces edited drafts or infers acceptance. Older completed operations become
+stale after their working parent changes; this is retained history, not damage.
+
+Resume verifies original request, source/master records, draft snapshots,
+trimap approval and all consumed immutable support/lock/parent dependencies.
+Completed tiles avoid repeat inference. A verified complete output stage or
+published orphan can finish publication without loading a model. Incomplete or
+invalid stages remain retained; incomplete/unknown tile entries are misses.
+A backend change starts a new whole tile generation; predictions from different
+devices never mix. A changed model/package/preprocess identity misses affected
+cache entries. No original, accepted revision, export, failed stage or cache file
+is automatically deleted.
+
+The saved master supports resume even if the capture moved. If supplying
+`--source /path/to/moved-capture`, its SHA-256 must match the original record;
+resume does not rewrite the source locator. Keep independent originals/backups.
+Space checks reserve 10 GiB plus conservative pending writes. On low disk,
+arrange storage then retry; never fill the disk to test recovery. Preparation and
+initial project creation do not resume. All calculations still require human
+photographic review and explicit final acceptance.

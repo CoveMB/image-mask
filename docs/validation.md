@@ -180,3 +180,34 @@ eleven focused cases now pass, including invalid immutable-asset controls.
 Restore uses validated exact input snapshots where needed, preserves malformed
 text during explicit replacement, binds default checks to captured bytes and
 retains saved crop geometry. The repaired full suite and static checks passed.
+
+
+## I05 recovery evidence
+
+Interrupted matte/repair now has durable request/snapshot validation and explicit
+`status`/`resume`. Deterministic recovery tests cover paused and mid-run edits,
+invalid/incomplete cache dependencies, complete-stage and pointer recovery,
+whole-backend generation changes, conservative space rejection and fresh CLI
+resume under actual OS writer contention. Fixture approvals are test controls.
+
+A separate actual pinned ViTMatte CPU float32 run on synthetic RGB16 69×41 was
+SIGKILLed after one verified native tile, during review-output construction
+(child exit −9). Fresh-process `status` and `resume` both exited 0. Resume recorded
+one reused tile and zero inferred tiles; accepted revision and all six prior
+export file hashes stayed identical. Measured interrupted child peak RSS was
+508,329,984 bytes; this small input does not predict full-size memory use. This
+is actual backend recovery evidence, distinct from deterministic fault injection
+and from pending human photographic/RAW/regular-use acceptance. Existing model
+pins, loader, native geometry, quantization and inference APIs are unchanged.
+
+Settled I05 deterministic suite: **213 passed**, three unchanged integration tests
+deselected; Ruff lint/format and mypy passed (all exit 0). The inspected wheel
+(18 entries) and source archive (55 entries) match current modules; source tests
+and public docs also match. No private asset or personal-path content was found.
+
+Review repairs bind recovery to the original request bytes. Matte and repair
+race regressions rejected stale completed-stage publication before the fix and
+now pass. Cache invalidation checks include warm reuse with complete identities;
+in-memory omissions of model hashes, packages and the operation’s native context
+each caused the intended assertion failure. Final archive inspection follows
+settled documentation; original diagnostic archives remain retained locally.
