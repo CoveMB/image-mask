@@ -21,7 +21,8 @@ same-crop review assets and accepted RGB16 black/alpha16 plus labelled PNG8 expo
 Scoped native repair now saves quantized operands for model-free replay; restore
 selects saved working inputs without changing final acceptance. Interrupted matte/repair now resumes verified tiles or completed stages through
 `status` and `resume`. An offline loopback review window provides typed guide
-authoring, native comparisons and the same processing/recovery controls. Appearance
+authoring, native comparisons and the same processing/recovery controls. Optional
+recorded, bounded source-based assisted review uses the same operations. Appearance
 effects remain future work.
 Prepared revisions require explicit human trimap review before matting.
 
@@ -93,7 +94,7 @@ Do not substitute a same-name capture if its recorded hash differs.
 .venv/bin/mypy src
 ```
 
-See [native matting and exports](docs/matting.md), [file contract](docs/file-contract.md), [validation and limitations](docs/validation.md),
+See [bounded assisted review](docs/assistant-workflow.md), [native matting and exports](docs/matting.md), [file contract](docs/file-contract.md), [validation and limitations](docs/validation.md),
 [recovery](docs/troubleshooting.md) and [exact package/development provenance](docs/model-provenance.md).
 Setup requires public package downloads; subsequent processing is local/offline. See [selection and guides](docs/guidance.md)
 for explicit model setup, typed preparation and human review.

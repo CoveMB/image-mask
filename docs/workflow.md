@@ -139,3 +139,7 @@ prepares, repairs, compares, accepts, restores and resumes using this page. Auto
 synthetic checks are separate from that human usability/photographic observation.
 Contributors additionally need Node.js to execute the shipped JavaScript coordinate
 regression; Node is not required to install or operate the application.
+
+## Optional assistant
+
+[Bounded assisted review](assistant-workflow.md) records an explicit cycle, source-visible defect, at most two repair attempts total, matching comparisons and review-needed disposition through the same commands. Manual controls above remain independent of this optional history. Human approvals remain separate.

@@ -249,7 +249,7 @@ def _prepare(
     project: Path, operation: dict[str, Any], model_cache: Path | None, request_file: Path | None
 ) -> dict[str, Any]:
     required = {"schema_version", "kind", "base_revision", "master_id", "inputs_digest"}
-    optional = {"guide_edits_file", "scope_xyxy", "reason"}
+    optional = {"guide_edits_file", "scope_xyxy", "reason", "assisted_review"}
     if (
         not isinstance(operation, dict)
         or not required <= set(operation)
@@ -266,6 +266,20 @@ def _prepare(
     if request_bytes is not None and json.loads(request_bytes) != operation:
         raise ProjectError("Stale request file changed before snapshot")
     state = read_project(project)
+    assisted_inputs = {}
+    if "assisted_review" in operation:
+        from .review import validate_assisted
+
+        validate_assisted(project, operation)
+        review_name = operation["assisted_review"]["review_manifest_file"]
+        review_bytes = _input_file(project, review_name).read_bytes()
+        assisted_inputs[review_name] = digest(review_bytes)
+        assisted_inputs.update(
+            {
+                str(Path(review_name).parent / name): checksum
+                for name, checksum in json.loads(review_bytes)["view_files"].items()
+            }
+        )
     if not state["development_approved"]:
         raise ProjectError("Explicit human development approval required before preparation")
     if (
@@ -310,7 +324,7 @@ def _prepare(
             if (
                 region["role"] == "lock"
                 and effective.get(region["id"]) != region
-                and region["id"] not in removed
+                and (region["id"] not in removed or "assisted_review" in operation)
             ):
                 raise ProjectError(
                     "Removing/changing saved lock requires explicit recorded remove action"
@@ -486,6 +500,9 @@ def _prepare(
     publication_inputs = dict(snapshots)
 
     def check_inputs() -> None:
+        for name, checksum in assisted_inputs.items():
+            if digest(_input_file(project, name).read_bytes()) != checksum:
+                raise ProjectError("Stale inspected review assets during preparation")
         if request_file is not None and request_file.read_bytes() != request_bytes:
             raise ProjectError("Stale request file changed during prepare")
         for name, data in publication_inputs.items():
@@ -579,6 +596,19 @@ def _save_matte_request(
     )
     _sync_directory(directory)
     return directory
+
+
+def retained_assisted_requests(project: Path, cycle_id: str) -> set[str]:
+    """Reconcile cycle reservations against existing immutable recovery request snapshots."""
+    checksums = set()
+    for path in _asset(project, "requests").glob("matte-*/operation.json"):
+        data = _asset(project, str(path.relative_to(project))).read_bytes()
+        if cycle_id.encode() not in data:
+            continue
+        operation = json.loads(data)
+        if operation.get("assisted_review", {}).get("cycle_id") == cycle_id:
+            checksums.add(digest(_json_bytes(operation)))
+    return checksums
 
 
 def _verify_matte_request(
@@ -704,6 +734,10 @@ def _resume_operation(
             operation = _verify_matte_request(
                 project, directory, completed_revision=revision if already_current else None
             )
+            if "assisted_review" in operation:
+                from .review import validate_assisted
+
+                validate_assisted(project, operation, resuming=True)
             destination = _asset(project, f"revisions/{revision}")
             stage_name = completed["stage"]
             if (
@@ -727,6 +761,8 @@ def _resume_operation(
                 )
 
             def recheck():
+                if "assisted_review" in operation:
+                    validate_assisted(project, operation, resuming=True)
                 _verify_matte_request(
                     project, directory, completed_revision=revision if already_current else None
                 )
@@ -838,7 +874,7 @@ def _matte(
     optional = {"reason"}
     if repairing:
         required |= {"context_xyxy", "scope_xyxy", "support_file"}
-        optional.add("merge_policy")
+        optional |= {"merge_policy", "assisted_review"}
     if (
         set(operation) - required - optional
         or not required <= set(operation)
@@ -997,8 +1033,17 @@ def _matte(
         raise ProjectError(
             "Unknown pixels require explicit local ViTMatte model cache; no downloads"
         )
+    from .review import reserve_assisted
+
+    reserve_assisted(project, operation, resuming=bool(recovery))
     if not recovery:
         dependencies = {f"approvals/{parent}-trimap.json": digest(approval_bytes)}
+        if "assisted_review" in operation:
+            review_name = operation["assisted_review"]["review_manifest_file"]
+            review_path = _input_file(project, review_name)
+            dependencies[review_name] = digest(review_path.read_bytes())
+            for name, checksum in json.loads(review_path.read_bytes())["view_files"].items():
+                dependencies[str(Path(review_name).parent / name)] = checksum
         for saved_revision in {parent, *lock_hashes, *ancestor_hashes}:
             saved_manifest = read_revision(project, saved_revision, state["master_id"])
             dependencies[f"revisions/{saved_revision}/manifest.json"] = digest(
@@ -1187,6 +1232,10 @@ def _matte(
     )
 
     def recheck():
+        if "assisted_review" in operation:
+            from .review import validate_assisted
+
+            validate_assisted(project, operation, resuming=True)
         if support_path is not None and support_path.read_bytes() != support_bytes:
             raise ProjectError("Stale repair support")
         for ancestor, expected in ancestor_hashes.items():

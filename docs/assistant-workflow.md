@@ -1,0 +1,151 @@
+# Bounded assisted review
+
+Assistance is optional. The [manual workflow](workflow.md) uses the same local
+engine and saved project without an assistant, account, credits or network after
+setup. This procedure adds recorded source-based judgement; it cannot provide
+photographic acceptance. No SDK, API-key service, background agent or upload is
+involved. Do not transfer private pixels to an assistant without the user's
+applicable direct authorization. Missing permission or missing source evidence
+stops the live assisted route; manual controls remain available.
+
+## Inspect and classify
+
+Read the project's current recipe, guides, state, user keep/remove request and
+saved cycle history. Obtain a current manifest with `blackmask review PROJECT`
+(or `--crops FILE`, a JSON list of native half-open rectangles). Inspect the
+source overview and matching native source/result/alpha crops, including fragile
+detail, gaps and suspect seams. The panel order is source, black, gray, white,
+alpha. These PNGs/contact sheets are explicitly RGB8/alpha8 viewing approximations;
+authoritative RGB16 and alpha16 paths are in `assets`. Never infer extra captured
+precision or reconstruct absent photographed detail.
+
+Use `master_id`, `working_revision` and `inputs_digest` from the current manifest.
+Do not reuse a manifest with stale labels. `revision_inputs_digest` belongs to the
+selected saved revision; `inputs_digest` belongs to the current editable draft.
+`settings` is that revision's frozen recipe and `model` records actual execution;
+structural `qa` is separate from source comparison. Native transforms use integer
+points and half-open boxes in the oriented master, with recorded origin and scale.
+An overview/proxy is not a native-coordinate authority.
+
+Describe one concrete source-visible defect: location, evidence, likely cause,
+proposed correction and uncertainty. Classify it as alpha/guidance, color cleanup,
+shading, or a user decision. Only alpha/guidance execution is currently supported.
+Effects remain unavailable and disabled; color/shading classifications require a
+user decision or future implementation. Blur, missing source detail, ambiguity
+and artistic preference are reasons to stop, never to invent detail. A
+`source_resolved: true` assertion records judgement; it does not prove its truth.
+
+## Explicit cycle and finite operations
+
+Only an explicit user-requested new correction starts another cycle. Never start
+a new cycle automatically to reset the budget. Save a schema-1 JSON cycle request
+and invoke:
+
+```sh
+blackmask review PROJECT --cycle-request CYCLE_REQUEST.json
+```
+
+A start request contains exactly `schema_version: 1`, `action: "start"`,
+`master_id`, `base_revision`, `inputs_digest` and `user_request` (the actual explicit
+request). The base must be the current complete matte/repair, with no pending
+guidance. Copy identities from current saved state, never from these examples.
+The returned `cycle_id` identifies immutable events under
+`requests/review-<identity>/`. These are advisory history; only `state.json` owns
+working/accepted pointers. Starting or finishing a cycle never accepts a photo.
+
+Add this optional envelope to the existing typed **prepare** request, and later
+to its **repair** request:
+
+```json
+{
+  "assisted_review": {
+    "cycle_id": "COPY_RETURNED_CYCLE_ID",
+    "review_manifest_file": "COPY_PROJECT_RELATIVE_CURRENT_REVIEW_MANIFEST_PATH",
+    "defect": {
+      "id": "gap-1",
+      "classification": "alpha",
+      "location_xyxy": [0, 0, 1, 1],
+      "source_evidence": "Replace with concrete visible source evidence at the actual location",
+      "likely_cause": "Replace with the supported cause and proposed correction",
+      "uncertainty": "State remaining uncertainty; say none only if justified",
+      "source_resolved": true
+    }
+  }
+}
+```
+
+This is an envelope illustration, not a complete processing request or coordinates
+to apply to another photo. Choose a small actual native defect box within an
+inspected crop and the repair scope. Use a project-relative manifest path returned
+by the current `review` command. Its identity, crop transforms and image hashes
+are validated; modified or stale evidence is rejected. Unknown keys/operations,
+off-image coordinates, stale draft/parent/master and contradictory/lock-conflicting
+guides fail through the shared validators. Unresolved source evidence and
+unavailable color/shading actions stop the cycle. Automatic preparation cannot
+remove or alter inherited locks.
+
+1. Save typed guide changes and run `blackmask run PROJECT --request PREPARE.json`.
+   Use the same `assisted_review` envelope throughout this attempt. Preparation
+   applies those changes once, saves the original request/result and returns
+   exact revision/master/draft/support paths. Selection membership is not opacity.
+2. The user inspects and explicitly confirms the authoritative trimap with
+   `blackmask accept PROJECT --revision REV --trimap --master-id ID --inputs-digest DIGEST`.
+   Assistance cannot infer this confirmation or development approval.
+3. Build a finite repair request using those **returned** identities/support,
+   `kind: "repair"`, `reason`, `context_xyxy`, `scope_xyxy` and `merge_policy`.
+   Omit `guide_edits_file`; repair consumes prepared guides rather than reapplying
+   them. Context may exceed scope. Support is full-master grayscale16, zero outside
+   permitted scope. A rectangle does not mean erase it; cores/unknown corridors
+   determine the correction. Locks, including partial alpha, remain inherited.
+4. Run the repair through `blackmask run PROJECT --request REPAIR.json`. One
+   attempt is reserved durably before model execution. At most **two repair
+   attempts total across all defects** are allowed in this explicit cycle.
+   Invalid proposals rejected before reservation do not spend an attempt.
+5. Inspect saved `review-before/manifest.json` and `review/manifest.json` under
+   the returned revision: identical native crops on source/black/gray/white/alpha,
+   plus `qa.json`, saved full-precision layers and preservation evidence. No second
+   automatic prepare/repair is allowed until the comparison is recorded.
+
+## Assess, stop and present
+
+An assessment uses the cycle command above with exactly the common identity fields
+(`schema_version`, `master_id`, `base_revision`, `inputs_digest`), `action: "assess"`,
+`cycle_id`, `outcome` and `comparison`. The base/digest must match the current
+complete repair. `comparison` records concrete visible improvement/preservation,
+remaining uncertainty and relevant before/after observations. Outcomes are
+`improved`, `no_progress`, `regression`, `ambiguous`, `missing_source_evidence` or
+`user_decision`. Only a supported `improved` disposition permits one further
+attempt; the second assessment ends the budget. Alpha identical to the prepared
+parent forces `no_progress`, even if an improvement was claimed. This equality
+check can disprove a change; numerical change cannot prove visual improvement.
+
+Stop earlier on ambiguity, absent source evidence, no clear improvement, a new
+regression or an artistic choice. To stop before a successful repair exists, send
+`action: "stop"`, the common identity fields, `cycle_id` and `reason`.
+A status request needs only `schema_version: 1`, `action: "status"` and `cycle_id`.
+Every start/reservation/assessment/stop is an immutable event with a content-hash filename and predecessor link, plus its
+original structured request; assessments include the operation result and
+before/after manifest paths. Reopen/status works without conversation memory. Event transitions are validated; retained immutable repair requests prevent truncated history from silently losing an attempt. A per-cycle `head.sha256` integrity anchor also detects loss of a terminal stop/assessment. Partial event/anchor publication fails closed: preserve the files and inspect the failure before an explicitly requested new cycle. This is local integrity checking, not protection against a local actor rewriting every related file.
+
+Failures/interruption retain the attempt reservation and saved recovery evidence.
+Use the existing `status` and `resume --operation ID` for that same operation;
+resume does not consume another attempt. A stopped cycle cannot resume automatic
+work. If failure precedes a recoverable operation snapshot, explicitly stop and
+inspect the cause; do not retry as a new automatic attempt or silently reset the
+budget. Manual operations and existing recovery controls remain available.
+
+Present the returned `best_revision`, exact comparison paths, cycle attempt count,
+stop reason and unresolved human decisions. Failed/regressed/ambiguous candidates
+remain saved, but do not replace the recorded best. The current working pointer
+may still refer to a candidate awaiting review; choosing a preserved best uses
+explicit `restore` and its draft-preservation safeguards. Never silently restore
+or accept. `status: "review_needed"` is advisory; actual final-photo acceptance
+requires the user's separate `accept --revision` action. Already accepted work and
+exports remain usable throughout.
+
+Keep mathematical preservation evidence distinct from assistant judgement and
+human photographic acceptance. Do not optimize foreground area, opacity or
+model disagreement as a quality proxy; do not present scores/confidence as
+calibrated probabilities. A synthetic contract test is not a live photographic
+pilot. After assistance closes, continue on the same saved project using the
+manual workflow; do not make its commands depend on cycle history.

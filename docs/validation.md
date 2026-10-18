@@ -270,3 +270,23 @@ a new unsaved guide; a real CLI restore followed by page reload cleared both rev
 checkboxes, selected the current revision and rejected acceptance without a new
 confirmation. Long recovery controls fit 1,000- and 800-pixel desktop widths;
 accepted export hashes stayed exact. No model inference was repeated for these frontend repairs. Human acceptance obligations remain pending.
+
+## Bounded assisted review evidence
+
+Synthetic public-operation contract checks cover finite proposals, native review
+identity/crop integrity, a two-attempt shared cycle budget, mandatory source
+comparison, early stops, unchanged-alpha no-progress, partial-lock/outside-support
+preservation, immutable request/result/history reopen, interrupted reservation/resume
+and real-process CLI writer contention. Model predictions in these assisted-review
+tests are explicitly stubbed; this is not live assistant compliance or photographic
+quality evidence. Existing manual request and recovery contracts remain covered.
+
+The full deterministic run for this assisted-review feature passed 263 tests, with
+three unchanged model integration tests deselected. After the final narrow integrity
+repair, all 32 affected assisted-review tests passed, along with lint, formatting and
+source type checks. That final affected run was not a new full-suite run.
+
+A live source-visible photographic defect/repair/human comparison and same-project
+closed-assistant/disconnected-network manual correction remain pending. These
+assisted-review runs did not include appearance effects. See
+[the assisted procedure](assistant-workflow.md).

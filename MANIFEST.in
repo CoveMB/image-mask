@@ -7,3 +7,5 @@ include docs/guidance.md
 include docs/matting.md
 
 include docs/workflow.md
+
+include docs/assistant-workflow.md

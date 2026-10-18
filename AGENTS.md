@@ -76,3 +76,7 @@ Maintain a local, single-photo workflow for black-background photography with ed
 - Do not invent branch names, commit prefixes, filenames, project commands or user-facing Git labels prefixed with `codex`.
 - Ponytail is explicit-only; never invoke it or apply its findings automatically.
 - Use `rtk` for shell commands and `rtk proxy` when exact output is needed.
+
+## Optional assisted review
+
+Use [the bounded assisted workflow](docs/assistant-workflow.md) for supported commands, data/coordinate meanings, effect availability, preservation and the two-attempt source-based procedure. Keep engineering safeguards above in force. Assistance never supplies human development, trimap or photographic acceptance.

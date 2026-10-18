@@ -1,6 +1,10 @@
 """Same-native-crop review assets with explicit lower-precision labels and transforms."""
 
+import json
+import re
 import tempfile
+import tomllib
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +16,8 @@ from .guidance import coordinates
 from .project import (
     ProjectError,
     _asset,
+    _atomic_bytes,
+    _atomic_json,
     _json_bytes,
     _read_json,
     _root,
@@ -20,6 +26,7 @@ from .project import (
     load_master,
     project_lock,
     read_project,
+    read_revision,
 )
 
 
@@ -127,7 +134,7 @@ def review_project(
         revision = revision or state["working_revision"]
         if revision is None:
             raise ProjectError("No complete matte revision to review")
-        foreground, alpha, _ = saved_layers(project, revision, state["master_id"])
+        foreground, alpha, revision_manifest = saved_layers(project, revision, state["master_id"])
         source, _ = load_master(project, state["master_id"])
         height, width = alpha.shape
         if crops is None:
@@ -158,7 +165,7 @@ def review_project(
         root.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".review-", dir=root))
         directory = stage / "assets"
-        write_review(
+        record = write_review(
             directory,
             source,
             foreground,
@@ -167,13 +174,560 @@ def review_project(
             revision=revision,
             crops=selected,
         )
+        from .operations import draft_digest, pending_guidance
+
+        current_digest = draft_digest(project)
+        stale = []
+        if revision != state["working_revision"]:
+            stale.append("not_current_working_revision")
+        if current_digest != revision_manifest["draft_digest"]:
+            stale.append("draft_changed")
+        pending = pending_guidance(project)
+        if pending and pending["current"] and pending["actions"]:
+            stale.append("pending_guidance")
+        prefix = f"revisions/{revision}"
+        record.update(
+            inputs_digest=current_digest,
+            revision_inputs_digest=revision_manifest["draft_digest"],
+            working_revision=state["working_revision"],
+            accepted_revision=state["accepted_revision"],
+            stale_labels=stale,
+            assets={
+                "source_rgb16": f"masters/{state['master_id']}.tif",
+                "foreground_rgb16": f"{prefix}/foreground_rgb16.tif",
+                "alpha16": f"{prefix}/base_alpha16.png",
+                "before_manifest": f"{prefix}/review-before/manifest.json"
+                if revision_manifest["kind"] == "repair"
+                else None,
+            },
+            settings=tomllib.loads(_asset(project, f"{prefix}/recipe.toml").read_text()),
+            model=revision_manifest.get("model"),
+            qa=_read_json(project, f"{prefix}/qa.json"),
+            effects={
+                "available": False,
+                "color_cleanup": "not implemented; disabled",
+                "shading": "not implemented; disabled",
+            },
+            status="review_needed",
+            view_files={p.name: digest(p.read_bytes()) for p in directory.glob("*.png")},
+        )
+        (directory / "manifest.json").write_bytes(_json_bytes(record))
         if (
-            before != _asset(project, "state.json").read_bytes()
+            current_digest != draft_digest(project)
+            or before != _asset(project, "state.json").read_bytes()
             or manifest_bytes != _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
         ):
             raise ProjectError("Stale review inputs")
         saved_layers(project, revision, state["master_id"])
-        key = digest(_json_bytes({"crops": selected, "manifest": digest(manifest_bytes)}))
+        key = digest(_json_bytes({"review": record, "manifest": digest(manifest_bytes)}))
         destination = root / key
         publish_artifacts(directory, destination)
         return {"revision": revision, "manifest_file": str(destination / "manifest.json")}
+
+
+# Immutable review events are advisory history, never project revision/acceptance pointers.
+def _cycle_events(project: Path, cycle_id: Any) -> tuple[dict[str, Any], str]:
+    if not isinstance(cycle_id, str) or re.fullmatch(r"review-[a-f0-9]{32}", cycle_id) is None:
+        raise ProjectError("Invalid assisted review cycle identity")
+    directory = _asset(project, f"requests/{cycle_id}")
+    files = sorted(directory.glob("*.json"))
+    if not files or len(files) > 7:
+        raise ProjectError("Missing or invalid assisted review history")
+    previous = None
+    prior = None
+    reservations = set()
+    for index, path in enumerate(files):
+        data = _asset(project, f"requests/{cycle_id}/{path.name}").read_bytes()
+        if path.name != f"{index:03d}-{digest(data)}.json":
+            raise ProjectError("Assisted review history event integrity mismatch")
+        record = json.loads(data)
+        if (
+            not isinstance(record, dict)
+            or record.get("cycle_id") != cycle_id
+            or record.get("event_index") != index
+            or record.get("previous_sha256") != previous
+            or record.get("schema_version") != 1
+            or record.get("status") != "review_needed"
+            or type(record.get("attempts")) is not int
+        ):
+            raise ProjectError("Invalid assisted review event")
+        event = record.get("event")
+        request = record.get("request")
+        if not isinstance(request, dict):
+            raise ProjectError("Invalid assisted review event request")
+        if prior is None:
+            valid = (
+                event == "start"
+                and request.get("action") == "start"
+                and record.get("attempts") == 0
+                and record.get("phase") == "ready"
+                and record.get("stop_reason") is None
+                and record.get("best_revision")
+                == record.get("last_revision")
+                == request.get("base_revision")
+                and record.get("master_id") == request.get("master_id")
+                and record.get("user_request") == request.get("user_request")
+            )
+        else:
+            valid = prior["phase"] != "stopped" and all(
+                record.get(k) == prior.get(k)
+                for k in ("master_id", "user_request", "schema_version", "cycle_id", "status")
+            )
+            if event == "reserve":
+                checksum = digest(_json_bytes(request))
+                valid = (
+                    valid
+                    and prior["phase"] == "ready"
+                    and prior["attempts"] < 2
+                    and record.get("phase") == "awaiting_assessment"
+                    and record["attempts"] == prior["attempts"] + 1
+                    and record.get("operation_sha256") == checksum
+                    and request.get("kind") == "repair"
+                    and request.get("assisted_review", {}).get("cycle_id") == cycle_id
+                    and record.get("stop_reason") is None
+                    and all(
+                        record.get(k) == prior.get(k) for k in ("best_revision", "last_revision")
+                    )
+                )
+                reservations.add(checksum)
+            elif event == "assess":
+                outcome = record.get("outcome")
+                expected_outcome = (
+                    "no_progress"
+                    if record.get("unchanged_alpha") is True
+                    and request.get("outcome") == "improved"
+                    else request.get("outcome")
+                )
+                stop = (
+                    outcome
+                    if outcome != "improved"
+                    else "attempt_budget_exhausted"
+                    if prior["attempts"] == 2
+                    else None
+                )
+                result = record.get("result", {})
+                valid = (
+                    valid
+                    and prior["phase"] == "awaiting_assessment"
+                    and request.get("action") == "assess"
+                    and outcome == expected_outcome
+                    and outcome
+                    in {
+                        "improved",
+                        "no_progress",
+                        "regression",
+                        "ambiguous",
+                        "missing_source_evidence",
+                        "user_decision",
+                    }
+                    and record.get("phase") == ("stopped" if stop else "ready")
+                    and record.get("stop_reason") == stop
+                    and record["attempts"] == prior["attempts"]
+                    and record.get("operation_sha256") == prior.get("operation_sha256")
+                    and record.get("last_revision")
+                    == result.get("revision")
+                    == request.get("base_revision")
+                    and record.get("best_revision")
+                    == (result.get("revision") if outcome == "improved" else prior["best_revision"])
+                )
+            elif event == "stop":
+                valid = (
+                    valid
+                    and record.get("phase") == "stopped"
+                    and bool(record.get("stop_reason"))
+                    and record["attempts"] == prior["attempts"]
+                    and all(
+                        record.get(k) == prior.get(k)
+                        for k in ("best_revision", "last_revision", "operation_sha256")
+                    )
+                )
+            else:
+                valid = False
+        if not valid:
+            raise ProjectError("Invalid assisted review history transition")
+        previous = digest(data)
+        prior = record
+    from .operations import retained_assisted_requests
+
+    if not retained_assisted_requests(project, cycle_id) <= reservations:
+        raise ProjectError("Truncated assisted review history: retained repair reservation missing")
+    if previous is None:
+        raise ProjectError("Missing assisted review history events")
+    return record, previous
+
+
+def _cycle_record(project: Path, cycle_id: Any) -> dict[str, Any]:
+    record, terminal = _cycle_events(project, cycle_id)
+    anchor = _asset(project, f"requests/{cycle_id}/head.sha256")
+    if not anchor.is_file() or anchor.read_bytes() != (terminal + "\n").encode():
+        raise ProjectError("Assisted review history anchor mismatch; preserve and inspect history")
+    return record
+
+
+def _save_cycle(
+    project: Path, record: dict[str, Any], event: str, **changes: Any
+) -> dict[str, Any]:
+    from .operations import draft_digest
+
+    state_bytes = _asset(project, "state.json").read_bytes()
+    inputs = draft_digest(project)
+    old = _json_bytes(record)
+    anchor = _asset(project, f"requests/{record['cycle_id']}/head.sha256")
+    anchor_before = anchor.read_bytes()
+    index = record["event_index"] + 1
+    updated = dict(record, **changes)
+    updated.update(event=event, event_index=index, previous_sha256=digest(old))
+    path = _asset(
+        project, f"requests/{record['cycle_id']}/{index:03d}-{digest(_json_bytes(updated))}.json"
+    )
+
+    def recheck():
+        if (
+            state_bytes != _asset(project, "state.json").read_bytes()
+            or inputs != draft_digest(project)
+            or _cycle_record(project, record["cycle_id"]) != record
+        ):
+            raise ProjectError("Stale assisted review history")
+
+    check_space(project, len(_json_bytes(updated)) + 1024**2)
+    _atomic_json(path, updated, replace_existing=False, validate_before_replace=recheck)
+
+    def recheck_anchor():
+        current, terminal = _cycle_events(project, record["cycle_id"])
+        if (
+            state_bytes != _asset(project, "state.json").read_bytes()
+            or inputs != draft_digest(project)
+            or anchor.read_bytes() != anchor_before
+            or current != updated
+            or terminal != digest(_json_bytes(updated))
+        ):
+            raise ProjectError("Stale assisted review history anchor publication")
+
+    # Event first, then its integrity anchor. Either partial state fails closed on reopen.
+    _atomic_bytes(
+        anchor,
+        (digest(_json_bytes(updated)) + "\n").encode(),
+        validate_before_replace=recheck_anchor,
+    )
+    return updated
+
+
+def _identity(project: Path, request: dict[str, Any]) -> dict[str, Any]:
+    from .operations import _reject_pending_guidance, draft_digest
+
+    state = read_project(project)
+    _reject_pending_guidance(project)
+    if (
+        request.get("master_id") != state["master_id"]
+        or request.get("base_revision") != state["working_revision"]
+        or request.get("inputs_digest") != draft_digest(project)
+    ):
+        raise ProjectError("Stale assisted review identity or draft")
+    return state
+
+
+def review_cycle(project: Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Record explicit cycle/visual dispositions under the canonical project writer lock."""
+    project = _root(project)
+    try:
+        with project_lock(project):
+            if (
+                not isinstance(request, dict)
+                or type(request.get("schema_version")) is not int
+                or request["schema_version"] != 1
+            ):
+                raise ProjectError("Invalid schema-1 review cycle request")
+            request = json.loads(_json_bytes(request))
+            action = request.get("action")
+            if not isinstance(action, str):
+                raise ProjectError("Invalid review cycle action")
+            common = {"schema_version", "action", "master_id", "base_revision", "inputs_digest"}
+            fields = {
+                "start": {"user_request"},
+                "assess": {"cycle_id", "outcome", "comparison"},
+                "stop": {"cycle_id", "reason"},
+                "status": {"cycle_id"},
+            }
+            expected = (
+                {"schema_version", "action"} if action == "status" else common
+            ) | fields.get(action, set())
+            if action not in fields or set(request) != expected:
+                raise ProjectError("Unknown or invalid review cycle action")
+            if action == "status":
+                return _cycle_record(project, request["cycle_id"])
+            state = _identity(project, request)
+            if action == "start":
+                _text(request["user_request"], "explicit user request")
+                saved_layers(project, state["working_revision"], state["master_id"])
+                check_space(project, 1024**2)
+                cycle_id = f"review-{uuid.uuid4().hex}"
+                directory = _asset(project, f"requests/{cycle_id}")
+                directory.mkdir(parents=True)
+                record = {
+                    "schema_version": 1,
+                    "cycle_id": cycle_id,
+                    "master_id": state["master_id"],
+                    "user_request": request["user_request"],
+                    "event_index": 0,
+                    "previous_sha256": None,
+                    "event": "start",
+                    "attempts": 0,
+                    "phase": "ready",
+                    "stop_reason": None,
+                    "best_revision": state["working_revision"],
+                    "last_revision": state["working_revision"],
+                    "status": "review_needed",
+                    "request": request,
+                }
+
+                def recheck_start():
+                    _identity(project, request)
+
+                _atomic_json(
+                    directory / f"000-{digest(_json_bytes(record))}.json",
+                    record,
+                    replace_existing=False,
+                    validate_before_replace=recheck_start,
+                )
+
+                def recheck_initial_anchor():
+                    _identity(project, request)
+                    current, terminal = _cycle_events(project, cycle_id)
+                    if current != record or terminal != digest(_json_bytes(record)):
+                        raise ProjectError("Stale initial assisted review history")
+
+                _atomic_bytes(
+                    directory / "head.sha256",
+                    (digest(_json_bytes(record)) + "\n").encode(),
+                    replace_existing=False,
+                    validate_before_replace=recheck_initial_anchor,
+                )
+                return record
+            record = _cycle_record(project, request["cycle_id"])
+            if record["master_id"] != state["master_id"] or record["phase"] == "stopped":
+                raise ProjectError("Assisted review cycle stopped or belongs to another master")
+            if action == "stop":
+                _text(request["reason"], "stop reason")
+                return _save_cycle(
+                    project,
+                    record,
+                    "stop",
+                    phase="stopped",
+                    stop_reason=request["reason"],
+                    request=request,
+                )
+            if record["phase"] != "awaiting_assessment":
+                raise ProjectError("No pending assisted repair assessment")
+            outcomes = {
+                "improved",
+                "no_progress",
+                "regression",
+                "ambiguous",
+                "missing_source_evidence",
+                "user_decision",
+            }
+            if request["outcome"] not in outcomes:
+                raise ProjectError("Unknown source comparison disposition")
+            _text(request["comparison"], "source comparison")
+            revision = state["working_revision"]
+            _foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
+            prefix = f"revisions/{revision}"
+            operation = _read_json(project, f"{prefix}/request.json")
+            if (
+                manifest["kind"] != "repair"
+                or digest(_json_bytes(operation)) != record["operation_sha256"]
+            ):
+                raise ProjectError(
+                    "Pending assisted request has no matching complete current repair"
+                )
+            parent = operation["base_revision"]
+            from .repair import scalar16
+
+            parent_alpha = scalar16(_asset(project, f"revisions/{parent}/base_alpha16.png"))
+            before = _read_json(project, f"{prefix}/review-before/manifest.json")
+            after = _read_json(project, f"{prefix}/review/manifest.json")
+            if (
+                [c["crop_xyxy"] for c in before["crops"]]
+                != [c["crop_xyxy"] for c in after["crops"]]
+                or before["master_id"] != after["master_id"]
+                or before["revision"] != parent
+                or after["revision"] != revision
+            ):
+                raise ProjectError("Mismatched native before/after review")
+            outcome = request["outcome"]
+            unchanged = np.array_equal(alpha, parent_alpha)
+            if unchanged and outcome == "improved":
+                outcome = "no_progress"
+            stop = (
+                outcome
+                if outcome != "improved"
+                else "attempt_budget_exhausted"
+                if record["attempts"] == 2
+                else None
+            )
+            # This is recorded source-based judgement, not a calibrated numerical quality score.
+            return _save_cycle(
+                project,
+                record,
+                "assess",
+                phase="stopped" if stop else "ready",
+                stop_reason=stop,
+                best_revision=revision if outcome == "improved" else record["best_revision"],
+                last_revision=revision,
+                outcome=outcome,
+                unchanged_alpha=unchanged,
+                comparison=request["comparison"],
+                result=_read_json(project, f"{prefix}/result.json"),
+                before_manifest=f"{prefix}/review-before/manifest.json",
+                after_manifest=f"{prefix}/review/manifest.json",
+                request=request,
+            )
+    except (ValueError, KeyError, TypeError) as error:
+        if isinstance(error, ProjectError):
+            raise
+        raise ProjectError(f"Invalid assisted review: {error}") from error
+
+
+def _text(value: Any, label: str) -> None:
+    if not isinstance(value, str) or not value.strip() or len(value) > 8000:
+        raise ProjectError(f"Missing or invalid {label}")
+
+
+def validate_assisted(
+    project: Path, operation: dict[str, Any], *, resuming: bool = False
+) -> dict[str, Any]:
+    """Validate advisory evidence and chain; callers already hold the project lock."""
+    from .operations import _input_file
+
+    envelope = operation["assisted_review"]
+    if (
+        operation["kind"] not in {"prepare", "repair"}
+        or not isinstance(envelope, dict)
+        or set(envelope) != {"cycle_id", "review_manifest_file", "defect"}
+    ):
+        raise ProjectError("Invalid assisted proposal; only prepare/alpha repair available")
+    record = _cycle_record(project, envelope["cycle_id"])
+    if record["phase"] == "stopped":
+        raise ProjectError("Assisted cycle stopped; two-attempt budget exhausted")
+    if resuming:
+        if record["phase"] != "awaiting_assessment" or record.get("operation_sha256") != digest(
+            _json_bytes(operation)
+        ):
+            raise ProjectError("Resume must reuse the pending assisted repair attempt")
+        return record
+    if record["phase"] != "ready":
+        raise ProjectError("Pending assisted assessment required before another operation")
+    if record["attempts"] >= 2:
+        raise ProjectError("Assisted two-attempt budget exhausted")
+    state = _identity(project, operation)
+    if state["master_id"] != record["master_id"]:
+        raise ProjectError("Assisted cycle master differs")
+    # Preparation may add guides, but a manual/new completed result cannot silently join this cycle.
+    ancestor = state["working_revision"]
+    while ancestor != record["last_revision"]:
+        manifest = read_revision(project, ancestor, state["master_id"])
+        if manifest["kind"] != "prepare":
+            raise ProjectError("Stale assisted cycle candidate; explicitly start a new review")
+        ancestor = manifest["parent"]
+    defect = envelope["defect"]
+    keys = {
+        "id",
+        "classification",
+        "location_xyxy",
+        "source_evidence",
+        "likely_cause",
+        "uncertainty",
+        "source_resolved",
+    }
+    if not isinstance(defect, dict) or set(defect) != keys:
+        raise ProjectError("Invalid concrete source-visible defect")
+    if (
+        defect["classification"] in {"color", "shading", "user_decision"}
+        or defect["source_resolved"] is False
+        or isinstance(defect["source_evidence"], str)
+        and not defect["source_evidence"].strip()
+    ):
+        _save_cycle(
+            project,
+            record,
+            "stop",
+            phase="stopped",
+            stop_reason="unresolved_source_or_user_decision",
+            request=operation,
+        )
+        raise ProjectError("Unresolved source or user decision; automatic cycle stopped")
+    for name in ("id", "source_evidence", "likely_cause", "uncertainty"):
+        _text(defect[name], name)
+    if defect["classification"] != "alpha" or defect["source_resolved"] is not True:
+        raise ProjectError("Unresolved/user-decision defect; color/shading effects unavailable")
+    source, _ = load_master(project, state["master_id"])
+    height, width = source.shape[:2]
+    location = coordinates(defect["location_xyxy"], width, height, box=True)
+    review_path = _input_file(project, envelope["review_manifest_file"])
+    reviewed = json.loads(review_path.read_bytes())
+    expected_hash = digest(
+        _json_bytes(
+            {
+                "review": reviewed,
+                "manifest": digest(
+                    _asset(
+                        project, f"revisions/{record['last_revision']}/manifest.json"
+                    ).read_bytes()
+                ),
+            }
+        )
+    )
+    if review_path != _asset(
+        project, f"reviews/{record['last_revision']}/{expected_hash}/manifest.json"
+    ):
+        raise ProjectError("Invalid or changed immutable review manifest path")
+    for name, checksum in reviewed["view_files"].items():
+        if (
+            Path(name).name != name
+            or digest(
+                _asset(
+                    project, f"reviews/{record['last_revision']}/{expected_hash}/{name}"
+                ).read_bytes()
+            )
+            != checksum
+        ):
+            raise ProjectError("Stale inspected crop asset")
+    expected_revision = read_revision(project, record["last_revision"], state["master_id"])
+    if (
+        reviewed.get("master_id") != state["master_id"]
+        or reviewed.get("revision") != record["last_revision"]
+        or reviewed.get("revision_inputs_digest") != expected_revision["draft_digest"]
+        or reviewed.get("inputs_digest") != expected_revision["draft_digest"]
+        or reviewed.get("stale_labels") != []
+    ):
+        raise ProjectError("Stale assisted source review manifest")
+    x0, y0, x1, y1 = location
+    if not any(
+        c["crop_xyxy"][0] <= x0
+        and c["crop_xyxy"][1] <= y0
+        and c["crop_xyxy"][2] >= x1
+        and c["crop_xyxy"][3] >= y1
+        for c in reviewed["crops"]
+    ):
+        raise ProjectError("Defect outside inspected native crop")
+    if operation["kind"] == "repair":
+        sx0, sy0, sx1, sy1 = coordinates(operation["scope_xyxy"], width, height, box=True)
+        if not (sx0 <= x0 < x1 <= sx1 and sy0 <= y0 < y1 <= sy1):
+            raise ProjectError("Defect outside repair scope")
+    return record
+
+
+def reserve_assisted(project: Path, operation: dict[str, Any], *, resuming: bool) -> None:
+    if "assisted_review" not in operation:
+        return
+    record = validate_assisted(project, operation, resuming=resuming)
+    if not resuming:
+        _save_cycle(
+            project,
+            record,
+            "reserve",
+            attempts=record["attempts"] + 1,
+            phase="awaiting_assessment",
+            operation_sha256=digest(_json_bytes(operation)),
+            request=operation,
+        )

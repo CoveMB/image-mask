@@ -23,7 +23,7 @@ from .operations import (
     resume_operation,
 )
 from .project import ProjectError, accept_development, create_project, read_project
-from .review import review_project
+from .review import review_cycle, review_project
 
 
 def doctor(path: Path, model_cache: Path | None = None, model: str = "sam") -> dict[str, Any]:
@@ -102,6 +102,11 @@ def main() -> int:
     )
     reviewed.add_argument("project", type=Path)
     reviewed.add_argument("--revision")
+    reviewed.add_argument(
+        "--cycle-request",
+        type=Path,
+        help="Explicit assisted cycle start/assessment/stop/status JSON",
+    )
     reviewed.add_argument(
         "--crops", type=Path, help="JSON list of native half-open crop rectangles"
     )
@@ -184,7 +189,14 @@ def main() -> int:
             )
         elif arguments.command == "review":
             crops = json.loads(arguments.crops.read_bytes()) if arguments.crops else None
-            result = review_project(arguments.project, revision=arguments.revision, crops=crops)
+            if arguments.cycle_request:
+                if arguments.revision or arguments.crops:
+                    raise ProjectError("Cycle requests cannot be combined with crop/revision flags")
+                result = review_cycle(
+                    arguments.project, json.loads(arguments.cycle_request.read_bytes())
+                )
+            else:
+                result = review_project(arguments.project, revision=arguments.revision, crops=crops)
         elif arguments.command == "export":
             result = export_project(
                 arguments.project, revision=arguments.revision, draft=arguments.draft
