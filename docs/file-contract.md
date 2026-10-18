@@ -14,10 +14,10 @@ ingest owner. Coordinates begin at the oriented master top-left. Points use
 integer pixel indices; boxes are half-open [x0,y0,x1,y1). Guide dimensions and master identity must match exactly.
 
 `recipe.toml` is typed schema 1 with identity, `guides_file="guides.json"`, editable
-notes and named groups. I02 keeps matting geometry at 1024/256, permits auto/cpu/mps,
+notes and named groups. Preparation keeps matting geometry at 1024/256, permits auto/cpu/mps,
 color cleanup disabled/strength .35 and shading disabled/opacity 0. Unknown keys,
-malformed types or unavailable processing settings fail visibly. Future owning
-increments extend validation with their implemented behavior. Prose is never code.
+malformed types or unavailable processing settings fail visibly. Validation expands
+with supported processing features. Prose is never code.
 `guides.json` contains schema, identity, dimensions and typed regions; see [guidance](guidance.md).
 
 `state.json` alone owns `working_revision`/`accepted_revision` (initially null),
@@ -37,9 +37,9 @@ cleanup are unavailable. OS lock release on process death needs no lock deletion
 Keep accepted dependencies outside rebuildable cache. Source changes during ingest
 reject publication. Managed symlinks and source/output aliases are refused.
 
-I02 creates labelled RGB8 proxies and immutable prepared revisions. Native alpha,
-final acceptance, effects and exports arrive in later increments. Never use a flattened preview as a master. The complete
-manual viewer and registration controls are not yet implemented.
+Preparation creates labelled RGB8 proxies and immutable prepared revisions. Native alpha,
+final acceptance, effects and exports are not yet implemented. Never use a
+flattened preview as a master. The complete manual viewer and registration controls are not yet implemented.
 
 Initial assets/state use atomic create-if-absent hard links within the project filesystem; concurrent externally created files cause a visible collision and remain unchanged. Own staged files may remain as diagnostic hard links and are never authoritative. Approval alone uses atomic replacement of existing state. RAW rejected coefficients use null for non-finite values, recorded shape and an explicit validity flag; finite values remain recorded.
 
@@ -77,7 +77,7 @@ conflicts before inference. Referenced edit files must be project-relative and
 free of traversal/symlinks. Original request/draft/external files, parent/lock
 manifests and saved assets are checked again before publication. Complete staged
 outputs are reloaded, hashed and synced, then a revision is published and state
-atomically advances working_revision. Accepted_revision remains null in I02.
+atomically advances working_revision. Accepted_revision remains null for preparation-only projects.
 Changed input fails visibly and preserves newer drafts/current pointers. The request
 digest is compared with captured draft bytes, and captured state must match the
 authorized state. Input validation runs after temporary JSON fsync immediately
@@ -103,6 +103,7 @@ Optional per-group `morphology` saves explicit native foreground erosion and
 unknown dilation margins without changing schema-1 drafts that omit it.
 Requested selected-mask proposals add `trimap_proposal.png` and binary
 `proposal_boundary.png`; manifest/result identify their exact groups, candidates,
-settings and unreviewed status. They are optional revision assets, so earlier I02
-revisions remain valid. They do not replace typed `trimap.png`, parent alpha or
+settings and unreviewed status. They are optional revision assets, so existing
+prepared revisions without these assets remain valid. They do not replace typed
+`trimap.png`, parent alpha or
 human review. See [native morphology semantics](guidance.md#optional-native-morphology-proposal).

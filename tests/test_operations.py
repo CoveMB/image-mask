@@ -95,7 +95,7 @@ def test_invalid_requests_preserve_state(tmp_path, field, value):
     assert (project / "state.json").read_bytes() == before
 
 
-def test_development_and_missing_saved_lock_gates(tmp_path):
+def test_development_approval_and_saved_lock_requirements(tmp_path):
     _, project = create(tmp_path)
     with pytest.raises(ProjectError, match="development"):
         operations.apply_operation(project, request(project))

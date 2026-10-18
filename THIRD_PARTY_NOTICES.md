@@ -7,7 +7,7 @@ Runtime dependencies: NumPy (BSD and bundled component licences), Pillow (MIT-CM
 Verification/build packages and their exact metadata are recorded in docs/model-provenance.md and the hash-pinned lock. Setuptools/pytest/mypy and their components retain upstream terms. No licence for original project code has been chosen. Model checkpoint labels do not license research implementations or photographs; verify each future model and implementation licence before download/use.
 
 
-I02 adds Torch/torchvision (BSD-3-Clause and bundled component notices),
+Selection dependencies include Torch/torchvision (BSD-3-Clause and bundled component notices),
 Transformers (Apache-2.0), safetensors (Apache-2.0), SciPy (BSD-3-Clause plus
 bundled numerical-library/GCC runtime notices), and their hash-pinned transitive
 packages. Preserve complete installed wheel licence/notice files when distributing

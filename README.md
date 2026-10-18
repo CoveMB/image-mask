@@ -12,8 +12,8 @@ internet access.
 
 ## Current status
 
-I01 creates/reopens trusted RGB16 projects with explicit human development approval.
-I02 prepares named SAM candidates, selected membership groups and categorical
+The tool creates/reopens trusted RGB16 projects with explicit human development approval.
+Preparation saves named SAM candidates, selected membership groups and categorical
 trimap/support/protection assets through typed native-coordinate guides, plus
 opt-in native-margin morphology proposals for separate source review. There is
 no matte, viewer, effects, export or final-photo acceptance yet. Prepared revisions

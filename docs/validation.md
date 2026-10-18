@@ -1,6 +1,6 @@
 # Verification
 
-## I01 retained evidence
+## Retained trusted-master evidence
 
 Observed on 2026-10-18 with native ARM64 Python 3.12.14, macOS 26.5.2 and
 LibRaw 0.22.1. The results below describe the trusted-master implementation and
@@ -65,9 +65,9 @@ source/hash; the fixture is not tracked. This is bounded actual RAW evidence, no
 human photographic acceptance or comprehensive camera-format coverage.
 
 
-## I02 observed evidence — 2026-10-18
+## Selection and preparation evidence — 2026-10-18
 
-The settled suite with explicit local model cache passed **108 tests** (exit 0),
+The recorded suite with explicit local model cache passed **108 tests** (exit 0),
 including the registered real SAM `integration` test; no skips. Ruff check/format,
 mypy (9 source modules) and pip dependency check exited 0. Pip reported its
 unwritable user cache warning while the dependency check still completed.
@@ -80,14 +80,14 @@ BLACKMASK_SAM_CACHE=/path/to/model-cache/sam2 .venv/bin/python -m pytest -q -p n
 .venv/bin/python -m pip check
 ```
 
-Q05–Q08 exercise actual native half-open geometry, categorical labels/locks,
+Guidance checks exercise actual native half-open geometry, categorical labels/locks,
 unknown corridors, typed roles, zero/inward-feather support, invalid inputs,
 FG/BG/lock contradictions and saved partial-alpha protection. Preparation carries
 nonempty partial alpha exactly; these downstream-boundary fixtures are synthetic,
 not actual matting or final acceptance. Selected membership remains separate from
 opacity; actual file round trips validate published assets.
 
-Q12/Q18/Q19 preparation checks exercise stale master/base/draft/request/external
+Preparation identity, cache and recovery checks exercise stale master/base/draft/request/external
 edit/parent and non-parent lock identities, digest/state binding at capture and final atomic-replacement boundaries, no clobber of changed drafts, corrupt
 revision rejection, reserve/publication failure, real competing writer/read
 behavior and a killed prepare process followed by safe retry. State alone owns
@@ -106,16 +106,16 @@ score differences; observed timings/RSS and package/advisory limits are in
 behavior uses injected failures, distinct from actual MPS success.
 
 No real photograph, human trimap review, final photographic acceptance, ViTMatte
-runtime, matte/export/viewer or regular-use acceptance is established by I02.
+runtime, matte/export/viewer or regular-use acceptance was established by these
+selection and preparation checks.
 These remain explicit downstream obligations.
 
 
-### Native morphology completeness repair
+### Native morphology proposal verification
 
-The original 96-test/review result did not exercise the specified morphology
-proposal capability. A subsequent source reconciliation added explicit saved
-native margins and selected-mask influence, bringing the suite to 108 passing
-tests. Hand-derived non-square core/boundary grids cover erosion/dilation, zero
+The earlier 96-test result and associated reviews did not exercise morphology
+proposal generation. Verification including explicit saved native margins and
+selected-mask influence passed 108 tests. Hand-derived non-square core/boundary grids cover erosion/dilation, zero
 margins, image exterior, holes, fragile-group overlaps, separately confirmed solid
 cores, BG/lock/support conflicts, saved-alpha/state preservation, invalid settings
 and old-draft compatibility. The proposal is a separate unreviewed categorical

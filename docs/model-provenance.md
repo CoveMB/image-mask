@@ -43,7 +43,7 @@ The existing local upstream [Kodak DC50 KDC fixture](https://raw.githubuserconte
 Fixture redistribution rights have not been established, so the capture and derived project remain outside tracked/public source. No human appearance judgement or user RAW acceptance is claimed, and one supported camera is not comprehensive RAW validation. [Primary CR2 format documentation](https://libopenraw.freedesktop.org/formats/cr2/) independently illustrates why RAW data may be outside IFD0; it does not establish an executed CR2 test. Filename suffixes and camera registries are not used for routing.
 
 
-## I02 SAM environment — checked 2026-10-18
+## SAM selection environment — checked 2026-10-18
 
 Native ARM64 Python 3.12.14, macOS 26.5.2. Torch 2.13.0 and torchvision 0.28.0
 have matching cp312 macOS14 ARM64 wheels; torchvision's official wheel metadata
@@ -104,5 +104,5 @@ covered by injected failure tests, distinct from the successful actual MPS smoke
 
 VitMatteForImageMatting/VitMatteImageProcessor import in this same environment;
 this is compatibility direction only. No ViTMatte weights/configs/download/runtime
-or native matte correctness is established in I02. Retain its separately pinned
-revision/hash and run its own CPU/MPS/geometry checks in I03.
+or native matte correctness was established by the selection checks. Native
+matting requires its separately pinned revision/hash and its own CPU/MPS/geometry checks.

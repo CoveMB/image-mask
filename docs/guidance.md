@@ -1,6 +1,6 @@
 # Selection and typed guides
 
-I02 prepares reviewable guidance. It does not compute alpha or accept a final
+Preparation produces reviewable guidance. It does not compute alpha or accept a final
 photograph. Inspect the developed RGB16 master first, then explicitly approve its
 actual identity with `blackmask accept --development --master-id ...`.
 
@@ -78,7 +78,7 @@ needing change requires support exactly 65535; feathered/out-of-scope support is
 not silently widened. Negative SAM hints do not certify background. Kept fragile
 or translucent objects remain unknown except explicit source-verified solid cores.
 
-Locks require an existing same-master revision containing alpha16. I02 cannot
+Locks require an existing same-master revision containing alpha16. Preparation cannot
 create initial alpha, so new projects cannot invent saved-value locks. Locks
 persist until an explicit recorded remove action. Changing/shrinking/rebinding a
 lock requires removal in one operation before a later upsert. Acceptance will not
@@ -138,7 +138,7 @@ Inspect returned categorical trimap, source proxy and support/protection paths i
 an external image viewer; the local review window comes later. All-unknown is an
 honest fallback, not an automatic quality result. Preserve source-visible fine
 features by unknown corridors; never paint invented foreground. Human trimap
-review is still required before I03. `accept --revision` rejects every prepared
+review is still required before native matting. `accept --revision` rejects every prepared
 revision, including one carrying parent alpha. See [recovery](troubleshooting.md).
 
 
@@ -155,8 +155,8 @@ unknown_dilation_px = 25
 Place this subtable immediately after its `[[groups]]` entry. Both margins are
 required nonnegative native-pixel integers, bounded by the master size. They are
 saved with the exact group/candidate identity in the revision recipe and manifest.
-Omitting morphology preserves existing I01/I02 draft behavior and all-unknown
-fallback; merely selecting membership does not force known opacity.
+Omitting morphology preserves existing trusted-master and preparation draft
+behavior and all-unknown fallback; merely selecting membership does not force known opacity.
 
 For `opaque_core`, Euclidean distance to background/image exterior greater than
 the erosion margin suggests a conservative interior. Distance to the selected
