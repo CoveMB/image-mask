@@ -63,3 +63,14 @@ def test_real_cpu_sam_geometry_normalization_and_native_candidates():
 
     changed = session.select(pixels, [[45, 32]], [1], None, "cpu", master_id="b" * 64)
     assert changed.metadata["embedding_reused"] is False
+
+
+@pytest.mark.integration
+def test_existing_vitmatte_setup_reuse_has_no_network():
+    import os
+
+    cache = os.environ.get("BLACKMASK_VITMATTE_CACHE")
+    if not cache:
+        pytest.skip("Set explicitly installed ViTMatte cache")
+    with patch("urllib.request.urlopen", side_effect=AssertionError("unexpected download")):
+        assert models.setup_vitmatte(Path(cache)) == models.VITMATTE_FILES

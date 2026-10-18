@@ -16,8 +16,10 @@ The tool creates/reopens trusted RGB16 projects with explicit human development 
 Preparation saves named SAM candidates, selected membership groups and categorical
 trimap/support/protection assets through typed native-coordinate guides, plus
 opt-in native-margin morphology proposals for separate source review. There is
-no matte, viewer, effects, export or final-photo acceptance yet. Prepared revisions
-require human trimap review before later matting.
+now an I03 native ViTMatte path, separate trimap/final acceptance controls, native
+same-crop review assets and accepted RGB16 black/alpha16 plus labelled PNG8 exports.
+The viewer, local repair, resumability and appearance effects remain future work.
+Prepared revisions require explicit human trimap review before matting.
 
 A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
 SAM passed real CPU and separate MPS synthetic geometry checks; auto stays CPU.
@@ -77,7 +79,7 @@ Do not substitute a same-name capture if its recorded hash differs.
 .venv/bin/mypy src
 ```
 
-See [file contract](docs/file-contract.md), [validation and limitations](docs/validation.md),
+See [native matting and exports](docs/matting.md), [file contract](docs/file-contract.md), [validation and limitations](docs/validation.md),
 [recovery](docs/troubleshooting.md) and [exact package/development provenance](docs/model-provenance.md).
 Setup requires public package downloads; subsequent processing is local/offline. See [selection and guides](docs/guidance.md)
 for explicit model setup, typed preparation and human review.
@@ -90,7 +92,10 @@ for explicit model setup, typed preparation and human review.
 | Identity, shared writer lock, publication and approval | `src/blackmask/project.py` |
 | Preparation snapshots and selected candidate publication | `src/blackmask/operations.py` |
 | Typed native guides and categorical rasterization | `src/blackmask/guidance.py` |
-| Pinned explicit setup and local-only SAM sessions | `src/blackmask/models.py` |
+| Pinned explicit setup and local-only SAM/ViTMatte sessions | `src/blackmask/models.py` |
+| Native tile geometry, blending and verified cache | `src/blackmask/matte.py` |
+| Same-native-crop review assets | `src/blackmask/review.py` |
+| Canonical precision renderer and accepted/draft exports | `src/blackmask/export.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | Supported commands and local doctor/setup | `src/blackmask/cli.py` |
 | Ingest, guide/model geometry, transactions and CLI regressions | `tests/` |
@@ -112,7 +117,7 @@ The public implementation history contains no photographs, private planning or
 reference archives. Local planning and frozen reference material, when supplied
 separately, stay ignored and are not required to install or operate the tool.
 The maintained public docs describe the behavior currently implemented. Future
-matting, review-window and appearance features require separate implementation
+review-window, repair and appearance features require separate implementation
 and human photographic validation.
 
 ## Licensing

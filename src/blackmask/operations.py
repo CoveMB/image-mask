@@ -18,12 +18,13 @@ from .guidance import (
     rasterize_regions,
     validate_guides,
 )
-from .models import SamSession
+from .models import SamSession, VitMatteSession
 from .project import (
     ProjectError,
     _asset,
     _atomic_json,
     _json_bytes,
+    _publish_new_directory,
     _root,
     _sync_directory,
     check_space,
@@ -120,13 +121,98 @@ def select_candidates(
     return results
 
 
-def accept_revision(project: Path, revision: str) -> None:
+def accept_trimap(
+    project: Path, revision: str, master_id: str, inputs_digest: str
+) -> dict[str, Any]:
+    """Explicit human confirmation of the exact current authoritative prepared trimap."""
+    project = _root(project)
     with project_lock(project):
         state = read_project(project)
-        read_revision(project, revision, state["master_id"])
-        raise ProjectError(
-            "A prepared revision cannot be accepted as a final photo; matte/repair and review required"
-        )
+        manifest = read_revision(project, revision, state["master_id"])
+        if (
+            master_id != state["master_id"]
+            or revision != state["working_revision"]
+            or inputs_digest != draft_digest(project)
+            or inputs_digest != manifest.get("draft_digest")
+        ):
+            raise ProjectError("Stale trimap review identity, revision or draft digest")
+        if manifest.get("kind") != "prepare" or not state["development_approved"]:
+            raise ProjectError(
+                "Trimap review requires current prepared revision and development approval"
+            )
+        record = {
+            "schema_version": 1,
+            "revision": revision,
+            "master_id": master_id,
+            "inputs_digest": inputs_digest,
+            "manifest_sha256": digest(
+                _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+            ),
+            "trimap_sha256": manifest["files"]["trimap.png"],
+            "confirmation": "explicit human trimap review",
+        }
+        before = _asset(project, "state.json").read_bytes()
+
+        def recheck():
+            if (
+                before != _asset(project, "state.json").read_bytes()
+                or draft_digest(project) != inputs_digest
+                or digest(_asset(project, f"revisions/{revision}/manifest.json").read_bytes())
+                != record["manifest_sha256"]
+            ):
+                raise ProjectError("Stale trimap review inputs")
+            read_revision(project, revision, master_id)
+            load_master(project, master_id)
+
+        check_space(project, 1024**2)
+        approvals = _asset(project, "approvals")
+        approvals.mkdir(exist_ok=True)
+        path = _asset(project, f"approvals/{revision}-trimap.json")
+        recheck()
+        if path.exists():
+            if json.loads(path.read_bytes()) != record:
+                raise ProjectError("Existing trimap approval differs; preserved")
+        else:
+            _atomic_json(path, record, replace_existing=False, validate_before_replace=recheck)
+        return record
+
+
+def accept_revision(project: Path, revision: str) -> dict[str, Any]:
+    project = _root(project)
+    with project_lock(project):
+        state = read_project(project)
+        manifest = read_revision(project, revision, state["master_id"])
+        if manifest.get("kind") != "matte" or manifest.get("final_acceptable") is not True:
+            raise ProjectError(
+                "A prepared revision cannot be accepted as a final photo; matte and review required"
+            )
+        from .export import saved_layers
+
+        saved_layers(project, revision, state["master_id"])
+        captured = draft_digest(project)
+        if (
+            revision != state["working_revision"]
+            or captured != manifest["draft_digest"]
+            or not state["development_approved"]
+        ):
+            raise ProjectError("Stale final acceptance; current complete reviewed matte required")
+        before = _asset(project, "state.json").read_bytes()
+        manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+
+        def recheck():
+            if (
+                before != _asset(project, "state.json").read_bytes()
+                or captured != draft_digest(project)
+                or manifest_bytes
+                != _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+            ):
+                raise ProjectError("Stale final acceptance inputs")
+            saved_layers(project, revision, state["master_id"])
+
+        check_space(project, 1024**2)
+        state.update(accepted_revision=revision, status="accepted")
+        _atomic_json(_asset(project, "state.json"), state, validate_before_replace=recheck)
+        return state
 
 
 def apply_operation(
@@ -140,11 +226,13 @@ def apply_operation(
     project = _root(project)
     with project_lock(project):
         try:
+            if isinstance(operation, dict) and operation.get("kind") == "matte":
+                return _matte(project, operation, model_cache, request_file)
             return _prepare(project, operation, model_cache, request_file)
         except (ValueError, KeyError, TypeError) as error:
             if isinstance(error, ProjectError):
                 raise
-            raise ProjectError(f"Invalid preparation: {error}") from error
+            raise ProjectError(f"Invalid operation: {error}") from error
 
 
 def _prepare(
@@ -417,7 +505,7 @@ def _prepare(
     destination = revisions / revision
     if destination.exists():
         raise ProjectError("Revision publication collision; preserved")
-    os.rename(stage, destination)
+    _publish_new_directory(stage, destination)
     _sync_directory(revisions)
     read_revision(project, revision, state["master_id"])
     # Draft publication may precede a failed pointer write; accepted state remains exact and recoverable.
@@ -447,3 +535,258 @@ def _prepare(
         "candidates": candidate_records,
         "proposal": proposal_record,
     }
+
+
+def _matte(
+    project: Path, operation: dict[str, Any], model_cache: Path | None, request_file: Path | None
+) -> dict[str, Any]:
+    import tifffile
+
+    from .ingest import write_master
+    from .matte import native_matte
+    from .review import write_review
+
+    required = {"schema_version", "kind", "base_revision", "master_id", "inputs_digest"}
+    if (
+        set(operation) - required - {"reason"}
+        or not required <= set(operation)
+        or type(operation["schema_version"]) is not int
+        or operation["schema_version"] != 1
+        or ("reason" in operation and not isinstance(operation["reason"], str))
+    ):
+        raise ProjectError("Invalid typed schema-1 matte operation; prepare guide changes first")
+    operation = json.loads(_json_bytes(operation))
+    request_bytes = request_file.read_bytes() if request_file else None
+    if request_bytes is not None and json.loads(request_bytes) != operation:
+        raise ProjectError("Stale request before matte snapshot")
+    state = read_project(project)
+    parent = state["working_revision"]
+    if not state["development_approved"] or not parent:
+        raise ProjectError("Matte requires approved development and human-reviewed prepared trimap")
+    if (
+        operation["master_id"] != state["master_id"]
+        or operation["base_revision"] != parent
+        or operation["inputs_digest"] != draft_digest(project)
+    ):
+        raise ProjectError("Stale matte master, revision or inputs_digest")
+    manifest = read_revision(project, parent, state["master_id"])
+    if manifest.get("kind") != "prepare":
+        raise ProjectError("Prepare and explicitly review the trimap before each matte rerun")
+    if manifest["draft_digest"] != operation["inputs_digest"]:
+        raise ProjectError("Stale prepared draft; prepare and review changed guides/settings")
+    approval_path = _asset(project, f"approvals/{parent}-trimap.json")
+    if not approval_path.is_file():
+        raise ProjectError("Explicit human trimap review required before native matte")
+    approval_bytes = approval_path.read_bytes()
+    approval = json.loads(approval_bytes)
+    if not isinstance(approval, dict):
+        raise ProjectError("Invalid trimap approval record")
+    parent_bytes = _asset(project, f"revisions/{parent}/manifest.json").read_bytes()
+    if (
+        approval.get("revision") != parent
+        or approval.get("master_id") != state["master_id"]
+        or approval.get("inputs_digest") != operation["inputs_digest"]
+        or approval.get("manifest_sha256") != digest(parent_bytes)
+        or approval.get("trimap_sha256") != manifest["files"]["trimap.png"]
+    ):
+        raise ProjectError("Stale trimap approval assets")
+    snapshots = {
+        name: _asset(project, name).read_bytes()
+        for name in ("state.json", "source.json", "recipe.toml", "guides.json")
+    }
+    if (
+        json.loads(snapshots["state.json"]) != state
+        or digest(snapshots["recipe.toml"] + b"\0" + snapshots["guides.json"])
+        != operation["inputs_digest"]
+    ):
+        raise ProjectError("Stale matte snapshot")
+    pixels, _ = load_master(project, state["master_id"])
+    height, width = pixels.shape[:2]
+    recipe = Recipe.from_dict(
+        tomllib.loads(snapshots["recipe.toml"].decode()),
+        state["master_id"],
+        max_margin_px=max(width, height),
+    )
+    guides = json.loads(_asset(project, f"revisions/{parent}/guides.json").read_bytes())
+    saved = {
+        r["revision"]: _alpha(project, r["revision"], state["master_id"], (height, width))
+        for r in guides["regions"]
+        if r["role"] == "lock"
+    }
+    lock_hashes = {
+        rev: digest(_asset(project, f"revisions/{rev}/manifest.json").read_bytes()) for rev in saved
+    }
+    raster = rasterize_regions(guides, scope_xyxy=manifest["scope_xyxy"], saved_alpha=saved)
+    with Image.open(_asset(project, f"revisions/{parent}/trimap.png")) as image:
+        trimap = np.array(image)
+    if not np.array_equal(trimap, raster.trimap):
+        raise ProjectError("Prepared trimap differs from confirmed typed guides")
+    check_space(project, pixels.nbytes * 40 + 1024**2)
+    foreground = pixels.copy()
+    rgb_protection = np.zeros((height, width), dtype=bool)
+    for region in guides["regions"]:
+        if region["role"] != "lock":
+            continue
+        rev = region["revision"]
+        locked_manifest = read_revision(project, rev, state["master_id"])
+        name = (
+            "foreground_rgb16.tif"
+            if "foreground_rgb16.tif" in locked_manifest["files"]
+            else "corrected_rgb16.tif"
+            if "corrected_rgb16.tif" in locked_manifest["files"]
+            else None
+        )
+        if name:
+            values = tifffile.imread(_asset(project, f"revisions/{rev}/{name}"))
+            if values.shape != pixels.shape or values.dtype != np.uint16:
+                raise ProjectError("Invalid saved foreground lock RGB16")
+            own = dict(guides, regions=[region])
+            mask = rasterize_regions(
+                own, scope_xyxy=manifest["scope_xyxy"], saved_alpha=saved
+            ).protection
+            if np.any(mask & rgb_protection & np.any(foreground != values, axis=2)):
+                raise ProjectError("Conflicting saved foreground RGB lock values")
+            foreground[mask] = values[mask]
+            rgb_protection |= mask
+    cache = model_cache or (
+        Path(os.environ["BLACKMASK_VITMATTE_CACHE"])
+        if "BLACKMASK_VITMATTE_CACHE" in os.environ
+        else None
+    )
+    if np.any(trimap == 128) and cache is None:
+        raise ProjectError(
+            "Unknown pixels require explicit local ViTMatte model cache; no downloads"
+        )
+    session = VitMatteSession(cache) if np.any(trimap == 128) and cache else None
+
+    def predict(rgb, guide, device):
+        if session is None:
+            raise ProjectError("ViTMatte session missing")
+        return session.predict(rgb, guide, device)
+
+    alpha, model_record = native_matte(
+        np.rint(pixels.astype(np.float64) / 257).astype(np.uint8),
+        trimap,
+        predict,
+        recipe.device,
+        cache_dir=_asset(project, "cache/matte"),
+        cache_identity={"master_id": state["master_id"], **session.identity} if session else None,
+    )
+    alpha[raster.protection] = raster.lock_values16[raster.protection]
+    if np.any(alpha[trimap == 0] != 0) or np.any(alpha[trimap == 255] != 65535):
+        raise ProjectError("Locked alpha contradicts known cores after matte")
+    revisions = _asset(project, "revisions")
+    existing = [
+        int(p.name[4:]) for p in revisions.iterdir() if re.fullmatch(r"rev-[0-9]{3,}", p.name)
+    ]
+    revision = f"rev-{max(existing, default=0) + 1:03d}"
+    stage = Path(tempfile.mkdtemp(prefix=".matte-", dir=revisions))
+    for name in (
+        "recipe.toml",
+        "guides.json",
+        "trimap.png",
+        "supports/support16.png",
+        "supports/protection.png",
+        "supports/lock_values16.png",
+    ):
+        target = stage / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(_asset(project, f"revisions/{parent}/{name}").read_bytes())
+    (stage / "request.json").write_bytes(
+        request_bytes if request_bytes is not None else _json_bytes(operation)
+    )
+    (stage / "trimap_approval.json").write_bytes(approval_bytes)
+    (stage / "inputs").mkdir()
+    for name, data in snapshots.items():
+        (stage / "inputs" / name).write_bytes(data)
+    Image.fromarray(alpha).save(stage / "base_alpha16.png")
+    write_master(stage / "foreground_rgb16.tif", foreground)
+    with Image.open(stage / "base_alpha16.png") as image:
+        if image.mode not in {"I;16", "I;16L", "I;16B"} or not np.array_equal(
+            np.array(image), alpha
+        ):
+            raise ProjectError("Alpha16 round trip failed")
+    if not np.array_equal(tifffile.imread(stage / "foreground_rgb16.tif"), foreground):
+        raise ProjectError("Foreground RGB16 round trip failed")
+    write_review(
+        stage / "review", pixels, foreground, alpha, master_id=state["master_id"], revision=revision
+    )
+    (stage / "qa.json").write_bytes(
+        _json_bytes(
+            {
+                "structural_checks": "passed",
+                "foreground_core_samples": int(np.count_nonzero(trimap == 255)),
+                "background_core_samples": int(np.count_nonzero(trimap == 0)),
+                "locked_samples": int(raster.protection.sum()),
+                "human_photographic_review": "pending",
+            }
+        )
+    )
+    result = {
+        "revision": revision,
+        "parent": parent,
+        "master_id": state["master_id"],
+        "inputs_digest": operation["inputs_digest"],
+        "kind": "matte",
+        "status": "review_needed",
+        "final_acceptable": True,
+        "model": model_record,
+    }
+    (stage / "result.json").write_bytes(_json_bytes(result))
+    files = {
+        str(p.relative_to(stage)): digest(p.read_bytes()) for p in stage.rglob("*") if p.is_file()
+    }
+    new_manifest = {
+        "schema_version": 1,
+        **result,
+        "complete": True,
+        "draft_digest": operation["inputs_digest"],
+        "files": files,
+        "parent_manifest_sha256": digest(parent_bytes),
+        "scope_xyxy": [0, 0, width, height],
+        "foreground_asset": "foreground_rgb16.tif",
+        "output_precision_bits": 16,
+        "model_view_precision_bits": 8,
+        "compositing": "encoded-sRGB float64 ties-to-even; alpha once",
+    }
+    (stage / "manifest.json").write_bytes(_json_bytes(new_manifest))
+    for path in stage.rglob("*"):
+        if path.is_file():
+            with path.open("rb") as stream:
+                os.fsync(stream.fileno())
+    for path in sorted((p for p in stage.rglob("*") if p.is_dir()), reverse=True):
+        _sync_directory(path)
+    _sync_directory(stage)
+
+    def recheck():
+        for name, data in snapshots.items():
+            if _asset(project, name).read_bytes() != data:
+                raise ProjectError(f"Stale input changed during matte: {name}")
+        if request_file is not None and request_file.read_bytes() != request_bytes:
+            raise ProjectError("Stale matte request file")
+        if (
+            approval_path.read_bytes() != approval_bytes
+            or _asset(project, f"revisions/{parent}/manifest.json").read_bytes() != parent_bytes
+        ):
+            raise ProjectError("Stale prepared assets/approval")
+        read_revision(project, parent, state["master_id"])
+        load_master(project, state["master_id"])
+        for rev, expected in lock_hashes.items():
+            read_revision(project, rev, state["master_id"])
+            if digest(_asset(project, f"revisions/{rev}/manifest.json").read_bytes()) != expected:
+                raise ProjectError("Stale saved lock values")
+
+    recheck()
+    destination = revisions / revision
+    if destination.exists():
+        raise ProjectError("Revision collision; preserved")
+    _publish_new_directory(stage, destination)
+    _sync_directory(revisions)
+    read_revision(project, revision, state["master_id"])
+    state.update(working_revision=revision, status="review_needed")
+    _atomic_json(_asset(project, "state.json"), state, validate_before_replace=recheck)
+    return dict(
+        result,
+        manifest_file=str(destination / "manifest.json"),
+        review_manifest_file=str(destination / "review/manifest.json"),
+    )

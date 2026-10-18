@@ -55,4 +55,24 @@ A publication collision means another tool/editor created a project asset while 
   Auto remains CPU; upstream implicit MPS fallback must be disabled. One synthetic
   successful MPS smoke is not photographic or regular-use acceptance.
 - **Prepared revision rejected by accept:** expected. Human trimap review comes
-  before later native matting; preparation never substitutes for a final result.
+  before native matting; preparation never substitutes for a final result.
+
+
+## Native matte and export recovery
+
+- **Trimap approval missing/stale:** inspect authoritative prepared trimap against
+  source, finish typed edits, prepare again and explicitly confirm returned identities.
+  A morphology proposal never counts as confirmed guide values.
+- **ViTMatte missing/corrupt:** use explicit pinned setup only after authorization;
+  local inference never downloads or substitutes another checkpoint. Preserve invalid
+  existing assets and select a new cache rather than overwriting them.
+- **MPS/non-finite failure:** explicit MPS fails visibly; retry a newly prepared and
+  reviewed CPU request with identical geometry. Auto stays CPU. No resolution reduction.
+- **Interrupted matte:** reopen state; accepted layers remain separate and usable.
+  `.matte-*` and complete orphans are not pointer authority. Submit a fresh current
+  request; verified cache can help, but resumability/restore are not yet supported.
+- **Final acceptance rejected:** require current complete matte and unchanged drafts,
+  master/development and saved review assets. Prepared-only state never qualifies.
+- **Export collision:** keep prior delivery; identical output reuses it. Different
+  bytes or an incomplete directory fail without overwrite. A newer candidate has a
+  different revision; explicit unaccepted output must use `--revision ... --draft`.

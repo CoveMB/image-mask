@@ -1,11 +1,14 @@
 """Canonical project identity, writer lock and safe publication boundaries."""
 
+import ctypes
+import errno
 import fcntl
 import hashlib
 import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import tomllib
 from collections.abc import Callable, Iterator
@@ -119,6 +122,22 @@ def _publish_new_file(source: Path, destination: Path) -> None:
         raise ProjectError(
             f"Initial publication collision: {destination.name}; incomplete project preserved"
         ) from error
+
+
+def _publish_new_directory(source: Path, destination: Path) -> None:
+    """Atomic exclusive publication on the supported native macOS filesystem."""
+    if sys.platform != "darwin":
+        raise ProjectError("Exclusive revision publication requires supported native macOS")
+    library = ctypes.CDLL(None, use_errno=True)
+    rename = library.renamex_np
+    rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    # Darwin stdio.h RENAME_EXCL=4; ordinary rename can replace an empty directory.
+    if rename(os.fsencode(source), os.fsencode(destination), 4) != 0:
+        code = ctypes.get_errno()
+        if code == errno.EEXIST:
+            raise ProjectError("Directory publication collision; existing output preserved")
+        raise OSError(code, os.strerror(code), str(destination))
 
 
 def check_space(path: Path, pending_bytes: int) -> None:
@@ -277,10 +296,12 @@ def read_project(project: Path) -> dict[str, Any]:
         or type(state["schema_version"]) is not int
         or state["schema_version"] != 1
         or type(state["development_approved"]) is not bool
-        or state["accepted_revision"] is not None
         or state["status"]
         != (
-            "review_needed"
+            "accepted"
+            if state["accepted_revision"] is not None
+            and state["working_revision"] == state["accepted_revision"]
+            else "review_needed"
             if state["working_revision"] is not None or not state["development_approved"]
             else "ready"
         )
@@ -289,6 +310,14 @@ def read_project(project: Path) -> dict[str, Any]:
     _validate_assets(project, state)
     if state["working_revision"] is not None:
         read_revision(project, state["working_revision"], state["master_id"])
+    if state["accepted_revision"] is not None:
+        accepted = read_revision(project, state["accepted_revision"], state["master_id"])
+        if (
+            accepted.get("kind") != "matte"
+            or accepted.get("final_acceptable") is not True
+            or not state["development_approved"]
+        ):
+            raise ProjectError("Invalid accepted complete matte revision")
     return state
 
 
@@ -310,7 +339,14 @@ def accept_development(project: Path, master_id: str) -> dict[str, Any]:
         check_space(project, 1024**2)
         state.update(
             development_approved=True,
-            status="review_needed" if state["working_revision"] else "ready",
+            status=(
+                "accepted"
+                if state["accepted_revision"]
+                and state["accepted_revision"] == state["working_revision"]
+                else "review_needed"
+                if state["working_revision"]
+                else "ready"
+            ),
         )
         _atomic_json(_asset(project, "state.json"), state)
     return state
@@ -349,4 +385,16 @@ def read_revision(project: Path, revision: str, master_id: str) -> dict[str, Any
         "supports/lock_values16.png",
     } <= set(manifest["files"]):
         raise ProjectError("Incomplete prepared revision files")
+    if manifest.get("kind") == "matte" and (
+        not {
+            "base_alpha16.png",
+            "foreground_rgb16.tif",
+            "qa.json",
+            "review/manifest.json",
+            "trimap_approval.json",
+        }
+        <= set(manifest["files"])
+        or manifest.get("final_acceptable") is not True
+    ):
+        raise ProjectError("Incomplete matte revision files")
     return manifest

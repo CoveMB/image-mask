@@ -98,3 +98,45 @@ def test_run_prepare_returns_paths_and_rejects_final_acceptance(tmp_path):
         timeout=20,
     )
     assert rejected.returncode == 1 and "prepared" in rejected.stderr
+
+
+def test_cli_recorded_known_only_journey_and_explicit_review_controls(tmp_path):
+    from test_matte_operations import prepared
+    from test_operations import edits, request
+
+    from blackmask.operations import apply_operation
+
+    _, project, _ = prepared(tmp_path)
+    name = edits(
+        project,
+        [
+            {"id": "allbg", "role": "background", "shape": "rectangle", "xyxy": [1, 0, 3, 1]},
+            {"id": "lower", "role": "foreground", "shape": "rectangle", "xyxy": [0, 1, 2, 2]},
+        ],
+    )
+    result = apply_operation(project, request(project, guide_edits_file=name))
+    approved = run(
+        "accept",
+        project,
+        "--trimap",
+        "--revision",
+        result["revision"],
+        "--master-id",
+        result["master_id"],
+        "--inputs-digest",
+        result["inputs_digest"],
+    )
+    assert approved.returncode == 0, approved.stderr
+    operation = request(project, kind="matte")
+    filename = project / "matte.json"
+    filename.write_text(json.dumps(operation))
+    completed = run("run", project, "--request", filename)
+    assert completed.returncode == 0, completed.stderr
+    candidate = json.loads(completed.stdout)
+    reviewed = run("review", project, "--revision", candidate["revision"])
+    assert reviewed.returncode == 0, reviewed.stderr
+    final = run("accept", project, "--revision", candidate["revision"])
+    assert final.returncode == 0, final.stderr
+    exported = run("export", project)
+    assert exported.returncode == 0, exported.stderr
+    assert Path(json.loads(exported.stdout)["directory"]).is_dir()

@@ -11,13 +11,15 @@ from typing import Any
 
 import rawpy
 
+from .export import export_project
 from .ingest import IngestError
-from .models import setup_sam, verify_sam
-from .operations import accept_revision, apply_operation, draft_digest
+from .models import setup_sam, setup_vitmatte, verify_sam, verify_vitmatte
+from .operations import accept_revision, accept_trimap, apply_operation, draft_digest
 from .project import ProjectError, accept_development, create_project, read_project
+from .review import review_project
 
 
-def doctor(path: Path, model_cache: Path | None = None) -> dict[str, Any]:
+def doctor(path: Path, model_cache: Path | None = None, model: str = "sam") -> dict[str, Any]:
     return {
         "python": platform.python_version(),
         "machine": platform.machine(),
@@ -30,11 +32,11 @@ def doctor(path: Path, model_cache: Path | None = None) -> dict[str, Any]:
         "libraw_flags": rawpy.flags,
         "free_bytes": shutil.disk_usage(path).free,
         "reserve_bytes": 10 * 1024**3,
-        "models": verify_sam(model_cache)
+        "models": (verify_sam(model_cache) if model == "sam" else verify_vitmatte(model_cache))
         if model_cache is not None
         else "pass --model-cache to verify pinned SAM assets",
         "auto_device": "cpu",
-        "backend": "CPU float32 baseline; explicit MPS is diagnostic; ViTMatte unverified",
+        "backend": "CPU float32 baseline; explicit MPS is diagnostic for SAM and ViTMatte",
     }
 
 
@@ -46,23 +48,49 @@ def main() -> int:
     opened.add_argument("--project", required=True, type=Path)
     opened.add_argument("--assume-srgb", action="store_true")
     opened.add_argument("--white-balance", choices=("camera", "daylight"), default="camera")
-    accepted = commands.add_parser("accept", help="Record explicit human development approval")
+    accepted = commands.add_parser(
+        "accept", help="Record explicit human development, trimap or final-photo approval"
+    )
     accepted.add_argument("project", type=Path)
     choice = accepted.add_mutually_exclusive_group(required=True)
     choice.add_argument("--development", action="store_true")
     choice.add_argument("--revision")
+    accepted.add_argument(
+        "--trimap",
+        action="store_true",
+        help="Review authoritative prepared trimap; requires revision/master/digest",
+    )
+    accepted.add_argument("--inputs-digest")
     accepted.add_argument("--master-id", help="Identity of the master you inspected")
     checked = commands.add_parser("doctor", help="Report local preflight without downloading")
     checked.add_argument("--project", type=Path, default=Path.cwd())
     checked.add_argument("--model-cache", type=Path)
+    checked.add_argument("--model", choices=("sam", "vitmatte"), default="sam")
     setup = commands.add_parser(
-        "setup-model", help="Explicitly download hash-pinned public SAM assets"
+        "setup-model", help="Explicitly download hash-pinned public model assets"
     )
     setup.add_argument("--model-cache", type=Path, required=True)
-    running = commands.add_parser("run", help="Prepare reviewable guidance from a typed request")
+    setup.add_argument("--model", choices=("sam", "vitmatte"), default="sam")
+    running = commands.add_parser(
+        "run", help="Prepare guidance or run native matte from a typed request"
+    )
     running.add_argument("project", type=Path)
     running.add_argument("--request", type=Path, required=True)
     running.add_argument("--model-cache", type=Path)
+    reviewed = commands.add_parser(
+        "review", help="Export same-native-crop RGB8 source/result/alpha viewing assets"
+    )
+    reviewed.add_argument("project", type=Path)
+    reviewed.add_argument("--revision")
+    reviewed.add_argument(
+        "--crops", type=Path, help="JSON list of native half-open crop rectangles"
+    )
+    exported = commands.add_parser(
+        "export", help="Export accepted RGB16 black/alpha16 and labelled viewing PNGs"
+    )
+    exported.add_argument("project", type=Path)
+    exported.add_argument("--revision")
+    exported.add_argument("--draft", action="store_true")
     arguments = parser.parse_args()
     try:
         if arguments.command == "open":
@@ -76,14 +104,44 @@ def main() -> int:
                 read_project(arguments.project), inputs_digest=draft_digest(arguments.project)
             )
         elif arguments.command == "accept":
-            if arguments.revision is not None:
-                accept_revision(arguments.project, arguments.revision)
-                raise ProjectError("Final acceptance unavailable")
-            if arguments.master_id is None:
-                raise ProjectError("Development approval requires the inspected --master-id")
-            result = accept_development(arguments.project, arguments.master_id)
+            if arguments.trimap:
+                if (
+                    arguments.revision is None
+                    or arguments.master_id is None
+                    or arguments.inputs_digest is None
+                ):
+                    raise ProjectError(
+                        "Trimap approval requires --revision, --master-id and --inputs-digest"
+                    )
+                result = accept_trimap(
+                    arguments.project,
+                    arguments.revision,
+                    arguments.master_id,
+                    arguments.inputs_digest,
+                )
+            elif arguments.revision is not None:
+                if arguments.inputs_digest is not None or arguments.master_id is not None:
+                    raise ProjectError(
+                        "Final-photo acceptance uses --revision; trimap identity flags require --trimap"
+                    )
+                result = accept_revision(arguments.project, arguments.revision)
+            else:
+                if arguments.master_id is None or arguments.inputs_digest is not None:
+                    raise ProjectError("Development approval requires the inspected --master-id")
+                result = accept_development(arguments.project, arguments.master_id)
         elif arguments.command == "setup-model":
-            result = setup_sam(arguments.model_cache)
+            result = (
+                setup_sam(arguments.model_cache)
+                if arguments.model == "sam"
+                else setup_vitmatte(arguments.model_cache)
+            )
+        elif arguments.command == "review":
+            crops = json.loads(arguments.crops.read_bytes()) if arguments.crops else None
+            result = review_project(arguments.project, revision=arguments.revision, crops=crops)
+        elif arguments.command == "export":
+            result = export_project(
+                arguments.project, revision=arguments.revision, draft=arguments.draft
+            )
         elif arguments.command == "run":
             result = apply_operation(
                 arguments.project,
@@ -92,7 +150,7 @@ def main() -> int:
                 request_file=arguments.request,
             )
         else:
-            result = doctor(arguments.project, arguments.model_cache)
+            result = doctor(arguments.project, arguments.model_cache, arguments.model)
         print(json.dumps(result, indent=2, allow_nan=False))
         return 0
     except (ProjectError, IngestError, OSError, ValueError, TypeError) as error:

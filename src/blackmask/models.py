@@ -46,25 +46,30 @@ def verify_sam(cache: Path) -> dict[str, str]:
     return dict(SAM_FILES)
 
 
-def setup_sam(cache: Path) -> dict[str, str]:
+def _setup_model(cache: Path, model: str) -> dict[str, str]:
     """Explicit public download, verified before non-clobber publication. Never called by inference."""
     import os
 
     from .project import check_space
 
+    repository, revision, files, size, verify = (
+        (SAM_REPOSITORY, SAM_REVISION, SAM_FILES, 184305280, verify_sam)
+        if model == "sam"
+        else (VITMATTE_REPOSITORY, VITMATTE_REVISION, VITMATTE_FILES, 103294572, verify_vitmatte)
+    )
     cache = cache.absolute()
     if cache.resolve() != cache:
         raise ValueError("Model cache must not contain symlinks")
     cache.mkdir(parents=True, exist_ok=True)
-    check_space(cache, 184305280 * 2 + 1024**2)
-    for name, expected in SAM_FILES.items():
+    check_space(cache, size * 2 + 1024**2)
+    for name, expected in files.items():
         destination = cache / name
         if destination.exists() or destination.is_symlink():
             if destination.is_symlink() or file_hash(destination) != expected:
-                raise ValueError(f"Existing SAM asset is invalid; preserved: {name}")
+                raise ValueError(f"Existing {model} asset is invalid; preserved: {name}")
             continue
         descriptor, temporary = tempfile.mkstemp(prefix=".download-", dir=cache)
-        url = f"https://huggingface.co/{SAM_REPOSITORY}/resolve/{SAM_REVISION}/{name}"
+        url = f"https://huggingface.co/{repository}/resolve/{revision}/{name}"
         with (
             os.fdopen(descriptor, "wb") as output,
             urllib.request.urlopen(url, timeout=60) as response,
@@ -74,10 +79,18 @@ def setup_sam(cache: Path) -> dict[str, str]:
             output.flush()
             os.fsync(output.fileno())
         if file_hash(Path(temporary)) != expected:
-            raise ValueError(f"Downloaded SAM hash mismatch: {name}; temporary retained")
+            raise ValueError(f"Downloaded {model} hash mismatch: {name}; temporary retained")
         os.link(temporary, destination, follow_symlinks=False)
         # Temporary verified files are intentionally retained; cleanup needs explicit authority.
-    return verify_sam(cache)
+    return verify(cache)
+
+
+def setup_sam(cache: Path) -> dict[str, str]:
+    return _setup_model(cache, "sam")
+
+
+def setup_vitmatte(cache: Path) -> dict[str, str]:
+    return _setup_model(cache, "vitmatte")
 
 
 def run_device_stage[T](
@@ -91,7 +104,7 @@ def run_device_stage[T](
     except (RuntimeError, MemoryError, FloatingPointError) as error:
         if device == "auto" and selected == "mps":
             return stage("cpu"), "cpu", str(error)
-        raise ValueError(f"SAM {selected} stage failed: {error}; try explicit CPU") from error
+        raise ValueError(f"Model {selected} stage failed: {error}; try explicit CPU") from error
 
 
 @dataclass(frozen=True)
@@ -263,3 +276,134 @@ class SamSession:
             "fallback": fallback,
         }
         return Candidates(masks, scores, metadata)
+
+
+VITMATTE_REPOSITORY = "hustvl/vitmatte-small-composition-1k"
+VITMATTE_REVISION = "6a58ad7646403c1df626fbd746900aec7361ea1d"
+VITMATTE_FILES = {
+    "model.safetensors": "bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb",
+    "config.json": "ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f",
+    "preprocessor_config.json": "0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0",
+}
+
+
+def verify_vitmatte(cache: Path) -> dict[str, str]:
+    if cache.absolute().resolve() != cache.absolute():
+        raise ValueError("Model cache must not contain symlinks")
+    for name, expected in VITMATTE_FILES.items():
+        path = cache / name
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("Pinned ViTMatte assets missing; explicit setup required")
+        if file_hash(path) != expected:
+            raise ValueError(f"Pinned ViTMatte hash mismatch: {name}")
+    if (cache / "model.safetensors").stat().st_size != 103294572:
+        raise ValueError("Pinned ViTMatte weight size mismatch")
+    return dict(VITMATTE_FILES)
+
+
+class VitMatteSession:
+    """Explicit safe local classes, pinned processor and native pad/unpad only."""
+
+    def __init__(self, cache: Path):
+        self.hashes = verify_vitmatte(cache)
+        import torch
+        from transformers import VitMatteConfig, VitMatteForImageMatting, VitMatteImageProcessor
+
+        started = time.monotonic()
+        config = VitMatteConfig.from_dict(json.loads((cache / "config.json").read_text()))
+        self.model = VitMatteForImageMatting.from_pretrained(
+            cache,
+            config=config,
+            local_files_only=True,
+            use_safetensors=True,
+            attn_implementation="eager",
+            dtype=torch.float32,
+        ).eval()
+        processor_config = json.loads((cache / "preprocessor_config.json").read_text())
+        # Pinned legacy name maps to the same divisor, without invoking deprecated setters.
+        processor_config["size_divisor"] = processor_config.pop("size_divisibility")
+        self.processor = VitMatteImageProcessor.from_dict(processor_config)
+        self.identity = {
+            "model": VITMATTE_REPOSITORY,
+            "revision": VITMATTE_REVISION,
+            "hashes": self.hashes,
+            "packages": {
+                name: version(name)
+                for name in (
+                    "torch",
+                    "torchvision",
+                    "transformers",
+                    "safetensors",
+                    "numpy",
+                    "Pillow",
+                )
+            },
+            "preprocessing": "VitMatteImageProcessor native pad/unpad v1",
+            "dtype": "float32",
+            "attention": "eager",
+        }
+        self.load_seconds = time.monotonic() - started
+
+    def predict(
+        self, pixels: np.ndarray, trimap: np.ndarray, device: str
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        import torch
+
+        if (
+            pixels.dtype != np.uint8
+            or pixels.ndim != 3
+            or pixels.shape[2] != 3
+            or trimap.dtype != np.uint8
+            or trimap.shape != pixels.shape[:2]
+            or not np.isin(trimap, [0, 128, 255]).all()
+            or device not in {"cpu", "mps"}
+        ):
+            raise ValueError(
+                "ViTMatte requires aligned native RGB8/categorical trimap and explicit backend"
+            )
+        if device == "mps":
+            if os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "1":
+                raise RuntimeError(
+                    "Disable PYTORCH_ENABLE_MPS_FALLBACK; backend failures must stay visible"
+                )
+            if not torch.backends.mps.is_available():
+                raise RuntimeError("MPS unavailable")
+        height, width = trimap.shape
+        inputs = self.processor(
+            images=pixels, trimaps=trimap, return_tensors="pt", input_data_format="channels_last"
+        )
+        tensor = inputs["pixel_values"]
+        padded_h, padded_w = (height + 31) // 32 * 32, (width + 31) // 32 * 32
+        if (
+            list(tensor.shape) != [1, 4, padded_h, padded_w]
+            or tensor.dtype != torch.float32
+            or not torch.isfinite(tensor).all()
+        ):
+            raise ValueError("Pinned ViTMatte native preprocessing geometry/dtype failed")
+        self.model.to(device=device, dtype=torch.float32)
+        started = time.monotonic()
+        with torch.inference_mode():
+            output = self.model(pixel_values=tensor.to(device)).alphas
+            if list(output.shape) != [1, 1, padded_h, padded_w] or not torch.isfinite(output).all():
+                raise FloatingPointError("Non-finite or invalid ViTMatte output")
+            alpha = output[0, 0, :height, :width].detach().cpu().numpy().copy()
+        unknown = np.argwhere(trimap == 128)
+        return alpha, {
+            **self.identity,
+            "pixel_values_shape": list(tensor.shape),
+            "output_shape": list(output.shape),
+            "native_shape": [height, width],
+            "padding_ltrb": [0, 0, padded_w - width, padded_h - height],
+            "device": device,
+            "normalization": {
+                "mean": self.processor.image_mean,
+                "std": self.processor.image_std,
+                "rescale_factor": self.processor.rescale_factor,
+            },
+            "corner_tensor": tensor[0, :, 0, 0].tolist(),
+            "unknown_tensor": float(tensor[0, 3, int(unknown[0, 0]), int(unknown[0, 1])])
+            if len(unknown)
+            else None,
+            "load_seconds": self.load_seconds,
+            "stage_seconds": time.monotonic() - started,
+        }

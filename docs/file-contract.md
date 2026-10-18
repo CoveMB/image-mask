@@ -14,7 +14,7 @@ ingest owner. Coordinates begin at the oriented master top-left. Points use
 integer pixel indices; boxes are half-open [x0,y0,x1,y1). Guide dimensions and master identity must match exactly.
 
 `recipe.toml` is typed schema 1 with identity, `guides_file="guides.json"`, editable
-notes and named groups. Preparation keeps matting geometry at 1024/256, permits auto/cpu/mps,
+notes and named groups. Matting keeps geometry at 1024/256, permits auto/cpu/mps,
 color cleanup disabled/strength .35 and shading disabled/opacity 0. Unknown keys,
 malformed types or unavailable processing settings fail visibly. Validation expands
 with supported processing features. Prose is never code.
@@ -37,9 +37,10 @@ cleanup are unavailable. OS lock release on process death needs no lock deletion
 Keep accepted dependencies outside rebuildable cache. Source changes during ingest
 reject publication. Managed symlinks and source/output aliases are refused.
 
-Preparation creates labelled RGB8 proxies and immutable prepared revisions. Native alpha,
-final acceptance, effects and exports are not yet implemented. Never use a
-flattened preview as a master. The complete manual viewer and registration controls are not yet implemented.
+Preparation creates labelled RGB8 proxies and immutable prepared revisions. Native
+matting adds alpha, final acceptance and base exports; effects remain unavailable.
+Never use a flattened preview as a master. The complete manual viewer and
+registration controls are not yet implemented.
 
 Initial assets/state use atomic create-if-absent hard links within the project filesystem; concurrent externally created files cause a visible collision and remain unchanged. Own staged files may remain as diagnostic hard links and are never authoritative. Approval alone uses atomic replacement of existing state. RAW rejected coefficients use null for non-finite values, recorded shape and an explicit validity flag; finite values remain recorded.
 
@@ -77,7 +78,7 @@ conflicts before inference. Referenced edit files must be project-relative and
 free of traversal/symlinks. Original request/draft/external files, parent/lock
 manifests and saved assets are checked again before publication. Complete staged
 outputs are reloaded, hashed and synced, then a revision is published and state
-atomically advances working_revision. Accepted_revision remains null for preparation-only projects.
+atomically advances working_revision. The accepted pointer is preserved by preparation.
 Changed input fails visibly and preserves newer drafts/current pointers. The request
 digest is compared with captured draft bytes, and captured state must match the
 authorized state. Input validation runs after temporary JSON fsync immediately
@@ -96,7 +97,7 @@ Only state owns pointers. A directory name or complete orphan does not make it
 working or accepted. Incomplete `.prepare-*` directories are diagnostic remnants,
 never inference cache or accepted dependencies. No resume/restore/automatic
 cleanup is implemented yet. Later writers must reuse these transaction and
-identity owners and extend state validation when final acceptance arrives.
+identity owners and use current state validation for complete matte acceptance.
 
 
 Optional per-group `morphology` saves explicit native foreground erosion and
@@ -107,3 +108,34 @@ settings and unreviewed status. They are optional revision assets, so existing
 prepared revisions without these assets remain valid. They do not replace typed
 `trimap.png`, parent alpha or
 human review. See [native morphology semantics](guidance.md#optional-native-morphology-proposal).
+
+
+## Native matte and acceptance
+
+See [native matting](matting.md) for supported steps. `approvals/rev-NNN-trimap.json`
+binds explicit human confirmation to exact current prepared revision, master, draft,
+manifest and authoritative trimap hashes. Optional proposals remain unreviewed.
+Matte snapshots that confirmation and the current inputs, saves scalar16 alpha,
+RGB16 foreground, model/package/backend/padding/tile records and same-crop review
+assets. No prepare-only/incomplete/stale candidate can be final-accepted.
+`qa.json` records structural/core/lock counts and pending human photographic review;
+state's explicit accepted pointer records final acceptance separately.
+
+`foreground_rgb16.tif` starts from the master, carrying only explicitly saved
+applicable RGB lock values. Scalar alpha16 has no ICC/gamma. The canonical base
+renderer in export.py uses these saved layers without model calls. Accepted revisions
+remain intact while newer preparation/matte advances the working pointer.
+
+`reviews/rev-NNN/<crop-and-manifest-hash>/` stores additional native-crop review
+exports; immutable revision review assets remain unchanged. `exports/rev-NNN/` is
+accepted delivery, `exports/rev-NNN-DRAFT/` explicitly unaccepted/labelled. Actual
+existing bytes must match for reuse. Native macOS exclusive rename prevents even
+empty concurrent directory collisions from replacing existing files. Filesystems
+without exclusive rename support fail visibly. Cooperative locks do not exclude
+hostile external writers; finish text edits before processing.
+
+`cache/matte/` contains verified rebuildable tile predictions keyed by master,
+input/crop/trimap, model/config/package, backend/dtype/geometry/preprocessing.
+Malformed/unknown entries miss. A backend switch starts the whole fresh stage in
+its own namespace. Accepted layers are outside cache. Retained temporary hard links
+and failed-stage directories are diagnostic, not accepted or resume authority.
