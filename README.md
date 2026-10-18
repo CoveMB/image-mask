@@ -22,8 +22,9 @@ Scoped native repair now saves quantized operands for model-free replay; restore
 selects saved working inputs without changing final acceptance. Interrupted matte/repair now resumes verified tiles or completed stages through
 `status` and `resume`. An offline loopback review window provides typed guide
 authoring, native comparisons and the same processing/recovery controls. Optional
-recorded, bounded source-based assisted review uses the same operations. Appearance
-effects remain future work.
+recorded, bounded source-based assisted review uses the same operations. Optional
+default-off source-guided color cleanup saves RGB16 layers with scoped stale/rebuild
+controls. Shading remains future work.
 Prepared revisions require explicit human trimap review before matting.
 
 A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
@@ -134,8 +135,9 @@ before publishing: ignore rules do not remove existing history or prevent force-
 The public implementation history contains no photographs, private planning or
 reference archives. Local planning and frozen reference material, when supplied
 separately, stay ignored and are not required to install or operate the tool.
-The maintained public docs describe the behavior currently implemented. Future
-appearance features require separate implementation and human photographic validation.
+The maintained public docs describe the behavior currently implemented. Cleanup
+requires per-photo human comparison; shading requires separate implementation and
+validation.
 
 ## Licensing
 

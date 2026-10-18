@@ -227,7 +227,8 @@ def test_review_manifest_has_current_identity_paths_settings_and_stale_labels(tm
     assert manifest["working_revision"] == original["revision"]
     assert manifest["qa"]["structural_checks"] == "passed"
     assert manifest["settings"]["matting"]["device"] == "auto"
-    assert manifest["effects"]["available"] is False
+    assert manifest["effects"]["available"] is True
+    assert manifest["effects"]["color_cleanup"]["enabled"] is False
     assert manifest["stale_labels"] == []
     for name in ("source_rgb16", "foreground_rgb16", "alpha16"):
         assert (project / manifest["assets"][name]).is_file()

@@ -332,7 +332,7 @@ def read_project(project: Path, *, validate_drafts: bool = True) -> dict[str, An
     if state["accepted_revision"] is not None:
         accepted = read_revision(project, state["accepted_revision"], state["master_id"])
         if (
-            accepted.get("kind") not in {"matte", "repair"}
+            accepted.get("kind") not in {"matte", "repair", "effects"}
             or accepted.get("final_acceptable") is not True
             or not state["development_approved"]
         ):
@@ -411,7 +411,7 @@ def _validate_revision_directory(
         "supports/lock_values16.png",
     } <= set(manifest["files"]):
         raise ProjectError("Incomplete prepared revision files")
-    if manifest.get("kind") in {"matte", "repair"} and (
+    if manifest.get("kind") in {"matte", "repair", "effects"} and (
         not {
             "base_alpha16.png",
             "foreground_rgb16.tif",

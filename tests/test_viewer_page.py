@@ -185,3 +185,28 @@ def test_rejected_dispatch_releases_authoring_and_retains_unsaved_edits():
  assert.equal($('message').textContent,'Synthetic dispatch rejection');
  addRegion([20,20]);assert.equal(regions.length,2);
  """)
+
+
+def test_cleanup_controls_use_shared_action_and_block_submission_during_image_load():
+    run_page(r"""
+ await ready();$('cleanupStrength').value='0.35';$('cleanupCandidate').checked=true;
+ $('cleanupScope').value='10,10,50,50';$('cleanupSupport').value='supports/manual16.png';
+ imageLoading=true;await $('cleanupApply').onclick();assert.equal(posts.length,0);
+ imageLoading=false;await $('cleanupApply').onclick();
+ assert.equal(posts.at(-1).action,'effects');
+ assert.deepEqual(posts.at(-1).scope_xyxy,[10,10,50,50]);
+ assert.deepEqual(posts.at(-1).color_cleanup,{enabled:true,strength:.35});
+ assert.equal(posts.at(-1).candidate_comparison,true);
+ actionWasRunning=false;servedState.action.running=false;await refresh();
+ await $('cleanupDisable').onclick();assert.equal(posts.at(-1).color_cleanup.enabled,false);
+ """)
+
+
+def test_same_alpha_cleanup_toggle_requests_explicit_base_pixels():
+    run_page(r"""
+ await ready();const paths=[];const originalFetch=globalThis.fetch;
+ globalThis.fetch=async(path, options)=>{paths.push(path);return originalFetch(path.replace('/base',''),options);};
+ $('panel').value='black';$('cleanupBase').checked=true;
+ await $('cleanupBase').onchange();
+ assert(paths.some(p=>p==='/image/black/rev-001/0,0,100,100/base'));
+ """)

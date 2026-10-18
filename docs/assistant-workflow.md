@@ -29,8 +29,7 @@ An overview/proxy is not a native-coordinate authority.
 
 Describe one concrete source-visible defect: location, evidence, likely cause,
 proposed correction and uncertainty. Classify it as alpha/guidance, color cleanup,
-shading, or a user decision. Only alpha/guidance execution is currently supported.
-Effects remain unavailable and disabled; color/shading classifications require a
+shading, or a user decision. The bounded automatic cycle supports alpha/guidance execution. Color cleanup is now available through an explicit separate effects operation and manual controls; it requires a same-alpha appearance decision. Shading remains unavailable. Color/shading classifications require a
 user decision or future implementation. Blur, missing source detail, ambiguity
 and artistic preference are reasons to stop, never to invent detail. A
 `source_resolved: true` assertion records judgement; it does not prove its truth.
@@ -81,7 +80,7 @@ by the current `review` command. Its identity, crop transforms and image hashes
 are validated; modified or stale evidence is rejected. Unknown keys/operations,
 off-image coordinates, stale draft/parent/master and contradictory/lock-conflicting
 guides fail through the shared validators. Unresolved source evidence and
-unavailable color/shading actions stop the cycle. Automatic preparation cannot
+color appearance decisions and unavailable shading actions stop the automatic alpha cycle. Automatic preparation cannot
 remove or alter inherited locks.
 
 1. Save typed guide changes and run `blackmask run PROJECT --request PREPARE.json`.

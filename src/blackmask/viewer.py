@@ -87,6 +87,9 @@ class ReviewServer(ThreadingHTTPServer):
                         ],
                         "scope_xyxy": manifest.get("scope_xyxy"),
                         "draft_digest": manifest.get("draft_digest"),
+                        "color_cleanup": manifest.get(
+                            "color_cleanup", {"enabled": False, "stale": False}
+                        ),
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
                             for k in ("inferred_tiles", "reused_tiles")
@@ -107,6 +110,7 @@ class ReviewServer(ThreadingHTTPServer):
             "trimap": {"revision"},
             "accept": {"revision"},
             "matte": set(),
+            "effects": {"scope_xyxy", "support_file", "color_cleanup", "candidate_comparison"},
             "repair": {"context_xyxy", "scope_xyxy", "reason", "merge_policy"},
             "restore": {"revision", "replace_drafts"},
             "resume": {"operation_id"},
@@ -156,7 +160,7 @@ class ReviewServer(ThreadingHTTPServer):
             raise ProjectError("Stale viewer identity; reload current project")
         pending = operations.pending_guidance(self.project)
         if (
-            action in {"trimap", "matte", "repair", "accept"}
+            action in {"trimap", "matte", "repair", "accept", "effects"}
             and pending
             and pending["current"]
             and pending["actions"]
@@ -194,6 +198,13 @@ class ReviewServer(ThreadingHTTPServer):
             "base_revision": data["base_revision"],
             "inputs_digest": data["inputs_digest"],
         }
+        if action == "effects":
+            request.update(
+                {
+                    k: data[k]
+                    for k in ("scope_xyxy", "support_file", "color_cleanup", "candidate_comparison")
+                }
+            )
         if action == "repair":
             request.update(
                 {k: data[k] for k in ("context_xyxy", "scope_xyxy", "reason", "merge_policy")}
@@ -206,12 +217,12 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)",
+            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base)?",
             path,
         )
         if not match:
             raise FileNotFoundError("Unknown image identity")
-        panel, identity, rectangle = match.groups()
+        panel, identity, rectangle, base = match.groups()
         source, _ = _validate_assets(self.project, state, validate_drafts=False)
         height, width = source.shape[:2]
         x0, y0, x1, y1 = coordinates(
@@ -222,7 +233,17 @@ class ReviewServer(ThreadingHTTPServer):
                 raise FileNotFoundError("Wrong master identity")
             pixels = np.rint(source[y0:y1, x0:x1].astype(np.float64) / 257).astype(np.uint8)
         else:
-            foreground, alpha, _ = saved_layers(self.project, identity, state["master_id"])
+            current = (
+                read_revision(self.project, state["working_revision"], state["master_id"])
+                if state["working_revision"]
+                else {}
+            )
+            stale = current.get("color_cleanup", {}).get("enabled") and current[
+                "color_cleanup"
+            ].get("stale")
+            foreground, alpha, _ = saved_layers(
+                self.project, identity, state["master_id"], effects_off=bool(base or stale)
+            )
             pixels = review_panels(
                 source[y0:y1, x0:x1], foreground[y0:y1, x0:x1], alpha[y0:y1, x0:x1]
             )[panel]

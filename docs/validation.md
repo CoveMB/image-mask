@@ -291,3 +291,58 @@ A live source-visible photographic defect/repair/human comparison and same-proje
 closed-assistant/disconnected-network manual correction remain pending. These
 assisted-review runs did not include appearance effects. See
 [the assisted procedure](assistant-workflow.md).
+
+## I08 color cleanup — 2026-10-18
+
+The full deterministic suite passed 283 tests with 3 unchanged real-model integrations
+deselected, exit 0. It was followed by an actual-browser recovery correction: explicit
+disable/zero no longer requires nonempty correction support. The affected effects/page
+suite then passed 25 tests; this is affected renewal, not a fresh 284-test full run.
+A final selected-foreground review-manifest regression and its affected renewal are
+recorded with this increment. Ruff lint/format and source mypy passed after the
+recovery fix. Required three-scope independent review and delivered-package inspection
+are tracked with the final candidate; no result is inferred from this earlier paragraph.
+
+Application tests use real profiled RGB16 TIFF, alpha16 and support16 PNG reloads,
+independent inverse-mixture sentinels, nonempty changed/opaque/protected/outside sets,
+off/zero/no-compounding, exact saved partial RGB locks, stale alpha dependencies,
+blocked acceptance/draft export, retained accepted exports, scoped rebuild and explicit
+disable. CLI processes exercise effects and writer contention. Injected interrupted
+state publication retains the complete effect revision for explicit restore. Source-only
+cleanup calls no model; synthetic matte boundary stubs are not real-model evidence.
+
+An actual in-app browser on a 6×4 synthetic source observed labelled default-OFF
+controls, keyboard enable, source/result and same-alpha base selection, visible saved
+revision/status changes, and keyboard disable after reopening the project with the
+recovery fix. Empty support failed visibly instead of expanding scope. The accepted
+base revision stayed separate. These observations do not establish human photographic
+preference, accessibility conformance, closed-assistant operation or physically
+network-disconnected usability. No private photograph or new model was accessed.
+
+
+I08 coherent review repairs then passed a fresh full deterministic suite: **293 passed,
+3 unchanged real-model integrations deselected**, exit 0. Ruff lint/format, source
+mypy and pip dependency checks exited 0. Five review regressions first failed on
+recipe review/accept/restore, same-alpha locks on full matte and scoped repair,
+first/re-enabled outside-support locks and no-op before/after panels; an additional
+prepared-lock compatibility regression also failed before its bounded repair.
+Exact saved RGB/black exports now preserve the independently expected partial-lock
+RGB [23559,33559,43559] and black [5890,8390,10890] at alpha16384. Changed guides,
+matting settings and groups remain rejected until prepared and completed, while
+recipe-only cleanup settings can be accepted/restored with exact consumed bytes.
+Required affected closure uses the same original three review scopes; no additional
+generic reviewer or unchanged real-model/browser run was added.
+
+
+The original verification reviewer then found one connected guard defect: a new RGB
+lock matching the current selected corrected appearance was wrongly rejected outside
+narrow alpha support because it was compared with base master RGB. Two actual repair
+regressions failed first (unchanged and changed alpha), while a different historical
+lock remained correctly rejected. The bounded shared guard correction passed **113
+necessary affected effects/repair/matte/recovery tests**, exit 0, plus Ruff lint/format
+and source mypy exit 0. The earlier full293/3deselected result remains earlier evidence;
+this is affected renewal, not a fresh296-test full run. Saved selected/corrected RGB and
+alpha outside support, independent locked black exports, model-free repair replay,
+source/master bytes and prior accepted exports are preserved. Stale base-to-base panels
+are labelled and match their actual saved base layers; no differing historical RGB lock
+can expand repair scope. No unchanged model or browser check was repeated.

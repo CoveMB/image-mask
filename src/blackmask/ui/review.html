@@ -354,7 +354,20 @@
         ><button id="repair">Run scoped repair</button>
       </fieldset>
       <fieldset>
-        <legend>5 · Recovery and photographic acceptance</legend>
+        <legend>5 · Optional source-guided color cleanup</legend>
+        <p class="small">Default OFF. Approximate decontamination, not recovery of true color or detail. Review with unchanged alpha. Shading is unavailable.</p>
+        <label>Strength (0–1; 0.35 is a starting point) <input id="cleanupStrength" type="number" min="0" max="1" step="0.01" value="0.35" /></label>
+        <label>Declared cleanup write scope x0,y0,x1,y1 <input id="cleanupScope" class="wide" /></label>
+        <label>Project-relative scalar16 support file <input id="cleanupSupport" class="wide" /></label>
+        <p class="small">Uses the saved support from your current guides by default. Author repair-support guides and run the reviewed matte/repair to change it. Nonzero support must fit the declared cleanup scope. A rebuild retains prior corrected RGB outside this support and saved locks inside.</p>
+        <label><input id="cleanupCandidate" type="checkbox" /> Explicitly compare cleanup on an unaccepted complete candidate</label>
+        <button id="cleanupApply">Enable / rebuild within declared support</button>
+        <button id="cleanupDisable">Explicitly disable cleanup</button>
+        <label><input id="cleanupBase" type="checkbox" /> Compare with cleanup OFF (same alpha)</label>
+        <p id="cleanupStatus" class="small" role="status"></p>
+      </fieldset>
+      <fieldset>
+        <legend>6 · Recovery and photographic acceptance</legend>
         <label
           >Interrupted operation
           <select id="operation"></select></label
@@ -604,6 +617,8 @@
       $("trimapReviewed").checked = false;
       $("photoReviewed").checked = false;
       $("viewRevision").value = state.working_revision || "";
+      $("cleanupSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
+      $("cleanupCandidate").checked = false;
       $("candidate").value = "";
       identity = {
         master_id: state.master_id,
@@ -640,6 +655,11 @@
         current = state.revisions.find(
           (r) => r.revision === state.working_revision,
         );
+      $("cleanupStatus").textContent = current?.color_cleanup?.enabled
+        ? current.color_cleanup.stale
+          ? "STALE cleanup: BASE-to-BASE views, cleanup OFF on both sides. Appearance acceptance/export blocked; rebuild every changed-alpha dependency within declared support or explicitly disable. Prior accepted complete result remains saved."
+          : "Cleanup enabled · saved RGB16 · strength " + current.color_cleanup.strength
+        : "Cleanup OFF · master-based RGB with explicit saved-value locks";
       $("status").textContent =
         (a.running
           ? "Running " + a.name
@@ -744,6 +764,7 @@
         $("crop").value = crop.join(",");
         $("scope").value = crop.join(",");
         $("context").value = crop.join(",");
+        $("cleanupScope").value = crop.join(",");
       }
       updateBusyControls();
       await loadImage();
@@ -761,6 +782,8 @@
         "accept",
         "exportAccepted",
         "exportDraft",
+        "cleanupApply",
+        "cleanupDisable",
       ]) {
         $(id).disabled = authoringBusy();
       }
@@ -802,6 +825,7 @@
         $("overlay").value,
         mask,
         workingRevision,
+        $("cleanupBase").checked,
       ].join("|");
       if (key === imageKey) return;
       imageKey = key;
@@ -815,7 +839,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.master_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : ""}`;
         next = await bitmap(path);
         if (imageKey !== key) return;
         if (mask && workingRevision)
@@ -1085,6 +1109,19 @@
         merge_policy: $("policy").value,
       });
     });
+    async function cleanup(enabled) {
+      requireSaved();
+      if (imageLoading || !image || !transform) throw Error("Wait for the matching native view before changing cleanup");
+      return action("effects", {
+        scope_xyxy: bounds("cleanupScope"),
+        support_file: $("cleanupSupport").value,
+        color_cleanup: {enabled, strength: Number($("cleanupStrength").value)},
+        candidate_comparison: $("cleanupCandidate").checked,
+      });
+    }
+    $("cleanupApply").onclick = guarded(() => cleanup(true));
+    $("cleanupDisable").onclick = guarded(() => cleanup(false));
+    $("cleanupBase").onchange = guarded(() => { imageKey = ""; return loadImage(); });
     $("restore").onclick = guarded(() => {
       if (dirty)
         throw Error("Save current authoring first so recovery can preserve it");

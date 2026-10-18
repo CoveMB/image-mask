@@ -15,9 +15,10 @@ integer pixel indices; boxes are half-open [x0,y0,x1,y1). Guide dimensions and m
 
 `recipe.toml` is typed schema 1 with identity, `guides_file="guides.json"`, editable
 notes and named groups. Matting keeps geometry at 1024/256, permits auto/cpu/mps,
-color cleanup disabled/strength .35 and shading disabled/opacity 0. Unknown keys,
-malformed types or unavailable processing settings fail visibly. Validation expands
-with supported processing features. Prose is never code.
+color cleanup default disabled/strength .35 (enabled boolean and finite strength
+0–1 are supported) and shading disabled/opacity 0. Unknown keys, malformed types or
+unavailable processing settings fail visibly. Validation expands with supported
+processing features. Prose is never code.
 `guides.json` contains schema, identity, dimensions and typed regions; see [guidance](guidance.md).
 
 `state.json` alone owns `working_revision`/`accepted_revision` (initially null),
@@ -38,9 +39,10 @@ Keep accepted dependencies outside rebuildable cache. Source changes during inge
 reject publication. Managed symlinks and source/output aliases are refused.
 
 Preparation creates labelled RGB8 proxies and immutable prepared revisions. Native
-matting adds alpha, final acceptance and base exports; effects remain unavailable.
-Never use a flattened preview as a master. The [manual review window](workflow.md)
-provides native registration and guide authoring through these shared contracts.
+matting adds alpha, final acceptance and base exports; optional cleanup uses the
+additive effects contract below. Shading remains unavailable. Never use a flattened
+preview as a master. The [manual review window](workflow.md) provides native
+registration and guide authoring through these shared contracts.
 
 Initial assets/state use atomic create-if-absent hard links within the project filesystem; concurrent externally created files cause a visible collision and remain unchanged. Own staged files may remain as diagnostic hard links and are never authoritative. Approval alone uses atomic replacement of existing state. RAW rejected coefficients use null for non-finite values, recorded shape and an explicit validity flag; finite values remain recorded.
 
@@ -234,4 +236,72 @@ viewing approximations, never replacements for authoritative precision layers.
 
 Schema-1 manual processing requests remain compatible. Prepare/repair optionally accept `assisted_review` as defined by [the assisted workflow](assistant-workflow.md). Immutable `requests/review-<identity>/000-<content-sha256>.json`, `001-<content-sha256>.json`, etc. record the original explicit cycle request, reservations and source comparisons with content-addressed filenames and predecessor hashes. Terminal-byte changes, missing/reordered predecessors, contradictory transitions and lost reservations referenced by retained recovery requests fail closed. A per-cycle `head.sha256` integrity anchor binds the latest event, detecting removal of a valid terminal suffix as well as altered bytes. Events publish before the atomic anchor update; any partial event/anchor publication fails closed and remains retained for inspection. The anchor owns no working/accepted pointers or separate attempt counter. The single project lock serializes writes. This history is advisory, not another working/accepted state authority. A repair reservation is durable before model execution and reused by the same resume request. Two attempts total are shared across all defects; judgement is required between attempts. Stop keeps the best valid revision identity without changing acceptance or restoring drafts. Original prepare/repair requests/results and recovery snapshots retain existing meanings.
 
-Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Effects remain unavailable/disabled.
+Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; shading remains unavailable.
+
+
+## Optional source-guided color cleanup
+
+Schema-1 `effects` requests extend the finite `run` operation. Common identity fields
+are unchanged. Require `scope_xyxy`, project-relative `support_file` (aligned scalar16),
+and boolean `candidate_comparison`. Optional `color_cleanup` overrides the current recipe
+section with enabled boolean and finite strength in [0,1]. A complete accepted base
+or explicit candidate comparison is required to enable nonzero cleanup. Old requests
+and projects remain valid; no migration or model setup is needed.
+
+Complete effects revisions retain unchanged `base_alpha16.png` and base
+`foreground_rgb16.tif`, plus separate profiled `corrected_rgb16.tif`, canonical
+`effects/support16.png`, dependency `effects/alpha16.png`, immutable actual
+`effects/settings.json` and the operation's `effects/write_support16.png`. The manifest
+hashes every file and records actual strength, enabled/stale state, master identity,
+alpha/support hashes, native scope, algorithm and parent manifest identity. The parent
+chain retains prior scoped settings; latest strength describes the latest patch, not
+an implicit global rewrite. Cumulative support/dependency maps describe retained layers;
+each immutable effects revision retains its exact write support and settings.
+
+Nearest confirmed-empty (trimap=0 AND alpha=0) source RGB supplies background;
+amount=strength*(1-alpha16/65535)*(support16/65535). Correction is
+round(clip((source-amount*background)/(1-amount),0,65535)) in float64 ties-to-even.
+Only permitted partial-alpha samples change; opaque, zero-alpha, protected and
+outside-support samples remain exact. No true-color or missing-detail recovery claim.
+No smoothing width from a historical photograph is imposed globally.
+
+Prepare carries actual cleanup assets; matte/repair compare saved alpha dependencies
+and mark enabled cleanup stale. Saved base-to-base repair comparisons disable cleanup
+on both sides and label that state. Live viewer comparisons also disable both sides
+while the current cleanup is stale. Same-alpha `/image/.../base` explicitly selects
+base RGB. Review manifests expose cleanup status and `cleanup_stale` labels. Accept
+and export block stale enabled appearance. A prior complete accepted result can still
+be exported by its saved identity. Explicit disable selects base master RGB with
+applicable saved-value locks; zero strength is equivalent to off.
+
+A rebuild copies prior corrected RGB outside its declared nonzero support, respects
+saved RGB locks inside (including partial-alpha values), and updates only covered
+alpha dependencies. Remaining uncovered changed alpha keeps the effect stale. Broader
+support is never inferred. All prior revisions/assets/accepted exports remain preserved.
+Publication uses the existing writer lock, immutable directory publication and atomic
+state pointer with rechecks. An interrupted pointer leaves a complete orphan revision
+that can be inspected and selected explicitly with restore; no accepted pointer changes.
+
+
+Effects revisions bind their `draft_digest`, saved recipe and saved guides to the
+actual consumed snapshots. Recipe-only cleanup/notes edits can therefore be reviewed,
+accepted and restored exactly. Changed guidance or mask-affecting recipe sections
+require prepare and a complete matte first; effects cannot accept unprepared mask
+changes. Valid whitespace-only guide changes retain their exact consumed bytes.
+
+On full matte or repair, applicable saved RGB locks also overlay the inherited
+corrected layer. The alpha operation validates its own write support before applying
+a different RGB lock; effect-layer selection cannot override that lock afterward.
+First enable/re-enable starts unaffected RGB from saved base foreground, including
+outside-support locks; correction arithmetic still derives only from the master.
+Prepared lock snapshots retain their inherited complete appearance before new guide
+requests apply. Valid unchanged-alpha repair comparisons select the same cleanup state
+on both sides; stale comparisons continue to select base RGB on both sides.
+
+
+For a repair, an outside-support RGB lock is compared against the verified saved
+selected parent appearance, including current valid cleanup. A lock equal to that
+appearance can bind without changing it; a genuinely different historical RGB value
+outside support is rejected. The explicit saved lock binds base and corrected layers;
+stale comparisons remain labelled base-to-base and represent their actual saved base
+layers. Original source/master and prior accepted exports remain unchanged.

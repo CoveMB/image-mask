@@ -190,7 +190,7 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
         _reject_pending_guidance(project)
         manifest = read_revision(project, revision, state["master_id"])
         if (
-            manifest.get("kind") not in {"matte", "repair"}
+            manifest.get("kind") not in {"matte", "repair", "effects"}
             or manifest.get("final_acceptable") is not True
         ):
             raise ProjectError(
@@ -199,6 +199,10 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
         from .export import saved_layers
 
         saved_layers(project, revision, state["master_id"])
+        if manifest.get("color_cleanup", {}).get("stale") and manifest["color_cleanup"]["enabled"]:
+            raise ProjectError(
+                "Stale enabled cleanup: scoped rebuild or explicit disable required before acceptance"
+            )
         captured = draft_digest(project)
         if (
             revision != state["working_revision"]
@@ -238,6 +242,10 @@ def apply_operation(
         try:
             if isinstance(operation, dict) and operation.get("kind") in {"matte", "repair"}:
                 return _run_matte(project, operation, model_cache, request_file)
+            if isinstance(operation, dict) and operation.get("kind") == "effects":
+                from .effects import run_effects
+
+                return run_effects(project, operation, request_file)
             return _prepare(project, operation, model_cache, request_file)
         except (ValueError, KeyError, TypeError) as error:
             if isinstance(error, ProjectError):
@@ -375,6 +383,9 @@ def _prepare(
                 (stage / name).write_bytes(
                     _asset(project, f"revisions/{parent}/{name}").read_bytes()
                 )
+    from .effects import inherit_cleanup
+
+    cleanup = inherit_cleanup(project, parent, stage, state["master_id"]) if parent else None
     # RGB8 is a separately labelled proxy. It never becomes a precision output owner.
     proxy = np.rint(pixels.astype(np.float64) / 257).astype(np.uint8)
     cache = model_cache or (
@@ -487,6 +498,7 @@ def _prepare(
         "source_precision_bits": metadata["source_precision_bits"],
         "proxy_precision_bits": 8,
         "trimap_review": "human review required; selection membership does not prove opacity",
+        **({"color_cleanup": cleanup} if cleanup is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
     for path in stage.rglob("*"):
@@ -995,6 +1007,15 @@ def _matte(
         foreground = tifffile.imread(_asset(project, f"revisions/{parent}/foreground_rgb16.tif"))
         if foreground.shape != pixels.shape or foreground.dtype != np.uint16:
             raise ProjectError("Invalid repair parent foreground RGB16")
+    applicable_parent_foreground = foreground
+    if repairing and manifest.get("color_cleanup", {}).get("enabled"):
+        from .effects import saved_effect_lock_layers
+
+        # The write boundary preserves the saved selected appearance, which may
+        # differ from the base master RGB before this explicit lock is bound.
+        applicable_parent_foreground, _, _ = saved_effect_lock_layers(
+            project, parent, state["master_id"]
+        )
     rgb_protection = np.zeros((height, width), dtype=bool)
     for region in guides["regions"]:
         if region["role"] != "lock":
@@ -1010,6 +1031,10 @@ def _matte(
         )
         if name:
             values = tifffile.imread(_asset(project, f"revisions/{rev}/{name}"))
+            if locked_manifest.get("color_cleanup", {}).get("enabled"):
+                from .effects import saved_effect_lock_layers
+
+                values, _, _ = saved_effect_lock_layers(project, rev, state["master_id"])
             if values.shape != pixels.shape or values.dtype != np.uint16:
                 raise ProjectError("Invalid saved foreground lock RGB16")
             own = dict(guides, regions=[region])
@@ -1018,7 +1043,9 @@ def _matte(
             ).protection
             if np.any(mask & rgb_protection & np.any(foreground != values, axis=2)):
                 raise ProjectError("Conflicting saved foreground RGB lock values")
-            if repairing and np.any(mask & (support == 0) & np.any(foreground != values, axis=2)):
+            if repairing and np.any(
+                mask & (support == 0) & np.any(applicable_parent_foreground != values, axis=2)
+            ):
                 raise ProjectError("Saved RGB lock differs from parent outside repair support")
             foreground[mask] = values[mask]
             rgb_protection |= mask
@@ -1154,10 +1181,18 @@ def _matte(
             raise ProjectError("Alpha16 round trip failed")
     if not np.array_equal(tifffile.imread(stage / "foreground_rgb16.tif"), foreground):
         raise ProjectError("Foreground RGB16 round trip failed")
+    from .effects import inherit_cleanup
+
+    cleanup = inherit_cleanup(
+        project, parent, stage, state["master_id"], alpha, foreground, rgb_protection
+    )
+    review_foreground = foreground
+    if cleanup and cleanup["enabled"] and not cleanup["stale"]:
+        review_foreground = tifffile.imread(stage / "corrected_rgb16.tif")
     write_review(
         stage / "review",
         pixels,
-        foreground,
+        review_foreground,
         alpha,
         master_id=state["master_id"],
         revision=revision,
@@ -1166,15 +1201,39 @@ def _matte(
     if repairing:
         if parent_alpha is None:
             raise ProjectError("Missing repair parent review alpha")
+        before_foreground = tifffile.imread(
+            _asset(project, f"revisions/{parent}/foreground_rgb16.tif")
+        )
+        if cleanup and cleanup["enabled"] and not cleanup["stale"]:
+            from .export import read_rgb16
+
+            # Prepared guides contain the requested new locks; the before panel
+            # depicts the actual inherited appearance before those locks apply.
+            before_foreground = read_rgb16(
+                _asset(project, f"revisions/{parent}/corrected_rgb16.tif")
+            )
         write_review(
             stage / "review-before",
             pixels,
-            tifffile.imread(_asset(project, f"revisions/{parent}/foreground_rgb16.tif")),
+            before_foreground,
             parent_alpha,
             master_id=state["master_id"],
             revision=parent,
             crops=[context],
         )
+    if cleanup:
+        for review_name in ("review", "review-before") if repairing else ("review",):
+            path = stage / review_name / "manifest.json"
+            record = json.loads(path.read_bytes())
+            record["color_cleanup"] = cleanup
+            record["label"] += (
+                "; BASE-to-BASE comparison: cleanup OFF on both sides; stale enabled cleanup needs scoped rebuild or explicit disable"
+                if cleanup["enabled"] and cleanup["stale"]
+                else f"; cleanup ON, latest scoped strength {cleanup['strength']}"
+                if cleanup["enabled"]
+                else "; cleanup OFF"
+            )
+            path.write_bytes(_json_bytes(record))
     (stage / "qa.json").write_bytes(
         _json_bytes(
             {
@@ -1195,6 +1254,7 @@ def _matte(
         "status": "review_needed",
         "final_acceptable": True,
         "model": model_record,
+        **({"color_cleanup": cleanup} if cleanup is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     files = {
@@ -1306,7 +1366,7 @@ def restore_revision(
                 "Saved pending authoring needs explicit draft replacement for restore"
             )
         target = read_revision(project, revision, state["master_id"])
-        if target.get("kind") not in {"prepare", "matte", "repair"}:
+        if target.get("kind") not in {"prepare", "matte", "repair", "effects"}:
             raise ProjectError("Unsupported saved revision for restore")
         current = state["working_revision"]
         if current is not None:

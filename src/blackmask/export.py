@@ -50,16 +50,9 @@ def view_rgba(foreground: np.ndarray, alpha16: np.ndarray) -> np.ndarray:
     )
 
 
-def saved_layers(
-    project: Path, revision: str, master_id: str
-) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    manifest = read_revision(project, revision, master_id)
-    if (
-        manifest.get("kind") not in {"matte", "repair"}
-        or manifest.get("final_acceptable") is not True
-    ):
-        raise ProjectError("Export/review requires a complete matte, not prepared-only state")
-    with tifffile.TiffFile(_asset(project, f"revisions/{revision}/foreground_rgb16.tif")) as image:
+def read_rgb16(path: Path) -> np.ndarray:
+    """One saved foreground/corrected RGB16 precision and profile contract."""
+    with tifffile.TiffFile(path) as image:
         page = image.pages[0]
         if not isinstance(page, tifffile.TiffPage):
             raise ProjectError("Invalid foreground RGB16 TIFF page")
@@ -71,7 +64,19 @@ def saved_layers(
             or page.tags[34675].value != srgb_profile()
         ):
             raise ProjectError("Invalid foreground RGB16 profile/compression")
-        foreground = page.asarray()
+        return page.asarray()
+
+
+def saved_layers(
+    project: Path, revision: str, master_id: str, *, effects_off: bool = False
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    manifest = read_revision(project, revision, master_id)
+    if (
+        manifest.get("kind") not in {"matte", "repair", "effects"}
+        or manifest.get("final_acceptable") is not True
+    ):
+        raise ProjectError("Export/review requires a complete matte, not prepared-only state")
+    foreground = read_rgb16(_asset(project, f"revisions/{revision}/foreground_rgb16.tif"))
     with Image.open(_asset(project, f"revisions/{revision}/base_alpha16.png")) as image:
         if image.format != "PNG" or image.mode not in {"I;16", "I;16B", "I;16L"}:
             raise ProjectError("Invalid saved scalar alpha16")
@@ -100,6 +105,11 @@ def saved_layers(
         from .repair import replay_repair
 
         replay_repair(project, revision)
+    from .effects import selected_foreground
+
+    foreground = selected_foreground(
+        project, revision, foreground, alpha, manifest, effects_off=effects_off
+    )
     return foreground, alpha, manifest
 
 
@@ -147,6 +157,10 @@ def export_project(
         if revision != state["accepted_revision"] and not draft:
             raise ProjectError("Unaccepted revision requires explicit --draft")
         foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
+        if manifest.get("color_cleanup", {}).get("stale") and manifest["color_cleanup"]["enabled"]:
+            raise ProjectError(
+                "Stale enabled cleanup: scoped rebuild or explicit disable required before export"
+            )
         before = _asset(project, "state.json").read_bytes()
         manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
         check_space(project, foreground.nbytes * 12 + 1024**2)
@@ -180,7 +194,8 @@ def export_project(
             else "Human-accepted saved revision",
             "revision_manifest_sha256": digest(manifest_bytes),
             "compositing": manifest["compositing"],
-            "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; no effects",
+            "color_cleanup": manifest.get("color_cleanup", {"enabled": False}),
+            "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; no shading",
             "files": {p.name: digest(p.read_bytes()) for p in stage.iterdir() if p.is_file()},
         }
         (stage / "manifest.json").write_bytes(_json_bytes(record))

@@ -112,7 +112,33 @@ photograph**. Preparation and computational success never imply this acceptance.
 candidate exists. **Export labelled current draft** is explicitly a draft. Both use
 the shared renderer and retain editable source/alpha assets; viewing RGBA PNG has
 8-bit alpha. Export directories and revision/status are displayed on success.
-Appearance effects are not implemented or shown in this release.
+Optional color cleanup is now available in the same review window. It starts OFF.
+Use the cleanup strength, declared native write scope and project-relative grayscale16
+support file. The default support is the current saved guide support. To change it,
+author support guides, prepare and approve the trimap, then run a complete matte/repair.
+Enable on an accepted base, or explicitly check candidate comparison. Compare with
+cleanup OFF using the same alpha before human appearance acceptance. Strength .35 is
+a starting point, never a recommendation for every photo. Shading is unavailable.
+
+Cleanup estimates nearby background only from confirmed empty source pixels. It
+approximates decontamination; it cannot recover true missing colors/detail. Repeated
+rendering selects saved corrected RGB16 and never compounds correction. Explicit
+Disable recovers master-based RGB with applicable saved-value locks.
+
+Alpha changes make enabled cleanup stale. The viewer then shows BASE-to-BASE
+comparisons with cleanup OFF on both sides; appearance acceptance and draft export
+are blocked. Earlier accepted complete results and exports remain available separately.
+Rebuild using separately declared support covering the changed alpha, preserving prior
+corrected RGB outside it and exact saved RGB locks inside. Any changed alpha left
+outside the rebuild keeps cleanup stale. Broader work needs explicit broader scope.
+
+CLI uses `blackmask run PROJECT --request FILE` with schema_version=1, kind="effects",
+master_id, base_revision and inputs_digest copied from current review/state, explicit
+scope_xyxy, project-relative support_file and candidate_comparison boolean. Optional
+color_cleanup={"enabled":true,"strength":0.35} records an explicit override; omitting
+it consumes the current recipe section. Editing the recipe alone does not change saved
+appearance. The viewer records actual settings in the effects request without rewriting
+editable recipe defaults. Both routes save the same revision/effect contracts.
 
 ## Restore, resume and continue without an assistant
 

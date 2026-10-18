@@ -12,6 +12,8 @@ class Recipe:
     notes: str = ""
     groups: list[dict[str, Any]] = field(default_factory=list)
     device: str = "auto"
+    cleanup_enabled: bool = False
+    cleanup_strength: float = 0.35
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -21,7 +23,7 @@ class Recipe:
             "notes": self.notes,
             "groups": self.groups,
             "matting": {"tile_size_px": 1024, "overlap_px": 256, "device": self.device},
-            "color_cleanup": {"enabled": False, "strength": 0.35},
+            "color_cleanup": {"enabled": self.cleanup_enabled, "strength": self.cleanup_strength},
             "shading": {"enabled": False, "opacity": 0.0},
         }
 
@@ -39,8 +41,11 @@ class Recipe:
             or not isinstance(value["notes"], str)
         ):
             raise ValueError("Invalid recipe keys, schema or master identity")
-        # Only supported processing settings are accepted.
-        for section in ("matting", "color_cleanup", "shading"):
+        from .effects import validate_cleanup
+
+        validate_cleanup(value["color_cleanup"])
+        # Shading remains unavailable until its actual application path exists.
+        for section in ("matting", "shading"):
             current = value[section]
             reference = expected[section]
             if not isinstance(current, dict) or set(current) != set(reference):
@@ -92,4 +97,11 @@ class Recipe:
                         "Invalid morphology settings: explicit native margins and kept selected candidate required"
                     )
             seen.add(stable_id)
-        return cls(master_id, value["notes"], groups, value["matting"]["device"])
+        return cls(
+            master_id,
+            value["notes"],
+            groups,
+            value["matting"]["device"],
+            value["color_cleanup"]["enabled"],
+            float(value["color_cleanup"]["strength"]),
+        )

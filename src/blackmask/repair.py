@@ -153,7 +153,9 @@ def prepared_parent_layers(project: Path, revision: str, master_id: str) -> dict
             ):
                 raise ProjectError("Prepared repair must preserve parental alpha and foreground")
         manifest = previous
-    if manifest.get("kind") not in {"matte", "repair"} or not manifest.get("final_acceptable"):
+    if manifest.get("kind") not in {"matte", "repair", "effects"} or not manifest.get(
+        "final_acceptable"
+    ):
         raise ProjectError("Repair needs a complete saved parental matte")
     return manifest
 

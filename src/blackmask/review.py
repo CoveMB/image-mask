@@ -185,6 +185,14 @@ def review_project(
         pending = pending_guidance(project)
         if pending and pending["current"] and pending["actions"]:
             stale.append("pending_guidance")
+        if (
+            revision_manifest.get("color_cleanup", {}).get("stale")
+            and revision_manifest["color_cleanup"]["enabled"]
+        ):
+            stale.append("cleanup_stale")
+            record["label"] += (
+                "; BASE comparison: cleanup OFF; stale enabled cleanup needs scoped rebuild or explicit disable"
+            )
         prefix = f"revisions/{revision}"
         record.update(
             inputs_digest=current_digest,
@@ -194,7 +202,11 @@ def review_project(
             stale_labels=stale,
             assets={
                 "source_rgb16": f"masters/{state['master_id']}.tif",
-                "foreground_rgb16": f"{prefix}/foreground_rgb16.tif",
+                "foreground_rgb16": f"{prefix}/corrected_rgb16.tif"
+                if revision_manifest.get("color_cleanup", {}).get("enabled")
+                and not revision_manifest["color_cleanup"]["stale"]
+                else f"{prefix}/foreground_rgb16.tif",
+                "base_foreground_rgb16": f"{prefix}/foreground_rgb16.tif",
                 "alpha16": f"{prefix}/base_alpha16.png",
                 "before_manifest": f"{prefix}/review-before/manifest.json"
                 if revision_manifest["kind"] == "repair"
@@ -204,8 +216,10 @@ def review_project(
             model=revision_manifest.get("model"),
             qa=_read_json(project, f"{prefix}/qa.json"),
             effects={
-                "available": False,
-                "color_cleanup": "not implemented; disabled",
+                "available": True,
+                "color_cleanup": revision_manifest.get(
+                    "color_cleanup", {"enabled": False, "stale": False}
+                ),
                 "shading": "not implemented; disabled",
             },
             status="review_needed",

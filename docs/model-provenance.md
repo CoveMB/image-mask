@@ -142,3 +142,21 @@ Sources: [Transformers ViTMatte API](https://huggingface.co/docs/transformers/v4
 Web rendering of the versioned docs was unavailable; official raw config/model card,
 PyPI JSON and installed matching version source were inspected directly. No model
 weights, third-party research framework or photos ship in the distribution.
+
+
+## I08 source-guided cleanup — checked 2026-10-18
+
+No dependency changes. Installed NumPy 2.3.5, SciPy 1.17.1, Pillow 12.3.0 and
+tifffile 2026.10.15 retain the hash-pinned environment and existing licence notices.
+Official version-specific PyPI metadata reports Python requirements >=3.11, >=3.11,
+>=3.10 and >=3.12 respectively, and zero published advisory entries for these four
+versions at this bounded check. This does not refresh or clear unrelated dependencies.
+Nearest-known-empty indexing uses SciPy distance_transform_edt with return_indices;
+float64 inverse-mixture arithmetic uses NumPy clip/rint and existing RGB16/PNG16 IO.
+Official [SciPy API](https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.distance_transform_edt.html),
+[NumPy rint](https://numpy.org/doc/stable/reference/generated/numpy.rint.html) and
+[clip](https://numpy.org/doc/stable/reference/generated/numpy.clip.html) establish API
+semantics; installed-runtime synthetic tests establish exercised compatibility. SciPy
+and NumPy wheel notices include bundled native-library licences; nothing is vendored
+or redistributed beyond the application's declared dependency metadata. No model,
+network service, implicit download or private-source transfer is used for cleanup.
