@@ -273,13 +273,14 @@ accepted export hashes stayed exact. No model inference was repeated for these f
 
 ## Bounded assisted review evidence
 
-Synthetic public-operation contract checks cover finite proposals, native review
-identity/crop integrity, a two-attempt shared cycle budget, mandatory source
-comparison, early stops, unchanged-alpha no-progress, partial-lock/outside-support
+In the 2026-10-18 assisted-review run, synthetic public-operation contract checks
+covered finite proposals, native review identity/crop integrity, a two-attempt shared
+cycle budget, mandatory source comparison, early stops, unchanged-alpha no-progress, partial-lock/outside-support
 preservation, immutable request/result/history reopen, interrupted reservation/resume
 and real-process CLI writer contention. Model predictions in these assisted-review
-tests are explicitly stubbed; this is not live assistant compliance or photographic
-quality evidence. Existing manual request and recovery contracts remain covered.
+tests were explicitly stubbed; this is not live assistant compliance or photographic
+quality evidence. The full deterministic run also covered existing manual requests
+and recovery contracts.
 
 The full deterministic run for this assisted-review feature passed 263 tests, with
 three unchanged model integration tests deselected. After the final narrow integrity
