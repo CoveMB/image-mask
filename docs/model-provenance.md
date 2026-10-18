@@ -27,7 +27,7 @@ Loaded LibRaw: (0, 22, 1); rawpy feature flags: `{'DNGLOSSYCODEC': True, 'DNGDEF
 
 RAW policy: full-size AHD, camera WB only with finite positive RGB coefficients; otherwise explicitly request daylight preview or a trusted developed TIFF. Both routes still require human inspection/approval of WB, clipping and orientation. sRGB output, 16-bit, gamma=(2.4,12.92), bright=1, auto_bright_thr=.01, automatic brightness enabled, median passes=0, FBDD off, no added sharpening, no extra DefaultCropSize crop. LibRaw alone applies RAW orientation. Captured RAW precision is unknown; white level is recorded separately. Boundary stubs verify parameter forwarding, not real RAW decoding/rendering.
 
-No model weights/configuration were downloaded, installed or evaluated for the trusted-master checks. Selection/model evidence follows below; ViTMatte runtime remains unverified. Future model revisions/configuration/licences require their own verified provenance and runtime checks. General regular-use and user-selected RAW evidence remain pending.
+No model weights/configuration were downloaded, installed or evaluated for the trusted-master checks. Selection/model evidence follows below; those trusted-master checks did not assess ViTMatte runtime. Future model revisions/configuration/licences require their own verified provenance and runtime checks. General regular-use and user-selected RAW evidence remain pending.
 
 Official sources: [rawpy 0.27.1 metadata](https://pypi.org/project/rawpy/0.27.1/), [RAW parameters](https://letmaik.github.io/rawpy/api/rawpy.Params.html), [LibRaw licences](https://www.libraw.org/about), [Pillow colour management](https://pillow.readthedocs.io/en/stable/reference/ImageCms.html), [Pillow security/release notes](https://pillow.readthedocs.io/en/stable/releasenotes/index.html), [tifffile](https://github.com/cgohlke/tifffile), [rawpy security](https://github.com/letmaik/rawpy/security), [Python flock](https://docs.python.org/3.12/library/fcntl.html). Each locked package's exact JSON metadata is at `https://pypi.org/pypi/NAME/VERSION/json`; advisory state can change.
 
@@ -108,14 +108,14 @@ or native matte correctness was established by the selection checks. Native
 matting requires its separately pinned revision/hash and its own CPU/MPS/geometry checks.
 
 
-## I03 ViTMatte — checked 2026-10-18
+## Native ViTMatte evidence — checked 2026-10-18
 
 Pinned [official checkpoint](https://huggingface.co/hustvl/vitmatte-small-composition-1k/tree/6a58ad7646403c1df626fbd746900aec7361ea1d)
 has Apache-2.0 label. Weight103294572bytes SHA256
 `bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb`;
 config837bytes SHA256 `ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f`;
 processor284bytes SHA256 `0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0`.
-The originating controller completed directly authorized verified download; runtime
+The pinned assets were explicitly downloaded and verified; runtime
 revalidates all bytes per session. Explicit VitMatteConfig/VitMatteForImageMatting/
 VitMatteImageProcessor only, local safetensors, eager attention, float32.
 No Auto classes, remote custom code, checkpoint conversion, Trainer/generation or

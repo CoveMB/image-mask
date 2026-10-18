@@ -124,11 +124,11 @@ The existing real CPU synthetic project also exercised the changed proposal rout
 model/device/package pins and prior independent MPS evidence remain unchanged.
 
 
-## I03 evidence categories
+## Native matting and base-export evidence
 
-Native alpha/precision export uses saved-file tests, independent arithmetic
-sentinels, native tile origins/positive weights and nonempty known/partial lock
-regions. Recorded-guide synthetic J1 exercises distinct development/trimap/final
+Native matting and precision export checks exercised saved-file tests, independent
+arithmetic sentinels, native tile origins/positive weights and nonempty known/partial
+lock regions. A recorded-guide synthetic workflow exercised distinct development/trimap/final
 controls through CLI and engine; programmatic fixture confirmations are not human
 photographic acceptance. Real local CPU and diagnostic MPS ViTMatte inference
 verify actual pad/unpad/normalization/device/attention. Native1024 evidence and
@@ -140,4 +140,4 @@ resumability, a viewer, local repair or appearance effects.
 Pending human evidence: selected private RAW orientation/WB/clipping; source-backed
 trimap cores/corridors; spider/dragonfly wing/web/detail and native seams on black/
 gray/white; explicit final photographic acceptance and regular-use pilot. No
-private pixels were uploaded or inspected by an assistant for this increment.
+private pixels were uploaded or inspected by an assistant during these checks.

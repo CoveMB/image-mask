@@ -15,8 +15,8 @@ internet access.
 The tool creates/reopens trusted RGB16 projects with explicit human development approval.
 Preparation saves named SAM candidates, selected membership groups and categorical
 trimap/support/protection assets through typed native-coordinate guides, plus
-opt-in native-margin morphology proposals for separate source review. There is
-now an I03 native ViTMatte path, separate trimap/final acceptance controls, native
+opt-in native-margin morphology proposals for separate source review. Native
+ViTMatte processing provides separate trimap/final acceptance controls, native
 same-crop review assets and accepted RGB16 black/alpha16 plus labelled PNG8 exports.
 The viewer, local repair, resumability and appearance effects remain future work.
 Prepared revisions require explicit human trimap review before matting.

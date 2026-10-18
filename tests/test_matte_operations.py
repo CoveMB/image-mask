@@ -1,4 +1,4 @@
-"""Recorded-guide synthetic J1; fixture approval controls are not human photo evidence."""
+"""Recorded-guide synthetic workflow; fixture approval controls are not human photo evidence."""
 
 import importlib
 import json
@@ -52,7 +52,7 @@ def run_matte(project):
         )
 
 
-def test_recorded_synthetic_j1_saved_layers_acceptance_export(tmp_path):
+def test_recorded_guides_matte_acceptance_and_saved_exports(tmp_path):
     source, project, prepared_result = prepared(tmp_path)
     capture = source.read_bytes()
     approve(project, prepared_result)
