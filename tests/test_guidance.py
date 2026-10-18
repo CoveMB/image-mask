@@ -92,3 +92,114 @@ def test_change_needed_cores_cannot_expand_feathered_support():
     saved = np.full((5, 7), 12345, dtype=np.uint16)
     with pytest.raises(ValueError, match="support"):
         raster([region("foreground"), region("support", feather_px=2)], parent_alpha=saved)
+
+
+def proposal(mask, policy="opaque_core", erosion=1, dilation=1, regions=None, **kwargs):
+    guides = document(regions or [])
+    group = {
+        "id": "object",
+        "keep": True,
+        "material_policy": policy,
+        "selected_candidate": 1,
+        "morphology": {"foreground_erosion_px": erosion, "unknown_dilation_px": dilation},
+    }
+    candidates = [{"group_id": "object", "selected": True, "mask": mask}]
+    return guidance.build_trimap_proposal(guides, [group], candidates, **kwargs)
+
+
+def test_morphology_native_core_and_boundary_independent_geometry():
+    mask = np.zeros((5, 7), dtype=bool)
+    mask[1:4, 1:6] = True
+    result, boundary = proposal(mask)
+    expected = np.full((5, 7), 128, dtype=np.uint8)
+    expected[2, 2:5] = 255
+    np.testing.assert_array_equal(result.trimap, expected)
+    expected_boundary = np.array(
+        [
+            [0, 1, 1, 1, 1, 1, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 0, 0, 0, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 1, 1, 0],
+        ],
+        dtype=bool,
+    )
+    np.testing.assert_array_equal(boundary, expected_boundary)
+    changed, _ = proposal(mask, erosion=0, dilation=0)
+    assert np.count_nonzero(changed.trimap == 255) == 15
+    assert not np.any(proposal(np.zeros_like(mask))[0].trimap == 255)
+
+
+def test_morphology_image_exterior_and_holes_never_filled():
+    mask = np.ones((5, 7), dtype=bool)
+    mask[2, 3] = False
+    result, _ = proposal(mask)
+    assert np.all(result.trimap[0] == 128) and np.all(result.trimap[:, 0] == 128)
+    assert result.trimap[2, 3] == 128 and result.trimap[2, 2] == 128
+    assert result.trimap[1, 1] == 255
+
+
+def test_fragile_proposal_stays_unknown_except_explicit_solid_core():
+    mask = np.ones((5, 7), dtype=bool)
+    result, _ = proposal(
+        mask, policy="unknown_interior", regions=[region("foreground", xyxy=[2, 2, 3, 3])]
+    )
+    assert np.count_nonzero(result.trimap == 255) == 1 and result.trimap[2, 2] == 255
+    assert np.count_nonzero(result.trimap == 0) == 0
+    corridor, _ = proposal(mask, regions=[region("unknown", xyxy=[2, 0, 3, 5])])
+    assert np.all(corridor.trimap[:, 2] == 128)
+
+
+def test_proposal_conflicts_partial_locks_and_support_do_not_bypass_guards():
+    mask = np.ones((5, 7), dtype=bool)
+    with pytest.raises(ValueError, match="foreground.*background"):
+        proposal(mask, regions=[region("background", xyxy=[2, 2, 3, 3])])
+    saved = np.full((5, 7), 12345, dtype=np.uint16)
+    with pytest.raises(ValueError, match="lock"):
+        proposal(mask, regions=[region("lock", revision="rev-001")], saved_alpha={"rev-001": saved})
+    with pytest.raises(ValueError, match="support"):
+        proposal(
+            mask,
+            regions=[region("support", feather_px=2)],
+            parent_alpha=saved,
+            scope_xyxy=[0, 0, 3, 5],
+        )
+    # A verified BG point outside the proposed core is retained; no complement becomes BG.
+    result, _ = proposal(
+        mask, regions=[{"id": "bg", "role": "background", "shape": "point", "xy": [0, 0]}]
+    )
+    assert result.trimap[0, 0] == 0 and np.count_nonzero(result.trimap == 0) == 1
+
+
+def test_unclassified_fragile_selection_overrides_other_group_proposed_core():
+    guides = document([])
+    body = np.ones((5, 7), dtype=bool)
+    wing = np.zeros_like(body)
+    wing[:, 3] = True
+    groups = [
+        {
+            "id": "body",
+            "keep": True,
+            "material_policy": "opaque_core",
+            "selected_candidate": 0,
+            "morphology": {"foreground_erosion_px": 1, "unknown_dilation_px": 1},
+        },
+        {
+            "id": "wing",
+            "keep": True,
+            "material_policy": "unknown_interior",
+            "selected_candidate": 0,
+        },
+    ]
+    candidates = [
+        {"group_id": "body", "selected": True, "mask": body},
+        {"group_id": "wing", "selected": True, "mask": wing},
+    ]
+    result, boundary = guidance.build_trimap_proposal(guides, groups, candidates)
+    assert np.all(result.trimap[:, 3] == 128) and result.trimap[2, 2] == 255
+    assert np.all(boundary[:, 3])
+
+
+def test_native_morphology_margins_bounded_by_master():
+    with pytest.raises(ValueError, match="margins"):
+        proposal(np.ones((5, 7), dtype=bool), erosion=8)

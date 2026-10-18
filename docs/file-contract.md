@@ -97,3 +97,12 @@ working or accepted. Incomplete `.prepare-*` directories are diagnostic remnants
 never inference cache or accepted dependencies. No resume/restore/automatic
 cleanup is implemented yet. Later writers must reuse these transaction and
 identity owners and extend state validation when final acceptance arrives.
+
+
+Optional per-group `morphology` saves explicit native foreground erosion and
+unknown dilation margins without changing schema-1 drafts that omit it.
+Requested selected-mask proposals add `trimap_proposal.png` and binary
+`proposal_boundary.png`; manifest/result identify their exact groups, candidates,
+settings and unreviewed status. They are optional revision assets, so earlier I02
+revisions remain valid. They do not replace typed `trimap.png`, parent alpha or
+human review. See [native morphology semantics](guidance.md#optional-native-morphology-proposal).

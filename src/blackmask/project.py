@@ -253,7 +253,7 @@ def _validate_assets(project: Path, state: dict[str, Any]) -> tuple[RGB16, dict[
         ):
             raise ProjectError("Master sample/metadata identity mismatch")
         recipe = tomllib.loads(_asset(project, "recipe.toml").read_text())
-        Recipe.from_dict(recipe, master_id)
+        Recipe.from_dict(recipe, master_id, max_margin_px=max(pixels.shape[:2]))
         guides = _read_json(project, "guides.json")
         validate_guides(guides, master_id, pixels.shape[1], pixels.shape[0])
     except (OSError, ValueError, TypeError, KeyError, tifffile.TiffFileError) as error:

@@ -67,7 +67,7 @@ human photographic acceptance or comprehensive camera-format coverage.
 
 ## I02 observed evidence — 2026-10-18
 
-The settled suite with explicit local model cache passed **96 tests** (exit 0),
+The settled suite with explicit local model cache passed **108 tests** (exit 0),
 including the registered real SAM `integration` test; no skips. Ruff check/format,
 mypy (9 source modules) and pip dependency check exited 0. Pip reported its
 unwritable user cache warning while the dependency check still completed.
@@ -108,3 +108,17 @@ behavior uses injected failures, distinct from actual MPS success.
 No real photograph, human trimap review, final photographic acceptance, ViTMatte
 runtime, matte/export/viewer or regular-use acceptance is established by I02.
 These remain explicit downstream obligations.
+
+
+### Native morphology completeness repair
+
+The original 96-test/review result did not exercise the specified morphology
+proposal capability. A subsequent source reconciliation added explicit saved
+native margins and selected-mask influence, bringing the suite to 108 passing
+tests. Hand-derived non-square core/boundary grids cover erosion/dilation, zero
+margins, image exterior, holes, fragile-group overlaps, separately confirmed solid
+cores, BG/lock/support conflicts, saved-alpha/state preservation, invalid settings
+and old-draft compatibility. The proposal is a separate unreviewed categorical
+asset; no known values or human review are inferred into authoritative trimaps.
+The existing real CPU synthetic project also exercised the changed proposal route;
+model/device/package pins and prior independent MPS evidence remain unchanged.

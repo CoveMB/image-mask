@@ -14,7 +14,8 @@ internet access.
 
 I01 creates/reopens trusted RGB16 projects with explicit human development approval.
 I02 prepares named SAM candidates, selected membership groups and categorical
-trimap/support/protection assets through typed native-coordinate guides. There is
+trimap/support/protection assets through typed native-coordinate guides, plus
+opt-in native-margin morphology proposals for separate source review. There is
 no matte, viewer, effects, export or final-photo acceptance yet. Prepared revisions
 require human trimap review before later matting.
 

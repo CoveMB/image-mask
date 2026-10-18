@@ -43,9 +43,9 @@ material_policy = "unknown_interior"
 ```
 
 Policies are `unknown_interior` or `opaque_core`. Membership and material policy
-alone never force opaque pixels. Current conservative preparation starts entirely
-unknown and uses explicitly confirmed native cores; no automatic morphology,
-hole filling or automatic background certification is performed.
+alone never force opaque pixels. Preparation starts entirely unknown and uses explicitly confirmed native cores.
+Optional morphology produces a separate unreviewed suggestion, described below;
+no hole filling or automatic background certification is performed.
 
 Guides schema 1 contains `master_id`, native integer `width`/`height`, and `regions`.
 Each region needs a stable `id`, `role`, `shape` and its shape-specific fields.
@@ -140,3 +140,42 @@ honest fallback, not an automatic quality result. Preserve source-visible fine
 features by unknown corridors; never paint invented foreground. Human trimap
 review is still required before I03. `accept --revision` rejects every prepared
 revision, including one carrying parent alpha. See [recovery](troubleshooting.md).
+
+
+## Optional native morphology proposal
+
+A kept group with an inspected `selected_candidate` may explicitly request:
+
+```toml
+[groups.morphology]
+foreground_erosion_px = 12
+unknown_dilation_px = 25
+```
+
+Place this subtable immediately after its `[[groups]]` entry. Both margins are
+required nonnegative native-pixel integers, bounded by the master size. They are
+saved with the exact group/candidate identity in the revision recipe and manifest.
+Omitting morphology preserves existing I01/I02 draft behavior and all-unknown
+fallback; merely selecting membership does not force known opacity.
+
+For `opaque_core`, Euclidean distance to background/image exterior greater than
+the erosion margin suggests a conservative interior. Distance to the selected
+mask at most the dilation margin defines its expanded search region; the remainder
+around the core is an unknown boundary. Zero margins are valid. Holes are never
+filled as foreground. `unknown_interior` suggests no opaque interior; its selected
+mask/search region stays unknown except separately verified typed solid cores.
+Selected fragile groups also protect overlapping proposals from other groups.
+Derived uncertainty preserves explicit typed FG/BG; explicit unknown corridors
+still override suggested cores. FG/BG, saved-value lock and change-required
+core/full-support contradictions reject through the same rasterizer. No support
+is widened or lock removed. No complement or negative hint certifies background.
+
+Preparation returns `trimap_proposal_file` and `proposal_boundary_file`, alongside
+the unchanged authoritative `trimap_file`. The categorical proposal is explicitly
+`unreviewed` and saved separately as `trimap_proposal.png`; its binary native
+morphological search band is `proposal_boundary.png`. Inspect it against the source
+before supplying source-verified foreground/background cores through typed guide
+edits. The proposal itself is never used as authoritative known values, alpha or
+human trimap approval. Later matting must consume the confirmed trimap and retain
+its human review control. A requested empty/over-eroded candidate can honestly
+produce no suggested core; absent defensible source confirmation, unknown remains.

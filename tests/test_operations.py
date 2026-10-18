@@ -471,3 +471,143 @@ def test_edit_at_atomic_replacement_boundary_preserved(tmp_path, replacement):
         operations.apply_operation(project, operation)
     assert (project / "guides.json").read_bytes() == changed
     assert (project / "state.json").read_bytes() == before
+
+
+def test_prepare_saves_opt_in_selected_native_proposal_without_forcing_trimap(tmp_path):
+    import tomllib
+
+    import tomli_w
+
+    from blackmask.models import Candidates
+
+    _, project = opened(tmp_path)
+    recipe = tomllib.loads((project / "recipe.toml").read_text())
+    recipe["groups"] = [
+        {
+            "id": "body",
+            "keep": True,
+            "material_policy": "opaque_core",
+            "selected_candidate": 1,
+            "morphology": {"foreground_erosion_px": 0, "unknown_dilation_px": 0},
+        }
+    ]
+    (project / "recipe.toml").write_text(tomli_w.dumps(recipe))
+    filename = edits(
+        project,
+        [{"id": "hint", "role": "keep", "shape": "point", "xy": [1, 1], "group_id": "body"}],
+    )
+    masks = np.array(
+        [[[0, 0, 0], [0, 0, 0]], [[0, 1, 0], [0, 1, 0]], [[1, 1, 1], [1, 1, 1]]], dtype=bool
+    )
+    prediction = Candidates(
+        masks, np.array([0.1, 0.2, 0.3], dtype=np.float32), {"evidence": "stub-only"}
+    )
+    with patch("blackmask.operations.SamSession") as session:
+        session.return_value.select.return_value = prediction
+        result = operations.apply_operation(
+            project,
+            request(project, guide_edits_file=filename),
+            model_cache=Path("unused-stub-cache"),
+        )
+    directory = Path(result["manifest_file"]).parent
+    assert np.all(np.array(Image.open(result["trimap_file"])) == 128)
+    expected = np.array([[128, 255, 128], [128, 255, 128]], dtype=np.uint8)
+    np.testing.assert_array_equal(np.array(Image.open(result["trimap_proposal_file"])), expected)
+    saved = tomllib.loads((directory / "recipe.toml").read_text())
+    assert saved["groups"][0]["morphology"] == {
+        "foreground_erosion_px": 0,
+        "unknown_dilation_px": 0,
+    }
+    manifest = json.loads((directory / "manifest.json").read_text())
+    assert manifest["proposal"]["review_status"] == "unreviewed"
+    assert manifest["proposal"]["groups"][0]["candidate_id"] == "body-1"
+    assert (
+        result["final_acceptable"] is False and read_project(project)["accepted_revision"] is None
+    )
+
+
+@pytest.mark.parametrize(
+    "morphology",
+    [
+        {"foreground_erosion_px": True, "unknown_dilation_px": 1},
+        {"foreground_erosion_px": -1, "unknown_dilation_px": 1},
+        {"foreground_erosion_px": 1},
+        {"foreground_erosion_px": 1, "unknown_dilation_px": 1, "unexpected": 1},
+    ],
+)
+def test_invalid_morphology_settings_reject_without_state_change(tmp_path, morphology):
+    import tomllib
+
+    import tomli_w
+
+    _, project = opened(tmp_path)
+    operation = request(project)
+    before = (project / "state.json").read_bytes()
+    recipe = tomllib.loads((project / "recipe.toml").read_text())
+    recipe["groups"] = [
+        {
+            "id": "body",
+            "keep": True,
+            "material_policy": "opaque_core",
+            "selected_candidate": 1,
+            "morphology": morphology,
+        }
+    ]
+    (project / "recipe.toml").write_text(tomli_w.dumps(recipe))
+    with pytest.raises(ProjectError, match="morphology"):
+        operations.apply_operation(project, operation)
+    assert (project / "state.json").read_bytes() == before
+
+
+def test_proposal_partial_lock_failure_preserves_saved_alpha_and_state(tmp_path):
+    import tomllib
+
+    import tomli_w
+
+    from blackmask.models import Candidates
+
+    _, project = opened(tmp_path)
+    values = np.array([[0, 12345, 65535], [17, 33333, 60000]], dtype=np.uint16)
+    first = saved_alpha_fixture(project, values)
+    directory = Path(first["manifest_file"]).parent
+    before_alpha = (directory / "base_alpha16.png").read_bytes()
+    before_state = (project / "state.json").read_bytes()
+    recipe = tomllib.loads((project / "recipe.toml").read_text())
+    recipe["groups"] = [
+        {
+            "id": "body",
+            "keep": True,
+            "material_policy": "opaque_core",
+            "selected_candidate": 1,
+            "morphology": {"foreground_erosion_px": 0, "unknown_dilation_px": 0},
+        }
+    ]
+    (project / "recipe.toml").write_text(tomli_w.dumps(recipe))
+    filename = edits(
+        project,
+        [
+            {"id": "hint", "role": "keep", "shape": "point", "xy": [1, 1], "group_id": "body"},
+            {
+                "id": "lock",
+                "role": "lock",
+                "shape": "rectangle",
+                "xyxy": [1, 0, 2, 2],
+                "revision": first["revision"],
+            },
+        ],
+    )
+    masks = np.zeros((3, 2, 3), dtype=bool)
+    masks[1, :, 1] = True
+    prediction = Candidates(
+        masks, np.array([0.1, 0.2, 0.3], dtype=np.float32), {"evidence": "stub-only"}
+    )
+    with patch("blackmask.operations.SamSession") as session:
+        session.return_value.select.return_value = prediction
+        with pytest.raises(ProjectError, match="lock"):
+            operations.apply_operation(
+                project,
+                request(project, guide_edits_file=filename),
+                model_cache=Path("unused-stub-cache"),
+            )
+    assert (directory / "base_alpha16.png").read_bytes() == before_alpha
+    assert (project / "state.json").read_bytes() == before_state

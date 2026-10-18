@@ -186,6 +186,8 @@ def rasterize_regions(
     scope_xyxy: list[int] | None = None,
     saved_alpha: dict[str, NDArray[np.uint16]] | None = None,
     parent_alpha: NDArray[np.uint16] | None = None,
+    proposed_foreground: NDArray[np.bool_] | None = None,
+    proposed_unknown: NDArray[np.bool_] | None = None,
 ) -> RasterizedGuides:
     width, height = guides["width"], guides["height"]
     validate_guides(guides, guides["master_id"], width, height)
@@ -224,6 +226,14 @@ def rasterize_regions(
             masks["lock"] |= mask
         else:
             masks[role] |= mask
+    # Suggestions share categorical/conflict guards; derived uncertainty preserves typed cores.
+    for proposed in (proposed_foreground, proposed_unknown):
+        if proposed is not None and (proposed.shape != shape or proposed.dtype != np.bool_):
+            raise ValueError("Invalid native proposal mask")
+    if proposed_unknown is not None:
+        masks["unknown"] |= proposed_unknown & ~(masks["foreground"] | masks["background"])
+    if proposed_foreground is not None:
+        masks["foreground"] |= proposed_foreground
     foreground, background, unknown, protection = (
         masks[r] for r in ("foreground", "background", "unknown", "lock")
     )
@@ -246,3 +256,58 @@ def rasterize_regions(
         if np.any(needs_change & (support != 65535)):
             raise ValueError("Change-required core needs full support inside write scope")
     return RasterizedGuides(trimap, support, protection, lock_values)
+
+
+def build_trimap_proposal(
+    guides: dict[str, Any],
+    groups: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    *,
+    scope_xyxy: list[int] | None = None,
+    saved_alpha: dict[str, NDArray[np.uint16]] | None = None,
+    parent_alpha: NDArray[np.uint16] | None = None,
+) -> tuple[RasterizedGuides, NDArray[np.bool_]]:
+    """Unreviewed native morphology suggestion; never replaces confirmed trimap or alpha."""
+    shape = (guides["height"], guides["width"])
+    foreground = np.zeros(shape, dtype=bool)
+    boundary = np.zeros(shape, dtype=bool)
+    for group in groups:
+        if not group["keep"] or group.get("selected_candidate") is None:
+            continue
+        selected = [
+            candidate
+            for candidate in candidates
+            if candidate["group_id"] == group["id"] and candidate["selected"]
+        ]
+        if len(selected) != 1:
+            raise ValueError("Morphology needs exactly one actual selected native candidate")
+        mask = selected[0]["mask"]
+        if mask.shape != shape or mask.dtype != np.bool_:
+            raise ValueError("Invalid selected native candidate mask")
+        morphology = group.get("morphology")
+        if morphology is None:
+            if group["material_policy"] == "unknown_interior":
+                boundary |= mask
+            continue
+        erosion, dilation = morphology["foreground_erosion_px"], morphology["unknown_dilation_px"]
+        if any(
+            type(margin) is not int or not 0 <= margin <= max(shape)
+            for margin in (erosion, dilation)
+        ):
+            raise ValueError("Morphology margins must be native integers within master size")
+        core = np.zeros(shape, dtype=bool)
+        expanded = np.zeros(shape, dtype=bool)
+        if np.any(mask):
+            expanded = distance_transform_edt(~mask) <= dilation
+            if group["material_policy"] == "opaque_core":
+                core = distance_transform_edt(np.pad(mask, 1))[1:-1, 1:-1] > erosion
+        foreground |= core
+        boundary |= expanded & ~core
+    return rasterize_regions(
+        guides,
+        scope_xyxy=scope_xyxy,
+        saved_alpha=saved_alpha,
+        parent_alpha=parent_alpha,
+        proposed_foreground=foreground,
+        proposed_unknown=boundary,
+    ), boundary

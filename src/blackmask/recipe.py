@@ -26,7 +26,9 @@ class Recipe:
         }
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any], master_id: str) -> "Recipe":
+    def from_dict(
+        cls, value: dict[str, Any], master_id: str, *, max_margin_px: int | None = None
+    ) -> "Recipe":
         expected = cls(master_id).to_dict()
         if (
             set(value) != set(expected)
@@ -55,9 +57,11 @@ class Recipe:
             raise TypeError("Groups must be a list")
         seen = set()
         for group in groups:
-            if not isinstance(group, dict) or set(group) not in (
-                {"id", "keep", "material_policy"},
-                {"id", "keep", "material_policy", "selected_candidate"},
+            if (
+                not isinstance(group, dict)
+                or not {"id", "keep", "material_policy"} <= set(group)
+                or set(group)
+                - {"id", "keep", "material_policy", "selected_candidate", "morphology"}
             ):
                 raise ValueError("Invalid group keys")
             stable_id = identifier(group["id"])
@@ -70,5 +74,22 @@ class Recipe:
             selected = group.get("selected_candidate")
             if selected is not None and (type(selected) is not int or selected not in (0, 1, 2)):
                 raise ValueError("Selected candidate must be 0, 1 or 2")
+            if "morphology" in group:
+                morphology = group["morphology"]
+                if (
+                    not isinstance(morphology, dict)
+                    or set(morphology) != {"foreground_erosion_px", "unknown_dilation_px"}
+                    or any(
+                        type(margin) is not int
+                        or margin < 0
+                        or (max_margin_px is not None and margin > max_margin_px)
+                        for margin in morphology.values()
+                    )
+                    or not group["keep"]
+                    or selected is None
+                ):
+                    raise ValueError(
+                        "Invalid morphology settings: explicit native margins and kept selected candidate required"
+                    )
             seen.add(stable_id)
         return cls(master_id, value["notes"], groups, value["matting"]["device"])

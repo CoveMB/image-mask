@@ -11,7 +11,13 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from .guidance import coordinates, edit_guides, rasterize_regions, validate_guides
+from .guidance import (
+    build_trimap_proposal,
+    coordinates,
+    edit_guides,
+    rasterize_regions,
+    validate_guides,
+)
 from .models import SamSession
 from .project import (
     ProjectError,
@@ -182,7 +188,11 @@ def _prepare(
     pixels, metadata = load_master(project, state["master_id"])
     height, width = pixels.shape[:2]
     scope = coordinates(operation.get("scope_xyxy", [0, 0, width, height]), width, height, box=True)
-    recipe = Recipe.from_dict(tomllib.loads(snapshots["recipe.toml"].decode()), state["master_id"])
+    recipe = Recipe.from_dict(
+        tomllib.loads(snapshots["recipe.toml"].decode()),
+        state["master_id"],
+        max_margin_px=max(width, height),
+    )
     guides = validate_guides(
         json.loads(snapshots["guides.json"]), state["master_id"], width, height
     )
@@ -259,6 +269,39 @@ def _prepare(
         Path(os.environ["BLACKMASK_SAM_CACHE"]) if "BLACKMASK_SAM_CACHE" in os.environ else None
     )
     candidates = select_candidates(proxy, recipe, guides, cache)
+    proposal_groups = [group for group in recipe.groups if "morphology" in group]
+    proposal_record = None
+    if proposal_groups:
+        proposal_raster, boundary = build_trimap_proposal(
+            guides,
+            recipe.groups,
+            candidates,
+            scope_xyxy=scope,
+            saved_alpha=saved_alpha,
+            parent_alpha=parent_alpha,
+        )
+        Image.fromarray(proposal_raster.trimap).save(stage / "trimap_proposal.png")
+        Image.fromarray(boundary.astype(np.uint8) * 255).save(stage / "proposal_boundary.png")
+        for name, proposed_expected in (
+            ("trimap_proposal.png", proposal_raster.trimap),
+            ("proposal_boundary.png", boundary.astype(np.uint8) * 255),
+        ):
+            with Image.open(stage / name) as image:
+                if not np.array_equal(np.array(image), proposed_expected):
+                    raise ProjectError("Morphology proposal round trip failed")
+        proposal_record = {
+            "review_status": "unreviewed",
+            "trimap_file": "trimap_proposal.png",
+            "boundary_file": "proposal_boundary.png",
+            "groups": [
+                {
+                    "group_id": group["id"],
+                    "candidate_id": f"{group['id']}-{group['selected_candidate']}",
+                    "morphology": group["morphology"],
+                }
+                for group in proposal_groups
+            ],
+        }
     candidate_records = []
     membership = np.zeros(shape, dtype=bool)
     for candidate in candidates:
@@ -295,6 +338,7 @@ def _prepare(
                 "support_file": "supports/support16.png",
                 "protection_file": "supports/protection.png",
                 "candidates": candidate_records,
+                "proposal": proposal_record,
             }
         )
     )
@@ -318,6 +362,7 @@ def _prepare(
         "scope_xyxy": scope,
         "files": files,
         "candidates": candidate_records,
+        "proposal": proposal_record,
         "external_inputs": {
             name: {"sha256": digest(data), "snapshot": f"inputs/external-{i}.json"}
             for i, (name, data) in enumerate(external.items())
@@ -393,5 +438,12 @@ def _prepare(
         "support_file": str(destination / "supports/support16.png"),
         "protection_file": str(destination / "supports/protection.png"),
         "source_proxy_file": str(destination / "source_proxy8.png"),
+        "trimap_proposal_file": str(destination / "trimap_proposal.png")
+        if proposal_record
+        else None,
+        "proposal_boundary_file": str(destination / "proposal_boundary.png")
+        if proposal_record
+        else None,
         "candidates": candidate_records,
+        "proposal": proposal_record,
     }
