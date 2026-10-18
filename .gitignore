@@ -1,0 +1,75 @@
+# Operating-system metadata and editor temporary files
+.DS_Store
+._*
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Python environments, bytecode and tooling caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging output
+/build/
+/dist/
+*.egg-info/
+
+# Private photos, photo projects, model downloads and evaluation output
+# Keep these outside the repository or beneath this root-only directory.
+/local/
+/.cache/
+*.safetensors
+
+# Local isolated checkouts
+/.worktrees/
+
+# Private source/reference/planning retained locally; never publish this history.
+/Photo-workflow-reference/
+/docs/incremental-plans/
+/single-photo-black-background-implementation-plan-v4-2026-10-11.txt
+/photo-workflow-guide-older-materials.docx
+
+# Captures and viewing/working images, including common camera RAW formats.
+# Store all private data under local/ or outside the checkout, regardless of suffix.
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[pP][nN][gG]
+*.[tT][iI][fF]
+*.[tT][iI][fF][fF]
+*.[wW][eE][bB][pP]
+*.[gG][iI][fF]
+*.[bB][mM][pP]
+*.[hH][eE][iI][cC]
+*.[hH][eE][iI][fF]
+*.[aA][vV][iI][fF]
+*.[dD][nN][gG]
+*.[rR][aA][wW]
+*.[cC][rR][23]
+*.[nN][eE][fF]
+*.[aA][rR][wW]
+*.[oO][rR][fF]
+*.[rR][wW]2
+*.[rR][aA][fF]
+*.[pP][eE][fF]
+*.[sS][rR][wW]
+*.[kK][dD][cC]
+
+# Only deliberate, small synthetic application fixtures may be tracked here.
+!tests/fixtures/
+!tests/fixtures/**
+# Ignore rules never sanitize existing history or make ignored data disposable.

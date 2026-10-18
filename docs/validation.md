@@ -1,8 +1,32 @@
 # I01 verification
 
-Candidate: `i01-trusted-rgb16`, based on the preserved local baseline. Actual
-commands/statuses and independent reports are appended to the current handoff
-and reviews record; this file describes evidence coverage and its limits.
+Observed on 2026-10-18 with native ARM64 Python 3.12.14, macOS 26.5.2 and
+LibRaw 0.22.1. The published application, tests and package inputs match the
+reviewed local candidate byte-for-byte; public-history separation and standalone
+documentation changes do not alter processing behavior. The deterministic suite
+was not repeated on unchanged inputs.
+
+```sh
+.venv/bin/python -m pytest -q -p no:cacheprovider
+.venv/bin/ruff check src tests --no-cache
+.venv/bin/ruff format --check src tests --no-cache
+.venv/bin/mypy src
+```
+
+Actual settled result: **50 passed** (exit 0); lint, format and type checks exited
+0. Hash-locked binary-only installation and dependency checks passed. Built-wheel
+inspection found only six application modules and package metadata, with no
+photographs, private planning, personal paths or VCS data. CLI create/reopen,
+explicit development approval and download-free doctor are exercised in fresh
+processes. Dependency/native evidence is summarized in [provenance](model-provenance.md).
+
+Independent source-fidelity, architecture/simplicity and verification scopes were
+completed, with focused rechecks after material corrections. Corrections covered
+initial publication collisions, non-finite rejected camera WB metadata, meaningful
+ICC conversion regression sensitivity and TIFF-container RAW routing. All findings
+closed within their scopes. Substitute simplicity review; Ponytail not run.
+These reports and passing tests do not replace human development or photographic
+acceptance.
 
 Synthetic ingest checks exercise exact non-257 RGB16 TIFF file reload, all eight
 asymmetric orientations, big-endian TIFF, misnamed signatures, JPEG/PNG8 sample
@@ -25,18 +49,16 @@ Package metadata, wheel hashes, licences and advisory disposition are in provena
 Passing deterministic tests/type/lint checks are not photographic, usability,
 accessibility, production safety or real RAW/backend evidence. No model, private
 photo upload, MPS/CPU inference or live assisted run occurred. I01 has no viewer.
-User-selected RAW/human WB/clipping/orientation review remains pending; I10 owns regular-use
-reconciliation and later increments own model/viewer/combined-journey checks.
+User-selected RAW/human WB/clipping/orientation review remains pending; Regular-use acceptance and model/viewer/combined-journey checks remain future work.
 
-Reviewer repairs add explicit NaN/Inf daylight project-creation cases, arriving-file collision preservation and a linear-light RGB ICC sentinel. The latter independently expects encoded sRGB [71,137,188] from RGB8 linear samples [16,64,128]; bypassing colour conversion is observably wrong.
+Regression checks include explicit NaN/Inf daylight project-creation cases, arriving-file collision preservation and a linear-light RGB ICC sentinel. The latter independently expects encoded sRGB [71,137,188] from RGB8 linear samples [16,64,128]; bypassing colour conversion is observably wrong.
 
 
-Controller reconciliation found and reproduced a TIFF-container RAW omission after
-the original local result. New synthetic regressions distinguish IFD0 RGB8 preview
+TIFF-container RAW regressions distinguish IFD0 RGB8 preview
 from the LibRaw-developed full-resolution RGB16 and cover recognized-RAW WB/data
 failures, including an unsupported exception raised after opening. Only unsupported
 format at opening permits ordinary TIFF fallback; its existing compression/profile
-and PNG16 rejections remain exercised. The supplied local public Kodak KDC also
+and PNG16 rejections remain exercised. The public upstream Kodak KDC also
 passed actual LibRaw ingest/create/reopen/master-reload with exact direct-decoder
 pixels and unchanged source. It stayed unapproved. Provenance identifies the public
 source/hash; the fixture is not tracked. This is bounded actual RAW evidence, not
