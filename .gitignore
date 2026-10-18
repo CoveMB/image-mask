@@ -41,7 +41,7 @@ htmlcov/
 # Private source/reference/planning retained locally; never publish this history.
 /Photo-workflow-reference/
 /docs/incremental-plans/
-/single-photo-black-background-implementation-plan-v4-2026-10-11.txt
+/*-implementation-plan-*.txt
 /photo-workflow-guide-older-materials.docx
 
 # Captures and viewing/working images, including common camera RAW formats.

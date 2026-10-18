@@ -24,7 +24,7 @@ indent_style = unset
 indent_size = unset
 trim_trailing_whitespace = unset
 
-[single-photo-black-background-implementation-plan-v4-2026-10-11.txt]
+[*-implementation-plan-*.txt]
 charset = unset
 end_of_line = unset
 insert_final_newline = unset

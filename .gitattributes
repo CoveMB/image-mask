@@ -15,4 +15,4 @@
 
 # Frozen provenance: preserve exact bytes and checksum identities.
 Photo-workflow-reference/** -text
-single-photo-black-background-implementation-plan-v4-2026-10-11.txt -text
+*-implementation-plan-*.txt -text
