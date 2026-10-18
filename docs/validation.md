@@ -46,7 +46,7 @@ Native environment observed: macOS 26.5.2 ARM64, Python 3.12.14, LibRaw 0.22.1.
 Package metadata, wheel hashes, licences and advisory disposition are in provenance.
 Passing deterministic tests/type/lint checks are not photographic, usability,
 accessibility, production safety or real RAW/backend evidence. No model, private
-photo upload, MPS/CPU inference or live assisted run occurred. The current tool has no viewer.
+photo upload, MPS/CPU inference or live assisted run occurred. These trusted-master checks did not exercise a viewer.
 User-selected RAW/human WB/clipping/orientation review remains pending; regular-use acceptance and model/viewer/combined-journey checks remain future work.
 
 Regression checks include explicit NaN/Inf daylight project-creation cases, arriving-file collision preservation and a linear-light RGB ICC sentinel. The latter independently expects encoded sRGB [71,137,188] from RGB8 linear samples [16,64,128]; bypassing colour conversion is observably wrong.
