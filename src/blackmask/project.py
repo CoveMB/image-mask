@@ -8,7 +8,7 @@ import re
 import shutil
 import tempfile
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -17,6 +17,7 @@ import numpy as np
 import tifffile
 import tomli_w
 
+from .guidance import validate_guides
 from .ingest import RGB16, decode_source, srgb_profile, write_master
 from .recipe import Recipe
 
@@ -85,7 +86,13 @@ def _sync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _atomic_json(path: Path, value: dict[str, Any], *, replace_existing: bool = True) -> None:
+def _atomic_json(
+    path: Path,
+    value: dict[str, Any],
+    *,
+    replace_existing: bool = True,
+    validate_before_replace: Callable[[], None] | None = None,
+) -> None:
     if path.is_symlink():
         raise ProjectError("Refusing symlink state publication")
     descriptor, temporary = tempfile.mkstemp(prefix=".state-", suffix=".tmp", dir=path.parent)
@@ -94,6 +101,8 @@ def _atomic_json(path: Path, value: dict[str, Any], *, replace_existing: bool = 
         stream.write(_json_bytes(value))
         stream.flush()
         os.fsync(stream.fileno())
+    if validate_before_replace is not None:
+        validate_before_replace()
     if replace_existing:
         os.replace(temporary, path)
     else:
@@ -246,16 +255,8 @@ def _validate_assets(project: Path, state: dict[str, Any]) -> tuple[RGB16, dict[
         recipe = tomllib.loads(_asset(project, "recipe.toml").read_text())
         Recipe.from_dict(recipe, master_id)
         guides = _read_json(project, "guides.json")
-        expected = {
-            "schema_version": 1,
-            "master_id": master_id,
-            "width": pixels.shape[1],
-            "height": pixels.shape[0],
-            "regions": [],
-        }
-        if guides != expected:
-            raise ProjectError("Invalid guide draft or identity")
-    except (OSError, ValueError, KeyError, tifffile.TiffFileError) as error:
+        validate_guides(guides, master_id, pixels.shape[1], pixels.shape[0])
+    except (OSError, ValueError, TypeError, KeyError, tifffile.TiffFileError) as error:
         raise ProjectError(f"Invalid project master or recipe: {error}") from error
     return pixels, metadata
 
@@ -276,12 +277,18 @@ def read_project(project: Path) -> dict[str, Any]:
         or type(state["schema_version"]) is not int
         or state["schema_version"] != 1
         or type(state["development_approved"]) is not bool
-        or state["working_revision"] is not None
         or state["accepted_revision"] is not None
-        or state["status"] != ("ready" if state["development_approved"] else "review_needed")
+        or state["status"]
+        != (
+            "review_needed"
+            if state["working_revision"] is not None or not state["development_approved"]
+            else "ready"
+        )
     ):
         raise ProjectError("Invalid project state")
     _validate_assets(project, state)
+    if state["working_revision"] is not None:
+        read_revision(project, state["working_revision"], state["master_id"])
     return state
 
 
@@ -301,6 +308,45 @@ def accept_development(project: Path, master_id: str) -> dict[str, Any]:
         if state["master_id"] != master_id:
             raise ProjectError("Development approval master identity is stale")
         check_space(project, 1024**2)
-        state.update(development_approved=True, status="ready")
+        state.update(
+            development_approved=True,
+            status="review_needed" if state["working_revision"] else "ready",
+        )
         _atomic_json(_asset(project, "state.json"), state)
     return state
+
+
+def read_revision(project: Path, revision: str, master_id: str) -> dict[str, Any]:
+    """Validate application-immutable saved dependencies before reuse; never infer pointers."""
+    if not isinstance(revision, str) or re.fullmatch(r"rev-[0-9]{3,}", revision) is None:
+        raise ProjectError("Invalid saved revision identity")
+    manifest = _read_json(project, f"revisions/{revision}/manifest.json")
+    if (
+        manifest.get("revision") != revision
+        or manifest.get("master_id") != master_id
+        or manifest.get("complete") is not True
+        or not isinstance(manifest.get("files"), dict)
+    ):
+        raise ProjectError("Invalid saved revision/master/complete manifest")
+    for name, expected_hash in manifest["files"].items():
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            raise ProjectError("Invalid revision asset path")
+        path = _asset(project, f"revisions/{revision}/{name}")
+        try:
+            if digest(path.read_bytes()) != expected_hash:
+                raise ProjectError(f"Saved revision hash mismatch: {revision}/{name}")
+        except OSError as error:
+            raise ProjectError(f"Missing saved revision asset: {name}") from error
+    if not {
+        "recipe.toml",
+        "guides.json",
+        "request.json",
+        "result.json",
+        "trimap.png",
+        "supports/support16.png",
+        "supports/protection.png",
+        "supports/lock_values16.png",
+    } <= set(manifest["files"]):
+        raise ProjectError("Incomplete prepared revision files")
+    return manifest

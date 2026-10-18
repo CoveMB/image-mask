@@ -12,17 +12,21 @@ internet access.
 
 ## Current status
 
-The current tool supports local project creation/reopen, trusted RGB16 sRGB TIFF masters,
-explicit human development approval and a download-free native doctor. There is
-no viewer, masking, model inference, effects or final-photo acceptance yet.
-A public Kodak RAW passed bounded native ingest/master round-trip checks.
-User-selected RAW and human photographic evaluation remain pending; neither that
-one fixture nor synthetic boundary tests establish complete RAW support.
+I01 creates/reopens trusted RGB16 projects with explicit human development approval.
+I02 prepares named SAM candidates, selected membership groups and categorical
+trimap/support/protection assets through typed native-coordinate guides. There is
+no matte, viewer, effects, export or final-photo acceptance yet. Prepared revisions
+require human trimap review before later matting.
+
+A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
+SAM passed real CPU and separate MPS synthetic geometry checks; auto stays CPU.
+User-selected RAW and human photographic evaluation remain pending. Synthetic
+model output does not establish photographic quality.
 
 ## Setup and quick start
 
 Use native ARM64 Python 3.12 on macOS. The project does not install Python or
-download models. Reserve at least 10 GiB free **plus** estimated pending writes;
+download models implicitly. Reserve at least 10 GiB free **plus** estimated pending writes;
 the doctor reports current disk/environment information. One environment is enough.
 From the repository root, with your selected Python 3.12 executable:
 
@@ -74,7 +78,8 @@ Do not substitute a same-name capture if its recorded hash differs.
 
 See [file contract](docs/file-contract.md), [validation and limitations](docs/validation.md),
 [recovery](docs/troubleshooting.md) and [exact package/development provenance](docs/model-provenance.md).
-Setup requires public package downloads; subsequent processing is local/offline.
+Setup requires public package downloads; subsequent processing is local/offline. See [selection and guides](docs/guidance.md)
+for explicit model setup, typed preparation and human review.
 
 ## Source map
 
@@ -82,9 +87,12 @@ Setup requires public package downloads; subsequent processing is local/offline.
 | --- | --- |
 | Content detection, RAW development, orientation and RGB16 | `src/blackmask/ingest.py` |
 | Identity, shared writer lock, publication and approval | `src/blackmask/project.py` |
-| Typed editable draft defaults | `src/blackmask/recipe.py` |
-| Supported commands and local doctor | `src/blackmask/cli.py` |
-| Ingest, project safety and CLI regressions | `tests/` |
+| Preparation snapshots and selected candidate publication | `src/blackmask/operations.py` |
+| Typed native guides and categorical rasterization | `src/blackmask/guidance.py` |
+| Pinned explicit setup and local-only SAM sessions | `src/blackmask/models.py` |
+| Typed editable recipe/groups | `src/blackmask/recipe.py` |
+| Supported commands and local doctor/setup | `src/blackmask/cli.py` |
+| Ingest, guide/model geometry, transactions and CLI regressions | `tests/` |
 | Saved files and recovery | [File contract](docs/file-contract.md), [troubleshooting](docs/troubleshooting.md) |
 | Observed checks and limits | [Validation](docs/validation.md) |
 | Dependency/development settings and licences | [Provenance](docs/model-provenance.md), [third-party notices](THIRD_PARTY_NOTICES.md) |
@@ -103,7 +111,7 @@ The public implementation history contains no photographs, private planning or
 reference archives. Local planning and frozen reference material, when supplied
 separately, stay ignored and are not required to install or operate the tool.
 The maintained public docs describe the behavior currently implemented. Future
-masking, review-window and appearance features require separate implementation
+matting, review-window and appearance features require separate implementation
 and human photographic validation.
 
 ## Licensing

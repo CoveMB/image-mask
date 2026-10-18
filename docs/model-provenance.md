@@ -1,4 +1,4 @@
-# Package and development provenance
+# Package, development and model provenance
 
 Checked 2026-10-18 against official version-specific PyPI JSON metadata, native wheel tags/hashes, installed package metadata and upstream documentation. `requirements-macos-arm64.lock` pins every installed runtime/test/type/lint dependency and the build backend; excludes the bootstrap pip and editable application. The lock selects only compatible CPython 3.12 macOS ARM64 or universal wheels; no source builds. Python is native ARM64 3.12.14. NumPy 2.3.5 and Pillow 12.3.0 retain the bundled runtime versions; rawpy 0.27.1 is pinned for RAW development. Tifffile 2026.10.15 and tomli-w 1.2.0 meet their declared Python/NumPy requirements. Installed imports/tests are separate compatibility evidence from metadata.
 
@@ -27,7 +27,7 @@ Loaded LibRaw: (0, 22, 1); rawpy feature flags: `{'DNGLOSSYCODEC': True, 'DNGDEF
 
 RAW policy: full-size AHD, camera WB only with finite positive RGB coefficients; otherwise explicitly request daylight preview or a trusted developed TIFF. Both routes still require human inspection/approval of WB, clipping and orientation. sRGB output, 16-bit, gamma=(2.4,12.92), bright=1, auto_bright_thr=.01, automatic brightness enabled, median passes=0, FBDD off, no added sharpening, no extra DefaultCropSize crop. LibRaw alone applies RAW orientation. Captured RAW precision is unknown; white level is recorded separately. Boundary stubs verify parameter forwarding, not real RAW decoding/rendering.
 
-No model weights/configuration were downloaded, installed or evaluated for these trusted-master checks. SAM2.1/ViTMatte, Torch/torchvision pairing, CPU/MPS and model licences still require compatibility, device and licence review before use. Future model revisions/configuration/licences require their own verified provenance and runtime checks. General regular-use and user-selected RAW evidence remain pending.
+No model weights/configuration were downloaded, installed or evaluated for the trusted-master checks. Selection/model evidence follows below; ViTMatte runtime remains unverified. Future model revisions/configuration/licences require their own verified provenance and runtime checks. General regular-use and user-selected RAW evidence remain pending.
 
 Official sources: [rawpy 0.27.1 metadata](https://pypi.org/project/rawpy/0.27.1/), [RAW parameters](https://letmaik.github.io/rawpy/api/rawpy.Params.html), [LibRaw licences](https://www.libraw.org/about), [Pillow colour management](https://pillow.readthedocs.io/en/stable/reference/ImageCms.html), [Pillow security/release notes](https://pillow.readthedocs.io/en/stable/releasenotes/index.html), [tifffile](https://github.com/cgohlke/tifffile), [rawpy security](https://github.com/letmaik/rawpy/security), [Python flock](https://docs.python.org/3.12/library/fcntl.html). Each locked package's exact JSON metadata is at `https://pypi.org/pypi/NAME/VERSION/json`; advisory state can change.
 
@@ -41,3 +41,68 @@ Non-finite rejected camera WB entries are recorded as JSON null, with coefficien
 The existing local upstream [Kodak DC50 KDC fixture](https://raw.githubusercontent.com/letmaik/rawpy/main/test/RAW_KODAK_DC50_%C3%A9.KDC) was used without further download or redistribution. Git blob `32354628d6653b83db905417e25e77b037337c94`, 92,675 bytes, SHA-256 `37e290dbd0053f00e508d02a6b3a2a990432dad1eb74c40a52ca899f0f225ecc` binds the exact bytes; the main-branch URL can change. Its first TIFF page is a 96×64 RGB8 preview without DNG tag. Native rawpy 0.27.1/LibRaw 0.22.1 recognizes it and full-size AHD/daylight/sRGB/gamma=(2.4,12.92) yields 768×512 RGB16. Ingest pixels and saved/reopened master match direct LibRaw exactly; source bytes remain unchanged. Captured precision remains unknown, and development approval stays false.
 
 Fixture redistribution rights have not been established, so the capture and derived project remain outside tracked/public source. No human appearance judgement or user RAW acceptance is claimed, and one supported camera is not comprehensive RAW validation. [Primary CR2 format documentation](https://libopenraw.freedesktop.org/formats/cr2/) independently illustrates why RAW data may be outside IFD0; it does not establish an executed CR2 test. Filename suffixes and camera registries are not used for routing.
+
+
+## I02 SAM environment — checked 2026-10-18
+
+Native ARM64 Python 3.12.14, macOS 26.5.2. Torch 2.13.0 and torchvision 0.28.0
+have matching cp312 macOS14 ARM64 wheels; torchvision's official wheel metadata
+requires exactly Torch 2.13.0. This pair replaces the older proposed 2.9.1/0.24.1
+after current advisory inspection. Torch 2.13.0, torchvision 0.28.0, SciPy 1.17.1,
+safetensors 0.8.0 and every added transitive package had no listed PyPI advisories
+at check. The lock pins exact wheel hashes and preserves the original ingest pins.
+Official [Torch metadata](https://pypi.org/pypi/torch/2.13.0/json) and
+[torchvision metadata](https://pypi.org/pypi/torchvision/0.28.0/json) establish package
+availability/declared compatibility; actual SAM execution supplies runtime evidence.
+
+Transformers 4.57.6 retains the reference-compatible explicit image API. Its
+[version-specific metadata](https://pypi.org/pypi/transformers/4.57.6/json) listed
+11 advisory records (including duplicate aliases): checkpoint conversion
+PYSEC-2025-217; Trainer RNG loading GHSA-69w3-r845-3855/PYSEC-2026-2288;
+custom attention/config loading GHSA-29pf-2h5f-8g72/PYSEC-2026-2289;
+LightGlue GHSA-fgcw-684q-jj6r/PYSEC-2026-2290;
+custom generation GHSA-x9r9-c232-4q39/PYSEC-2026-4174;
+processor/tokenizer chat-template save traversal GHSA-xrqw-3rrv-vx5w/PYSEC-2026-3929.
+This application uses none of those training/conversion/Auto/generation/save paths.
+Only the exact hash-verified configs below enter explicit Sam2Config/Sam2Model and
+Sam2ImageProcessorFast/Sam2Processor, with eager attention and local-only
+safetensors. No arbitrary model directory/config, remote custom code, pickle
+checkpoint, torch.load, chat template or custom kernels are accepted. That bounded
+exposure decision is not package-wide security clearance; re-evaluate before
+adding any other model/API path. See upstream [security guidance](https://github.com/huggingface/transformers/blob/main/SECURITY.md).
+
+| Pinned SAM asset | Bytes | SHA-256 |
+| --- | --- | --- |
+| model.safetensors | 184305280 | 0a4067b11ce1e23d5229203f11c718a823060d15a4b23fa2372a7d4b77cbbc60 |
+| config.json | 5698 | 97ff9f65b76d107acda4247885f0a5555d0048850ae3c5f97183df289aaecde9 |
+| preprocessor_config.json | 683 | 6ebf229ee259368ce4a8d4f2fe893a72b053023710853e257253939e601f583d |
+
+Source: [facebook/sam2.1-hiera-small at ee5bba1d82bb8749febdf90f45e84b687142ba03](https://huggingface.co/facebook/sam2.1-hiera-small/tree/ee5bba1d82bb8749febdf90f45e84b687142ba03),
+Apache-2.0 checkpoint label. The pinned config/processor advertises video
+architecture/classes; the application deliberately selects the explicit image
+classes documented by upstream and validates actual tensors instead of using
+Auto/video dispatch. Runtime hashes all three files before first session use.
+No weights or third-party model source are distributed with blackmask.
+
+Observed synthetic 97×65 RGB8 selection: actual input `[1,3,1024,1024]`, native
+outputs `[3,65,97]`, float32, eager attention, mean `[.485,.456,.406]`, std
+`[.229,.224,.225]`, rescale `1/255`. A zero corner independently normalizes to
+approximately `[-2.117904,-2.035714,-1.804444]`. Native point `[40,30]` becomes
+`[422.268036,472.615387]` through the pinned processor; recorded tensors preserve
+the actual mapping. Three source-supported synthetic-object candidate masks were
+nonempty. Warm prompt updates reuse one session embedding; changed master,
+pixels, geometry/backend invalidate it. Unknown master identity disables reuse.
+Separate CLI calls do not promise persistent model caching.
+
+Separate real MPS float32 smoke succeeded with identical binary masks on that
+fixture, small score differences, and unchanged geometry. CPU cold stage ~0.73s,
+warm prompt/box stage ~0.025s, MPS first stage ~6.37s; model construction ~0.035s
+(excludes imports/hash verification and cold filesystem effects). Observed process
+peak RSS ~1.93GB. These are one fixture/run, not general latency or quality claims.
+Auto remains CPU; explicit MPS errors stay visible. Failed-stage auto fallback is
+covered by injected failure tests, distinct from the successful actual MPS smoke.
+
+VitMatteForImageMatting/VitMatteImageProcessor import in this same environment;
+this is compatibility direction only. No ViTMatte weights/configs/download/runtime
+or native matte correctness is established in I02. Retain its separately pinned
+revision/hash and run its own CPU/MPS/geometry checks in I03.

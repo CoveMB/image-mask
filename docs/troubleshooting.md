@@ -28,8 +28,31 @@
 - **Moved capture:** reopen uses retained master; locate the original by SHA-256
   before future source-dependent recomputation. Same filename is insufficient.
 
-The current tool uses no model/MPS/viewer/assistant service; recovery procedures
-for those services are not available yet. All supported commands work offline after
-package setup. Preserve independent backups; ignored local data is not Git backup.
+The viewer and assistant service are not implemented. Processing works offline
+after explicit package/model setup. Preserve independent backups; ignored local data is not Git backup.
 
 A publication collision means another tool/editor created a project asset while ingestion ran. Its bytes are preserved. Keep the incomplete project for inspection and choose a new empty destination. Do not delete an arriving file to force publication.
+
+
+## Preparation recovery
+
+- **Missing/corrupt SAM:** inference never downloads. Inspect the explicit cache;
+  retain mismatched files for diagnosis and select a new empty cache for a separately
+  authorized setup. Do not replace weights/configs with same-name alternatives.
+- **Stale request:** reopen to obtain actual master/base/draft digest. Finish external
+  edits, inspect source/trimap intent, and submit a fresh request. Newer text remains
+  untouched. Typed edits already published need not be submitted again.
+- **FG/BG/lock/core-support conflict:** resolve the typed assertions from the source.
+  No last-layer overwrite or automatic shrinking of protection occurs. Remove a
+  lock explicitly before changing its binding. A new prepare-only project has no
+  saved alpha to lock.
+- **Interrupted/failed prepare:** reopen actual state. The prior working revision
+  remains authoritative until state advances. `.prepare-*` or a complete orphan is
+  not accepted/working solely because it exists. Inspect retained diagnostics;
+  retry with current identities. Resume/restore/automatic cleanup are unavailable.
+  A failed pointer write may leave effective root guides updated; inspect them.
+- **MPS failure:** retry explicitly with recipe device `cpu`, preserving geometry.
+  Auto remains CPU; upstream implicit MPS fallback must be disabled. One synthetic
+  successful MPS smoke is not photographic or regular-use acceptance.
+- **Prepared revision rejected by accept:** expected. Human trimap review comes
+  before later native matting; preparation never substitutes for a final result.

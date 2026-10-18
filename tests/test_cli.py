@@ -37,7 +37,7 @@ def test_fresh_cli_create_reopen_doctor_accept(tmp_path):
     assert doctor.returncode == 0, doctor.stderr
     report = json.loads(doctor.stdout)
     assert report["native_arm64_python312"] is True
-    assert report["models"] == "not installed or evaluated"
+    assert report["auto_device"] == "cpu"
     assert report["libraw"]
 
 
@@ -46,3 +46,55 @@ def test_cli_failure_is_actionable(tmp_path):
     assert result.returncode != 0
     assert "incomplete" in result.stderr or "missing" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def test_run_prepare_returns_paths_and_rejects_final_acceptance(tmp_path):
+    from test_project import create
+
+    from blackmask.operations import draft_digest
+    from blackmask.project import accept_development, read_project
+
+    _, project = create(tmp_path)
+    state = read_project(project)
+    accept_development(project, state["master_id"])
+    request = project / "prepare.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "prepare",
+                "master_id": state["master_id"],
+                "base_revision": None,
+                "inputs_digest": draft_digest(project),
+            }
+        )
+    )
+    completed = subprocess.run(
+        [sys.executable, "-m", "blackmask", "run", str(project), "--request", str(request)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert Path(result["trimap_file"]).is_file() and result["revision"] == "rev-001"
+    reopened = subprocess.run(
+        [sys.executable, "-m", "blackmask", "open", "--project", str(project)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert (
+        reopened.returncode == 0
+        and json.loads(reopened.stdout)["inputs_digest"] == result["inputs_digest"]
+    )
+    rejected = subprocess.run(
+        [sys.executable, "-m", "blackmask", "accept", str(project), "--revision", "rev-001"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert rejected.returncode == 1 and "prepared" in rejected.stderr

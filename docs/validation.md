@@ -1,4 +1,6 @@
-# Trusted-master verification
+# Verification
+
+## I01 retained evidence
 
 Observed on 2026-10-18 with native ARM64 Python 3.12.14, macOS 26.5.2 and
 LibRaw 0.22.1. The results below describe the trusted-master implementation and
@@ -61,3 +63,48 @@ passed actual LibRaw ingest/create/reopen/master-reload with exact direct-decode
 pixels and unchanged source. It stayed unapproved. Provenance identifies the public
 source/hash; the fixture is not tracked. This is bounded actual RAW evidence, not
 human photographic acceptance or comprehensive camera-format coverage.
+
+
+## I02 observed evidence — 2026-10-18
+
+The settled suite with explicit local model cache passed **96 tests** (exit 0),
+including the registered real SAM `integration` test; no skips. Ruff check/format,
+mypy (9 source modules) and pip dependency check exited 0. Pip reported its
+unwritable user cache warning while the dependency check still completed.
+
+```sh
+BLACKMASK_SAM_CACHE=/path/to/model-cache/sam2 .venv/bin/python -m pytest -q -p no:cacheprovider
+.venv/bin/ruff check src tests --no-cache
+.venv/bin/ruff format --check src tests --no-cache
+.venv/bin/mypy src
+.venv/bin/python -m pip check
+```
+
+Q05–Q08 exercise actual native half-open geometry, categorical labels/locks,
+unknown corridors, typed roles, zero/inward-feather support, invalid inputs,
+FG/BG/lock contradictions and saved partial-alpha protection. Preparation carries
+nonempty partial alpha exactly; these downstream-boundary fixtures are synthetic,
+not actual matting or final acceptance. Selected membership remains separate from
+opacity; actual file round trips validate published assets.
+
+Q12/Q18/Q19 preparation checks exercise stale master/base/draft/request/external
+edit/parent and non-parent lock identities, digest/state binding at capture and final atomic-replacement boundaries, no clobber of changed drafts, corrupt
+revision rejection, reserve/publication failure, real competing writer/read
+behavior and a killed prepare process followed by safe retry. State alone owns
+pointers; retained stages and orphans are not working/accepted data. No resume or
+persistent tile cache is claimed.
+
+Pinned real CPU SAM validates explicit image/fast processor classes, hash checks,
+actual 1024 overview and native mask geometry, finite output, independently
+expected normalization, warm embedding reuse and changed-master invalidation.
+A fresh actual CLI journey created a synthetic RGB16 master, simulated development
+approval, saved three real SAM candidates/selected membership and explicit FG/BG
+trimap, and reopened the prepared revision with accepted state still empty.
+Separate MPS synthetic execution passed, with identical binary masks and small
+score differences; observed timings/RSS and package/advisory limits are in
+[provenance](model-provenance.md). CPU remains auto default. Failure/one-CPU-retry
+behavior uses injected failures, distinct from actual MPS success.
+
+No real photograph, human trimap review, final photographic acceptance, ViTMatte
+runtime, matte/export/viewer or regular-use acceptance is established by I02.
+These remain explicit downstream obligations.

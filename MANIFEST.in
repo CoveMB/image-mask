@@ -1,3 +1,5 @@
 include .editorconfig .gitattributes .gitignore .python-version
 include AGENTS.md README.md THIRD_PARTY_NOTICES.md requirements-macos-arm64.lock
 include docs/file-contract.md docs/model-provenance.md docs/troubleshooting.md docs/validation.md
+
+include docs/guidance.md
