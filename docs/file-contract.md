@@ -42,3 +42,11 @@ in later increments. Never use a flattened preview as a master. The complete
 manual viewer and registration controls are not yet implemented.
 
 Initial assets/state use atomic create-if-absent hard links within the project filesystem; concurrent externally created files cause a visible collision and remain unchanged. Own staged files may remain as diagnostic hard links and are never authoritative. Approval alone uses atomic replacement of existing state. RAW rejected coefficients use null for non-finite values, recorded shape and an explicit validity flag; finite values remain recorded.
+
+
+TIFF container recognition belongs to LibRaw, not the first TIFF page or filename.
+A RAW may expose an RGB8 thumbnail in IFD0. Only LibRaw's unsupported-format result
+while opening permits the ordinary TIFF validator; development/processing failures
+after recognition stay errors, including later unsupported-operation errors.
+Ordinary TIFF precision/compression/profile rules are unchanged. Known DNG/CFA
+containers that LibRaw cannot decode cannot be imported as a developed TIFF.

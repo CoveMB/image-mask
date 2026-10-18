@@ -69,7 +69,14 @@ def _orient(pixels: RGB16, orientation: int) -> RGB16:
 
 def _decode_raw(data: bytes, settings: dict[str, Any]) -> tuple[RGB16, dict[str, Any]]:
     try:
-        with rawpy.imread(io.BytesIO(data)) as raw:
+        opened_raw = rawpy.imread(io.BytesIO(data))
+    except rawpy.LibRawFileUnsupportedError:
+        # Only failure to recognize RAW permits ordinary TIFF validation.
+        raise
+    except rawpy.LibRawError as error:
+        raise IngestError(f"Unsupported or invalid RAW capture: {error}") from error
+    try:
+        with opened_raw as raw:
             coefficients = np.asarray(raw.camera_whitebalance, dtype=np.float64)
             credible = (
                 coefficients.shape == (4,)
@@ -148,13 +155,18 @@ def decode_source(data: bytes, development: dict[str, Any]) -> tuple[RGB16, dict
         raise IngestError("RGB16 PNG unsupported: export trusted uncompressed sRGB TIFF")
     if is_tiff:
         try:
-            with tifffile.TiffFile(io.BytesIO(data)) as image:
-                page = image.pages[0]
-                if not isinstance(page, tifffile.TiffPage):
-                    raise IngestError("TIFF frame is not a supported image page")
-                if 50706 in page.tags or int(page.photometric) == 32803:
-                    pixels, metadata = _decode_raw(data, development)
-                else:
+            # IFD0 may be only an RGB preview; LibRaw owns RAW identification.
+            pixels, metadata = _decode_raw(data, development)
+        except rawpy.LibRawFileUnsupportedError as unsupported_raw:
+            try:
+                with tifffile.TiffFile(io.BytesIO(data)) as image:
+                    page = image.pages[0]
+                    if not isinstance(page, tifffile.TiffPage):
+                        raise IngestError("TIFF frame is not a supported image page")
+                    if 50706 in page.tags or int(page.photometric) == 32803:
+                        raise IngestError(
+                            "LibRaw cannot decode this RAW TIFF container"
+                        ) from unsupported_raw
                     if (
                         len(image.pages) != 1
                         or page.dtype != np.dtype("uint16")
@@ -185,8 +197,8 @@ def decode_source(data: bytes, development: dict[str, Any]) -> tuple[RGB16, dict
                         "source_width": page.imagewidth,
                         "source_height": page.imagelength,
                     }
-        except (tifffile.TiffFileError, IndexError) as error:
-            raise IngestError(f"Invalid TIFF: {error}") from error
+            except (tifffile.TiffFileError, IndexError) as error:
+                raise IngestError(f"Invalid TIFF: {error}") from error
     elif is_png or data.startswith(b"\xff\xd8"):
         try:
             with Image.open(io.BytesIO(data)) as image:
@@ -229,7 +241,10 @@ def decode_source(data: bytes, development: dict[str, Any]) -> tuple[RGB16, dict
         except (UnidentifiedImageError, OSError) as error:
             raise IngestError(f"Invalid JPEG/PNG: {error}") from error
     else:
-        pixels, metadata = _decode_raw(data, development)
+        try:
+            pixels, metadata = _decode_raw(data, development)
+        except rawpy.LibRawFileUnsupportedError as error:
+            raise IngestError(f"Unsupported or invalid RAW capture: {error}") from error
     if (
         pixels.dtype != np.uint16
         or pixels.ndim != 3

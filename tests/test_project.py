@@ -314,3 +314,28 @@ def test_initial_publication_never_replaces_arriving_file(tmp_path, name):
         assert not (project / "state.json").exists()
     with pytest.raises(ProjectError):
         read_project(project)
+
+
+def test_tiff_raw_preview_creates_identity_bound_full_precision_master(tmp_path):
+    import io
+
+    from PIL import Image
+    from test_ingest import FakeRaw
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (7, 4), (10, 20, 30)).save(buffer, format="TIFF")
+    source = tmp_path / "misnamed.jpg"
+    source.write_bytes(buffer.getvalue())
+    original = source.read_bytes()
+    raw = FakeRaw()
+    raw.camera_whitebalance = [2, 1, 1.5, 0]
+    with patch("blackmask.ingest.rawpy.imread", return_value=raw):
+        project = create_project(source, tmp_path / "project", {})
+    state = read_project(project)
+    pixels, metadata = load_master(project, state["master_id"])
+    np.testing.assert_array_equal(pixels, ramp())
+    assert metadata["format"] == "RAW"
+    assert metadata["source_precision_bits"] is None
+    assert metadata["source_sha256"] == hashlib.sha256(original).hexdigest()
+    assert state["development_approved"] is False
+    assert source.read_bytes() == original

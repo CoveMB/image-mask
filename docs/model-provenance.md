@@ -29,10 +29,17 @@ RAW policy: full-size AHD, camera WB only with finite positive RGB coefficients;
 
 Historical ten-photo daylight development used camera/auto WB disabled and no extra DefaultCropSize. The spider approximate conversion and .0001 threshold remain frozen reference provenance; their incomplete AsShotWhiteXY implementation is not generalized. Current code uses neither those numerical multipliers nor their threshold.
 
-No model weights/configuration were downloaded, installed or evaluated in I01. SAM2.1/ViTMatte, Torch/torchvision pairing, CPU/MPS and model licences are future I02/I03 responsibilities. Frozen MODEL_REFERENCE.json remains checkpoint provenance, not runtime proof. General regular-use and real RAW evidence remain pending I10.
+No model weights/configuration were downloaded, installed or evaluated in I01. SAM2.1/ViTMatte, Torch/torchvision pairing, CPU/MPS and model licences are future I02/I03 responsibilities. Frozen MODEL_REFERENCE.json remains checkpoint provenance, not runtime proof. General regular-use and user-selected RAW evidence remain pending I10.
 
 Official sources: [rawpy 0.27.1 metadata](https://pypi.org/project/rawpy/0.27.1/), [RAW parameters](https://letmaik.github.io/rawpy/api/rawpy.Params.html), [LibRaw licences](https://www.libraw.org/about), [Pillow colour management](https://pillow.readthedocs.io/en/stable/reference/ImageCms.html), [Pillow security/release notes](https://pillow.readthedocs.io/en/stable/releasenotes/index.html), [tifffile](https://github.com/cgohlke/tifffile), [rawpy security](https://github.com/letmaik/rawpy/security), [Python flock](https://docs.python.org/3.12/library/fcntl.html). Each locked package's exact JSON metadata is at `https://pypi.org/pypi/NAME/VERSION/json`; advisory state can change.
 
 Security correction: the initial setuptools 82.0.1 proposal had CVE-2026-59890 / GHSA-h35f-9h28-mq5c (Unicode exclusion bypass while building source distributions on macOS). Changed to minimum fixed 83.0.0; its exact PyPI metadata reports zero published advisories at check. No source distribution was built or published. [Upstream advisory](https://github.com/pypa/setuptools/security/advisories/GHSA-h35f-9h28-mq5c).
 
 Non-finite rejected camera WB entries are recorded as JSON null, with coefficient shape and validity flag. Daylight selection can therefore create an unapproved preview project without inventing valid camera coefficients.
+
+
+## Bounded actual RAW evidence — controller routing correction
+
+The existing local upstream [Kodak DC50 KDC fixture](https://raw.githubusercontent.com/letmaik/rawpy/main/test/RAW_KODAK_DC50_%C3%A9.KDC) was used without further download or redistribution. Git blob `32354628d6653b83db905417e25e77b037337c94`, 92,675 bytes, SHA-256 `37e290dbd0053f00e508d02a6b3a2a990432dad1eb74c40a52ca899f0f225ecc` binds the exact bytes; the main-branch URL can change. Its first TIFF page is a 96×64 RGB8 preview without DNG tag. Native rawpy 0.27.1/LibRaw 0.22.1 recognizes it and full-size AHD/daylight/sRGB/gamma=(2.4,12.92) yields 768×512 RGB16. Ingest pixels and saved/reopened master match direct LibRaw exactly; source bytes remain unchanged. Captured precision remains unknown, and development approval stays false.
+
+Fixture redistribution rights have not been established, so the capture and derived project remain outside tracked/public source. No human appearance judgement or user RAW acceptance is claimed, and one supported camera is not comprehensive RAW validation. [Primary CR2 format documentation](https://libopenraw.freedesktop.org/formats/cr2/) independently illustrates why RAW data may be outside IFD0; it does not establish an executed CR2 test. Filename suffixes and camera registries are not used for routing.

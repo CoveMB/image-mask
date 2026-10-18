@@ -25,7 +25,19 @@ Package metadata, wheel hashes, licences and advisory disposition are in provena
 Passing deterministic tests/type/lint checks are not photographic, usability,
 accessibility, production safety or real RAW/backend evidence. No model, private
 photo upload, MPS/CPU inference or live assisted run occurred. I01 has no viewer.
-Real RAW/human WB/clipping/orientation review remains pending; I10 owns regular-use
+User-selected RAW/human WB/clipping/orientation review remains pending; I10 owns regular-use
 reconciliation and later increments own model/viewer/combined-journey checks.
 
 Reviewer repairs add explicit NaN/Inf daylight project-creation cases, arriving-file collision preservation and a linear-light RGB ICC sentinel. The latter independently expects encoded sRGB [71,137,188] from RGB8 linear samples [16,64,128]; bypassing colour conversion is observably wrong.
+
+
+Controller reconciliation found and reproduced a TIFF-container RAW omission after
+the original local result. New synthetic regressions distinguish IFD0 RGB8 preview
+from the LibRaw-developed full-resolution RGB16 and cover recognized-RAW WB/data
+failures, including an unsupported exception raised after opening. Only unsupported
+format at opening permits ordinary TIFF fallback; its existing compression/profile
+and PNG16 rejections remain exercised. The supplied local public Kodak KDC also
+passed actual LibRaw ingest/create/reopen/master-reload with exact direct-decoder
+pixels and unchanged source. It stayed unapproved. Provenance identifies the public
+source/hash; the fixture is not tracked. This is bounded actual RAW evidence, not
+human photographic acceptance or comprehensive camera-format coverage.

@@ -237,3 +237,78 @@ def test_big_endian_tiff_and_missing_profile_assumption(tmp_path):
     pixels, metadata = decode_source(source.read_bytes(), {"assume_srgb": True})
     np.testing.assert_array_equal(pixels, ramp())
     assert metadata["profile_decision"] == "explicit_srgb_assumption"
+
+
+def test_tiff_raw_preview_does_not_choose_the_rgb8_route():
+    # RAW containers can expose an RGB8 preview in IFD0 without DNG/CFA tags.
+    buffer = io.BytesIO()
+    Image.new("RGB", (7, 4), (10, 20, 30)).save(buffer, format="TIFF")
+    raw = FakeRaw()
+    raw.camera_whitebalance = [2, 1, 1.5, 0]
+    with patch("blackmask.ingest.rawpy.imread", return_value=raw):
+        pixels, metadata = decode_source(buffer.getvalue(), {})
+    np.testing.assert_array_equal(pixels, ramp())
+    assert pixels.shape == (2, 3, 3) and pixels.dtype == np.uint16
+    assert metadata["format"] == "RAW"
+    assert metadata["orientation_owner"] == "LibRaw"
+    assert metadata["source_precision_bits"] is None
+
+
+def test_recognized_tiff_raw_development_error_cannot_fall_back_to_preview():
+    buffer = io.BytesIO()
+    Image.new("RGB", (7, 4), (10, 20, 30)).save(buffer, format="TIFF")
+    with (
+        patch("blackmask.ingest.rawpy.imread", return_value=FakeRaw()),
+        pytest.raises(IngestError, match="white balance"),
+    ):
+        decode_source(buffer.getvalue(), {"assume_srgb": True})
+
+
+@pytest.mark.parametrize("error_name", ["LibRawDataError", "LibRawFileUnsupportedError"])
+def test_recognized_tiff_raw_decode_error_cannot_fall_back_to_tiff(error_name):
+    import rawpy
+
+    buffer = io.BytesIO()
+    write_profile = srgb_profile()
+    tifffile.imwrite(
+        buffer,
+        ramp(),
+        photometric="rgb",
+        metadata=None,
+        extratags=[(34675, "B", len(write_profile), write_profile, False)],
+    )
+    raw = FakeRaw()
+    raw.camera_whitebalance = [2, 1, 1.5, 0]
+    with (
+        patch("blackmask.ingest.rawpy.imread", return_value=raw),
+        patch.object(raw, "postprocess", side_effect=getattr(rawpy, error_name)("damaged RAW")),
+        pytest.raises(IngestError, match="invalid RAW"),
+    ):
+        decode_source(buffer.getvalue(), {})
+
+
+def test_unknown_raw_is_an_actionable_ingest_error():
+    with pytest.raises(IngestError, match="Unsupported or invalid RAW"):
+        decode_source(b"Not a decodable capture", {})
+
+
+def test_unrecognized_dng_cannot_be_imported_as_ordinary_rgb16_tiff():
+    import rawpy
+
+    buffer = io.BytesIO()
+    profile = srgb_profile()
+    tifffile.imwrite(
+        buffer,
+        ramp(),
+        photometric="rgb",
+        metadata=None,
+        extratags=[
+            (34675, "B", len(profile), profile, False),
+            (50706, "B", 4, (1, 4, 0, 0), False),
+        ],
+    )
+    with (
+        patch("blackmask.ingest.rawpy.imread", side_effect=rawpy.LibRawFileUnsupportedError()),
+        pytest.raises(IngestError, match="RAW"),
+    ):
+        decode_source(buffer.getvalue(), {})
