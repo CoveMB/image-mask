@@ -1,4 +1,4 @@
-"""Synthetic I08 arithmetic and saved-operation contracts; no photo preference claims."""
+"""Synthetic color-cleanup arithmetic and saved-operation contracts; no photo preference claims."""
 
 import json
 from pathlib import Path

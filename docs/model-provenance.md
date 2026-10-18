@@ -144,7 +144,7 @@ PyPI JSON and installed matching version source were inspected directly. No mode
 weights, third-party research framework or photos ship in the distribution.
 
 
-## I08 source-guided cleanup — checked 2026-10-18
+## Source-guided color cleanup — checked 2026-10-18
 
 No dependency changes. Installed NumPy 2.3.5, SciPy 1.17.1, Pillow 12.3.0 and
 tifffile 2026.10.15 retain the hash-pinned environment and existing licence notices.
