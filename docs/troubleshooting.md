@@ -27,7 +27,8 @@
 - **Moved capture:** reopen uses retained master; locate the original by SHA-256
   before future source-dependent recomputation. Same filename is insufficient.
 
-The [local review window](workflow.md) supports the manual workflow; assisted defect repair remains future work. Processing works offline
+The [local review window](workflow.md) supports the manual workflow; [bounded assisted review](assistant-workflow.md) uses the same local operations.
+Live photographic defect/repair acceptance remains pending. Processing works offline
 after explicit package/model setup. Preserve independent backups; ignored local data is not Git backup.
 
 A publication collision means another tool/editor created a project asset while ingestion ran. Its bytes are preserved. Keep the incomplete project for inspection and choose a new empty destination. Do not delete an arriving file to force publication.

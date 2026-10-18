@@ -402,3 +402,148 @@ behavior.
 Categorical8 authored protection normalizes losslessly to separately saved
 categorical16 without changing the scalar16 precision contract. No unchanged
 model/dependency/full-suite rerun was needed. Human acceptance limits above remain.
+
+
+## Combined candidate reconciliation
+
+I10 reconciles the combined I01–I09 application; **representative photographic and
+regular-use acceptance remain pending**. The application, tests, dependency lock
+and model inputs are unchanged from the reviewed I09 implementation. Documentation
+corrections remove obsolete availability statements; they add no processing path.
+
+On native ARM64 Python 3.12.14/macOS 26.5.2, with the pinned local caches and packages
+in [provenance](model-provenance.md), the complete registered groups ran separately:
+
+```sh
+BLACKMASK_SAM_CACHE=/path/to/installed-sam BLACKMASK_VITMATTE_CACHE=/path/to/installed-vitmatte .venv/bin/python -m pytest -q -p no:cacheprovider -m "not integration"
+BLACKMASK_SAM_CACHE=/path/to/installed-sam BLACKMASK_VITMATTE_CACHE=/path/to/installed-vitmatte .venv/bin/python -m pytest -q -p no:cacheprovider -m integration
+```
+
+The deterministic group passed **314 tests, 3 deselected**; the real CPU integration
+group passed **3 tests, 314 deselected**, no skips, both exit 0. These establish
+combined test correspondence after the earlier affected renewals, not photographic
+quality. The integrations exercise SAM geometry/normalization/warm embedding reuse,
+ViTMatte native pad/unpad and existing pinned setup without network access.
+Earlier I07 full 263 then final 32, I08 full 293 then final 113, and I09 full 311 then
+final 110 remain historical full/affected observations in their original categories.
+Prior lint/format/source typing and dependency evidence remains applicable because
+its inputs are unchanged; no redundant static or MPS/native 1024 run was performed.
+
+A separate fresh-process walkthrough copied the combined synthetic J6 project
+without inference cache or exports. Both model constructors, network loading and
+original-capture reads were blocked. Actual headless reopen, status, repair replay,
+review, export and restore exited 0. Empty model caches stayed empty. Independently
+decoded 6×4 RGB16/A16/W16 and opacity .12 reconstructed black pixels exactly; all
+13 accepted export files matched the original fixture bytes. There were 16 partial
+alpha samples and 8 nonzero W samples. Restore retained its synthetic accepted
+pointer. Fixture approvals are test controls, never human photographic approval.
+Installed help for all 11 documented commands exited 0. Review found that the manual
+launch examples required an undocumented shell activation; they now use the explicit
+`.venv/bin/blackmask` executable from the repository root. Actual open-help and
+headless reopen passed in a fresh process with only system PATH and no VIRTUAL_ENV.
+This CLI walkthrough does not establish a human keyboard/browser walkthrough or
+physically offline use.
+
+The following rows identify current computational coverage and remaining source
+obligations. Test names refer to the shipped `tests/` suite. “Pending” cannot be
+closed by a numerical pass or standing implementation approval.
+
+| Row | Applicable evidence | Remaining obligation / owner |
+| --- | --- | --- |
+| Q01 Source integrity | `test_ingest.py`, `test_project.py`; operation/export preservation checks and saved-only reconstruction | Capture integrity checked on fixtures; human selects and retains pilot originals |
+| Q02 RGB precision | RGB16 ramp, unsupported PNG16 rejection, real saved TIFF/mask reloads and independent export arithmetic | Human reviews selected RAW development; RGB8 inputs gain no captured precision |
+| Q03 Input/orientation | Misnamed/rotated non-square tests; unchanged canonical ingest; bounded actual Kodak LibRaw receipt | User-selected RAW orientation and source/guide registration review |
+| Q04 WB/profile | Invalid WB/profile tests, explicit assumptions and separate development gate; Kodak remains unapproved | Human WB/clipping/profile/development decision on local RAW |
+| Q05 Model geometry | Current 3 integrations; prior actual separate CPU/MPS records and native 1024 geometry | Human photographic CPU/MPS quality/responsiveness; auto stays CPU |
+| Q06 Known cores | Nonempty exact FG/BG assertions in guidance/matte/repair tests | Human verifies actual source-supported cores |
+| Q07 Transparency/web | Unknown corridors, mixed-alpha and partial-lock tests | Native spider/web and dragonfly wing/detail review by human |
+| Q08 Conflicts | Shared rasterizer, feather/core, directional and lock-contradiction rejection tests | Human resolves ambiguous source guidance; no automatic expansion |
+| Q09 Tile boundaries | Hand-derived origins, positive coverage, pad/unpad; retained two actual 1024 tiles | Human native photographic seam inspection; statistic is insufficient |
+| Q10 Repair/full rerun | J2 and J6 nonempty outside/partial alpha/RGB locks, decoded exports and full-rerun preservation | Human approves defect/scope and resulting fragile detail |
+| Q11 Repair replay | All three policies in J2; fresh guarded saved-only combined repair replay | Computationally covered for fixtures; retain all pilot operands/dependencies |
+| Q12 Stale/concurrent | Wrong identities, mutable inputs and real OS writer contention in operation/viewer/restore tests | Human follows visible busy/stale recovery in pilot |
+| Q13 Bounded AI loop | `test_assisted_review.py` validates shared two-attempt cycle, early stops and immutable history | Actual assistant behavior and human comparison remain pending |
+| Q14 Live AI defect | Public operation/proposal tests only | Human authorizes live image access, then confirms source-supported repair; no upload implied |
+| Q15 Optional effects | Complete J6, independent scoped stale/rebuild gates, partial RGB locks and BASE pixels | Human same-alpha color/shading preference and explicit protection review |
+| Q16 Alpha/opacity | Independent single-round sentinels and saved-only RGB16/A16/W16/p reconstruction | Exact arithmetic covered; photographic appearance remains human |
+| Q17 Exports | Lossless reload/collision tests; all 13 saved-only export files match, straight viewing copies labelled | Human inspects editable handoff/native appearance; PNG8 is a convenience |
+| Q18 Cache use | Current warm SAM integration, invalidation/device-generation/opacity zero-model tests | Representative cold/warm photo measurements pending; cache is not accepted-data storage |
+| Q19 Interruption/disk | Deterministic reserve/publication faults; retained actual I05 post-tile SIGKILL/resume | Human pilot recovery; I06 stop phase remains unverified, never relabelled post-tile |
+| Q20 No-credit/offline | Local HTTP/page tests, prior real synthetic browser controls and guarded saved-only CLI | Human closes assistant, physically disconnects network and authors NEW guides/support/partial lock |
+| Q21 Documentation | Actual installed help and fresh guarded CLI walkthrough; corrected current workflow/recovery docs | Fresh human source-to-export keyboard/status/recovery walkthrough without hidden context |
+
+| Journey | Combined evidence | Remaining human evidence |
+| --- | --- | --- |
+| J1 Ingest to export | `test_recorded_synthetic_j1_saved_layers_acceptance_export`; current integration geometry | Three separate photographic cases plus selected RAW; development/trimap/final choices |
+| J2 Repair/full rerun/restore/replay | `test_j2_roundtrip_replay_full_rerun_locks_and_restore`, all policies; fresh CLI replay | Source-backed defect/scope and human fragile-detail acceptance |
+| J3 Interrupt/resume/export | `test_resume.py`; actual I05 verified-tile SIGKILL -9, fresh reuse 1/infer 0 with accepted exports intact | Representative pilot recovery; no new I10 kill or inferred I06 phase |
+| J4 Offline authoring | Current viewer/page tests and prior real synthetic browser authoring | Same-project closed-assistant/physically offline NEW core/support/partial-lock correction and keyboard use |
+| J5 Live assisted to manual | Recorded synthetic bounded-cycle and continuation contracts | Authorized live source-visible repair/human compare followed by closed-assistant manual correction |
+| J6 Both effects/repair/rebuild/export | `test_both_effects_repair_independent_stale_rebuild_and_fresh_export`; guarded saved-only reproduction | Human appearance/protection on complete photographic sources; full-source dahlia unavailable |
+
+### Resource and retention limits
+
+The observed Mac is MacBookPro18,2, 10 physical CPU cores and 64 GiB memory. Free
+space at I10 preflight was 28,139,569,152 bytes; estimated bounded pending writes were
+250 MiB, checked in addition to the 10 GiB reserve. Measured logical file sizes
+excluding symlinks were 1,065,483,744 bytes for the environment and 575,214,708 bytes
+for the existing model-cache root. Logical bytes are not physical allocated disk.
+No environment, source, accepted asset, model, cache, failed stage or evidence was deleted.
+
+Reuse exact prior observed conditions: I02 SAM synthetic 65×97 recorded .035s load,
+.732s first stage and .025s warm embedding stage, peak RSS about 1.93GB including
+separate MPS work. I03 native 1024 used two 1024×1024 tiles over 1025×1024, 3.49s
+operation and 7,856,570,368-byte process peak RSS. I04 CPU 69×41 repair in a 97×65
+synthetic source took 4.21s including loading/validation, peak 514,703,360 bytes.
+I05 post-tile recovery observed peak 508,329,984 bytes. These are distinct prior
+synthetic measurements, not full-photo throughput or current memory-pressure data.
+The fresh 6×4 saved-only export CLI took .375s including process startup. The two
+current pytest groups took 67.25s and 8.02s respectively; suite duration is not
+seconds per photograph. Representative cold/warm full matte/repair/export timing,
+OS memory pressure and photo-project disk growth remain unmeasured human-pilot work.
+
+Retain durable source/contracts/reviews and exact computational proof; hold active
+pilot inputs, earlier environments, failed/successful packages, caches/stages and
+accepted dependencies until their consumers and independent backups are verified.
+Uncertain external ownership/storage remains unknown. Retention review grants no
+deletion permission and does not make ignored data a Git backup.
+
+### Pending representative pilot
+
+Use the [complete manual workflow](workflow.md), [bounded assisted procedure](assistant-workflow.md)
+and [recovery instructions](troubleshooting.md), processing each photograph separately.
+The human owns input selection, development/trimap/photographic decisions and the
+regular-use decision. The existing Kodak test is bounded LibRaw evidence with
+unresolved redistribution rights; it is neither the selected RAW pilot nor a
+redistributable fixture. No private pixels were uploaded for this reconciliation.
+
+1. Select local spider/prey/web, dragonfly and bee/flower or grasshopper originals,
+   including a real RAW/DNG; record hashes and choose separate empty project roots.
+   Preserve originals and existing accepted results. Choose CPU and verify existing
+   model caches with `doctor`; check reserve plus actual estimated pending writes.
+2. In a fresh session follow source development, named groups/unknown corridors,
+   explicit trimap review, native matte and black/gray/white same-crop detail/seam
+   review. Inspect the saved RGB16 master in a trusted full-precision viewer.
+3. Record a concrete source-visible defect, permitted support/context and partial
+   locks. Live assistant image access needs separate authority. Stop ambiguous or
+   unimproved cycles, never degrade a good result to manufacture a defect. Human
+   confirms matching before/after and base photographic acceptance.
+4. If desired compare same-alpha cleanup and 0/12/24% shading on identical native
+   crops with explicit per-photo width/protection. Exercise both-effect stale gates
+   and bounded rebuild; human decides appearance. Missing full-source dahlia stays pending.
+5. Close the assistant and physically disconnect application network after setup.
+   In this same project author a NEW source-supported background core, support and
+   saved partial-alpha/RGB lock through the viewer, without prebuilt masks/editor/
+   scripts. Prepare, approve, repair, compare, explicitly accept, restore and resume.
+   Record keyboard/status/errors and retained acceptance; automated local use does
+   not establish this observation.
+6. In a separately retained candidate observe actual interruption stage and fresh
+   resume while prior accepted exports stay intact. Use a copied disposable project
+   with cache absent and models unavailable to replay saved operands and reconstruct
+   exact RGB16/A16/W16/p output; preserve the original project and caches.
+7. Record actual dimensions, inferred/reused tiles, cold/warm conditions, stage
+   times, process peak RSS, OS memory pressure and disk growth. Enable default GPU
+   only after separate actual quality/responsiveness decisions. No invented threshold
+   or CPU result substitutes for MPS quality acceptance.
+8. Record unresolved observations and each human decision. Implementation/result
+   preapproval, test passes and independent review cannot supply regular-use acceptance.

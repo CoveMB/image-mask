@@ -1,12 +1,14 @@
 # Offline manual review
 
 After [explicit environment/model setup](../README.md) and [model cache setup](guidance.md),
-open one source/project. Use your own paths; select guides from the actual source.
+open one source/project. From the repository root, use the environment executable
+shown below; shell activation is unnecessary. Use your own paths and select guides
+from the actual source.
 
 ```sh
-blackmask open /path/to/source.tif --project /path/to/new-project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache
+.venv/bin/blackmask open /path/to/source.tif --project /path/to/new-project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache
 # Later: reopen saved assets, without needing the original capture path.
-blackmask open --project /path/to/new-project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache
+.venv/bin/blackmask open --project /path/to/new-project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache
 ```
 
 The command keeps one local server running until Ctrl-C. It opens a packaged page;
@@ -118,7 +120,8 @@ support file. The default support is the current saved guide support. To change 
 author support guides, prepare and approve the trimap, then run a complete matte/repair.
 Enable on an accepted base, or explicitly check candidate comparison. Compare with
 cleanup OFF using the same alpha before human appearance acceptance. Strength .35 is
-a starting point, never a recommendation for every photo. Shading is unavailable.
+a starting point, never a recommendation for every photo. Optional protected shading
+is described below.
 
 Cleanup estimates nearby background only from confirmed empty source pixels. It
 approximates decontamination; it cannot recover true missing colors/detail. Repeated
@@ -132,7 +135,7 @@ Rebuild using separately declared support covering the changed alpha, preserving
 corrected RGB outside it and exact saved RGB locks inside. Any changed alpha left
 outside the rebuild keeps cleanup stale. Broader work needs explicit broader scope.
 
-CLI uses `blackmask run PROJECT --request FILE` with schema_version=1, kind="effects",
+CLI uses `.venv/bin/blackmask run PROJECT --request FILE` with schema_version=1, kind="effects",
 master_id, base_revision and inputs_digest copied from current review/state, explicit
 scope_xyxy, project-relative support_file and candidate_comparison boolean. Optional
 color_cleanup={"enabled":true,"strength":0.35} records an explicit override; omitting
@@ -200,7 +203,7 @@ Accepted complete revisions and exports remain saved separately. For a new
 protection choice rebuild within explicit support; prior protected W=0 samples
 remain protected. Human comparison decides whether shading improves the photo.
 
-CLI uses the existing `blackmask run PROJECT --request FILE`. Add, for example,
+CLI uses the existing `.venv/bin/blackmask run PROJECT --request FILE`. Add, for example,
 `shading={"enabled":true,"opacity":0.12,"width_px":YOUR_WIDTH,"direction_degrees":YOUR_DIRECTION}`
 and `shading_protection_file` to the common effects request. Values shown as
 YOUR_WIDTH/YOUR_DIRECTION are placeholders, not executable JSON. For opacity

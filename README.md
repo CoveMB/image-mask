@@ -27,6 +27,9 @@ default-off source-guided color cleanup saves RGB16 layers with scoped stale/reb
 controls. Default-off protected inward shading saves independent W16/opacity and
 supports exact editable exports.
 Prepared revisions require explicit human trimap review before matting.
+Combined computational checks and saved-only reconstruction are reconciled in
+[validation](docs/validation.md#combined-candidate-reconciliation). The representative
+human pilot remains pending; implementation delivery does not establish regular-use acceptance.
 
 A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
 SAM passed real CPU and separate MPS synthetic geometry checks; auto stays CPU.
