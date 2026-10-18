@@ -47,9 +47,11 @@ no real photograph has been approved by an agent.
 Native environment observed: macOS 26.5.2 ARM64, Python 3.12.14, LibRaw 0.22.1.
 Package metadata, wheel hashes, licences and advisory disposition are in provenance.
 Passing deterministic tests/type/lint checks are not photographic, usability,
-accessibility, production safety or real RAW/backend evidence. No model, private
-photo upload, MPS/CPU inference or live assisted run occurred. These trusted-master checks did not exercise a viewer.
-User-selected RAW/human WB/clipping/orientation review remains pending; regular-use acceptance and model/viewer/combined-journey checks remain future work.
+accessibility, production safety or real RAW/backend evidence. These trusted-master
+checks included no model, private photo upload, MPS/CPU inference, live assisted run or viewer exercise.
+User-selected RAW/human WB/clipping/orientation review and regular-use acceptance
+remain pending. Model, viewer and combined-journey evidence from that stage was
+not established; later evidence is recorded separately below.
 
 Regression checks include explicit NaN/Inf daylight project-creation cases, arriving-file collision preservation and a linear-light RGB ICC sentinel. The latter independently expects encoded sRGB [71,137,188] from RGB8 linear samples [16,64,128]; bypassing colour conversion is observably wrong.
 
@@ -134,8 +136,9 @@ photographic acceptance. Real local CPU and diagnostic MPS ViTMatte inference
 verify actual pad/unpad/normalization/device/attention. Native1024 evidence and
 resource observations are in [provenance](model-provenance.md). Interruption,
 stale inputs, corruption, conflicts, low space and non-clobber exports preserve
-accepted state in covered paths. This does not certify hostile-writer exclusion,
-resumability, a viewer, local repair or appearance effects.
+accepted state in covered paths. These native matting and base-export checks did
+not certify hostile-writer exclusion, resumability, a viewer, local repair or
+appearance effects; later evidence is recorded separately below.
 
 Pending human evidence: selected private RAW orientation/WB/clipping; source-backed
 trimap cores/corridors; spider/dragonfly wing/web/detail and native seams on black/
@@ -167,8 +170,8 @@ evidence remains separate; no new backend or dependency was introduced.
 
 Human source-backed defect/scope/trimap, private RAW development, spider/dragonfly
 detail/seam comparisons, final photographic acceptance and regular-use observations
-remain pending. Viewer, effects, resumability and autonomous defect detection are
-outside the scoped-repair implementation. Restore retains recovery bytes and
+remain pending. These scoped-repair checks did not establish a viewer, effects,
+resumability or autonomous defect detection. Restore retains recovery bytes and
 accepted state; interrupted draft replacement can require explicit text recovery.
 
 Independent review and separate reproduction found four bounded issues in the
@@ -216,15 +219,15 @@ followed the completed documentation.
 
 ## Local review boundary
 
-I06 adds HTTP origin/host/capability and exact asset-identity checks, executable native
-JavaScript transform checks, shared-lock CLI/viewer contention, draft concurrency,
+Local review verification covers HTTP origin/host/capability and exact asset-identity
+checks, executable native JavaScript transform checks, shared-lock CLI/viewer contention, draft concurrency,
 malformed-draft restore and an actual HTTP synthetic guide/support/partial-lock
 repair/accept/restore/resume journey. That deterministic journey stubs the expensive
 model boundary; it exercises real rasterization, files, publication and rendering.
 Node.js executes the shipped coordinate helper across cropped/non-square,
 zoomed/panned/letterboxed/resized views, including CSS/canvas scale differences.
 
-A separate actual in-app-browser walkthrough used a rotated RGB16 synthetic gradient
+A separate actual browser walkthrough used a rotated RGB16 synthetic gradient
 with real pinned CPU SAM and ViTMatte. New background, feathered support and 25
 partially transparent locked pixels were authored through page controls. A native
 point under zoom/pan saved the expected coordinates. The repair changed 875 samples;
@@ -245,8 +248,8 @@ separately from the earlier successful cropped repair; no post-tile kill is clai
 
 The settled full deterministic run passed 227 tests (three unchanged model integration
 tests deselected). Ruff, formatting, mypy and UI formatting passed after two test-only
-import-order corrections; the affected two tests were renewed. An initial partial
-run was interrupted because a legacy JSON-only CLI test did not select the new
+import-order corrections; the affected two tests passed after those corrections.
+An initial partial run was interrupted because a legacy JSON-only CLI test did not select the new
 `--headless` option; that compatibility check was corrected before the full pass.
 
 
@@ -261,10 +264,9 @@ rendering and human usability observations.
 
 The repaired full deterministic suite passed 233 tests (three unchanged integrations
 deselected). Changed page/test formatting and lint passed; the six affected tests
-were renewed after a test-only import-spacing correction. Python source/type inputs
-are byte-identical to the successful mypy run. Actual in-app-browser export retained
+passed after a test-only import-spacing correction. Python source/type inputs
+are byte-identical to the successful mypy run. Actual browser export retained
 a new unsaved guide; a real CLI restore followed by page reload cleared both review
 checkboxes, selected the current revision and rejected acceptance without a new
-confirmation. Long recovery controls fit 1,000- and 800-pixel desktop widths; the
-viewport was reset afterward. Accepted export hashes stayed exact. No model inference
-was repeated for these frontend repairs. Human acceptance obligations remain pending.
+confirmation. Long recovery controls fit 1,000- and 800-pixel desktop widths;
+accepted export hashes stayed exact. No model inference was repeated for these frontend repairs. Human acceptance obligations remain pending.

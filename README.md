@@ -20,7 +20,9 @@ ViTMatte processing provides separate trimap/final acceptance controls, native
 same-crop review assets and accepted RGB16 black/alpha16 plus labelled PNG8 exports.
 Scoped native repair now saves quantized operands for model-free replay; restore
 selects saved working inputs without changing final acceptance. Interrupted matte/repair now resumes verified tiles or completed stages through
-`status` and `resume`. I06 adds an offline loopback review window with typed guide authoring, native comparisons and the same processing/recovery controls. Appearance effects remain future work.
+`status` and `resume`. An offline loopback review window provides typed guide
+authoring, native comparisons and the same processing/recovery controls. Appearance
+effects remain future work.
 Prepared revisions require explicit human trimap review before matting.
 
 A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
