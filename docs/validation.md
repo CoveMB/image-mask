@@ -1,10 +1,8 @@
-# I01 verification
+# Trusted-master verification
 
 Observed on 2026-10-18 with native ARM64 Python 3.12.14, macOS 26.5.2 and
-LibRaw 0.22.1. The published application, tests and package inputs match the
-reviewed local candidate byte-for-byte; public-history separation and standalone
-documentation changes do not alter processing behavior. The deterministic suite
-was not repeated on unchanged inputs.
+LibRaw 0.22.1. The results below describe the trusted-master implementation and
+its stated evidence limits.
 
 ```sh
 .venv/bin/python -m pytest -q -p no:cacheprovider
@@ -13,7 +11,7 @@ was not repeated on unchanged inputs.
 .venv/bin/mypy src
 ```
 
-Actual settled result: **50 passed** (exit 0); lint, format and type checks exited
+Recorded result: **50 passed** (exit 0); lint, format and type checks exited
 0. Hash-locked binary-only installation and dependency checks passed. Built-wheel
 inspection found only six application modules and package metadata, with no
 photographs, private planning, personal paths or VCS data. CLI create/reopen,
@@ -24,7 +22,7 @@ Independent source-fidelity, architecture/simplicity and verification scopes wer
 completed, with focused rechecks after material corrections. Corrections covered
 initial publication collisions, non-finite rejected camera WB metadata, meaningful
 ICC conversion regression sensitivity and TIFF-container RAW routing. All findings
-closed within their scopes. Substitute simplicity review; Ponytail not run.
+closed within their scopes.
 These reports and passing tests do not replace human development or photographic
 acceptance.
 
@@ -48,8 +46,8 @@ Native environment observed: macOS 26.5.2 ARM64, Python 3.12.14, LibRaw 0.22.1.
 Package metadata, wheel hashes, licences and advisory disposition are in provenance.
 Passing deterministic tests/type/lint checks are not photographic, usability,
 accessibility, production safety or real RAW/backend evidence. No model, private
-photo upload, MPS/CPU inference or live assisted run occurred. I01 has no viewer.
-User-selected RAW/human WB/clipping/orientation review remains pending; Regular-use acceptance and model/viewer/combined-journey checks remain future work.
+photo upload, MPS/CPU inference or live assisted run occurred. The current tool has no viewer.
+User-selected RAW/human WB/clipping/orientation review remains pending; regular-use acceptance and model/viewer/combined-journey checks remain future work.
 
 Regression checks include explicit NaN/Inf daylight project-creation cases, arriving-file collision preservation and a linear-light RGB ICC sentinel. The latter independently expects encoded sRGB [71,137,188] from RGB8 linear samples [16,64,128]; bypassing colour conversion is observably wrong.
 

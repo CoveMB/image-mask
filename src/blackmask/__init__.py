@@ -1,1 +1,1 @@
-"""Local single-photo engine. I01: trusted developed masters."""
+"""Local single-photo engine for trusted developed masters."""

@@ -37,7 +37,7 @@ def test_fresh_cli_create_reopen_doctor_accept(tmp_path):
     assert doctor.returncode == 0, doctor.stderr
     report = json.loads(doctor.stdout)
     assert report["native_arm64_python312"] is True
-    assert report["models"] == "not installed or evaluated in I01"
+    assert report["models"] == "not installed or evaluated"
     assert report["libraw"]
 
 

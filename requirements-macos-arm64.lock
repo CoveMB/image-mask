@@ -1,4 +1,4 @@
-# I01 native macOS ARM64 / CPython 3.12; runtime + verification tools.
+# Native macOS ARM64 / CPython 3.12; runtime + verification tools.
 # Generated from installed versions and official PyPI wheel SHA-256 on 2026-10-18.
 # Install with --require-hashes --only-binary=:all:. No model packages included.
 ast_serialize==0.13.1 --hash=sha256:1b158f1c9e3a0d386913924c57995d6df78224868a4d0f215bdd41587c97b34a

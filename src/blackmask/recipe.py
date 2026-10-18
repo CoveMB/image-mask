@@ -33,7 +33,7 @@ class Recipe:
             or not isinstance(value["notes"], str)
         ):
             raise ValueError("Invalid recipe keys, schema or master identity")
-        # Later cards extend these sections with their actual application paths.
+        # Only supported processing settings are accepted.
         for section in ("matting", "color_cleanup", "shading"):
             current = value[section]
             reference = expected[section]
@@ -41,7 +41,7 @@ class Recipe:
                 raise ValueError(f"Invalid recipe {section}")
             for key, default in reference.items():
                 if type(current[key]) is not type(default) or current[key] != default:
-                    raise ValueError(f"Unsupported I01 recipe setting {section}.{key}")
+                    raise ValueError(f"Unsupported recipe setting {section}.{key}")
         if value["groups"] != []:
-            raise ValueError("Guide groups arrive in I02")
+            raise ValueError("Guide groups are not supported yet")
         return cls(master_id, value["notes"])

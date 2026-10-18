@@ -12,14 +12,14 @@ internet access.
 
 ## Current status
 
-I01 implements local project creation/reopen, trusted RGB16 sRGB TIFF masters,
+The current tool supports local project creation/reopen, trusted RGB16 sRGB TIFF masters,
 explicit human development approval and a download-free native doctor. There is
 no viewer, masking, model inference, effects or final-photo acceptance yet.
 A public Kodak RAW passed bounded native ingest/master round-trip checks.
 User-selected RAW and human photographic evaluation remain pending; neither that
 one fixture nor synthetic boundary tests establish complete RAW support.
 
-## I01 setup and quick start
+## Setup and quick start
 
 Use native ARM64 Python 3.12 on macOS. The project does not install Python or
 download models. Reserve at least 10 GiB free **plus** estimated pending writes;
@@ -60,7 +60,7 @@ review; this records development approval, leaving final-photo acceptance empty:
 .venv/bin/blackmask accept /path/to/new-photo-project --development --master-id ACTUAL_INSPECTED_MASTER_ID
 ```
 
-Changing development creates a separate project/master identity in I01; dimensions
+Changing development currently requires a separate project/master identity; dimensions
 alone cannot preserve later guides. Reopen uses saved validated assets and works
 without the original path being available; preserve the original separately.
 Do not substitute a same-name capture if its recorded hash differs.
@@ -74,7 +74,7 @@ Do not substitute a same-name capture if its recorded hash differs.
 
 See [file contract](docs/file-contract.md), [validation and limitations](docs/validation.md),
 [recovery](docs/troubleshooting.md) and [exact package/development provenance](docs/model-provenance.md).
-Setup requires public package downloads; subsequent I01 processing is local/offline.
+Setup requires public package downloads; subsequent processing is local/offline.
 
 ## Source map
 
@@ -101,7 +101,7 @@ before publishing: ignore rules do not remove existing history or prevent force-
 
 The public implementation history contains no photographs, private planning or
 reference archives. Local planning and frozen reference material, when supplied
-separately, stay ignored and are not required to install or operate this increment.
+separately, stay ignored and are not required to install or operate the tool.
 The maintained public docs describe the behavior currently implemented. Future
 masking, review-window and appearance features require separate implementation
 and human photographic validation.

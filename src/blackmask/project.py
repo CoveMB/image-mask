@@ -280,7 +280,7 @@ def read_project(project: Path) -> dict[str, Any]:
         or state["accepted_revision"] is not None
         or state["status"] != ("ready" if state["development_approved"] else "review_needed")
     ):
-        raise ProjectError("Invalid I01 project state")
+        raise ProjectError("Invalid project state")
     _validate_assets(project, state)
     return state
 

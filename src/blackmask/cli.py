@@ -1,4 +1,4 @@
-"""Bounded offline I01 command surface; no viewer or downloads."""
+"""Bounded offline photo-project commands; no viewer or downloads."""
 
 import argparse
 import json
@@ -28,8 +28,8 @@ def doctor(path: Path) -> dict[str, Any]:
         "libraw_flags": rawpy.flags,
         "free_bytes": shutil.disk_usage(path).free,
         "reserve_bytes": 10 * 1024**3,
-        "models": "not installed or evaluated in I01",
-        "backend": "no inference in I01",
+        "models": "not installed or evaluated",
+        "backend": "no inference performed",
     }
 
 
