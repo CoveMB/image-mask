@@ -26,7 +26,26 @@ from .project import (
 )
 
 
-def render_black(foreground: np.ndarray, alpha16: np.ndarray) -> np.ndarray:
+def shading_factor(
+    shape: tuple[int, ...], weight16: np.ndarray | None, opacity: float
+) -> np.ndarray:
+    if type(opacity) not in {int, float} or not np.isfinite(opacity) or not 0 <= opacity <= 1:
+        raise ValueError("Shading opacity must be finite in [0,1]")
+    if weight16 is None:
+        if opacity != 0:
+            raise ValueError("Nonzero shading opacity requires saved W16")
+        return np.ones(shape, dtype=np.float64)
+    if weight16.dtype != np.uint16 or weight16.shape != shape:
+        raise ValueError("Shading requires aligned scalar W16")
+    return 1 - opacity * (weight16.astype(np.float64) / 65535)
+
+
+def render_black(
+    foreground: np.ndarray,
+    alpha16: np.ndarray,
+    weight16: np.ndarray | None = None,
+    opacity: float = 0,
+) -> np.ndarray:
     if (
         foreground.dtype != np.uint16
         or foreground.ndim != 3
@@ -36,15 +55,26 @@ def render_black(foreground: np.ndarray, alpha16: np.ndarray) -> np.ndarray:
     ):
         raise ValueError("Renderer requires aligned saved RGB16 and scalar alpha16")
     return np.rint(
-        foreground.astype(np.float64) * (alpha16.astype(np.float64) / 65535)[..., None]
+        foreground.astype(np.float64)
+        * (alpha16.astype(np.float64) / 65535)[..., None]
+        * shading_factor(alpha16.shape, weight16, opacity)[..., None]
     ).astype(np.uint16)
 
 
-def view_rgba(foreground: np.ndarray, alpha16: np.ndarray) -> np.ndarray:
+def view_rgba(
+    foreground: np.ndarray,
+    alpha16: np.ndarray,
+    weight16: np.ndarray | None = None,
+    opacity: float = 0,
+) -> np.ndarray:
     render_black(foreground, alpha16)  # Shared input contract, no flattened foreground reuse.
     return np.dstack(
         (
-            np.rint(foreground.astype(np.float64) / 257).astype(np.uint8),
+            np.rint(
+                foreground.astype(np.float64)
+                * shading_factor(alpha16.shape, weight16, opacity)[..., None]
+                / 257
+            ).astype(np.uint8),
             np.rint(alpha16.astype(np.float64) / 257).astype(np.uint8),
         )
     )
@@ -105,7 +135,10 @@ def saved_layers(
         from .repair import replay_repair
 
         replay_repair(project, revision)
-    from .effects import selected_foreground
+    from .effects import effects_stale, saved_shading, selected_foreground
+
+    effects_off = effects_off or effects_stale(manifest)
+    saved_shading(project, revision, alpha, manifest, effects_off=effects_off)
 
     foreground = selected_foreground(
         project, revision, foreground, alpha, manifest, effects_off=effects_off
@@ -157,10 +190,13 @@ def export_project(
         if revision != state["accepted_revision"] and not draft:
             raise ProjectError("Unaccepted revision requires explicit --draft")
         foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
-        if manifest.get("color_cleanup", {}).get("stale") and manifest["color_cleanup"]["enabled"]:
+        from .effects import effects_stale, saved_shading
+
+        if effects_stale(manifest):
             raise ProjectError(
-                "Stale enabled cleanup: scoped rebuild or explicit disable required before export"
+                "Stale enabled cleanup/shading: scoped rebuild or explicit disable required before export"
             )
+        weight, opacity = saved_shading(project, revision, alpha, manifest)
         before = _asset(project, "state.json").read_bytes()
         manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
         check_space(project, foreground.nbytes * 12 + 1024**2)
@@ -168,13 +204,15 @@ def export_project(
         exports.mkdir(exist_ok=True)
         label = f"{revision}-DRAFT" if draft else revision
         stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
-        black = render_black(foreground, alpha)
+        black = render_black(foreground, alpha, weight, opacity)
         write_master(stage / "black_rgb16.tif", black)
         Image.fromarray(alpha).save(stage / "alpha16.png")
         Image.fromarray(np.rint(black.astype(np.float64) / 257).astype(np.uint8)).save(
             stage / "black_RGB8_VIEW.png"
         )
-        Image.fromarray(view_rgba(foreground, alpha)).save(stage / "transparent_RGBA8_VIEW.png")
+        Image.fromarray(view_rgba(foreground, alpha, weight, opacity)).save(
+            stage / "transparent_RGBA8_VIEW.png"
+        )
         if not np.array_equal(tifffile.imread(stage / "black_rgb16.tif"), black):
             raise ProjectError("RGB16 export round trip failed")
         with Image.open(stage / "alpha16.png") as image:
@@ -184,6 +222,19 @@ def export_project(
                 or "gamma" in image.info
             ):
                 raise ProjectError("Scalar16 export round trip/profile failed")
+        write_master(stage / "foreground_rgb16.tif", foreground)
+        write_master(stage / "source_rgb16.tif", load_master(project, state["master_id"])[0])
+        for name in ("shadow_weight16.png", "corrected_rgb16.tif", "recipe.toml"):
+            if name in manifest["files"]:
+                (stage / name).write_bytes(
+                    _asset(project, f"revisions/{revision}/{name}").read_bytes()
+                )
+        for effect, name in (
+            ("color_cleanup", "effects/settings.json"),
+            ("shading", "effects/shading/settings.json"),
+        ):
+            if effect in manifest:
+                (stage / (effect + "_settings.json")).write_bytes(_json_bytes(manifest[effect]))
         record = {
             "schema_version": 1,
             "revision": revision,
@@ -195,7 +246,8 @@ def export_project(
             "revision_manifest_sha256": digest(manifest_bytes),
             "compositing": manifest["compositing"],
             "color_cleanup": manifest.get("color_cleanup", {"enabled": False}),
-            "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; no shading",
+            "shading": manifest.get("shading", {"enabled": False}),
+            "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; baked shading at saved p; editable W16 plus p retained separately",
             "files": {p.name: digest(p.read_bytes()) for p in stage.iterdir() if p.is_file()},
         }
         (stage / "manifest.json").write_bytes(_json_bytes(record))

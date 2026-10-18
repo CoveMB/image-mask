@@ -103,7 +103,7 @@ is working. Explicit unaccepted exports require both flags:
 sRGB RGB16 black TIFF, scalar alpha16 lossless PNG and RGB8/RGBA8 viewing PNGs.
 The single renderer computes `round(F * (alpha16/65535))` in float64, encoded
 sRGB, ties-to-even, applying alpha once. Transparent viewing RGB stays straight,
-never alpha-multiplied. No effects are enabled. Masks receive no ICC/gamma
+never alpha-multiplied. Optional cleanup and shading are selected only by explicit saved settings; RGBA8 shading is baked into straight RGB, while editable W16 and p remain separate. Masks receive no ICC/gamma
 transform. Existing identical deliveries can be reused; differing/incomplete
 ones fail without overwrite. Retain saved foreground/master and alpha for editable
 handoff; the flattened black image never becomes foreground.

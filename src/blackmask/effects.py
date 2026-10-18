@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import tifffile
 from PIL import Image
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt, gaussian_filter
 
 from .guidance import coordinates, rasterize_regions
 from .ingest import write_master
@@ -27,6 +27,103 @@ from .project import (
     read_revision,
 )
 from .repair import scalar16, validate_support
+
+
+def validate_shading(settings: Any) -> None:
+    if (
+        not isinstance(settings, dict)
+        or set(settings)
+        not in ({"enabled", "opacity"}, {"enabled", "opacity", "width_px", "direction_degrees"})
+        or type(settings.get("enabled")) is not bool
+    ):
+        raise ProjectError("Invalid shading settings")
+    for name in set(settings) - {"enabled"}:
+        if type(settings[name]) not in {int, float} or not np.isfinite(settings[name]):
+            raise ProjectError("Shading settings must be finite numbers")
+    if not 0 <= settings["opacity"] <= 1:
+        raise ProjectError("Shading opacity must be in [0,1]")
+    if settings["enabled"] and "width_px" not in settings:
+        raise ProjectError("Shading requires explicit per-photo width and direction")
+    if "width_px" in settings and (
+        not 0 < settings["width_px"] or not 0 <= settings["direction_degrees"] < 360
+    ):
+        raise ProjectError("Shading requires positive width and direction in [0,360)")
+
+
+def read_shading_protection(path: Path) -> np.ndarray:
+    """Accept canonical authored categorical8 guides or explicit categorical16 masks."""
+    with Image.open(path) as image:
+        if image.format == "PNG" and image.mode == "L":
+            values = np.array(image)
+            if not np.isin(values, [0, 255]).all():
+                raise ProjectError("Authored shading protection must contain only 0/255")
+            return values.astype(np.uint16) * 257
+    return scalar16(path)
+
+
+def make_shadow_weight(
+    source16: np.ndarray,
+    alpha16: np.ndarray,
+    support16: np.ndarray,
+    settings: dict[str, Any],
+    *,
+    protection: np.ndarray,
+) -> np.ndarray:
+    """Relative inward weight; opacity is deliberately excluded, including at p=0."""
+    validate_shading(settings)
+    shape = alpha16.shape
+    if (
+        alpha16.dtype != np.uint16
+        or alpha16.ndim != 2
+        or source16.dtype != np.uint16
+        or source16.shape != (*shape, 3)
+        or support16.dtype != np.uint16
+        or support16.shape != shape
+        or protection.dtype != np.bool_
+        or protection.shape != shape
+    ):
+        raise ProjectError("Shading requires aligned RGB16/A16/support16 and boolean protection")
+    if not settings["enabled"]:
+        return np.zeros(shape, dtype=np.uint16)
+    width = settings["width_px"]
+    if width > max(shape):
+        raise ProjectError("Shading width exceeds native image extent")
+    alpha = alpha16.astype(np.float64) / 65535
+
+    def smooth(value):
+        value = np.clip(value, 0, 1)
+        return value * value * (3 - 2 * value)
+
+    # Padding makes the image boundary an explicit empty exterior on every side.
+    distance = distance_transform_edt(np.pad(alpha >= 0.5, 1))[1:-1, 1:-1]
+    edge = 1 - smooth(distance / width)
+    # Scale the reference thickness/normal heuristics to the chosen band, not a photo default.
+    radius = width * 14 / 48
+    core = distance >= radius
+    thickness = (
+        np.zeros(shape)
+        if not core.any()
+        else 1 - smooth((distance_transform_edt(~core) - radius) / (width * 8 / 48))
+    )
+    thickness = gaussian_filter(thickness, width * 2 / 48)
+    blurred = gaussian_filter(alpha, width / 4)
+    gy = np.gradient(blurred, axis=0) if shape[0] > 1 else np.zeros(shape)
+    gx = np.gradient(blurred, axis=1) if shape[1] > 1 else np.zeros(shape)
+    magnitude = np.hypot(gx, gy)
+    angle = np.deg2rad(settings["direction_degrees"])
+    normal = np.divide(
+        -gx * np.cos(angle) - gy * np.sin(angle),
+        magnitude,
+        out=np.zeros(shape),
+        where=magnitude > 1e-5,
+    )
+    direction = 0.35 + 0.65 * smooth((normal + 1) / 2)
+    luminance = source16.astype(np.float64) @ np.array([0.2126, 0.7152, 0.0722]) / 65535
+    highlights = 1 - 0.75 * smooth((gaussian_filter(luminance, width / 8) - 0.68) / 0.25)
+    weight = edge * thickness * direction * highlights * smooth(alpha / 0.35)
+    weight *= support16.astype(np.float64) / 65535
+    weight[(alpha16 == 0) | (distance >= width) | protection] = 0
+    return np.rint(np.clip(weight, 0, 1) * 65535).astype(np.uint16)
 
 
 def validate_cleanup(settings: Any) -> None:
@@ -92,6 +189,74 @@ EFFECT_FILES = (
     "effects/alpha16.png",
     "effects/settings.json",
 )
+
+
+SHADING_FILES = (
+    "shadow_weight16.png",
+    "effects/shading/support16.png",
+    "effects/shading/alpha16.png",
+    "effects/shading/protection16.png",
+    "effects/shading/settings.json",
+)
+
+
+def effects_stale(manifest: dict[str, Any]) -> bool:
+    return any(
+        manifest.get(name, {}).get("enabled") and manifest[name].get("stale")
+        for name in ("color_cleanup", "shading")
+    )
+
+
+def inherit_shading(
+    project: Path, parent: str, stage: Path, master_id: str, alpha: np.ndarray | None = None
+) -> dict[str, Any] | None:
+    manifest = read_revision(project, parent, master_id)
+    record = manifest.get("shading")
+    if record is None:
+        return None
+    record = dict(record)
+    for name in SHADING_FILES:
+        target = stage / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(_asset(project, f"revisions/{parent}/{name}").read_bytes())
+    if alpha is not None and record["enabled"]:
+        record["stale"] = not np.array_equal(scalar16(stage / "effects/shading/alpha16.png"), alpha)
+    return record
+
+
+def saved_shading(
+    project: Path,
+    revision: str,
+    alpha: np.ndarray,
+    manifest: dict[str, Any],
+    *,
+    effects_off: bool = False,
+):
+    record = manifest.get("shading")
+    if record is None:
+        return None, 0.0
+    validate_shading(record["settings"])
+    weight = scalar16(_asset(project, f"revisions/{revision}/shadow_weight16.png"))
+    dependency = scalar16(_asset(project, f"revisions/{revision}/effects/shading/alpha16.png"))
+    support = scalar16(_asset(project, f"revisions/{revision}/effects/shading/support16.png"))
+    protection = scalar16(_asset(project, f"revisions/{revision}/effects/shading/protection16.png"))
+    if (
+        any(value.shape != alpha.shape for value in (weight, dependency, support, protection))
+        or type(record.get("enabled")) is not bool
+        or type(record.get("stale")) is not bool
+        or record.get("source_id") != manifest["master_id"]
+        or record["enabled"] != record["settings"]["enabled"]
+        or record["opacity"] != record["settings"]["opacity"]
+        or np.any(weight[(protection != 0) | (support == 0)] != 0)
+        or record["enabled"]
+        and record["stale"] != (not np.array_equal(dependency, alpha))
+    ):
+        raise ProjectError("Invalid saved shading dependency/protection/status")
+    return (
+        (None, 0.0)
+        if effects_off or effects_stale(manifest) or not record["enabled"]
+        else (weight, record["opacity"])
+    )
 
 
 def inherit_cleanup(
@@ -207,7 +372,9 @@ def run_effects(
     }
     if (
         not required <= set(operation)
-        or set(operation) - required - {"color_cleanup"}
+        or set(operation)
+        - required
+        - {"color_cleanup", "shading", "shading_protection_file", "opacity_only"}
         or type(operation["schema_version"]) is not int
         or operation["schema_version"] != 1
         or operation["kind"] != "effects"
@@ -229,12 +396,18 @@ def run_effects(
     ):
         raise ProjectError("Stale effects master, base revision or draft identity")
     parent = state["working_revision"]
+    cleanup_changed = "color_cleanup" in operation or "shading" not in operation
     settings = operation.get(
         "color_cleanup", tomllib.loads(_asset(project, "recipe.toml").read_text())["color_cleanup"]
     )
     validate_cleanup(settings)
     enabled = settings["enabled"] and settings["strength"] != 0
-    if enabled and parent != state["accepted_revision"] and not operation["candidate_comparison"]:
+    if (
+        cleanup_changed
+        and enabled
+        and parent != state["accepted_revision"]
+        and not operation["candidate_comparison"]
+    ):
         raise ProjectError("Cleanup requires accepted base or explicit candidate comparison")
     foreground, alpha, manifest = saved_layers(
         project, parent, state["master_id"], effects_off=True
@@ -266,7 +439,7 @@ def run_effects(
     if json.loads(snapshots["guides.json"]) != json.loads(parent_guides) or any(
         current_recipe[name] != parent_recipe[name]
         for name in current_recipe
-        if name not in {"color_cleanup", "notes"}
+        if name not in {"color_cleanup", "shading", "notes"}
     ):
         raise ProjectError(
             "Changed guidance/base recipe requires prepare and complete matte before effects"
@@ -301,46 +474,99 @@ def run_effects(
         locked |= mask
     protection |= locked
     check_space(project, source.nbytes * 35 + 1024**2)
-    corrected = make_corrected_rgb(
-        source,
-        alpha,
-        support,
-        settings,
-        known_empty=(trimap == 0) & (alpha == 0),
-        protection=protection,
-    )
-    # Unaffected pixels start from the actual saved base (including its RGB locks).
-    # Correction math above always starts from source, never this saved output.
-    writable = (support != 0) & (alpha > 0) & (alpha < 65535) & ~protection
-    corrected[~writable] = foreground[~writable]
-    previous = manifest.get("color_cleanup")
-    dependency = alpha.copy()
-    cumulative_support = support.copy()
-    if (
-        enabled
-        and previous is not None
-        and previous["enabled"]
-        and "corrected_rgb16.tif" in manifest["files"]
+    record: dict[str, Any] | None
+    if cleanup_changed:
+        corrected = make_corrected_rgb(
+            source,
+            alpha,
+            support,
+            settings,
+            known_empty=(trimap == 0) & (alpha == 0),
+            protection=protection,
+        )
+        # Unaffected pixels start from the actual saved base (including its RGB locks).
+        # Correction math above always starts from source, never this saved output.
+        writable = (support != 0) & (alpha > 0) & (alpha < 65535) & ~protection
+        corrected[~writable] = foreground[~writable]
+        previous = manifest.get("color_cleanup")
+        dependency = alpha.copy()
+        cumulative_support = support.copy()
+        if (
+            enabled
+            and previous is not None
+            and previous["enabled"]
+            and "corrected_rgb16.tif" in manifest["files"]
+        ):
+            prior = tifffile.imread(_asset(project, f"revisions/{parent}/corrected_rgb16.tif"))
+            corrected[support == 0] = prior[support == 0]
+            dependency = scalar16(_asset(project, f"revisions/{parent}/effects/alpha16.png"))
+            dependency[support != 0] = alpha[support != 0]
+            cumulative_support = scalar16(
+                _asset(project, f"revisions/{parent}/effects/support16.png")
+            )
+            cumulative_support[support != 0] = support[support != 0]
+        corrected[protection & (support != 0)] = lock_values[protection & (support != 0)]
+        record = {
+            "enabled": bool(enabled),
+            "strength": settings["strength"],
+            "stale": bool(enabled and not np.array_equal(dependency, alpha)),
+            "source_id": state["master_id"],
+            "algorithm": "nearest-confirmed-empty-inverse-mixture-v1",
+            "scope_xyxy": scope,
+            "support_sha256": digest(support_bytes),
+            "alpha_sha256": manifest["files"]["base_alpha16.png"],
+            "parent_manifest_sha256": digest(parent_bytes),
+            "candidate_comparison": operation["candidate_comparison"],
+        }
+    else:
+        record = manifest.get("color_cleanup")
+        enabled = bool(record and record["enabled"])
+        corrected = (
+            tifffile.imread(_asset(project, f"revisions/{parent}/corrected_rgb16.tif"))
+            if record
+            else foreground.copy()
+        )
+        cumulative_support = support
+        dependency = alpha
+    if not cleanup_changed and current_recipe["color_cleanup"] != parent_recipe["color_cleanup"]:
+        raise ProjectError("Changed cleanup recipe requires explicit cleanup operation")
+    shading_record = manifest.get("shading")
+    shading_inputs = {}
+    if "shading" in operation:
+        shading_settings = operation["shading"]
+        validate_shading(shading_settings)
+        if (
+            shading_settings["enabled"]
+            and parent != state["accepted_revision"]
+            and not operation["candidate_comparison"]
+        ):
+            raise ProjectError("Shading requires accepted base or explicit candidate comparison")
+        if type(operation.get("opacity_only", False)) is not bool:
+            raise ProjectError("opacity_only must be boolean")
+        if operation.get("opacity_only"):
+            if shading_record is None:
+                raise ProjectError("Opacity-only operation requires saved shading")
+            if any(
+                shading_settings.get(key) != shading_record["settings"].get(key)
+                for key in ("width_px", "direction_degrees")
+            ):
+                raise ProjectError("Opacity-only operation cannot change geometry")
+        elif shading_settings["enabled"]:
+            validate_support(support, alpha.shape, [0, 0, width, height], scope)
+            if "shading_protection_file" not in operation:
+                raise ProjectError("Shading rebuild requires explicit protection file")
+            path = _input_file(project, operation["shading_protection_file"])
+            shading_inputs[path] = path.read_bytes()
+            own_protection = read_shading_protection(path)
+            if own_protection.shape != alpha.shape or not np.isin(own_protection, [0, 65535]).all():
+                raise ProjectError("Shading protection must be aligned categorical scalar16")
+        if shading_record is None and not shading_settings["enabled"]:
+            own_protection = np.zeros(alpha.shape, dtype=np.uint16)
+    elif any(
+        current_recipe["shading"].get(key) != parent_recipe["shading"].get(key)
+        for key in current_recipe["shading"]
     ):
-        prior = tifffile.imread(_asset(project, f"revisions/{parent}/corrected_rgb16.tif"))
-        corrected[support == 0] = prior[support == 0]
-        dependency = scalar16(_asset(project, f"revisions/{parent}/effects/alpha16.png"))
-        dependency[support != 0] = alpha[support != 0]
-        cumulative_support = scalar16(_asset(project, f"revisions/{parent}/effects/support16.png"))
-        cumulative_support[support != 0] = support[support != 0]
-    corrected[protection & (support != 0)] = lock_values[protection & (support != 0)]
-    record = {
-        "enabled": bool(enabled),
-        "strength": settings["strength"],
-        "stale": bool(enabled and not np.array_equal(dependency, alpha)),
-        "source_id": state["master_id"],
-        "algorithm": "nearest-confirmed-empty-inverse-mixture-v1",
-        "scope_xyxy": scope,
-        "support_sha256": digest(support_bytes),
-        "alpha_sha256": manifest["files"]["base_alpha16.png"],
-        "parent_manifest_sha256": digest(parent_bytes),
-        "candidate_comparison": operation["candidate_comparison"],
-    }
+        raise ProjectError("Changed shading recipe requires explicit shading operation")
     revisions = _asset(project, "revisions")
     existing = [
         int(p.name[4:]) for p in revisions.iterdir() if re.fullmatch(r"rev-[0-9]{3,}", p.name)
@@ -364,31 +590,107 @@ def run_effects(
         target.write_bytes(_asset(project, f"revisions/{parent}/{name}").read_bytes())
     for name in ("recipe.toml", "guides.json"):
         (stage / name).write_bytes(snapshots[name])
-    (stage / "effects").mkdir()
-    Image.fromarray(cumulative_support).save(stage / "effects/support16.png")
-    Image.fromarray(dependency).save(stage / "effects/alpha16.png")
-    (stage / "effects/settings.json").write_bytes(_json_bytes(dict(record, settings=settings)))
-    (stage / "effects/write_support16.png").write_bytes(support_bytes)
-    write_master(stage / "corrected_rgb16.tif", corrected)
-    if not np.array_equal(tifffile.imread(stage / "corrected_rgb16.tif"), corrected):
-        raise ProjectError("Corrected RGB16 round trip failed")
+    (stage / "effects").mkdir(exist_ok=True)
+    if cleanup_changed:
+        assert record is not None
+        Image.fromarray(cumulative_support).save(stage / "effects/support16.png")
+        Image.fromarray(dependency).save(stage / "effects/alpha16.png")
+        (stage / "effects/settings.json").write_bytes(_json_bytes(dict(record, settings=settings)))
+        (stage / "effects/write_support16.png").write_bytes(support_bytes)
+        write_master(stage / "corrected_rgb16.tif", corrected)
+        if not np.array_equal(tifffile.imread(stage / "corrected_rgb16.tif"), corrected):
+            raise ProjectError("Corrected RGB16 round trip failed")
+    else:
+        inherit_cleanup(project, parent, stage, state["master_id"])
+    shading_record = inherit_shading(project, parent, stage, state["master_id"])
+    if "shading" in operation:
+        old = shading_record
+        if old and not shading_settings["enabled"] and "width_px" not in shading_settings:
+            shading_settings = dict(old["settings"], **shading_settings)
+        if old is None:
+            weight = np.zeros(alpha.shape, dtype=np.uint16)
+            shading_dependency = alpha.copy()
+            shading_support = np.zeros(alpha.shape, dtype=np.uint16)
+            saved_protection = np.zeros(alpha.shape, dtype=np.uint16)
+        else:
+            weight = scalar16(stage / "shadow_weight16.png")
+            shading_dependency = scalar16(stage / "effects/shading/alpha16.png")
+            shading_support = scalar16(stage / "effects/shading/support16.png")
+            saved_protection = scalar16(stage / "effects/shading/protection16.png")
+        if shading_settings["enabled"] and not operation.get("opacity_only"):
+            explicit = (own_protection != 0) | (saved_protection != 0) | protection
+            rebuilt = make_shadow_weight(
+                source, alpha, support, shading_settings, protection=explicit
+            )
+            writable = support != 0
+            # Rebuild only its declared support; preserve prior W elsewhere.
+            weight[writable] = rebuilt[writable]
+            shading_dependency[writable] = alpha[writable]
+            shading_support[writable] = support[writable]
+            saved_protection[writable] = explicit[writable].astype(np.uint16) * 65535
+        shading_record = {
+            "enabled": shading_settings["enabled"],
+            "opacity": shading_settings["opacity"],
+            "settings": shading_settings,
+            "source_id": state["master_id"],
+            "stale": bool(
+                shading_settings["enabled"] and not np.array_equal(shading_dependency, alpha)
+            ),
+            "algorithm": "inward-smoothstep-thickness-direction-highlight-v1",
+            "scope_xyxy": scope,
+            "operation_scope": "global opacity only"
+            if operation.get("opacity_only")
+            else "scoped rebuild"
+            if shading_settings["enabled"]
+            else "global explicit disable",
+            "candidate_comparison": operation["candidate_comparison"],
+        }
+        directory = stage / "effects/shading"
+        directory.mkdir(parents=True, exist_ok=True)
+        for name, value in (
+            ("support16", shading_support),
+            ("alpha16", shading_dependency),
+            ("protection16", saved_protection),
+        ):
+            Image.fromarray(value).save(directory / (name + ".png"))
+        Image.fromarray(weight).save(stage / "shadow_weight16.png")
+        (directory / "settings.json").write_bytes(_json_bytes(shading_record))
+        if not np.array_equal(scalar16(stage / "shadow_weight16.png"), weight):
+            raise ProjectError("Shadow W16 round trip failed")
     (stage / "request.json").write_bytes(request_bytes)
     (stage / "inputs").mkdir()
     for name, data in snapshots.items():
         (stage / "inputs" / name).write_bytes(data)
-    appearance = corrected if enabled and not record["stale"] else foreground
+    effect_records = {}
+    if record is not None:
+        effect_records["color_cleanup"] = record
+    if shading_record is not None:
+        effect_records["shading"] = shading_record
+    stale = effects_stale(effect_records)
+    appearance = corrected if enabled and not stale else foreground
+    review_weight, opacity = (
+        (scalar16(stage / "shadow_weight16.png"), shading_record["opacity"])
+        if shading_record and shading_record["enabled"] and not stale
+        else (None, 0.0)
+    )
     review = write_review(
-        stage / "review", source, appearance, alpha, master_id=state["master_id"], revision=revision
+        stage / "review",
+        source,
+        appearance,
+        alpha,
+        master_id=state["master_id"],
+        revision=revision,
+        weight16=review_weight,
+        opacity=opacity,
     )
-    review["color_cleanup"] = record
+    review.update(effect_records)
+    review["label"] += "; cleanup ON" if enabled and not stale else "; cleanup OFF"
     review["label"] += (
-        f"; cleanup ON, latest scoped strength {settings['strength']}"
-        if enabled and not record["stale"]
-        else "; cleanup OFF"
+        "; shading ON; baked shading preview" if review_weight is not None else "; shading OFF"
     )
-    if record["stale"]:
+    if stale:
         review["label"] += (
-            "; BASE comparison: cleanup OFF; stale enabled cleanup needs scoped rebuild or explicit disable"
+            "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need scoped rebuild or explicit disable"
         )
     (stage / "review/manifest.json").write_bytes(_json_bytes(review))
     result = {
@@ -400,7 +702,7 @@ def run_effects(
         "status": "review_needed",
         "final_acceptable": True,
         "inputs_digest": operation["inputs_digest"],
-        "color_cleanup": record,
+        **effect_records,
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     files = {
@@ -419,6 +721,9 @@ def run_effects(
     (stage / "manifest.json").write_bytes(_json_bytes(new_manifest))
 
     def recheck():
+        for path, data in shading_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale shading protection input")
         for name, data in snapshots.items():
             if _asset(project, name).read_bytes() != data:
                 raise ProjectError(f"Stale effects input: {name}")

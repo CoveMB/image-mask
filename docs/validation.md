@@ -347,3 +347,56 @@ alpha outside support, independent locked black exports, model-free repair repla
 source/master bytes and prior accepted exports are preserved. Stale base-to-base panels
 are labelled and match their actual saved base layers; no differing historical RGB lock
 can expand repair scope. No unchanged model or browser check was repeated.
+
+
+## I09 protected inward shading — 2026-10-18
+
+The settled deterministic suite passed **311 tests**, with three unchanged real-model
+integrations deselected. Ruff lint/format, source mypy and installed dependency
+checks passed. Earlier focused 78 tests passed before final added invalid-input,
+mutable-protection and interrupted-shading cases; it is not substituted for the
+settled full run. No unchanged model inference was rerun.
+
+Independent arithmetic sentinels exercise partial A/W, ties-to-even and a
+premature-shaded-foreground-rounding counterexample. Synthetic weight checks
+cover nonempty bands, thin structures, partial alpha, explicit protection,
+empty background and interior/outside support, with W independent of opacity.
+Public operation tests cover separate saved RGB16/A16/W16 round trips, cleanup
+independence, global opacity without weight rebuild/model calls and exact
+lossless black output. Both effects enabled, local alpha repair, labelled
+base comparisons, independent stale acceptance/export gates, bounded per-effect
+rebuild and a fresh-process export pass together. Prior accepted export bytes
+and source/master remain exact; protected W and outside-support W/RGB survive.
+
+Existing manual viewer/server and shipped JavaScript handler tests exercise
+0/12/24 identical native crops, explicit width/direction/protection inputs,
+independent disable and dirty-authoring protection. Controlled DOM checks and
+server pixels are not actual browser, keyboard usability or accessibility
+acceptance. Invalid numeric/settings requests, mutable protection and interrupted
+publication preserve current state; explicit restore retains accepted work.
+
+Official metadata for the four unchanged NumPy/SciPy/Pillow/tifffile pins lists
+no advisories at this bounded check; this does not clear unrelated dependencies.
+No package, model, backend or licence change was introduced. Current APIs follow
+[NumPy ties-to-even rounding](https://numpy.org/doc/stable/reference/generated/numpy.rint.html)
+and [SciPy Euclidean distance](https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.distance_transform_edt.html).
+
+Human same-crop photographic appearance/protection choices remain pending.
+Reference-specific widths are not new-photo defaults. No private photographs
+were inspected/uploaded and no fresh full-source dahlia outcome is claimed.
+User RAW/third input, live assisted, closed-assistant manual, physical offline,
+accessibility and regular-use acceptance obligations remain open.
+
+
+I09 review repairs renewed **110 affected effects/viewer/page/review/repair tests**,
+all passing, plus lint/format/source typing. The earlier full 311-test run remains
+earlier evidence; this is not a new full 314-test run. Three new regressions and
+the strengthened existing J6 cover first shading enablement directly from locally
+authored saved-value guide protection, effective historical/BASE/stale/loading
+labels bound to matching images, and nonempty partial RGB locks inside/outside
+repair support with independently derived decoded BASE pixels on both sides,
+exact alpha and replay. The original first-use and page cases failed before
+repair; the stronger J6 passed the existing correct processing behavior.
+Categorical8 authored protection normalizes losslessly to separately saved
+categorical16 without changing the scalar16 precision contract. No unchanged
+model/dependency/full-suite rerun was needed. Human acceptance limits above remain.

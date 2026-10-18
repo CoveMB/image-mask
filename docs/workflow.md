@@ -169,3 +169,42 @@ regression; Node is not required to install or operate the application.
 ## Optional assistant
 
 [Bounded assisted review](assistant-workflow.md) records an explicit cycle, source-visible defect, at most two repair attempts total, matching comparisons and review-needed disposition through the same commands. Manual controls above remain independent of this optional history. Human approvals remain separate.
+
+
+## Protected inward shading
+
+Shading starts OFF and does not repair a mask. In the same review window, choose
+your photograph's native width, direction (0 right, 90 down), opacity, declared
+support and explicit protection. The default uses the current saved guide
+protection mask (categorical8); it may be empty. Author saved alpha/RGB lock
+guides for the selected details in the existing guide controls, then prepare,
+review the trimap and complete matte/repair. No external mask script is needed.
+Explicit categorical16 files are also supported. Select hairs, antennae, web,
+tips, genuine highlights and bee yourself; automatic attenuation cannot guarantee
+their protection. Use the enable/rebuild button only on an accepted mask or with
+the explicit candidate-comparison checkbox. W16 stays separate from opacity.
+
+Compare the same native crop at 0%, 12% and 24% with the preview selector. Labels
+show the displayed revision, effective opacity, encoded sRGB, width, cleanup
+and baked RGB8 preview precision. BASE and stale views label both effects OFF. These are
+comparison strengths, not defaults or photographic approval. The BASE checkbox
+turns BOTH cleanup and shading off. The global opacity button reuses saved W
+without a model or mask rebuild; it does not change geometry/protection. Explicit
+disable preserves saved layers. Rebuilding one effect never rebuilds the other.
+
+After alpha repair, each enabled dependent effect becomes stale if its saved
+alpha differs. Both sides of comparisons then show labelled BASE views. Rebuild
+each stale effect only within its declared support, covering all changed-alpha
+dependencies, or explicitly disable it before accepting/exporting appearance.
+Accepted complete revisions and exports remain saved separately. For a new
+protection choice rebuild within explicit support; prior protected W=0 samples
+remain protected. Human comparison decides whether shading improves the photo.
+
+CLI uses the existing `blackmask run PROJECT --request FILE`. Add, for example,
+`shading={"enabled":true,"opacity":0.12,"width_px":YOUR_WIDTH,"direction_degrees":YOUR_DIRECTION}`
+and `shading_protection_file` to the common effects request. Values shown as
+YOUR_WIDTH/YOUR_DIRECTION are placeholders, not executable JSON. For opacity
+only, keep geometry identical, set `opacity_only=true`, omit protection file,
+and supply the new scalar opacity. Omit cleanup to retain its saved state.
+See [the file contract](file-contract.md#optional-protected-inward-shading) for
+exact assets, stale rules and editable editor handoff.

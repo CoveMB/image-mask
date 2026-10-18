@@ -363,8 +363,24 @@
         <label><input id="cleanupCandidate" type="checkbox" /> Explicitly compare cleanup on an unaccepted complete candidate</label>
         <button id="cleanupApply">Enable / rebuild within declared support</button>
         <button id="cleanupDisable">Explicitly disable cleanup</button>
-        <label><input id="cleanupBase" type="checkbox" /> Compare with cleanup OFF (same alpha)</label>
+        <label><input id="cleanupBase" type="checkbox" /> Compare BASE with cleanup and shading OFF (same alpha)</label>
         <p id="cleanupStatus" class="small" role="status"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Optional protected inward shading</legend>
+        <label>Per-photo inward width (native pixels; required) <input id="shadingWidth" type="number" min="0.01" step="0.1" /></label>
+        <label>Direction (degrees clockwise: 0 right, 90 down) <input id="shadingDirection" type="number" min="0" max="359.99" step="1" /></label>
+        <label>Opacity (0–1; default OFF) <input id="shadingOpacity" type="number" min="0" max="1" step="0.01" value="0" /></label>
+        <label>Declared shading write scope x0,y0,x1,y1 <input id="shadingScope" class="wide" /></label>
+        <label>Project-relative scalar16 support file <input id="shadingSupport" class="wide" /></label>
+        <label>Explicit protection file (authored categorical8 or scalar16) <input id="shadingProtection" class="wide" /></label>
+        <p class="small">Uses the current saved guide protection by default; it may be empty. Author saved alpha/RGB lock guides for protected details, then prepare, review the trimap and complete matte/repair before enabling shading. Choose protection for hairs, antennae, web, tips, highlights and bee explicitly. Heuristics cannot identify these details. Rebuild preserves prior W outside its own support and prior protection inside. Alpha is unchanged.</p>
+        <label><input id="shadingCandidate" type="checkbox" /> Explicitly compare an unaccepted candidate</label>
+        <button id="shadingApply">Enable / rebuild shading within declared support</button>
+        <button id="shadingOpacityApply">Apply global opacity only (reuse saved W)</button>
+        <button id="shadingDisable">Explicitly disable shading</button>
+        <label>Same native crop shading comparison <select id="shadingPreview"><option value="">Saved opacity</option><option value="0">0%</option><option value="0.12">12%</option><option value="0.24">24%</option></select></label>
+        <p id="shadingStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>6 · Recovery and photographic acceptance</legend>
@@ -619,6 +635,13 @@
       $("viewRevision").value = state.working_revision || "";
       $("cleanupSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
       $("cleanupCandidate").checked = false;
+      $("shadingSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
+      $("shadingCandidate").checked = false;
+      $("shadingProtection").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/protection.png" : "";
+      const shadingSettings = state.revisions.find(r => r.revision === state.working_revision)?.shading?.settings;
+      $("shadingWidth").value = shadingSettings?.width_px ?? "";
+      $("shadingDirection").value = shadingSettings?.direction_degrees ?? "";
+      $("shadingOpacity").value = shadingSettings?.opacity ?? 0;
       $("candidate").value = "";
       identity = {
         master_id: state.master_id,
@@ -658,8 +681,8 @@
       $("cleanupStatus").textContent = current?.color_cleanup?.enabled
         ? current.color_cleanup.stale
           ? "STALE cleanup: BASE-to-BASE views, cleanup OFF on both sides. Appearance acceptance/export blocked; rebuild every changed-alpha dependency within declared support or explicitly disable. Prior accepted complete result remains saved."
-          : "Cleanup enabled · saved RGB16 · strength " + current.color_cleanup.strength
-        : "Cleanup OFF · master-based RGB with explicit saved-value locks";
+          : "Working cleanup enabled · saved RGB16 · strength " + current.color_cleanup.strength
+        : "Working cleanup OFF · master-based RGB with explicit saved-value locks";
       $("status").textContent =
         (a.running
           ? "Running " + a.name
@@ -765,6 +788,7 @@
         $("scope").value = crop.join(",");
         $("context").value = crop.join(",");
         $("cleanupScope").value = crop.join(",");
+        $("shadingScope").value = crop.join(",");
       }
       updateBusyControls();
       await loadImage();
@@ -782,6 +806,9 @@
         "accept",
         "exportAccepted",
         "exportDraft",
+        "shadingApply",
+        "shadingOpacityApply",
+        "shadingDisable",
         "cleanupApply",
         "cleanupDisable",
       ]) {
@@ -807,12 +834,27 @@
       const blob = await (await api(path)).blob();
       return createImageBitmap(blob);
     }
+    function previewLabel(panel, revision, base, comparison) {
+      if (panel === "source") return "Source RGB8 preview · cleanup OFF · shading OFF";
+      if (panel === "alpha") return "Alpha8 preview · cleanup OFF · shading OFF";
+      const viewed = state.revisions.find(r => r.revision === revision),
+        working = state.revisions.find(r => r.revision === state.working_revision);
+      const stale = record => ["color_cleanup", "shading"].some(name => record?.[name]?.enabled && record[name].stale);
+      const isStale = stale(viewed) || stale(working);
+      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE · cleanup OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
+      const cleanup = viewed?.color_cleanup?.enabled ? "ON" : "OFF";
+      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF";
+      const shading = viewed.shading,
+        opacity = comparison === "" ? shading.opacity : Number(comparison);
+      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup;
+    }
     async function loadImage() {
       if (!state || !crop) return;
       const panel = $("panel").value,
         revision = $("viewRevision").value;
       const requestedCrop = [...crop],
-        workingRevision = state.working_revision;
+        workingRevision = state.working_revision,
+        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value);
       const mask =
         $("candidate").value ||
         (!["guides", "none"].includes($("overlay").value)
@@ -826,12 +868,15 @@
         mask,
         workingRevision,
         $("cleanupBase").checked,
+        $("shadingPreview").value,
+        label,
       ].join("|");
       if (key === imageKey) return;
       imageKey = key;
       imageLoading = true;
       gesture = null;
       $("coordinate").textContent = "Loading native view…";
+      $("shadingStatus").textContent = "Loading selected native view…";
       draw();
       let next = null,
         nextOverlay = null;
@@ -839,7 +884,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.master_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : ""}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = await bitmap(path);
         if (imageKey !== key) return;
         if (mask && workingRevision)
@@ -853,6 +898,7 @@
         next = null;
         nextOverlay = null;
         imageLoading = false;
+        $("shadingStatus").textContent = label;
         $("coordinate").textContent = "";
         draw();
       } catch (error) {
@@ -864,6 +910,7 @@
           overlayImage = null;
           imageLoading = false;
           imageKey = "";
+          $("shadingStatus").textContent = "No matching native image loaded; appearance review unavailable.";
           draw();
         }
       } finally {
@@ -1119,6 +1166,25 @@
         candidate_comparison: $("cleanupCandidate").checked,
       });
     }
+    async function shading(enabled, opacityOnly) {
+      requireSaved();
+      if (imageLoading || !image || !transform) throw Error("Wait for the matching native view before changing shading");
+      const settings = {enabled, opacity: Number($("shadingOpacity").value)};
+      if ($("shadingWidth").value !== "" || $("shadingDirection").value !== "") {
+        if ($("shadingWidth").value === "" || $("shadingDirection").value === "") throw Error("Choose both per-photo width and direction");
+        settings.width_px = Number($("shadingWidth").value);
+        settings.direction_degrees = Number($("shadingDirection").value);
+      }
+      const fields = {scope_xyxy: bounds("shadingScope"), support_file: $("shadingSupport").value,
+        shading: settings, candidate_comparison: $("shadingCandidate").checked};
+      if (opacityOnly) fields.opacity_only = true;
+      else if (enabled) fields.shading_protection_file = $("shadingProtection").value;
+      return action("effects", fields);
+    }
+    $("shadingApply").onclick = guarded(() => shading(true, false));
+    $("shadingOpacityApply").onclick = guarded(() => shading(true, true));
+    $("shadingDisable").onclick = guarded(() => shading(false, false));
+    $("shadingPreview").onchange = guarded(() => { imageKey = ""; return refresh(); });
     $("cleanupApply").onclick = guarded(() => cleanup(true));
     $("cleanupDisable").onclick = guarded(() => cleanup(false));
     $("cleanupBase").onchange = guarded(() => { imageKey = ""; return loadImage(); });

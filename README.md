@@ -24,7 +24,8 @@ selects saved working inputs without changing final acceptance. Interrupted matt
 authoring, native comparisons and the same processing/recovery controls. Optional
 recorded, bounded source-based assisted review uses the same operations. Optional
 default-off source-guided color cleanup saves RGB16 layers with scoped stale/rebuild
-controls. Shading remains future work.
+controls. Default-off protected inward shading saves independent W16/opacity and
+supports exact editable exports.
 Prepared revisions require explicit human trimap review before matting.
 
 A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
@@ -113,6 +114,7 @@ for explicit model setup, typed preparation and human review.
 | Native tile geometry, blending and verified cache | `src/blackmask/matte.py` |
 | Same-native-crop review assets | `src/blackmask/review.py` |
 | Canonical precision renderer and accepted/draft exports | `src/blackmask/export.py` |
+| Source cleanup, protected inward W16 and independent effect publication | `src/blackmask/effects.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | One-project loopback server and packaged manual page | `src/blackmask/viewer.py`, `src/blackmask/ui/review.html` |
 | Shared inverse native coordinate mapping | `src/blackmask/ui/coordinates.js` |
@@ -136,8 +138,8 @@ The public implementation history contains no photographs, private planning or
 reference archives. Local planning and frozen reference material, when supplied
 separately, stay ignored and are not required to install or operate the tool.
 The maintained public docs describe the behavior currently implemented. Cleanup
-requires per-photo human comparison; shading requires separate implementation and
-validation.
+and shading require per-photo human comparison; synthetic checks do not supply
+photographic acceptance.
 
 ## Licensing
 

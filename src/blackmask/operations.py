@@ -199,9 +199,11 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
         from .export import saved_layers
 
         saved_layers(project, revision, state["master_id"])
-        if manifest.get("color_cleanup", {}).get("stale") and manifest["color_cleanup"]["enabled"]:
+        from .effects import effects_stale
+
+        if effects_stale(manifest):
             raise ProjectError(
-                "Stale enabled cleanup: scoped rebuild or explicit disable required before acceptance"
+                "Stale enabled cleanup/shading: scoped rebuild or explicit disable required before acceptance"
             )
         captured = draft_digest(project)
         if (
@@ -383,9 +385,10 @@ def _prepare(
                 (stage / name).write_bytes(
                     _asset(project, f"revisions/{parent}/{name}").read_bytes()
                 )
-    from .effects import inherit_cleanup
+    from .effects import inherit_cleanup, inherit_shading
 
     cleanup = inherit_cleanup(project, parent, stage, state["master_id"]) if parent else None
+    shading = inherit_shading(project, parent, stage, state["master_id"]) if parent else None
     # RGB8 is a separately labelled proxy. It never becomes a precision output owner.
     proxy = np.rint(pixels.astype(np.float64) / 257).astype(np.uint8)
     cache = model_cache or (
@@ -499,6 +502,7 @@ def _prepare(
         "proxy_precision_bits": 8,
         "trimap_review": "human review required; selection membership does not prove opacity",
         **({"color_cleanup": cleanup} if cleanup is not None else {}),
+        **({"shading": shading} if shading is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
     for path in stage.rglob("*"):
@@ -1181,13 +1185,21 @@ def _matte(
             raise ProjectError("Alpha16 round trip failed")
     if not np.array_equal(tifffile.imread(stage / "foreground_rgb16.tif"), foreground):
         raise ProjectError("Foreground RGB16 round trip failed")
-    from .effects import inherit_cleanup
+    from .effects import effects_stale, inherit_cleanup, inherit_shading
 
     cleanup = inherit_cleanup(
         project, parent, stage, state["master_id"], alpha, foreground, rgb_protection
     )
+    shading = inherit_shading(project, parent, stage, state["master_id"], alpha)
+    stale_effects = effects_stale({"color_cleanup": cleanup or {}, "shading": shading or {}})
+    review_weight = (
+        scalar16(stage / "shadow_weight16.png")
+        if shading and shading["enabled"] and not stale_effects
+        else None
+    )
+    review_opacity = shading["opacity"] if shading and review_weight is not None else 0.0
     review_foreground = foreground
-    if cleanup and cleanup["enabled"] and not cleanup["stale"]:
+    if cleanup and cleanup["enabled"] and not stale_effects:
         review_foreground = tifffile.imread(stage / "corrected_rgb16.tif")
     write_review(
         stage / "review",
@@ -1197,6 +1209,8 @@ def _matte(
         master_id=state["master_id"],
         revision=revision,
         crops=[context] if repairing else None,
+        weight16=review_weight,
+        opacity=review_opacity,
     )
     if repairing:
         if parent_alpha is None:
@@ -1204,7 +1218,7 @@ def _matte(
         before_foreground = tifffile.imread(
             _asset(project, f"revisions/{parent}/foreground_rgb16.tif")
         )
-        if cleanup and cleanup["enabled"] and not cleanup["stale"]:
+        if cleanup and cleanup["enabled"] and not stale_effects:
             from .export import read_rgb16
 
             # Prepared guides contain the requested new locks; the before panel
@@ -1220,6 +1234,8 @@ def _matte(
             master_id=state["master_id"],
             revision=parent,
             crops=[context],
+            weight16=review_weight,
+            opacity=review_opacity,
         )
     if cleanup:
         for review_name in ("review", "review-before") if repairing else ("review",):
@@ -1228,10 +1244,23 @@ def _matte(
             record["color_cleanup"] = cleanup
             record["label"] += (
                 "; BASE-to-BASE comparison: cleanup OFF on both sides; stale enabled cleanup needs scoped rebuild or explicit disable"
-                if cleanup["enabled"] and cleanup["stale"]
+                if stale_effects
                 else f"; cleanup ON, latest scoped strength {cleanup['strength']}"
                 if cleanup["enabled"]
                 else "; cleanup OFF"
+            )
+            path.write_bytes(_json_bytes(record))
+    if shading:
+        for review_name in ("review", "review-before") if repairing else ("review",):
+            path = stage / review_name / "manifest.json"
+            record = json.loads(path.read_bytes())
+            record["shading"] = shading
+            record["label"] += (
+                "; BASE-to-BASE comparison: cleanup OFF; shading OFF on both sides; stale enabled effects need scoped rebuild or explicit disable"
+                if stale_effects
+                else f"; shading ON; baked shading p={review_opacity}"
+                if shading["enabled"]
+                else "; shading OFF"
             )
             path.write_bytes(_json_bytes(record))
     (stage / "qa.json").write_bytes(
@@ -1255,6 +1284,7 @@ def _matte(
         "final_acceptable": True,
         "model": model_record,
         **({"color_cleanup": cleanup} if cleanup is not None else {}),
+        **({"shading": shading} if shading is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     files = {

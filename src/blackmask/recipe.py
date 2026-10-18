@@ -14,6 +14,7 @@ class Recipe:
     device: str = "auto"
     cleanup_enabled: bool = False
     cleanup_strength: float = 0.35
+    shading: dict[str, Any] = field(default_factory=lambda: {"enabled": False, "opacity": 0.0})
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -24,7 +25,7 @@ class Recipe:
             "groups": self.groups,
             "matting": {"tile_size_px": 1024, "overlap_px": 256, "device": self.device},
             "color_cleanup": {"enabled": self.cleanup_enabled, "strength": self.cleanup_strength},
-            "shading": {"enabled": False, "opacity": 0.0},
+            "shading": self.shading,
         }
 
     @classmethod
@@ -41,11 +42,11 @@ class Recipe:
             or not isinstance(value["notes"], str)
         ):
             raise ValueError("Invalid recipe keys, schema or master identity")
-        from .effects import validate_cleanup
+        from .effects import validate_cleanup, validate_shading
 
         validate_cleanup(value["color_cleanup"])
-        # Shading remains unavailable until its actual application path exists.
-        for section in ("matting", "shading"):
+        validate_shading(value["shading"])
+        for section in ("matting",):
             current = value[section]
             reference = expected[section]
             if not isinstance(current, dict) or set(current) != set(reference):
@@ -104,4 +105,5 @@ class Recipe:
             value["matting"]["device"],
             value["color_cleanup"]["enabled"],
             float(value["color_cleanup"]["strength"]),
+            dict(value["shading"]),
         )

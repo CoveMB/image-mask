@@ -90,6 +90,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "color_cleanup": manifest.get(
                             "color_cleanup", {"enabled": False, "stale": False}
                         ),
+                        "shading": manifest.get("shading", {"enabled": False, "stale": False}),
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
                             for k in ("inferred_tiles", "reused_tiles")
@@ -110,12 +111,15 @@ class ReviewServer(ThreadingHTTPServer):
             "trimap": {"revision"},
             "accept": {"revision"},
             "matte": set(),
-            "effects": {"scope_xyxy", "support_file", "color_cleanup", "candidate_comparison"},
+            "effects": {"scope_xyxy", "support_file", "candidate_comparison"},
             "repair": {"context_xyxy", "scope_xyxy", "reason", "merge_policy"},
             "restore": {"revision", "replace_drafts"},
             "resume": {"operation_id"},
             "export": {"revision", "draft"},
         }
+        if action == "effects":
+            optional = {"color_cleanup", "shading", "shading_protection_file", "opacity_only"}
+            fields["effects"] |= set(data) & optional
         if action not in fields or set(data) != fields[action] | {
             "action",
             "authoring_digest",
@@ -202,7 +206,16 @@ class ReviewServer(ThreadingHTTPServer):
             request.update(
                 {
                     k: data[k]
-                    for k in ("scope_xyxy", "support_file", "color_cleanup", "candidate_comparison")
+                    for k in (
+                        "scope_xyxy",
+                        "support_file",
+                        "color_cleanup",
+                        "candidate_comparison",
+                        "shading",
+                        "shading_protection_file",
+                        "opacity_only",
+                    )
+                    if k in data
                 }
             )
         if action == "repair":
@@ -217,7 +230,7 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base)?",
+            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -238,14 +251,26 @@ class ReviewServer(ThreadingHTTPServer):
                 if state["working_revision"]
                 else {}
             )
-            stale = current.get("color_cleanup", {}).get("enabled") and current[
-                "color_cleanup"
-            ].get("stale")
-            foreground, alpha, _ = saved_layers(
-                self.project, identity, state["master_id"], effects_off=bool(base or stale)
+            from .effects import effects_stale, saved_shading
+
+            stale = effects_stale(current)
+            foreground, alpha, manifest = saved_layers(
+                self.project,
+                identity,
+                state["master_id"],
+                effects_off=bool(base == "/base" or stale),
             )
+            weight, opacity = saved_shading(
+                self.project, identity, alpha, manifest, effects_off=bool(base == "/base" or stale)
+            )
+            if base and base.startswith("/p") and weight is not None:
+                opacity = float(base[2:])
             pixels = review_panels(
-                source[y0:y1, x0:x1], foreground[y0:y1, x0:x1], alpha[y0:y1, x0:x1]
+                source[y0:y1, x0:x1],
+                foreground[y0:y1, x0:x1],
+                alpha[y0:y1, x0:x1],
+                None if weight is None else weight[y0:y1, x0:x1],
+                opacity,
             )[panel]
         buffer = io.BytesIO()
         Image.fromarray(pixels).save(buffer, format="PNG")

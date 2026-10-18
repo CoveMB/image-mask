@@ -39,8 +39,8 @@ Keep accepted dependencies outside rebuildable cache. Source changes during inge
 reject publication. Managed symlinks and source/output aliases are refused.
 
 Preparation creates labelled RGB8 proxies and immutable prepared revisions. Native
-matting adds alpha, final acceptance and base exports; optional cleanup uses the
-additive effects contract below. Shading remains unavailable. Never use a flattened
+matting adds alpha, final acceptance and base exports. Optional cleanup and protected
+inward shading use the additive effects contracts below. Never use a flattened
 preview as a master. The [manual review window](workflow.md) provides native
 registration and guide authoring through these shared contracts.
 
@@ -236,7 +236,7 @@ viewing approximations, never replacements for authoritative precision layers.
 
 Schema-1 manual processing requests remain compatible. Prepare/repair optionally accept `assisted_review` as defined by [the assisted workflow](assistant-workflow.md). Immutable `requests/review-<identity>/000-<content-sha256>.json`, `001-<content-sha256>.json`, etc. record the original explicit cycle request, reservations and source comparisons with content-addressed filenames and predecessor hashes. Terminal-byte changes, missing/reordered predecessors, contradictory transitions and lost reservations referenced by retained recovery requests fail closed. A per-cycle `head.sha256` integrity anchor binds the latest event, detecting removal of a valid terminal suffix as well as altered bytes. Events publish before the atomic anchor update; any partial event/anchor publication fails closed and remains retained for inspection. The anchor owns no working/accepted pointers or separate attempt counter. The single project lock serializes writes. This history is advisory, not another working/accepted state authority. A repair reservation is durable before model execution and reused by the same resume request. Two attempts total are shared across all defects; judgement is required between attempts. Stop keeps the best valid revision identity without changing acceptance or restoring drafts. Original prepare/repair requests/results and recovery snapshots retain existing meanings.
 
-Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; shading remains unavailable.
+Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; protected inward shading uses the additive contract below.
 
 
 ## Optional source-guided color cleanup
@@ -305,3 +305,71 @@ appearance can bind without changing it; a genuinely different historical RGB va
 outside support is rejected. The explicit saved lock binds base and corrected layers;
 stale comparisons remain labelled base-to-base and represent their actual saved base
 layers. Original source/master and prior accepted exports remain unchanged.
+
+
+## Optional protected inward shading
+
+Schema-1 `effects` retains its common identity, `scope_xyxy`, `support_file` and
+`candidate_comparison` fields. `shading` contains boolean `enabled`, finite scalar
+`opacity` in [0,1], positive `width_px` no larger than the native image extent,
+and `direction_degrees` in [0,360). Direction is clockwise in native coordinates:
+0 right, 90 down. Width/direction have no new-photo defaults. Legacy disabled
+recipes `{enabled=false, opacity=0.0}` and existing cleanup requests remain valid.
+A shading request changes only shading; an explicit cleanup request changes only
+cleanup. Simultaneous settings use the declared support for each effect.
+
+Enabling or rebuilding requires an accepted base or explicit candidate comparison,
+plus `shading_protection_file`: the saved authored categorical8 PNG (0/255),
+or an aligned explicit categorical16 PNG (0/65535). Both normalize losslessly
+to saved categorical16 protection. The viewer defaults to the current revision
+`supports/protection.png`; author saved-value lock guides, prepare, review the
+trimap and complete matte/repair to choose those protected regions locally.
+Choose protected hairs, antennae, web, petal tips, genuine highlights and bee
+explicitly. This mask combines with saved protection and RGB/alpha locks.
+Heuristic thickness/highlight attenuation does not promise semantic protection.
+The inward smoothstep uses the alpha >= 0.5 silhouette, an explicitly empty
+padded exterior, thickness and directional-normal attenuation, source luminance
+and low-alpha attenuation. The reference thickness/smoothing ratios scale with
+the chosen band. The reference 48/88px widths and tentative 24% opacity never
+become global defaults.
+
+Save `shadow_weight16.png` separately from opacity, with own cumulative support,
+alpha dependency, explicit protection and actual settings under `effects/shading/`.
+W includes geometry/direction/protection and excludes p, even at p=0. Scoped
+rebuild preserves previous W outside its support and keeps previous protection
+inside it. Alpha dependency samples update only within that support; remaining
+uncovered changes keep the enabled effect stale. Each immutable revision retains
+its actual settings and previous complete revisions remain available.
+`opacity_only=true` reuses W and geometry exactly; its settings explicitly label
+a **global opacity only** operation. Disabling is an explicit global setting,
+retains saved geometry/assets, and restores appearance without changing alpha.
+Neither shading nor rendering invokes models.
+
+The one authoritative renderer is encoded-sRGB float64
+`round(F * (A16/65535) * (1 - p*(W16/65535)))`, ties-to-even. F is saved base
+foreground with applicable RGB locks or selected corrected RGB. No intermediate
+shaded foreground quantization, flattened-black foreground reuse, second alpha
+application or second compositing mode is permitted. Off/p=0 is identity relative
+to the selected unshaded foreground/alpha rendering.
+
+Prepare carries both effects; matte/repair recompute their independent alpha
+dependency status. Any stale enabled effect selects BASE-to-BASE comparisons,
+with BOTH effects disabled on BOTH sides and labels stating this. Viewer labels
+bind to the successfully displayed revision and effective BASE/stale/opacity
+mode; loading or failed images cannot retain misleading appearance labels. Acceptance
+and draft appearance export remain blocked until EACH stale enabled effect is
+explicitly disabled or independently rebuilt. Prior accepted complete exports
+remain usable. Review manifests expose `cleanup_stale` and `shading_stale`.
+`/image/.../base` selects both effects off; `/image/.../p0`, `/p0.12`, `/p0.24`
+compare identical native crops using saved W and selected cleanup, without
+changing saved opacity or accepting appearance. Stale comparisons stay base-only.
+
+Exports retain source RGB16, selected unshaded foreground RGB16, base A16,
+optional corrected RGB16, unbaked W16 and separate actual effect settings.
+Black RGB16 TIFF is authoritative; transparent RGBA8 straight RGB includes
+shading but is not alpha-premultiplied, and labels disclose reduced precision
+and baked shading. Preferred editable editor handoff is foreground plus alpha
+and W+p: mask the foreground group with alpha ONCE, use a solid black layer
+with W and chosen p over foreground, and place black background below. No
+baked overlay or GIF is generated. If a downstream editor bakes p into overlay
+alpha, label that strength and use 100% layer opacity.

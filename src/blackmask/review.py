@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from .export import publish_artifacts, render_black, saved_layers
+from .export import publish_artifacts, render_black, saved_layers, shading_factor
 from .guidance import coordinates
 from .project import (
     ProjectError,
@@ -31,21 +31,24 @@ from .project import (
 
 
 def review_panels(
-    source: np.ndarray, foreground: np.ndarray, alpha16: np.ndarray
+    source: np.ndarray,
+    foreground: np.ndarray,
+    alpha16: np.ndarray,
+    weight16: np.ndarray | None = None,
+    opacity: float = 0,
 ) -> dict[str, np.ndarray]:
     """Shared labelled RGB8 approximations; authoritative layers remain RGB16/alpha16."""
     factor = alpha16.astype(np.float64)[..., None] / 65535
+    appearance = (
+        foreground.astype(np.float64) * shading_factor(alpha16.shape, weight16, opacity)[..., None]
+    )
     return {
         "source": np.rint(source.astype(np.float64) / 257).astype(np.uint8),
-        "black": np.rint(render_black(foreground, alpha16).astype(np.float64) / 257).astype(
-            np.uint8
-        ),
-        "gray": np.rint(
-            (foreground.astype(np.float64) * factor + 32768 * (1 - factor)) / 257
+        "black": np.rint(
+            render_black(foreground, alpha16, weight16, opacity).astype(np.float64) / 257
         ).astype(np.uint8),
-        "white": np.rint(
-            (foreground.astype(np.float64) * factor + 65535 * (1 - factor)) / 257
-        ).astype(np.uint8),
+        "gray": np.rint((appearance * factor + 32768 * (1 - factor)) / 257).astype(np.uint8),
+        "white": np.rint((appearance * factor + 65535 * (1 - factor)) / 257).astype(np.uint8),
         "alpha": np.repeat(
             np.rint(alpha16.astype(np.float64) / 257).astype(np.uint8)[..., None], 3, axis=2
         ),
@@ -61,6 +64,8 @@ def write_review(
     master_id: str,
     revision: str,
     crops: list[list[int]] | None = None,
+    weight16: np.ndarray | None = None,
+    opacity: float = 0,
 ) -> dict[str, Any]:
     height, width = alpha16.shape
     if crops is None:
@@ -85,7 +90,13 @@ def write_review(
                     "white_RGB8_VIEW",
                     "alpha8_VIEW",
                 ),
-                review_panels(source_crop, rgb, alpha).values(),
+                review_panels(
+                    source_crop,
+                    rgb,
+                    alpha,
+                    None if weight16 is None else weight16[y0:y1, x0:x1],
+                    opacity,
+                ).values(),
                 strict=True,
             )
         }
@@ -135,6 +146,9 @@ def review_project(
         if revision is None:
             raise ProjectError("No complete matte revision to review")
         foreground, alpha, revision_manifest = saved_layers(project, revision, state["master_id"])
+        from .effects import effects_stale, saved_shading
+
+        weight, opacity = saved_shading(project, revision, alpha, revision_manifest)
         source, _ = load_master(project, state["master_id"])
         height, width = alpha.shape
         if crops is None:
@@ -173,6 +187,8 @@ def review_project(
             master_id=state["master_id"],
             revision=revision,
             crops=selected,
+            weight16=weight,
+            opacity=opacity,
         )
         from .operations import draft_digest, pending_guidance
 
@@ -193,6 +209,18 @@ def review_project(
             record["label"] += (
                 "; BASE comparison: cleanup OFF; stale enabled cleanup needs scoped rebuild or explicit disable"
             )
+        if revision_manifest.get("shading", {}).get("enabled") and revision_manifest["shading"].get(
+            "stale"
+        ):
+            stale.append("shading_stale")
+        if effects_stale(revision_manifest):
+            record["label"] += (
+                "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need independent rebuild or disable"
+            )
+        elif weight is not None:
+            record["label"] += (
+                f"; encoded-sRGB; baked shading p={opacity}; width={revision_manifest['shading']['settings']['width_px']} native px; cleanup={revision_manifest.get('color_cleanup', {}).get('enabled', False)}"
+            )
         prefix = f"revisions/{revision}"
         record.update(
             inputs_digest=current_digest,
@@ -204,7 +232,7 @@ def review_project(
                 "source_rgb16": f"masters/{state['master_id']}.tif",
                 "foreground_rgb16": f"{prefix}/corrected_rgb16.tif"
                 if revision_manifest.get("color_cleanup", {}).get("enabled")
-                and not revision_manifest["color_cleanup"]["stale"]
+                and not effects_stale(revision_manifest)
                 else f"{prefix}/foreground_rgb16.tif",
                 "base_foreground_rgb16": f"{prefix}/foreground_rgb16.tif",
                 "alpha16": f"{prefix}/base_alpha16.png",
@@ -220,7 +248,7 @@ def review_project(
                 "color_cleanup": revision_manifest.get(
                     "color_cleanup", {"enabled": False, "stale": False}
                 ),
-                "shading": "not implemented; disabled",
+                "shading": revision_manifest.get("shading", {"enabled": False, "stale": False}),
             },
             status="review_needed",
             view_files={p.name: digest(p.read_bytes()) for p in directory.glob("*.png")},

@@ -210,3 +210,71 @@ def test_same_alpha_cleanup_toggle_requests_explicit_base_pixels():
  await $('cleanupBase').onchange();
  assert(paths.some(p=>p==='/image/black/rev-001/0,0,100,100/base'));
  """)
+
+
+def test_shading_controls_use_shared_action_and_retain_dirty_guides():
+    run_page(r"""
+await ready();
+$('shadingWidth').value='12';$('shadingDirection').value='90';$('shadingOpacity').value='0.12';
+$('shadingScope').value='0,0,100,100';$('shadingSupport').value='support.png';$('shadingProtection').value='protect.png';
+$('shadingCandidate').checked=true;
+await shading(true, false);
+assert.equal(posts.at(-1).action, 'effects');
+assert.equal(posts.at(-1).shading.width_px, 12);
+assert.equal(posts.at(-1).shading.opacity, .12);
+assert.equal(posts.at(-1).shading_protection_file, 'protect.png');
+assert(!('color_cleanup' in posts.at(-1)));
+await shading(true, true);
+assert.equal(posts.at(-1).opacity_only, true);
+for(let i=0;i<30&&(!image||!transform);i++)await Promise.resolve();
+dirty=true;
+const count=posts.length;
+await assert.rejects(() => shading(true, false), /Save authoring/);
+assert.equal(posts.length,count);
+""")
+
+
+def test_shading_labels_follow_matching_historical_base_and_stale_image():
+    run_page(r"""
+servedState.working_revision='rev-002';
+servedState.revisions=[
+{revision:'rev-001',kind:'effects',draft_digest:'draft',final_acceptable:true,candidates:[],shading:{enabled:true,stale:false,opacity:.12,settings:{width_px:12,direction_degrees:90}},color_cleanup:{enabled:false,stale:false}},
+{revision:'rev-002',kind:'effects',draft_digest:'draft',final_acceptable:true,candidates:[],shading:{enabled:true,stale:false,opacity:.24,settings:{width_px:30,direction_degrees:180}},color_cleanup:{enabled:true,stale:false}}];
+await ready();
+$('viewRevision').value='rev-001';$('panel').value='black';$('shadingPreview').value='0.12';
+await loadImage();
+assert($('shadingStatus').textContent.includes('width 12 px'), $('shadingStatus').textContent);
+assert($('shadingStatus').textContent.includes('90°'));
+assert($('shadingStatus').textContent.includes('cleanup OFF'));
+assert($('shadingStatus').textContent.includes('opacity 0.12'));
+$('cleanupBase').checked=true;await $('cleanupBase').onchange();
+assert($('shadingStatus').textContent.includes('BASE'));
+assert($('shadingStatus').textContent.includes('shading OFF'));
+assert(!$('shadingStatus').textContent.includes('baked shading'));
+$('cleanupBase').checked=false;
+servedState.revisions[1].shading.stale=true;await refresh(false);
+assert($('shadingStatus').textContent.includes('STALE'));
+assert($('shadingStatus').textContent.includes('shading OFF'));
+servedState.revisions[1].shading.stale=false;await refresh(false);
+holdImages=true;$('viewRevision').value='rev-002';
+const loading=loadImage();
+assert($('shadingStatus').textContent.includes('Loading'));
+for(let i=0;i<30&&!imageResolvers.length;i++)await Promise.resolve();
+holdImages=false;imageResolvers.shift()();await loading;
+assert($('shadingStatus').textContent.includes('width 30 px'));
+$('panel').value='source';await loadImage();
+assert($('shadingStatus').textContent.includes('Source'));
+assert($('shadingStatus').textContent.includes('shading OFF'));
+""")
+
+
+def test_first_shading_controls_default_to_authored_guide_protection():
+    run_page(r"""
+await ready();
+assert.equal($('shadingProtection').value,'revisions/rev-001/supports/protection.png');
+assert.equal($('shadingSupport').value,'revisions/rev-001/supports/support16.png');
+$('shadingWidth').value='12';$('shadingDirection').value='90';$('shadingOpacity').value='0.12';
+$('shadingScope').value='0,0,100,100';$('shadingCandidate').checked=true;
+await shading(true, false);
+assert.equal(posts.at(-1).shading_protection_file,'revisions/rev-001/supports/protection.png');
+""")

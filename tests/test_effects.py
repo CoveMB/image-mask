@@ -285,9 +285,10 @@ def test_invalid_cleanup_settings_preserve_state(tmp_path, field, value):
     assert (project / "state.json").read_bytes() == before
 
 
-def test_interrupted_effect_pointer_retains_complete_assets_and_explicit_restore(tmp_path):
+@pytest.mark.parametrize("shading", [False, True])
+def test_interrupted_effect_pointer_retains_complete_assets_and_explicit_restore(tmp_path, shading):
     project, _, _parent = fixture_project(tmp_path)
-    operation = effect_request(project)
+    operation = shading_request(project) if shading else effect_request(project)
     original = operations._atomic_json
     from blackmask import effects
 
@@ -735,3 +736,399 @@ def test_different_historical_rgb_lock_outside_support_still_rejects(tmp_path):
     with pytest.raises(ProjectError, match="Saved RGB lock differs.*outside repair support"):
         run_repair(project, repair_request(project, prepared, [0, 0, 6, 4], [3, 1, 5, 3]))
     assert (project / "state.json").read_bytes() == before
+
+
+def test_shading_exact_single_round_renderer_and_straight_preview():
+    from blackmask.export import render_black, view_rgba
+
+    foreground = np.array([[[65535] * 3, [65535] * 3, [5, 7, 1], [1] * 3]], dtype=np.uint16)
+    alpha = np.array([[32768, 32768, 65535, 40000]], dtype=np.uint16)
+    weight = np.full(alpha.shape, 65535, dtype=np.uint16)
+    np.testing.assert_array_equal(
+        render_black(foreground, alpha, weight, 0), render_black(foreground, alpha)
+    )
+    actual = render_black(foreground, alpha, weight, 0.25)
+    assert actual[0, 0, 0] == 24576
+    # Rounding shaded F=0.75 to 1 before alpha would incorrectly produce 1.
+    assert actual[0, 3, 0] == 0
+    np.testing.assert_array_equal(render_black(foreground, alpha, weight, 0.5)[0, 2], [2, 4, 0])
+    rgba = view_rgba(foreground, alpha, weight, 0.25)
+    assert rgba[0, 0, 0] == 191 and rgba[0, 0, 3] == 128
+
+
+def test_shadow_weight_unbaked_protection_band_and_thin_features():
+    from blackmask.effects import make_shadow_weight
+
+    source = np.full((80, 100, 3), 24000, dtype=np.uint16)
+    alpha = np.zeros((80, 100), dtype=np.uint16)
+    alpha[5:75, 5:85] = 65535
+    alpha[35:37, 85:98] = 65535
+    alpha[4, 20:40] = 20000
+    support = np.full(alpha.shape, 65535, dtype=np.uint16)
+    support[:, :10] = 0
+    protection = np.zeros(alpha.shape, dtype=bool)
+    protection[68:75, 20:30] = True
+    settings = {"enabled": True, "opacity": 0.12, "width_px": 10.0, "direction_degrees": 90.0}
+    weight = make_shadow_weight(source, alpha, support, settings, protection=protection)
+    assert weight.dtype == np.uint16 and np.any(weight > 0)
+    assert np.all(weight[protection] == 0) and np.all(weight[support == 0] == 0)
+    assert np.all(weight[alpha == 0] == 0) and np.all(weight[25:55, 25:65] == 0)
+    np.testing.assert_array_equal(
+        weight,
+        make_shadow_weight(
+            source, alpha, support, dict(settings, opacity=0.24), protection=protection
+        ),
+    )
+    assert weight[36, 96] < weight[73, 50]
+
+
+def shading_request(project, *, opacity=0.12, enabled=True, opacity_only=False, support=None):
+    operation = effect_request(project, candidate_comparison=True, support=support)
+    operation.pop("color_cleanup")
+    operation["shading"] = {
+        "enabled": enabled,
+        "opacity": opacity,
+        "width_px": 3.0,
+        "direction_degrees": 90.0,
+    }
+    if opacity_only:
+        operation["opacity_only"] = True
+    else:
+        protection = np.zeros((4, 6), dtype=np.uint16)
+        protection[2, 3] = 65535
+        Image.fromarray(protection).save(project / "shading-protection.png")
+        operation["shading_protection_file"] = "shading-protection.png"
+    return operation
+
+
+def test_shading_saved_operation_independent_cleanup_global_opacity_and_export(tmp_path):
+    from blackmask.export import render_black
+    from blackmask.repair import scalar16
+
+    project, source, _parent = fixture_project(tmp_path)
+    cleaned = operations.apply_operation(project, effect_request(project))
+    rgb, alpha, cleanup_manifest = saved_layers(
+        project, cleaned["revision"], read_project(project)["master_id"]
+    )
+    with patch("blackmask.operations.VitMatteSession", side_effect=AssertionError("No model")):
+        shaded = operations.apply_operation(project, shading_request(project))
+        foreground, actual_alpha, manifest = saved_layers(
+            project, shaded["revision"], read_project(project)["master_id"]
+        )
+        np.testing.assert_array_equal(foreground, rgb)
+        np.testing.assert_array_equal(actual_alpha, alpha)
+        assert manifest["color_cleanup"] == cleanup_manifest["color_cleanup"]
+        weight = scalar16(project / "revisions" / shaded["revision"] / "shadow_weight16.png")
+        assert np.any(weight) and weight[2, 3] == 0
+        operations.accept_revision(project, shaded["revision"])
+        exported = Path(export_project(project)["directory"])
+        np.testing.assert_array_equal(
+            tifffile.imread(exported / "black_rgb16.tif"), render_black(rgb, alpha, weight, 0.12)
+        )
+        np.testing.assert_array_equal(scalar16(exported / "shadow_weight16.png"), weight)
+        np.testing.assert_array_equal(tifffile.imread(exported / "foreground_rgb16.tif"), rgb)
+        assert "baked shading" in (exported / "README.txt").read_text()
+        with patch(
+            "blackmask.effects.make_shadow_weight",
+            side_effect=AssertionError("Opacity must reuse W"),
+        ):
+            changed = operations.apply_operation(
+                project, shading_request(project, opacity=0.24, opacity_only=True)
+            )
+        directory = project / "revisions" / changed["revision"]
+        np.testing.assert_array_equal(scalar16(directory / "shadow_weight16.png"), weight)
+        assert (
+            json.loads((directory / "effects/shading/settings.json").read_bytes())[
+                "operation_scope"
+            ]
+            == "global opacity only"
+        )
+        disabled = operations.apply_operation(project, shading_request(project, enabled=False))
+        assert (
+            saved_layers(project, disabled["revision"], read_project(project)["master_id"])[2][
+                "color_cleanup"
+            ]
+            == cleanup_manifest["color_cleanup"]
+        )
+    assert read_project(project)["accepted_revision"] == shaded["revision"]
+    np.testing.assert_array_equal(
+        tifffile.imread(project / "masters" / (read_project(project)["master_id"] + ".tif")), source
+    )
+
+
+def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path):
+    import subprocess
+    import sys
+
+    from test_matte_operations import StubSession
+    from test_repair_operations import repair_guides, repair_request, run_repair
+
+    from blackmask.repair import scalar16
+    from blackmask.review import review_project
+
+    project, source, _parent = fixture_project(tmp_path)
+    operations.apply_operation(project, effect_request(project))
+    first = operations.apply_operation(project, shading_request(project))
+    operations.accept_revision(project, first["revision"])
+    accepted = Path(export_project(project)["directory"])
+    original = {p.name: p.read_bytes() for p in accepted.iterdir()}
+    old_weight = scalar16(project / "revisions" / first["revision"] / "shadow_weight16.png")
+    old_corrected = tifffile.imread(
+        project / "revisions" / first["revision"] / "corrected_rgb16.tif"
+    )
+    old_alpha = saved_layers(project, first["revision"], read_project(project)["master_id"])[1]
+    lock_file = edits(
+        project,
+        [
+            {
+                "id": "inside-partial",
+                "role": "lock",
+                "shape": "rectangle",
+                "xyxy": [2, 1, 3, 2],
+                "revision": first["revision"],
+            },
+            {
+                "id": "outside-partial",
+                "role": "lock",
+                "shape": "rectangle",
+                "xyxy": [4, 0, 5, 1],
+                "revision": first["revision"],
+            },
+        ],
+    )
+    prepared_locks = operations.apply_operation(
+        project, request(project, guide_edits_file=lock_file)
+    )
+    approve(project, prepared_locks)
+    prepared = repair_guides(project, [1, 1, 4, 3])
+    with patch.object(
+        StubSession,
+        "predict",
+        side_effect=lambda rgb, guide, device: (np.full(guide.shape, 0.75), {}),
+    ):
+        repair = run_repair(project, repair_request(project, prepared, [0, 0, 6, 4], [1, 1, 4, 3]))
+    manifest = saved_layers(project, repair["revision"], read_project(project)["master_id"])[2]
+    assert manifest["color_cleanup"]["stale"] and manifest["shading"]["stale"]
+    for name in ("review", "review-before"):
+        label = json.loads(
+            (project / "revisions" / repair["revision"] / name / "manifest.json").read_bytes()
+        )["label"]
+        assert "cleanup OFF" in label and "shading OFF" in label
+    # Independently derive BASE pixels on both sides; no production renderer reused.
+    expected_alpha = old_alpha.copy()
+    expected_alpha[1:3, 1:4] = 49151
+    expected_alpha[1, 2] = old_alpha[1, 2]
+    expected_after_rgb = source.copy()
+    expected_after_rgb[1, 2] = old_corrected[1, 2]
+    expected_after_rgb[0, 4] = old_corrected[0, 4]
+    assert 0 < old_alpha[1, 2] < 65535 and 0 < old_alpha[0, 4] < 65535
+    assert np.any(old_corrected[1, 2] != source[1, 2])
+    for review_name, expected_rgb, expected_a in (
+        ("review-before", source, old_alpha),
+        ("review", expected_after_rgb, expected_alpha),
+    ):
+        expected_black16 = np.rint(
+            expected_rgb.astype(np.float64) * (expected_a.astype(np.float64) / 65535)[..., None]
+        ).astype(np.uint16)
+        expected_view = np.rint(expected_black16.astype(np.float64) / 257).astype(np.uint8)
+        with Image.open(
+            project
+            / "revisions"
+            / repair["revision"]
+            / review_name
+            / "crop-000-black_RGB8_VIEW.png"
+        ) as image:
+            np.testing.assert_array_equal(np.array(image), expected_view)
+    from blackmask.repair import replay_repair
+
+    np.testing.assert_array_equal(replay_repair(project, repair["revision"]), expected_alpha)
+    label = json.loads(Path(review_project(project)["manifest_file"]).read_bytes())
+    assert {"cleanup_stale", "shading_stale"} <= set(label["stale_labels"])
+    with pytest.raises(ProjectError, match="Stale"):
+        operations.accept_revision(project, repair["revision"])
+    rebuilt_cleanup = operations.apply_operation(
+        project, effect_request(project, scope=[1, 1, 4, 3], candidate_comparison=True)
+    )
+    assert not rebuilt_cleanup["color_cleanup"]["stale"] and rebuilt_cleanup["shading"]["stale"]
+    with pytest.raises(ProjectError, match="Stale"):
+        operations.accept_revision(project, rebuilt_cleanup["revision"])
+    with pytest.raises(ProjectError, match="Stale"):
+        export_project(project, revision=rebuilt_cleanup["revision"], draft=True)
+    partial_support = np.zeros((4, 6), dtype=np.uint16)
+    partial_support[1, 1] = 65535
+    partial = operations.apply_operation(project, shading_request(project, support=partial_support))
+    assert partial["shading"]["stale"]
+    scope_support = np.zeros((4, 6), dtype=np.uint16)
+    scope_support[1:3, 1:4] = 65535
+    rebuilt = operations.apply_operation(project, shading_request(project, support=scope_support))
+    assert not rebuilt["shading"]["stale"] and not rebuilt["color_cleanup"]["stale"]
+    directory = project / "revisions" / rebuilt["revision"]
+    weight = scalar16(directory / "shadow_weight16.png")
+    outside = scope_support == 0
+    assert old_weight[outside].any() and np.any(old_corrected[outside] != source[outside])
+    np.testing.assert_array_equal(weight[outside], old_weight[outside])
+    assert weight[2, 3] == 0 and weight[1, 2] == 0
+    np.testing.assert_array_equal(scalar16(directory / "base_alpha16.png"), expected_alpha)
+    np.testing.assert_array_equal(expected_alpha[outside], old_alpha[outside])
+    final_rgb = tifffile.imread(directory / "corrected_rgb16.tif")
+    np.testing.assert_array_equal(final_rgb[1, 2], old_corrected[1, 2])
+    np.testing.assert_array_equal(final_rgb[0, 4], old_corrected[0, 4])
+    np.testing.assert_array_equal(
+        tifffile.imread(directory / "corrected_rgb16.tif")[outside], old_corrected[outside]
+    )
+    operations.accept_revision(project, rebuilt["revision"])
+    # New process uses only saved layers, no model/cache setup or original capture lookup.
+    result = subprocess.run(
+        [sys.executable, "-m", "blackmask", "export", str(project)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    exported = Path(json.loads(result.stdout)["directory"])
+    rgb, alpha, _ = saved_layers(project, rebuilt["revision"], read_project(project)["master_id"])
+    expected = np.rint(
+        rgb.astype(np.float64)
+        * (alpha.astype(np.float64) / 65535)[..., None]
+        * (1 - 0.12 * weight.astype(np.float64) / 65535)[..., None]
+    ).astype(np.uint16)
+    np.testing.assert_array_equal(tifffile.imread(exported / "black_rgb16.tif"), expected)
+    for name, data in original.items():
+        assert (accepted / name).read_bytes() == data
+
+
+def test_viewer_shading_same_native_crop_comparisons_and_independent_disable(tmp_path):
+    import io
+
+    from blackmask.export import render_black
+    from blackmask.repair import scalar16
+    from blackmask.viewer import ReviewServer
+
+    project, _, _ = fixture_project(tmp_path)
+    result = operations.apply_operation(project, shading_request(project))
+    rgb, alpha, _ = saved_layers(project, result["revision"], read_project(project)["master_id"])
+    weight = scalar16(project / "revisions" / result["revision"] / "shadow_weight16.png")
+    server = ReviewServer(project)
+    try:
+        state = server.snapshot()
+        current = next(r for r in state["revisions"] if r["revision"] == result["revision"])
+        assert current["shading"]["settings"]["width_px"] == 3
+        for opacity in (0, 0.12, 0.24):
+            data = server.image(f"/image/black/{result['revision']}/1,0,5,4/p{opacity}")
+            with Image.open(io.BytesIO(data)) as image:
+                expected = np.rint(
+                    render_black(rgb, alpha, weight, opacity).astype(np.float64) / 257
+                ).astype(np.uint8)[:, 1:5]
+                np.testing.assert_array_equal(np.array(image), expected)
+        identity = {k: state[k] for k in ("master_id", "inputs_digest", "authoring_digest")}
+        operation = shading_request(project, enabled=False)
+        operation.pop("schema_version")
+        operation.pop("kind")
+        operation.update(identity, action="effects")
+        assert server.execute(operation)["shading"]["enabled"] is False
+    finally:
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("width_px", 0),
+        ("width_px", 1000),
+        ("direction_degrees", 360),
+        ("direction_degrees", True),
+        ("opacity", float("nan")),
+        ("opacity", 2),
+        ("enabled", 1),
+    ],
+)
+def test_invalid_shading_preserves_state(tmp_path, field, value):
+    project, _, _ = fixture_project(tmp_path)
+    operation = shading_request(project)
+    operation["shading"][field] = value
+    before = (project / "state.json").read_bytes()
+    with pytest.raises((ProjectError, ValueError)):
+        operations.apply_operation(project, operation)
+    assert (project / "state.json").read_bytes() == before
+
+
+def test_shading_protection_mutation_before_publish_preserves_state(tmp_path):
+    from blackmask import effects
+
+    project, _, _ = fixture_project(tmp_path)
+    operation = shading_request(project)
+    before = (project / "state.json").read_bytes()
+    original = effects.make_shadow_weight
+
+    def changing(*args, **kwargs):
+        result = original(*args, **kwargs)
+        Image.fromarray(np.zeros((4, 6), dtype=np.uint16)).save(project / "shading-protection.png")
+        return result
+
+    with (
+        patch.object(effects, "make_shadow_weight", changing),
+        pytest.raises(ProjectError, match="Stale shading protection"),
+    ):
+        operations.apply_operation(project, operation)
+    assert (project / "state.json").read_bytes() == before
+
+
+def test_first_shading_uses_offline_authored_guides_without_external_mask(tmp_path):
+    from blackmask.repair import scalar16
+    from blackmask.viewer import ReviewServer
+
+    project, _, parent = fixture_project(tmp_path)
+    guide_file = edits(
+        project,
+        [
+            {
+                "id": "protect-detail",
+                "role": "lock",
+                "shape": "rectangle",
+                "xyxy": [4, 1, 5, 2],
+                "revision": parent["revision"],
+            },
+            {
+                "id": "shading-support",
+                "role": "support",
+                "shape": "rectangle",
+                "xyxy": [1, 0, 5, 4],
+                "feather_px": 0,
+            },
+        ],
+    )
+    prepared = operations.apply_operation(project, request(project, guide_edits_file=guide_file))
+    approve(project, prepared)
+    matte = run_matte(project)
+    server = ReviewServer(project)
+    try:
+        state = server.snapshot()
+        identity = {k: state[k] for k in ("master_id", "inputs_digest", "authoring_digest")}
+        prefix = "revisions/" + matte["revision"]
+        with Image.open(project / prefix / "supports/protection.png") as image:
+            assert image.mode == "L" and np.array(image)[1, 4] == 255
+        result = server.execute(
+            dict(
+                identity,
+                action="effects",
+                base_revision=matte["revision"],
+                scope_xyxy=[1, 0, 5, 4],
+                support_file=prefix + "/supports/support16.png",
+                shading_protection_file=prefix + "/supports/protection.png",
+                candidate_comparison=True,
+                shading={
+                    "enabled": True,
+                    "opacity": 0.12,
+                    "width_px": 3.0,
+                    "direction_degrees": 90.0,
+                },
+            )
+        )
+        weight = scalar16(project / "revisions" / result["revision"] / "shadow_weight16.png")
+        assert weight.any() and weight[1, 4] == 0
+        protection = scalar16(
+            project / "revisions" / result["revision"] / "effects/shading/protection16.png"
+        )
+        assert protection[1, 4] == 65535
+    finally:
+        server.server_close()
