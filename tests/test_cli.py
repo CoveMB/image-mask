@@ -23,15 +23,15 @@ def run(*arguments):
 def test_fresh_cli_create_reopen_doctor_accept(tmp_path):
     source = tiff(tmp_path / "source.bin", profile=srgb_profile())
     project = tmp_path / "project"
-    opened = run("open", source, "--project", project)
+    opened = run("open", "--headless", source, "--project", project)
     assert opened.returncode == 0, opened.stderr
     state = json.loads(opened.stdout)
     assert state["development_approved"] is False
-    assert run("open", "--project", project).returncode == 0
+    assert run("open", "--headless", "--project", project).returncode == 0
     assert (
         run("accept", project, "--development", "--master-id", state["master_id"]).returncode == 0
     )
-    reopened = json.loads(run("open", "--project", project).stdout)
+    reopened = json.loads(run("open", "--headless", "--project", project).stdout)
     assert reopened["development_approved"] is True
     doctor = run("doctor", "--project", project)
     assert doctor.returncode == 0, doctor.stderr
@@ -42,7 +42,7 @@ def test_fresh_cli_create_reopen_doctor_accept(tmp_path):
 
 
 def test_cli_failure_is_actionable(tmp_path):
-    result = run("open", "--project", tmp_path / "missing")
+    result = run("open", "--headless", "--project", tmp_path / "missing")
     assert result.returncode != 0
     assert "incomplete" in result.stderr or "missing" in result.stderr
     assert "Traceback" not in result.stderr
@@ -80,7 +80,7 @@ def test_run_prepare_returns_paths_and_rejects_final_acceptance(tmp_path):
     result = json.loads(completed.stdout)
     assert Path(result["trimap_file"]).is_file() and result["revision"] == "rev-001"
     reopened = subprocess.run(
-        [sys.executable, "-m", "blackmask", "open", "--project", str(project)],
+        [sys.executable, "-m", "blackmask", "open", "--headless", "--project", str(project)],
         capture_output=True,
         text=True,
         check=False,
@@ -140,3 +140,35 @@ def test_cli_recorded_known_only_journey_and_explicit_review_controls(tmp_path):
     exported = run("export", project)
     assert exported.returncode == 0, exported.stderr
     assert Path(json.loads(exported.stdout)["directory"]).is_dir()
+
+
+def test_open_defaults_to_viewer_and_explicit_headless_preserves_json(
+    tmp_path, monkeypatch, capsys
+):
+    from test_project import create
+
+    from blackmask import cli, viewer
+
+    _, project = create(tmp_path)
+    calls = []
+    monkeypatch.setattr(viewer, "open_viewer", lambda *args: calls.append(args))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "blackmask",
+            "open",
+            "--project",
+            str(project),
+            "--model-cache",
+            "vit-cache",
+            "--sam-cache",
+            "sam-cache",
+        ],
+    )
+    assert cli.main() == 0
+    assert calls == [(project, Path("vit-cache"), Path("sam-cache"))]
+    monkeypatch.setattr(sys, "argv", ["blackmask", "open", "--headless", "--project", str(project)])
+    assert cli.main() == 0
+    assert len(calls) == 1
+    assert json.loads(capsys.readouterr().out)["development_approved"] is False

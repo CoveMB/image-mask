@@ -20,7 +20,7 @@ ViTMatte processing provides separate trimap/final acceptance controls, native
 same-crop review assets and accepted RGB16 black/alpha16 plus labelled PNG8 exports.
 Scoped native repair now saves quantized operands for model-free replay; restore
 selects saved working inputs without changing final acceptance. Interrupted matte/repair now resumes verified tiles or completed stages through
-`status` and `resume`. The viewer and appearance effects remain future work.
+`status` and `resume`. I06 adds an offline loopback review window with typed guide authoring, native comparisons and the same processing/recovery controls. Appearance effects remain future work.
 Prepared revisions require explicit human trimap review before matting.
 
 A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
@@ -40,9 +40,19 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install --require-hashes --only-binary=:all: -r requirements-macos-arm64.lock
 .venv/bin/python -m pip install --no-build-isolation --no-deps -e .
 .venv/bin/blackmask doctor
-.venv/bin/blackmask open /path/to/capture.tif --project /path/to/new-photo-project
-.venv/bin/blackmask open --project /path/to/new-photo-project
+.venv/bin/blackmask open /path/to/capture.tif --project /path/to/new-photo-project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache
+.venv/bin/blackmask open --project /path/to/new-photo-project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache
 ```
+
+`open` starts one foreground server bound to `127.0.0.1` on an available port and
+opens the packaged review page in your browser. Keep that terminal open; Ctrl-C
+stops the server without discarding saved work. Reuse its printed launch URL if
+browser opening fails. The URL grants access to this project: keep it local.
+`--headless` creates/validates and returns JSON for automation without starting a
+server. Model cache arguments select existing explicitly installed assets; they
+never download. Preparation can also use `BLACKMASK_SAM_CACHE`, and matting
+`BLACKMASK_VITMATTE_CACHE`. See [the complete manual workflow](docs/workflow.md)
+for new guide/support/lock authoring, separate approvals and recovery.
 
 The project location must be new/empty, separate from the capture and free of
 symlink aliases. Source paths are detected by content, never by extension. For
@@ -61,7 +71,7 @@ in its first page never becomes the working master. Recognized RAW failures stop
 rather than falling back to that preview.
 Invalid camera WB requires an explicit `--white-balance daylight` preview or an
 already-developed trusted TIFF. There is no general RAW editor or crop control.
-Inspect the saved master TIFF in a trusted full-precision external viewer for
+The local page shows a labelled RGB8 source preview. Inspect the saved master TIFF in a trusted full-precision external viewer for
 orientation, WB and clipping. Copy the returned `master_id` only after that human
 review; this records development approval, leaving final-photo acceptance empty:
 
@@ -100,6 +110,8 @@ for explicit model setup, typed preparation and human review.
 | Same-native-crop review assets | `src/blackmask/review.py` |
 | Canonical precision renderer and accepted/draft exports | `src/blackmask/export.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
+| One-project loopback server and packaged manual page | `src/blackmask/viewer.py`, `src/blackmask/ui/review.html` |
+| Shared inverse native coordinate mapping | `src/blackmask/ui/coordinates.js` |
 | Supported commands and local doctor/setup | `src/blackmask/cli.py` |
 | Ingest, guide/model geometry, transactions and CLI regressions | `tests/` |
 | Saved files and recovery | [File contract](docs/file-contract.md), [troubleshooting](docs/troubleshooting.md) |
@@ -120,8 +132,7 @@ The public implementation history contains no photographs, private planning or
 reference archives. Local planning and frozen reference material, when supplied
 separately, stay ignored and are not required to install or operate the tool.
 The maintained public docs describe the behavior currently implemented. Future
-review-window and appearance features require separate implementation
-and human photographic validation.
+appearance features require separate implementation and human photographic validation.
 
 ## Licensing
 

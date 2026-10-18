@@ -1,0 +1,1287 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  />
+  <title>Image Mask · Local review</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font: 15px system-ui;
+    }
+    body {
+      margin: 0;
+      background: #171b20;
+      color: #edf1f5;
+    }
+    header {
+      padding: 12px 18px;
+      border-bottom: 1px solid #44505a;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 6px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(360px, 1fr) 360px;
+      height: calc(100vh - 115px);
+    }
+    aside {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      overflow: auto;
+      padding: 12px;
+      border-left: 1px solid #44505a;
+    }
+    fieldset {
+      min-inline-size: 0;
+      border: 1px solid #56616a;
+      margin: 0 0 12px;
+      padding: 10px;
+    }
+    legend {
+      font-weight: 650;
+    }
+    label {
+      display: block;
+      margin: 6px 0;
+    }
+    input,
+    select,
+    button,
+    textarea {
+      font: inherit;
+      color: inherit;
+      background: #252d36;
+      border: 1px solid #75828d;
+      border-radius: 4px;
+      padding: 5px;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      cursor: pointer;
+      margin: 3px;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: wait;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    canvas:focus-visible {
+      outline: 3px solid #73c5ff;
+      outline-offset: 2px;
+    }
+    input[type="number"] {
+      width: 78px;
+    }
+    input[type="checkbox"] {
+      width: auto;
+    }
+    textarea {
+      width: 100%;
+      height: 60px;
+    }
+    .row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .view {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+    .toolbar {
+      padding: 8px;
+      background: #202730;
+    }
+    #viewport {
+      flex: 1;
+      min-height: 180px;
+      position: relative;
+    }
+    canvas {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      background: #090b0e;
+    }
+    #status {
+      white-space: pre-wrap;
+      min-height: 40px;
+    }
+    #message {
+      color: #ffcf85;
+      white-space: pre-wrap;
+      max-height: 120px;
+      overflow: auto;
+    }
+    .small {
+      font-size: 13px;
+      color: #c0ccd6;
+    }
+    .group {
+      padding: 6px;
+      border-bottom: 1px solid #56616a;
+    }
+    .wide {
+      width: 100%;
+    }
+    @media (max-width: 800px) {
+      main {
+        display: block;
+        height: auto;
+      }
+      #viewport {
+        height: 55vh;
+      }
+      aside {
+        border-left: 0;
+      }
+      .view {
+        height: auto;
+      }
+    }
+  </style>
+  <header>
+    <h1>Image Mask · Offline local review</h1>
+    <div id="status" role="status" aria-live="polite">
+      Opening current project…
+    </div>
+    <div id="message" role="alert"></div>
+  </header>
+  <main>
+    <section class="view" aria-label="Native image review">
+      <div class="toolbar">
+        <div class="row">
+          <label
+            >View
+            <select id="panel">
+              <option value="source">Source</option>
+              <option value="black">Result · black</option>
+              <option value="gray">Result · gray</option>
+              <option value="white">Result · white</option>
+              <option value="alpha">Alpha8 view</option>
+            </select></label
+          >
+          <label
+            >Compare revision
+            <select id="viewRevision"></select
+          ></label>
+          <button id="toggle">Source / result</button
+          ><button id="fit">Fit</button><button id="native">Native 1:1</button>
+          <label
+            >Zoom
+            <input
+              id="zoom"
+              type="number"
+              min="0.05"
+              max="32"
+              step="0.1"
+              value="1"
+          /></label>
+          <label
+            >Overlay
+            <select id="overlay">
+              <option value="guides">Typed guides</option>
+              <option value="trimap">Prepared trimap</option>
+              <option value="support">Prepared support8 view</option>
+              <option value="lock">Prepared lock region</option>
+              <option value="proposal">Unreviewed trimap proposal</option>
+              <option value="boundary">Proposal unknown boundary</option>
+              <option value="membership">SAM membership</option>
+              <option value="none">None</option>
+            </select></label
+          >
+        </div>
+        <p class="small">
+          RGB8/alpha8 viewing approximations. Saved master/foreground remain
+          RGB16 and masks alpha16. Canvas: +/- zoom, arrows pan, Shift-drag pan.
+          Use numeric authoring below with keyboard.
+        </p>
+        <div class="row">
+          <label
+            >Native crop x0,y0,x1,y1
+            <input id="crop" value="" size="22" /></label
+          ><button id="cropApply">Apply crop</button
+          ><button id="full">Full image</button
+          ><span id="coordinate" aria-live="polite"></span>
+        </div>
+      </div>
+      <div id="viewport">
+        <canvas
+          id="canvas"
+          tabindex="0"
+          aria-label="Source and result; native-coordinate guide authoring. Numeric alternative in Guide section."
+        ></canvas>
+      </div>
+    </section>
+    <aside>
+      <button id="reload">Reload saved inputs</button
+      ><span id="draftStatus" class="small"></span
+      ><button id="recoverPending">
+        Load retained pending guides for review
+      </button>
+      <fieldset>
+        <legend>1 · Source development review</legend>
+        <p class="small">
+          Inspect orientation, white balance and clipping. For precision,
+          inspect the saved master TIFF in an RGB16 viewer before approval. No
+          automatic photo approval.
+        </p>
+        <label
+          ><input type="checkbox" id="developmentReviewed" /> I reviewed this
+          master’s development</label
+        ><button id="development">Approve development</button>
+      </fieldset>
+      <fieldset>
+        <legend>2 · Named SAM groups</legend>
+        <div class="row">
+          <label
+            >Group name
+            <input id="newGroup" placeholder="subject" size="16" /></label
+          ><button id="addGroup">Add group</button>
+        </div>
+        <div id="groups"></div>
+        <p class="small">
+          Prepare generates three candidates per prompted group. Choose a
+          candidate, save and prepare again. Membership is a suggestion, never
+          confirmed opacity.
+        </p>
+        <label
+          >Candidate preview
+          <select id="candidate">
+            <option value="">None</option>
+          </select></label
+        >
+      </fieldset>
+      <fieldset>
+        <legend>3 · Typed native guide</legend>
+        <label
+          >Role
+          <select id="role">
+            <option value="keep">SAM keep hint</option>
+            <option value="remove">SAM remove hint</option>
+            <option value="foreground">Confirmed foreground core</option>
+            <option value="background">Confirmed background core</option>
+            <option value="unknown">Unknown corridor</option>
+            <option value="support">Repair support16</option>
+            <option value="lock">Saved alpha/RGB region lock</option>
+          </select></label
+        >
+        <div class="row">
+          <label
+            >Shape
+            <select id="shape">
+              <option value="point">Point</option>
+              <option value="rectangle">Rectangle / SAM box</option>
+              <option value="stroke">Coarse stroke</option>
+              <option value="pan">Pan only</option>
+            </select></label
+          ><label
+            >Group
+            <select id="guideGroup"></select
+          ></label>
+        </div>
+        <div class="row">
+          <label
+            >Stroke radius px
+            <input id="radius" type="number" min="1" value="2" /></label
+          ><label
+            >Inward feather px
+            <input id="feather" type="number" min="0" value="0"
+          /></label>
+        </div>
+        <label
+          >Lock saved revision
+          <select id="lockRevision"></select
+        ></label>
+        <label
+          >Native coordinates
+          <input
+            id="geometry"
+            class="wide"
+            placeholder="x,y or x0,y0,x1,y1 or x,y;x,y" /></label
+        ><button id="addGeometry">Add numeric guide</button>
+        <p class="small">
+          Locks copy saved partial alpha and RGB exactly on every rerun. Remove
+          a lock explicitly, save and prepare before replacing its binding.
+          Support feather must leave a full-strength interior under changed
+          cores.
+        </p>
+        <label
+          >Recorded guides
+          <select id="regions" class="wide" size="5"></select></label
+        ><button id="removeRegion">Remove selected guide explicitly</button
+        ><button id="save">Save groups and pending guides</button>
+      </fieldset>
+      <fieldset>
+        <legend>4 · Prepare and review</legend>
+        <label>Write scope x0,y0,x1,y1 <input id="scope" class="wide" /></label
+        ><label
+          >Repair context x0,y0,x1,y1 <input id="context" class="wide" /></label
+        ><button id="prepare">Prepare saved guidance</button
+        ><label
+          ><input id="trimapReviewed" type="checkbox" /> I reviewed the current
+          prepared trimap against source</label
+        ><button id="trimap">Approve prepared trimap</button
+        ><button id="matte">Run full matte</button>
+        <p class="small">
+          Prepare preserves previous alpha; it cannot be accepted as a final
+          photo. Use a context larger than the permitted write scope for local
+          repair.
+        </p>
+        <label
+          >Source-supported repair reason
+          <textarea id="reason"></textarea></label
+        ><label
+          >Merge
+          <select id="policy">
+            <option value="replace">Replace within support</option>
+            <option value="increase-only">Increase only</option>
+            <option value="decrease-only">Decrease only</option>
+          </select></label
+        ><button id="repair">Run scoped repair</button>
+      </fieldset>
+      <fieldset>
+        <legend>5 · Recovery and photographic acceptance</legend>
+        <label
+          >Interrupted operation
+          <select id="operation"></select></label
+        ><button id="resume">Resume verified work</button
+        ><label
+          >Restore saved revision
+          <select id="restoreRevision"></select></label
+        ><label
+          ><input type="checkbox" id="replaceDrafts" /> Preserve current draft
+          bytes in recovery, then replace drafts</label
+        ><button id="restore">
+          Restore working inputs (acceptance unchanged)
+        </button>
+        <label
+          ><input type="checkbox" id="photoReviewed" /> I reviewed current
+          result at native scale on black/gray/white, including fine detail,
+          transparency and seams</label
+        ><button id="accept">Accept current photograph</button
+        ><button id="exportAccepted">Export accepted result</button
+        ><button id="exportDraft">Export labelled current draft</button>
+        <p id="result" class="small" style="white-space: pre-wrap"></p>
+      </fieldset>
+    </aside>
+  </main>
+  <script src="/coordinates.js"></script>
+  <script>
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const token = location.hash.slice(1);
+    let state = null,
+      identity = null,
+      groups = [],
+      regions = [],
+      originalRegions = [],
+      dirty = false,
+      pendingSaved = false;
+    let image = null,
+      overlayImage = null,
+      crop = null,
+      pan = [0, 0],
+      zoom = 1,
+      gesture = null,
+      transform = null,
+      imageKey = "",
+      actionWasRunning = false,
+      actionSubmitting = false,
+      imageLoading = false;
+    const canvas = $("canvas"),
+      ctx = canvas.getContext("2d");
+    function message(value) {
+      $("message").textContent = value || "";
+    }
+    async function api(path, data) {
+      const headers = { "X-Blackmask-Token": token };
+      if (data !== undefined) headers["Content-Type"] = "application/json";
+      const response = await fetch(path, {
+        method: data === undefined ? "GET" : "POST",
+        headers,
+        body: data === undefined ? undefined : JSON.stringify(data),
+      });
+      if (!response.ok) {
+        let error = await response.json();
+        throw Error(error.error || "Local request failed");
+      }
+      return response;
+    }
+    function select(id, values, selected) {
+      const node = $(id),
+        previous = selected === undefined ? node.value : selected;
+      if (
+        JSON.stringify(
+          Array.from(node.options, (o) => [o.value, o.textContent]),
+        ) === JSON.stringify(values)
+      ) {
+        if (values.some((v) => v[0] === previous)) node.value = previous;
+        return;
+      }
+      node.replaceChildren();
+      for (const [value, label] of values) {
+        let option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        node.append(option);
+      }
+      if (values.some((v) => v[0] === previous)) node.value = previous;
+    }
+    function bounds(id) {
+      const values = $(id)
+        .value.split(",")
+        .map((v) => Number(v.trim()));
+      if (values.length !== 4 || values.some((v) => !Number.isInteger(v)))
+        throw Error("Use four native integer coordinates");
+      const [x0, y0, x1, y1] = values,
+        [w, h] = state.dimensions_wh;
+      if (!(0 <= x0 && x0 < x1 && x1 <= w && 0 <= y0 && y0 < y1 && y1 <= h))
+        throw Error("Empty or out-of-master half-open rectangle");
+      return values;
+    }
+    function markDirty() {
+      dirty = true;
+      pendingSaved = false;
+      $("draftStatus").textContent = "Unsaved authoring edits";
+    }
+    function actions() {
+      const old = new Map(originalRegions.map((r) => [r.id, r])),
+        current = new Map(regions.map((r) => [r.id, r]));
+      const result = [];
+      for (const r of originalRegions)
+        if (!current.has(r.id)) result.push({ action: "remove", id: r.id });
+      for (const r of regions)
+        if (
+          !old.has(r.id) ||
+          JSON.stringify(old.get(r.id)) !== JSON.stringify(r)
+        )
+          result.push({ action: "upsert", region: r });
+      return result;
+    }
+    function renderGroups() {
+      $("groups").replaceChildren();
+      for (const group of groups) {
+        let row = document.createElement("div");
+        row.className = "group";
+        let name = document.createElement("strong");
+        name.textContent = group.id;
+        row.append(name);
+        function field(title, type, value, onChange) {
+          let label = document.createElement("label"),
+            control = document.createElement(
+              type === "select" ? "select" : "input",
+            );
+          label.append(document.createTextNode(title + " "));
+          if (type === "checkbox") {
+            control.type = type;
+            control.checked = value;
+          } else if (type === "number") {
+            control.type = type;
+            control.min = 0;
+            control.value = value;
+          } else {
+            for (const [v, l] of value) {
+              let option = document.createElement("option");
+              option.value = v;
+              option.textContent = l;
+              control.append(option);
+            }
+          }
+          control.onchange = () => {
+            if (authoringBusy()) return;
+            onChange(control);
+            markDirty();
+          };
+          label.append(control);
+          row.append(label);
+          return control;
+        }
+        field(
+          "Retain group",
+          "checkbox",
+          group.keep,
+          (c) => (group.keep = c.checked),
+        );
+        let material = field(
+          "Material",
+          "select",
+          [
+            ["opaque_core", "Opaque core"],
+            ["unknown_interior", "Unknown / translucent interior"],
+          ],
+          (c) => (group.material_policy = c.value),
+        );
+        material.value = group.material_policy;
+        let candidate = field(
+          "Selected candidate",
+          "select",
+          [
+            ["", "Unselected"],
+            ["0", "0"],
+            ["1", "1"],
+            ["2", "2"],
+          ],
+          (c) => {
+            delete group.morphology;
+            if (c.value === "") delete group.selected_candidate;
+            else group.selected_candidate = Number(c.value);
+          },
+        );
+        candidate.value =
+          group.selected_candidate === undefined
+            ? ""
+            : String(group.selected_candidate);
+        let morphology = field(
+          "Propose morphology",
+          "checkbox",
+          !!group.morphology,
+          (c) => {
+            if (c.checked) {
+              if (group.selected_candidate === undefined || !group.keep) {
+                c.checked = false;
+                message("Choose and retain a candidate first");
+                return;
+              }
+              group.morphology = {
+                foreground_erosion_px: 2,
+                unknown_dilation_px: 2,
+              };
+            } else delete group.morphology;
+            renderGroups();
+          },
+        );
+        if (group.morphology) {
+          field(
+            "Foreground erosion px",
+            "number",
+            group.morphology.foreground_erosion_px,
+            (c) => (group.morphology.foreground_erosion_px = Number(c.value)),
+          );
+          field(
+            "Unknown dilation px",
+            "number",
+            group.morphology.unknown_dilation_px,
+            (c) => (group.morphology.unknown_dilation_px = Number(c.value)),
+          );
+        }
+        $("groups").append(row);
+      }
+      select(
+        "guideGroup",
+        groups.map((g) => [g.id, g.id]),
+      );
+    }
+    function renderRegions() {
+      select(
+        "regions",
+        regions.map((r) => [
+          r.id,
+          r.id +
+            " · " +
+            r.role +
+            " · " +
+            JSON.stringify(r.xyxy || r.xy || r.points),
+        ]),
+      );
+      draw();
+    }
+    function loadAuthoring() {
+      // Review confirmation belongs to the authoring identity being replaced.
+      $("trimapReviewed").checked = false;
+      $("photoReviewed").checked = false;
+      $("viewRevision").value = state.working_revision || "";
+      $("candidate").value = "";
+      identity = {
+        master_id: state.master_id,
+        base_revision: state.working_revision,
+        inputs_digest: state.inputs_digest,
+        authoring_digest: state.authoring_digest,
+      };
+      groups = structuredClone(state.recipe?.groups || []);
+      originalRegions = structuredClone(state.guides?.regions || []);
+      regions = structuredClone(originalRegions);
+      const p = state.pending;
+      pendingSaved = !!p && p.current;
+      if (pendingSaved) {
+        for (const action of p.actions) {
+          regions = regions.filter(
+            (r) => r.id !== (action.id || action.region.id),
+          );
+          if (action.action === "upsert") regions.push(action.region);
+        }
+      }
+      dirty = false;
+      $("recoverPending").disabled = !p || p.current || p.consumed;
+      renderGroups();
+      renderRegions();
+      $("draftStatus").textContent = pendingSaved
+        ? "Saved pending guides; prepare to apply"
+        : p && !p.current && !p.consumed
+          ? "Retained pending guides have an older identity; load explicitly to review"
+          : "Saved project inputs";
+    }
+    async function refresh(reload = false) {
+      state = await (await api("/api/state")).json();
+      const a = state.action,
+        current = state.revisions.find(
+          (r) => r.revision === state.working_revision,
+        );
+      $("status").textContent =
+        (a.running
+          ? "Running " + a.name
+          : state.writer_busy
+            ? "Project busy · another writer"
+            : state.status) +
+        " · working " +
+        (state.working_revision || "none") +
+        " · accepted " +
+        (state.accepted_revision || "none") +
+        " · development " +
+        (state.development_approved ? "approved" : "review required") +
+        "\n" +
+        (current && current.draft_digest !== state.inputs_digest
+          ? "Draft changed · prepared inputs stale"
+          : "Saved revision identities current; RGB8 preview") +
+        (current?.tile_summary?.inferred_tiles !== undefined &&
+        current.tile_summary.inferred_tiles !== null
+          ? " · inferred tiles " +
+            current.tile_summary.inferred_tiles +
+            ", verified cache reuse " +
+            current.tile_summary.reused_tiles
+          : "");
+      if (a.error)
+        message(
+          a.error +
+            " · Reload inputs, fix guidance/model/space, or use recovery controls.",
+        );
+      else if (state.draft_error)
+        message(
+          state.draft_error +
+            " · Explicit restore can preserve and replace malformed drafts.",
+        );
+      if (a.result) {
+        const r = a.result;
+        $("result").textContent = [
+          r.revision ? "Revision: " + r.revision : "",
+          r.status ? "Status: " + r.status : "",
+          r.directory ? "Export saved: " + r.directory : "",
+          r.operation_id ? "Operation: " + r.operation_id : "",
+          r.candidates ? "Generated candidates: " + r.candidates.length : "",
+          r.record_file ? "Authoring saved; prepare to apply" : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+      const completed = !actionSubmitting && actionWasRunning && !a.running;
+      if (!actionSubmitting) actionWasRunning = a.running;
+      const authoringPublished = ["save", "prepare", "restore"].includes(
+        a.name,
+      );
+      if (
+        reload ||
+        !identity ||
+        (completed && !a.error && (!dirty || authoringPublished))
+      ) {
+        loadAuthoring();
+        if (completed) imageKey = "";
+      }
+      if (
+        identity &&
+        (identity.base_revision !== state.working_revision ||
+          identity.inputs_digest !== state.inputs_digest ||
+          identity.authoring_digest !== state.authoring_digest)
+      )
+        $("draftStatus").textContent =
+          "Stale authoring identity · reload before saving";
+      const revisions = state.revisions.map((r) => [
+        r.revision,
+        r.revision + " · " + r.kind,
+      ]);
+      select(
+        "viewRevision",
+        revisions,
+        state.working_revision && !$("viewRevision").value
+          ? state.working_revision
+          : undefined,
+      );
+      select("restoreRevision", revisions);
+      select(
+        "lockRevision",
+        state.revisions
+          .filter((r) => r.final_acceptable)
+          .map((r) => [r.revision, r.revision + " · saved partial values"]),
+      );
+      select(
+        "operation",
+        state.operations.map((o) => [
+          o.operation_id,
+          o.operation_id + " · " + o.status + (o.error ? " · " + o.error : ""),
+        ]),
+      );
+      select("candidate", [
+        ["", "None"],
+        ...(current?.candidates || []).map((c) => [
+          c.id,
+          c.id + " · score " + c.score.toFixed(3),
+        ]),
+      ]);
+      if (!crop) {
+        crop = [0, 0, ...state.dimensions_wh];
+        $("crop").value = crop.join(",");
+        $("scope").value = crop.join(",");
+        $("context").value = crop.join(",");
+      }
+      updateBusyControls();
+      await loadImage();
+    }
+    function updateBusyControls() {
+      for (const id of [
+        "save",
+        "prepare",
+        "development",
+        "trimap",
+        "matte",
+        "repair",
+        "restore",
+        "resume",
+        "accept",
+        "exportAccepted",
+        "exportDraft",
+      ]) {
+        $(id).disabled = authoringBusy();
+      }
+      for (const element of $("groups").querySelectorAll("input,select"))
+        element.disabled = authoringBusy();
+      for (const id of [
+        "addGroup",
+        "addGeometry",
+        "removeRegion",
+        "role",
+        "shape",
+        "geometry",
+        "guideGroup",
+        "lockRevision",
+        "radius",
+        "feather",
+      ])
+        $(id).disabled = authoringBusy();
+    }
+    async function bitmap(path) {
+      const blob = await (await api(path)).blob();
+      return createImageBitmap(blob);
+    }
+    async function loadImage() {
+      if (!state || !crop) return;
+      const panel = $("panel").value,
+        revision = $("viewRevision").value;
+      const requestedCrop = [...crop],
+        workingRevision = state.working_revision;
+      const mask =
+        $("candidate").value ||
+        (!["guides", "none"].includes($("overlay").value)
+          ? $("overlay").value
+          : "");
+      const key = [
+        panel,
+        revision,
+        requestedCrop.join(","),
+        $("overlay").value,
+        mask,
+        workingRevision,
+      ].join("|");
+      if (key === imageKey) return;
+      imageKey = key;
+      imageLoading = true;
+      gesture = null;
+      $("coordinate").textContent = "Loading native view…";
+      draw();
+      let next = null,
+        nextOverlay = null;
+      try {
+        const path =
+          panel === "source"
+            ? `/image/source/${state.master_id}/${requestedCrop.join(",")}`
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}`;
+        next = await bitmap(path);
+        if (imageKey !== key) return;
+        if (mask && workingRevision)
+          nextOverlay = await bitmap(`/mask/${workingRevision}/${mask}`);
+        if (imageKey !== key) return;
+        // Publish a matching image/overlay/crop together; never author against a transitional frame.
+        image?.close();
+        overlayImage?.close();
+        image = next;
+        overlayImage = nextOverlay;
+        next = null;
+        nextOverlay = null;
+        imageLoading = false;
+        $("coordinate").textContent = "";
+        draw();
+      } catch (error) {
+        if (imageKey === key) {
+          message(error.message);
+          image?.close();
+          overlayImage?.close();
+          image = null;
+          overlayImage = null;
+          imageLoading = false;
+          imageKey = "";
+          draw();
+        }
+      } finally {
+        next?.close();
+        nextOverlay?.close();
+      }
+    }
+    function draw() {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width));
+      canvas.height = Math.max(1, Math.round(rect.height));
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      transform = null;
+      if (imageLoading || !image || !crop) return;
+      transform = viewTransform([canvas.width, canvas.height], crop, zoom, pan);
+      const { scale, x, y } = transform;
+      ctx.imageSmoothingEnabled = false;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+      ctx.drawImage(image, 0, 0);
+      if (overlayImage) {
+        ctx.globalAlpha = 0.45;
+        ctx.drawImage(
+          overlayImage,
+          crop[0],
+          crop[1],
+          image.width,
+          image.height,
+          0,
+          0,
+          image.width,
+          image.height,
+        );
+        ctx.globalAlpha = 1;
+      }
+      if ($("overlay").value === "guides") {
+        for (const region of regions) {
+          ctx.strokeStyle = {
+            keep: "#6f6",
+            remove: "#f66",
+            foreground: "#6ff",
+            background: "#f66",
+            unknown: "#ff6",
+            support: "#6af",
+            lock: "#f6f",
+          }[region.role];
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.lineWidth = 2 / scale;
+          ctx.beginPath();
+          if (region.xy) {
+            ctx.arc(
+              region.xy[0] - crop[0] + 0.5,
+              region.xy[1] - crop[1] + 0.5,
+              3 / scale,
+              0,
+              2 * Math.PI,
+            );
+            ctx.fill();
+          } else if (region.xyxy) {
+            const [x0, y0, x1, y1] = region.xyxy;
+            ctx.strokeRect(x0 - crop[0], y0 - crop[1], x1 - x0, y1 - y0);
+          } else {
+            ctx.lineWidth = region.radius_px * 2;
+            ctx.globalAlpha = 0.5;
+            region.points.forEach((p, i) =>
+              i
+                ? ctx.lineTo(p[0] - crop[0] + 0.5, p[1] - crop[1] + 0.5)
+                : ctx.moveTo(p[0] - crop[0] + 0.5, p[1] - crop[1] + 0.5),
+            );
+            if (region.points.length === 1) {
+              ctx.arc(
+                region.points[0][0] - crop[0] + 0.5,
+                region.points[0][1] - crop[1] + 0.5,
+                region.radius_px,
+                0,
+                2 * Math.PI,
+              );
+              ctx.fill();
+            }
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+      ctx.restore();
+    }
+    function nativePosition(event, edge = false) {
+      if (imageLoading || !image || !transform) return null;
+      return screenToNative(
+        [event.clientX, event.clientY],
+        canvas.getBoundingClientRect(),
+        [canvas.width, canvas.height],
+        transform,
+        crop,
+        edge,
+      );
+    }
+
+    function authoringBusy() {
+      return !!(
+        actionSubmitting ||
+        actionWasRunning ||
+        state?.action?.running ||
+        state?.writer_busy
+      );
+    }
+    function addRegion(geometry) {
+      if (authoringBusy())
+        throw Error("Wait for the active writer before authoring guides");
+      const role = $("role").value,
+        shape = $("shape").value;
+      let region = {
+        id: "guide-" + crypto.randomUUID().slice(0, 8),
+        role,
+        shape,
+      };
+      if (shape === "pan") return;
+      if ((role === "keep" || role === "remove") && shape === "stroke")
+        throw Error(
+          "SAM hints use points or a keep box; categorical roles support strokes",
+        );
+      if (shape === "rectangle") {
+        if (role === "remove") throw Error("SAM remove uses points");
+        region.shape = role === "keep" ? "box" : "rectangle";
+        region.xyxy = geometry;
+      } else if (shape === "point") region.xy = geometry;
+      else {
+        region.points = geometry;
+        region.radius_px = Number($("radius").value);
+      }
+      if (["keep", "remove"].includes(role)) {
+        if (!$("guideGroup").value) throw Error("Add a named group first");
+        region.group_id = $("guideGroup").value;
+      }
+      if (role === "support") region.feather_px = Number($("feather").value);
+      if (role === "lock") {
+        if (!$("lockRevision").value)
+          throw Error("Lock needs a saved matte/repair revision");
+        region.revision = $("lockRevision").value;
+      }
+      regions.push(region);
+      markDirty();
+      renderRegions();
+    }
+    function guarded(fn) {
+      return async () => {
+        try {
+          await fn();
+        } catch (error) {
+          message(error.message);
+        }
+      };
+    }
+    async function action(name, extra = {}) {
+      if (!identity) throw Error("Project inputs unavailable");
+      if (authoringBusy())
+        throw Error("Wait for the active writer before submitting");
+      message("");
+      actionSubmitting = true;
+      gesture = null;
+      updateBusyControls();
+      try {
+        await api("/api/action", { ...identity, action: name, ...extra });
+        actionWasRunning = true;
+      } finally {
+        actionSubmitting = false;
+        updateBusyControls();
+      }
+      await refresh();
+    }
+    function requireSaved() {
+      if (dirty) throw Error("Save authoring edits before preparing/running");
+    }
+    $("addGroup").onclick = guarded(() => {
+      if (authoringBusy())
+        throw Error("Wait for the active writer before authoring groups");
+      const id = $("newGroup").value.trim();
+      if (
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id) ||
+        groups.some((g) => g.id === id)
+      )
+        throw Error(
+          "Use a unique group name: letters, digits, underscore or hyphen",
+        );
+      groups.push({ id, keep: true, material_policy: "unknown_interior" });
+      markDirty();
+      renderGroups();
+    });
+    $("addGeometry").onclick = guarded(() => {
+      const shape = $("shape").value;
+      let geometry =
+        shape === "stroke"
+          ? $("geometry")
+              .value.split(";")
+              .map((s) => s.split(",").map(Number))
+          : $("geometry").value.split(",").map(Number);
+      let flat = geometry.flat();
+      if (flat.some((v) => !Number.isInteger(v)))
+        throw Error("Use native integer coordinates");
+      if (shape === "rectangle") {
+        if (flat.length !== 4) throw Error("Rectangle needs x0,y0,x1,y1");
+      } else if (shape === "point" && flat.length !== 2)
+        throw Error("Point needs x,y");
+      addRegion(geometry);
+    });
+    $("removeRegion").onclick = guarded(() => {
+      if (authoringBusy())
+        throw Error("Wait for the active writer before removing guides");
+      if (!$("regions").value) throw Error("Select a guide to remove");
+      regions = regions.filter((r) => r.id !== $("regions").value);
+      markDirty();
+      renderRegions();
+    });
+    $("save").onclick = guarded(() =>
+      action("save", { groups, actions: actions() }),
+    );
+    $("prepare").onclick = guarded(() => {
+      requireSaved();
+      return action("prepare", { scope_xyxy: bounds("scope") });
+    });
+    $("development").onclick = guarded(() => {
+      if (!$("developmentReviewed").checked)
+        throw Error("Explicit master development review is required");
+      return action("development");
+    });
+    $("trimap").onclick = guarded(() => {
+      requireSaved();
+      if (!$("trimapReviewed").checked)
+        throw Error("Review the actual prepared trimap first");
+      return action("trimap", { revision: state.working_revision });
+    });
+    $("matte").onclick = guarded(() => {
+      requireSaved();
+      return action("matte");
+    });
+    $("repair").onclick = guarded(() => {
+      requireSaved();
+      return action("repair", {
+        context_xyxy: bounds("context"),
+        scope_xyxy: bounds("scope"),
+        reason: $("reason").value,
+        merge_policy: $("policy").value,
+      });
+    });
+    $("restore").onclick = guarded(() => {
+      if (dirty)
+        throw Error("Save current authoring first so recovery can preserve it");
+      return action("restore", {
+        revision: $("restoreRevision").value,
+        replace_drafts: $("replaceDrafts").checked,
+      });
+    });
+    $("resume").onclick = guarded(() => {
+      requireSaved();
+      return action("resume", { operation_id: $("operation").value });
+    });
+    $("accept").onclick = guarded(() => {
+      requireSaved();
+      if (!$("photoReviewed").checked)
+        throw Error("Explicit photographic review is required");
+      return action("accept", { revision: state.working_revision });
+    });
+    $("exportAccepted").onclick = guarded(() => {
+      if (!state.accepted_revision) throw Error("No accepted photograph");
+      return action("export", {
+        revision: state.accepted_revision,
+        draft: false,
+      });
+    });
+    $("exportDraft").onclick = guarded(() =>
+      action("export", { revision: state.working_revision, draft: true }),
+    );
+    $("recoverPending").onclick = guarded(() => {
+      if (authoringBusy())
+        throw Error("Wait for the active writer before recovering guides");
+      const p = state.pending;
+      if (!p || p.consumed) throw Error("No unconsumed retained guidance");
+      if (dirty)
+        throw Error("Save current authoring before loading retained guidance");
+      groups = structuredClone(p.groups);
+      regions = structuredClone(originalRegions);
+      for (const a of p.actions) {
+        regions = regions.filter((r) => r.id !== (a.id || a.region.id));
+        if (a.action === "upsert") regions.push(structuredClone(a.region));
+      }
+      markDirty();
+      renderGroups();
+      renderRegions();
+      message(
+        "Retained pending guides loaded against current source. Recheck every region, group and lock before saving/preparing.",
+      );
+    });
+    $("reload").onclick = guarded(() => {
+      if (
+        dirty &&
+        !confirm("Discard unsaved browser authoring and reload saved inputs?")
+      )
+        return;
+      return refresh(true);
+    });
+    for (const id of ["panel", "viewRevision"])
+      $(id).onchange = guarded(loadImage);
+    $("overlay").onchange = guarded(() => {
+      $("candidate").value = "";
+      return loadImage();
+    });
+    $("candidate").onchange = guarded(() => {
+      $("overlay").value = "none";
+      return loadImage();
+    });
+    $("toggle").onclick = guarded(() => {
+      $("panel").value = $("panel").value === "source" ? "black" : "source";
+      return loadImage();
+    });
+    $("fit").onclick = () => {
+      zoom = 1;
+      pan = [0, 0];
+      $("zoom").value = zoom;
+      draw();
+    };
+    $("native").onclick = () => {
+      if (!image) return;
+      zoom =
+        1 / Math.min(canvas.width / image.width, canvas.height / image.height);
+      pan = [0, 0];
+      $("zoom").value = zoom;
+      draw();
+    };
+    $("zoom").oninput = () => {
+      zoom = Math.max(0.05, Math.min(32, Number($("zoom").value) || 1));
+      draw();
+    };
+    $("cropApply").onclick = guarded(() => {
+      crop = bounds("crop");
+      pan = [0, 0];
+      zoom = 1;
+      return loadImage();
+    });
+    $("full").onclick = guarded(() => {
+      crop = [0, 0, ...state.dimensions_wh];
+      $("crop").value = crop.join(",");
+      pan = [0, 0];
+      zoom = 1;
+      return loadImage();
+    });
+    canvas.onpointerdown = (event) => {
+      const panMode = event.shiftKey || $("shape").value === "pan";
+      const point = nativePosition(event);
+      if (!panMode && (authoringBusy() || imageLoading)) {
+        message(
+          "Guide not started while a writer is active or the native view is loading",
+        );
+        return;
+      }
+      if (!panMode && !point) return;
+      gesture = {
+        panMode,
+        start: [event.clientX, event.clientY],
+        pan: [...pan],
+        points: point ? [point] : [],
+      };
+      canvas.setPointerCapture(event.pointerId);
+    };
+    canvas.onpointermove = (event) => {
+      const point = nativePosition(event);
+      $("coordinate").textContent = point
+        ? "Native " + point.map(Math.floor).join(", ")
+        : "Outside image";
+      if (!gesture) return;
+      if (gesture.panMode) {
+        pan = [
+          gesture.pan[0] + event.clientX - gesture.start[0],
+          gesture.pan[1] + event.clientY - gesture.start[1],
+        ];
+        draw();
+      } else if (point && $("shape").value === "stroke")
+        gesture.points.push(point);
+    };
+    canvas.onpointerup = (event) => {
+      if (!gesture) return;
+      const g = gesture;
+      gesture = null;
+      if (g.panMode) return;
+      if (authoringBusy() || imageLoading) {
+        message(
+          "Guide cancelled because a writer or native view changed; nothing saved",
+        );
+        return;
+      }
+      const end = nativePosition(event, true);
+      if (!end) {
+        message("Guide ended outside displayed native crop; nothing saved");
+        return;
+      }
+      try {
+        const shape = $("shape").value,
+          start = g.points[0];
+        if (shape === "rectangle") {
+          const rectangle = nativeBox(start, end);
+          if (rectangle[0] === rectangle[2] || rectangle[1] === rectangle[3])
+            throw Error("Empty box; drag a region");
+          addRegion(rectangle);
+        } else if (shape === "point") addRegion(start.map(Math.floor));
+        else addRegion(g.points.map((p) => p.map(Math.floor)));
+      } catch (error) {
+        message(error.message);
+      }
+    };
+    canvas.onpointercancel = () => (gesture = null);
+    canvas.onkeydown = (event) => {
+      if (
+        [
+          "+",
+          "=",
+          "-",
+          "ArrowLeft",
+          "ArrowRight",
+          "ArrowUp",
+          "ArrowDown",
+        ].includes(event.key)
+      ) {
+        event.preventDefault();
+        if (event.key === "-") zoom = Math.max(0.05, zoom / 1.25);
+        else if (["+", "="].includes(event.key))
+          zoom = Math.min(32, zoom * 1.25);
+        else {
+          pan[0] +=
+            event.key === "ArrowLeft"
+              ? 20
+              : event.key === "ArrowRight"
+                ? -20
+                : 0;
+          pan[1] +=
+            event.key === "ArrowUp" ? 20 : event.key === "ArrowDown" ? -20 : 0;
+        }
+        $("zoom").value = zoom;
+        draw();
+      }
+    };
+    new ResizeObserver(draw).observe($("viewport"));
+    refresh(true).catch((error) => message(error.message));
+    setInterval(() => refresh().catch((error) => message(error.message)), 1000);
+  </script>
+</html>

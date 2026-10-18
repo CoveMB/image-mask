@@ -134,8 +134,8 @@ bounded to one image/master/backend and reused across prompt updates in that
 session; separate CLI calls reload rather than promise a persistent inference
 cache. Missing key dependencies miss cache. Saved revision assets remain durable.
 
-Inspect returned categorical trimap, source proxy and support/protection paths in
-an external image viewer; the local review window comes later. All-unknown is an
+Inspect the returned categorical trimap, source proxy and support/protection overlays
+in the [local review window](workflow.md), or inspect the saved paths in an external viewer. All-unknown is an
 honest fallback, not an automatic quality result. Preserve source-visible fine
 features by unknown corridors; never paint invented foreground. Human trimap
 review is still required before native matting. `accept --revision` rejects every prepared

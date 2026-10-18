@@ -39,8 +39,8 @@ reject publication. Managed symlinks and source/output aliases are refused.
 
 Preparation creates labelled RGB8 proxies and immutable prepared revisions. Native
 matting adds alpha, final acceptance and base exports; effects remain unavailable.
-Never use a flattened preview as a master. The complete manual viewer and
-registration controls are not yet implemented.
+Never use a flattened preview as a master. The [manual review window](workflow.md)
+provides native registration and guide authoring through these shared contracts.
 
 Initial assets/state use atomic create-if-absent hard links within the project filesystem; concurrent externally created files cause a visible collision and remain unchanged. Own staged files may remain as diagnostic hard links and are never authoritative. Approval alone uses atomic replacement of existing state. RAW rejected coefficients use null for non-finite values, recorded shape and an explicit validity flag; finite values remain recorded.
 
@@ -199,3 +199,33 @@ entry. Missing master/model/config/package/dtype/preprocessing identity disables
 reuse. `cache/matte/backend.json` selects a backend generation; a device change
 abandons the entire previous generation without removing its files. Legacy cache
 entries safely miss. Saved accepted layers and exact operand replay are unaffected.
+
+
+## Local review authoring and exposure
+
+The packaged viewer serves only one explicitly opened project on `127.0.0.1` with
+an ephemeral port. Exact Host/Origin and a per-launch capability header protect
+private reads and mutations. There is no filesystem URL browser, arbitrary path
+endpoint, remote asset or model download. Image URLs bind oriented native crops to
+master/revision identity; prepared masks are selected from validated manifest
+allowlists and checked against exact saved hashes. The browser inverts zoom, pan,
+letterbox and CSS/canvas scaling before recording native coordinates.
+
+`recipe.toml` and `guides.json` keep their existing schema/authority. New optional
+`viewer-draft.json` binds saved pending typed edits to master, working revision and
+current draft digest, with exact retained `requests/viewer-<id>.json` authoring and
+`requests/viewer-edits-<id>.json` shared-edit records. The authoring record retains
+the prior recipe bytes as text. Viewer mutations also compare a SHA-256 of the
+pending pointer bytes, so same-recipe edits in another browser cannot be overwritten
+silently. Pending edits do not become confirmed guides until canonical preparation;
+processing/approval rejects unprepared current pending edits. Immutable prepare
+`external_inputs` proves consumption, including after a restore of an older identity.
+Older projects need no migration; these optional files appear only on manual save.
+
+Explicit restore preserves previous recipe/guides through the existing recovery
+owner. Restore also retains the exact pending pointer bytes in recovery and marks the pointer
+`superseded_by_restore`, including same-revision restores. Pending records remain retained separately and can be loaded explicitly for
+review if stale; they cannot silently rebind locks or change acceptance. The state
+pointer remains the sole owner of working and accepted revisions. No viewer-specific
+processing engine or acceptance shortcut exists. UI RGB8/support8/alpha8 images are
+viewing approximations, never replacements for authoritative precision layers.

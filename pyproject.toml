@@ -12,6 +12,9 @@ dependencies = ["numpy==2.3.5", "Pillow==12.3.0", "tifffile==2026.10.15", "rawpy
 [project.scripts]
 blackmask = "blackmask.cli:main"
 
+[tool.setuptools.package-data]
+blackmask = ["ui/*.html", "ui/*.js"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

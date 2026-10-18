@@ -27,7 +27,7 @@
 - **Moved capture:** reopen uses retained master; locate the original by SHA-256
   before future source-dependent recomputation. Same filename is insufficient.
 
-The viewer and assistant service are not implemented. Processing works offline
+The [local review window](workflow.md) supports the manual workflow; assisted defect repair remains future work. Processing works offline
 after explicit package/model setup. Preserve independent backups; ignored local data is not Git backup.
 
 A publication collision means another tool/editor created a project asset while ingestion ran. Its bytes are preserved. Keep the incomplete project for inspection and choose a new empty destination. Do not delete an arriving file to force publication.
@@ -135,3 +135,26 @@ Space checks reserve 10 GiB plus conservative pending writes. On low disk,
 arrange storage then retry; never fill the disk to test recovery. Preparation and
 initial project creation do not resume. All calculations still require human
 photographic review and explicit final acceptance.
+
+
+## Local review window
+
+Keep the foreground `blackmask open` terminal running. If browser launch fails, open
+its printed local URL; keep the URL private. A server restart uses a new port and
+capability: use its new printed URL. Reloading the original launch URL retains access.
+Use `--headless` for JSON-only automation. No browser or assistant is needed for the
+existing CLI commands; another terminal shares the same project lock.
+
+Busy means another writer is active; comparisons/status remain readable. Do not
+remove the writer lock file. Wait or stop the owning foreground process, then reopen
+and inspect recovery. A visible stale authoring identity means reload current inputs
+before saving. Existing source/revisions/accepted exports and failed stages remain
+preserved; no automatic cleanup runs.
+
+A malformed recipe/guide draft is shown as a draft error. Select a validated saved
+revision and explicitly enable draft replacement to preserve the exact broken bytes
+in recovery before restore. Saved pending authoring stays retained; load an
+unconsumed stale batch with **Load retained pending guides for review**, recheck it
+against source and save/prepare. Do not assume its former scope or lock binding is
+still appropriate. Native coordinate boxes must be nonempty and half-open; support
+must cover changed cores at full strength. See [manual workflow](workflow.md).

@@ -404,7 +404,7 @@ def test_real_cli_writers_share_os_lock_and_reads_remain_responsive(tmp_path):
             )
             assert child.returncode == 1 and "busy" in child.stderr, child.stderr
         child = subprocess.run(
-            [sys.executable, "-m", "blackmask", "open", "--project", str(project)],
+            [sys.executable, "-m", "blackmask", "open", "--headless", "--project", str(project)],
             check=False,
             capture_output=True,
             text=True,

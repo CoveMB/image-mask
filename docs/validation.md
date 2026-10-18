@@ -212,3 +212,59 @@ now pass. Cache invalidation checks include warm reuse with complete identities;
 in-memory omissions of model hashes, packages and the operation’s native context
 each caused the intended assertion failure. The recorded archive inspection
 followed the completed documentation.
+
+
+## Local review boundary
+
+I06 adds HTTP origin/host/capability and exact asset-identity checks, executable native
+JavaScript transform checks, shared-lock CLI/viewer contention, draft concurrency,
+malformed-draft restore and an actual HTTP synthetic guide/support/partial-lock
+repair/accept/restore/resume journey. That deterministic journey stubs the expensive
+model boundary; it exercises real rasterization, files, publication and rendering.
+Node.js executes the shipped coordinate helper across cropped/non-square,
+zoomed/panned/letterboxed/resized views, including CSS/canvas scale differences.
+
+A separate actual in-app-browser walkthrough used a rotated RGB16 synthetic gradient
+with real pinned CPU SAM and ViTMatte. New background, feathered support and 25
+partially transparent locked pixels were authored through page controls. A native
+point under zoom/pan saved the expected coordinates. The repair changed 875 samples;
+5,405 outside-support samples and all 25 partial locks stayed exact, and the new
+background core was exactly zero. Accepted export hashes were retained for comparison.
+These are bounded synthetic computational/browser observations, not photographic
+quality or calibrated color evidence. The environment used local packaged resources
+and existing model assets; physically disconnected network and a closed assistant
+were not observed. Human keyboard/usability/accessibility, user-selected RAW,
+photographic review and regular-use offline acceptance remain pending.
+
+A real viewer process was also interrupted while a full native rerun was active,
+then reopened in a fresh process. The readiness marker was not observed, so the
+precise interruption phase is unverified. Fresh UI status reported the interrupted
+writer and Resume completed from validated saved inputs, preserving all 25 partial
+locks and the accepted pointer/export hashes. Its actual tile counts are recorded
+separately from the earlier successful cropped repair; no post-tile kill is claimed.
+
+The settled full deterministic run passed 227 tests (three unchanged model integration
+tests deselected). Ruff, formatting, mypy and UI formatting passed after two test-only
+import-order corrections; the affected two tests were renewed. An initial partial
+run was interrupted because a legacy JSON-only CLI test did not select the new
+`--headless` option; that compatibility check was corrected before the full pass.
+
+
+The bounded UI review repairs add six behavioral regressions that execute the shipped
+page and coordinate functions with controlled DOM/transport boundaries. All six
+failed for the original defects, then passed: export preserves unsaved authoring;
+processing and crossing gestures cannot create guides; pending/failed crop loads
+cannot remap old pixels; reload clears review confirmations and selects current
+revision; resume requires saved authoring. Matching image/overlay publication is
+atomic from the page’s perspective. These checks are distinct from native browser
+rendering and human usability observations.
+
+The repaired full deterministic suite passed 233 tests (three unchanged integrations
+deselected). Changed page/test formatting and lint passed; the six affected tests
+were renewed after a test-only import-spacing correction. Python source/type inputs
+are byte-identical to the successful mypy run. Actual in-app-browser export retained
+a new unsaved guide; a real CLI restore followed by page reload cleared both review
+checkboxes, selected the current revision and rejected acceptance without a new
+confirmation. Long recovery controls fit 1,000- and 800-pixel desktop widths; the
+viewport was reset afterward. Accepted export hashes stayed exact. No model inference
+was repeated for these frontend repairs. Human acceptance obligations remain pending.

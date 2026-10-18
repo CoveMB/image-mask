@@ -23,6 +23,28 @@ from .project import (
 )
 
 
+def review_panels(
+    source: np.ndarray, foreground: np.ndarray, alpha16: np.ndarray
+) -> dict[str, np.ndarray]:
+    """Shared labelled RGB8 approximations; authoritative layers remain RGB16/alpha16."""
+    factor = alpha16.astype(np.float64)[..., None] / 65535
+    return {
+        "source": np.rint(source.astype(np.float64) / 257).astype(np.uint8),
+        "black": np.rint(render_black(foreground, alpha16).astype(np.float64) / 257).astype(
+            np.uint8
+        ),
+        "gray": np.rint(
+            (foreground.astype(np.float64) * factor + 32768 * (1 - factor)) / 257
+        ).astype(np.uint8),
+        "white": np.rint(
+            (foreground.astype(np.float64) * factor + 65535 * (1 - factor)) / 257
+        ).astype(np.uint8),
+        "alpha": np.repeat(
+            np.rint(alpha16.astype(np.float64) / 257).astype(np.uint8)[..., None], 3, axis=2
+        ),
+    }
+
+
 def write_review(
     directory: Path,
     source: np.ndarray,
@@ -46,21 +68,19 @@ def write_review(
         source_crop = source[y0:y1, x0:x1]
         rgb = foreground[y0:y1, x0:x1]
         alpha = alpha16[y0:y1, x0:x1]
-        factor = alpha.astype(np.float64)[..., None] / 65535
         panels = {
-            "source_RGB8_VIEW": np.rint(source_crop.astype(np.float64) / 257).astype(np.uint8),
-            "black_RGB8_VIEW": np.rint(render_black(rgb, alpha).astype(np.float64) / 257).astype(
-                np.uint8
-            ),
-            "gray_RGB8_VIEW": np.rint(
-                (rgb.astype(np.float64) * factor + 32768 * (1 - factor)) / 257
-            ).astype(np.uint8),
-            "white_RGB8_VIEW": np.rint(
-                (rgb.astype(np.float64) * factor + 65535 * (1 - factor)) / 257
-            ).astype(np.uint8),
-            "alpha8_VIEW": np.repeat(
-                np.rint(alpha.astype(np.float64) / 257).astype(np.uint8)[..., None], 3, axis=2
-            ),
+            name: pixels
+            for name, pixels in zip(
+                (
+                    "source_RGB8_VIEW",
+                    "black_RGB8_VIEW",
+                    "gray_RGB8_VIEW",
+                    "white_RGB8_VIEW",
+                    "alpha8_VIEW",
+                ),
+                review_panels(source_crop, rgb, alpha).values(),
+                strict=True,
+            )
         }
         files = {}
         for label, pixels in panels.items():

@@ -5,10 +5,12 @@ import os
 import re
 import tempfile
 import tomllib
+import uuid
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import tomli_w
 from PIL import Image
 
 from .guidance import (
@@ -131,6 +133,7 @@ def accept_trimap(
     project = _root(project)
     with project_lock(project):
         state = read_project(project)
+        _reject_pending_guidance(project)
         manifest = read_revision(project, revision, state["master_id"])
         if (
             master_id != state["master_id"]
@@ -184,6 +187,7 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
     project = _root(project)
     with project_lock(project):
         state = read_project(project)
+        _reject_pending_guidance(project)
         manifest = read_revision(project, revision, state["master_id"])
         if (
             manifest.get("kind") not in {"matte", "repair"}
@@ -848,6 +852,7 @@ def _matte(
     if request_bytes is not None and json.loads(request_bytes) != operation:
         raise ProjectError("Stale request before matte snapshot")
     state = read_project(project)
+    _reject_pending_guidance(project)
     parent = state["working_revision"]
     if not state["development_approved"] or not parent:
         raise ProjectError("Matte requires approved development and human-reviewed prepared trimap")
@@ -1226,12 +1231,31 @@ def _matte(
 
 
 def restore_revision(
-    project: Path, revision: str, *, replace_drafts: bool = False
+    project: Path,
+    revision: str,
+    *,
+    replace_drafts: bool = False,
+    expected_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Select saved working inputs; acceptance is never reassigned."""
     project = _root(project)
     with project_lock(project):
         state = read_project(project, validate_drafts=not replace_drafts)
+        if expected_identity is not None and (
+            expected_identity.get("master_id") != state["master_id"]
+            or expected_identity.get("base_revision") != state["working_revision"]
+            or expected_identity.get("inputs_digest") != draft_digest(project)
+            or (
+                "authoring_digest" in expected_identity
+                and expected_identity["authoring_digest"] != guidance_draft_digest(project)
+            )
+        ):
+            raise ProjectError("Stale restore viewer identity")
+        pending = pending_guidance(project)
+        if pending and pending["current"] and pending["actions"] and not replace_drafts:
+            raise ProjectError(
+                "Saved pending authoring needs explicit draft replacement for restore"
+            )
         target = read_revision(project, revision, state["master_id"])
         if target.get("kind") not in {"prepare", "matte", "repair"}:
             raise ProjectError("Unsupported saved revision for restore")
@@ -1246,6 +1270,9 @@ def restore_revision(
             name: _asset(project, name).read_bytes()
             for name in ("state.json", "source.json", "recipe.toml", "guides.json")
         }
+        pending_path = _asset(project, "viewer-draft.json")
+        if pending_path.exists():
+            snapshots["viewer-draft.json"] = pending_path.read_bytes()
         if json.loads(snapshots["state.json"]) != state:
             raise ProjectError("Stale restore state before snapshot")
         if (
@@ -1324,9 +1351,162 @@ def restore_revision(
         for name, data in (("recipe.toml", recipe), ("guides.json", guides)):
             _atomic_bytes(_asset(project, name), data, validate_before_replace=recheck)
             publication_inputs[name] = data
+        if "viewer-draft.json" in snapshots:
+            retired = dict(json.loads(snapshots["viewer-draft.json"]), superseded_by_restore=True)
+            _atomic_json(pending_path, retired, validate_before_replace=recheck)
+            publication_inputs["viewer-draft.json"] = _json_bytes(retired)
         state.update(
             working_revision=revision,
             status=("accepted" if state["accepted_revision"] == revision else "review_needed"),
         )
         _atomic_json(_asset(project, "state.json"), state, validate_before_replace=recheck)
         return dict(state, inputs_digest=target["draft_digest"], recovery_directory=str(stage))
+
+
+def _check_draft_identity(project: Path, identity: dict[str, Any]) -> dict[str, Any]:
+    state = read_project(project)
+    if (
+        identity.get("master_id") != state["master_id"]
+        or identity.get("base_revision") != state["working_revision"]
+        or identity.get("inputs_digest") != draft_digest(project)
+        or (
+            "authoring_digest" in identity
+            and identity["authoring_digest"] != guidance_draft_digest(project)
+        )
+    ):
+        raise ProjectError("Stale master, revision or draft inputs_digest; reload before editing")
+    return state
+
+
+def save_guidance_draft(
+    project: Path, identity: dict[str, Any], groups: Any, actions: Any
+) -> dict[str, Any]:
+    """Save typed pending edits, never silently replace/remove a persistent lock."""
+    project = _root(project)
+    with project_lock(project):
+        state = _check_draft_identity(project, identity)
+        snapshots = {
+            name: _asset(project, name).read_bytes()
+            for name in ("recipe.toml", "guides.json", "state.json")
+        }
+        captured_authoring = guidance_draft_digest(project)
+
+        def recheck() -> None:
+            read_project(project)
+            if (
+                any(_asset(project, name).read_bytes() != data for name, data in snapshots.items())
+                or guidance_draft_digest(project) != captured_authoring
+            ):
+                raise ProjectError("Stale drafts changed during authoring save")
+
+        guides = json.loads(snapshots["guides.json"])
+        edits = {"schema_version": 1, "master_id": state["master_id"], "actions": actions}
+        edited = edit_guides(guides, edits)
+        for region in edited["regions"]:
+            if region["role"] == "lock":
+                _alpha(
+                    project,
+                    region["revision"],
+                    state["master_id"],
+                    (guides["height"], guides["width"]),
+                )
+        recipe = tomllib.loads(snapshots["recipe.toml"].decode())
+        recipe["groups"] = groups
+        Recipe.from_dict(
+            recipe, state["master_id"], max_margin_px=max(guides["width"], guides["height"])
+        )
+        check_space(project, len(_json_bytes(edits)) * 3 + 1024**2)
+        # Retain exact prior recipe and every typed edit file for interruption/recovery.
+        directory = _asset(project, "requests")
+        directory.mkdir(exist_ok=True)
+        name = f"requests/viewer-{uuid.uuid4().hex}.json"
+        record = dict(edits, groups=groups, previous_recipe=snapshots["recipe.toml"].decode())
+        _atomic_json(_asset(project, name), record, replace_existing=False)
+        edits_name = f"requests/viewer-edits-{uuid.uuid4().hex}.json"
+        _atomic_json(_asset(project, edits_name), edits, replace_existing=False)
+        new_recipe = tomli_w.dumps(recipe).encode()
+        _atomic_bytes(_asset(project, "recipe.toml"), new_recipe, validate_before_replace=recheck)
+        snapshots["recipe.toml"] = new_recipe
+        pending = {
+            "master_id": state["master_id"],
+            "base_revision": state["working_revision"],
+            "inputs_digest": digest(new_recipe + b"\0" + snapshots["guides.json"]),
+            "record_file": name,
+            "guide_edits_file": edits_name,
+            "actions": actions,
+        }
+        _atomic_json(_asset(project, "viewer-draft.json"), pending, validate_before_replace=recheck)
+        return pending
+
+
+def prepare_guidance_draft(
+    project: Path, identity: dict[str, Any], scope: list[int], *, model_cache: Path | None = None
+) -> dict[str, Any]:
+    """Consume current pending typed edits once through the canonical preparation owner."""
+    project = _root(project)
+    with project_lock(project):
+        state = _check_draft_identity(project, identity)
+        operation = {
+            "schema_version": 1,
+            "kind": "prepare",
+            "master_id": state["master_id"],
+            "base_revision": state["working_revision"],
+            "inputs_digest": draft_digest(project),
+            "scope_xyxy": scope,
+        }
+        pending = pending_guidance(project)
+        if pending is not None and pending["current"]:
+            operation["guide_edits_file"] = pending["guide_edits_file"]
+        return _prepare(project, operation, model_cache, None)
+
+
+def pending_guidance(project: Path) -> dict[str, Any] | None:
+    """A restored identity must never reapply a previously consumed edit batch."""
+    path = _asset(project, "viewer-draft.json")
+    if not path.exists():
+        return None
+    pending = json.loads(path.read_bytes())
+    if (
+        not isinstance(pending, dict)
+        or re.fullmatch(r"requests/viewer-[a-f0-9]{32}\.json", str(pending.get("record_file")))
+        is None
+        or re.fullmatch(
+            r"requests/viewer-edits-[a-f0-9]{32}\.json", str(pending.get("guide_edits_file"))
+        )
+        is None
+    ):
+        raise ProjectError("Invalid saved authoring record identity")
+    edits = json.loads(_input_file(project, pending["guide_edits_file"]).read_bytes())
+    record = json.loads(_input_file(project, pending["record_file"]).read_bytes())
+    if (
+        edits
+        != {"schema_version": 1, "master_id": pending["master_id"], "actions": pending["actions"]}
+        or record["actions"] != pending["actions"]
+    ):
+        raise ProjectError("Saved authoring snapshot differs from pending typed edits")
+    state = read_project(project, validate_drafts=False)
+    consumed = any(
+        pending["guide_edits_file"]
+        in read_revision(project, p.name, state["master_id"]).get("external_inputs", {})
+        for p in _asset(project, "revisions").glob("rev-*")
+        if re.fullmatch(r"rev-[0-9]{3,}", p.name)
+    )
+    current = (
+        not consumed
+        and not pending.get("superseded_by_restore", False)
+        and pending["master_id"] == state["master_id"]
+        and pending["base_revision"] == state["working_revision"]
+        and pending["inputs_digest"] == draft_digest(project)
+    )
+    return dict(pending, current=current, consumed=consumed, groups=record["groups"])
+
+
+def guidance_draft_digest(project: Path) -> str:
+    path = _asset(project, "viewer-draft.json")
+    return digest(path.read_bytes() if path.exists() else b"")
+
+
+def _reject_pending_guidance(project: Path) -> None:
+    pending = pending_guidance(project)
+    if pending and pending["current"] and pending["actions"]:
+        raise ProjectError("Saved pending guidance requires prepare and trimap review first")

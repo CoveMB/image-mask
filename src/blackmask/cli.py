@@ -50,9 +50,22 @@ def doctor(path: Path, model_cache: Path | None = None, model: str = "sam") -> d
 def main() -> int:
     parser = argparse.ArgumentParser(prog="blackmask")
     commands = parser.add_subparsers(dest="command", required=True)
-    opened = commands.add_parser("open", help="Create or validate/reopen a project (CLI only)")
+    opened = commands.add_parser(
+        "open", help="Create/reopen a project and open its offline review window"
+    )
     opened.add_argument("source", nargs="?", type=Path)
     opened.add_argument("--project", required=True, type=Path)
+    opened.add_argument(
+        "--headless",
+        action="store_true",
+        help="Validate/create and return JSON without a server/browser",
+    )
+    opened.add_argument(
+        "--sam-cache", type=Path, help="Explicit local pinned SAM cache; no downloads"
+    )
+    opened.add_argument(
+        "--model-cache", type=Path, help="Explicit local pinned model cache; no downloads"
+    )
     opened.add_argument("--assume-srgb", action="store_true")
     opened.add_argument("--white-balance", choices=("camera", "daylight"), default="camera")
     accepted = commands.add_parser(
@@ -132,6 +145,11 @@ def main() -> int:
             result = dict(
                 read_project(arguments.project), inputs_digest=draft_digest(arguments.project)
             )
+            if not arguments.headless:
+                from .viewer import open_viewer
+
+                open_viewer(arguments.project, arguments.model_cache, arguments.sam_cache)
+                return 0
         elif arguments.command == "accept":
             if arguments.trimap:
                 if (
