@@ -51,7 +51,9 @@ bytes with header creation time/profile ID ignored. Other high-depth profiles
 require a trusted sRGB TIFF export; this is a deliberately conservative limit.
 Opaque RGB JPEG/PNG8 profiles are converted through LittleCMS when necessary;
 8-bit captures gain no precision by entering the 16-bit container. Alpha-bearing
-images, compressed TIFF, RGB16 PNG and non-RGB input are rejected.
+images, compressed TIFF, RGB16 PNG and non-RGB input are rejected. Multi-frame
+PNG/MPO and multi-image JPEGs (including Ultra HDR gain maps) are rejected;
+export one SDR JPEG/PNG8 or a trusted uncompressed sRGB RGB16 TIFF first.
 
 RAW/DNG uses LibRaw, full-size AHD and explicit sRGB gamma/WB/brightness settings.
 LibRaw identifies TIFF-container RAW before ordinary TIFF import; an RGB8 preview
