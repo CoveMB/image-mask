@@ -25,6 +25,7 @@ from .project import (
     _asset,
     _root,
     _validate_assets,
+    _validation_scope,
     accept_development,
     digest,
     read_project,
@@ -53,6 +54,7 @@ class ReviewServer(ThreadingHTTPServer):
         self.origin = f"http://127.0.0.1:{self.server_port}"
         self.host = f"127.0.0.1:{self.server_port}"
 
+    @_validation_scope()
     def snapshot(self) -> dict[str, Any]:
         state = operations.operation_status(self.project)
         master, _ = _validate_assets(self.project, state, validate_drafts=False)
@@ -70,7 +72,11 @@ class ReviewServer(ThreadingHTTPServer):
             read_project(self.project)
         except (OSError, ValueError, TypeError) as error:
             state["draft_error"] = str(error)
-        state["pending"] = operations.pending_guidance(self.project)
+        try:
+            state["pending"] = operations.pending_guidance(self.project)
+        except ProjectError as error:
+            state["pending"] = None
+            state["draft_error"] = str(error)
         state["authoring_digest"] = operations.guidance_draft_digest(self.project)
         revisions = []
         for path in sorted(_asset(self.project, "revisions").glob("rev-*")):
@@ -158,13 +164,12 @@ class ReviewServer(ThreadingHTTPServer):
             or data.get("authoring_digest") != operations.guidance_draft_digest(self.project)
         ):
             raise ProjectError("Stale viewer identity; reload current project")
-        pending = operations.pending_guidance(self.project)
-        if (
-            action in {"trimap", "matte", "repair", "accept", "effects"}
-            and pending
-            and pending["current"]
-            and pending["actions"]
-        ):
+        pending = (
+            operations.pending_guidance(self.project)
+            if action in {"trimap", "matte", "repair", "accept", "effects"}
+            else None
+        )
+        if pending and pending["current"] and pending["actions"]:
             raise ProjectError("Saved pending guidance requires prepare and trimap review first")
         if action == "development":
             return accept_development(self.project, data["master_id"])
@@ -214,6 +219,7 @@ class ReviewServer(ThreadingHTTPServer):
             )
         return operations.apply_operation(self.project, request, model_cache=self.model_cache)
 
+    @_validation_scope()
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
@@ -251,6 +257,7 @@ class ReviewServer(ThreadingHTTPServer):
         Image.fromarray(pixels).save(buffer, format="PNG")
         return buffer.getvalue()
 
+    @_validation_scope()
     def mask(self, path: str) -> bytes:
         match = re.fullmatch(r"/mask/(rev-[0-9]{3,})/([A-Za-z0-9_-]+)", path)
         if not match:

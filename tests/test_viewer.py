@@ -8,7 +8,7 @@ import pytest
 from test_operations import opened, request
 
 from blackmask import operations
-from blackmask.project import ProjectError, project_lock, read_project
+from blackmask.project import ProjectError, load_master, project_lock, read_project
 
 
 @contextmanager
@@ -388,3 +388,118 @@ def test_restore_same_revision_explicitly_preserves_and_retires_pending_authorin
     assert (Path(restored["recovery_directory"]) / "viewer-draft.json").read_bytes() == before
     assert not operations.pending_guidance(project)["current"]
     assert not operations.pending_guidance(project)["consumed"]
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "pointer-json",
+        "pointer-fields",
+        "missing-record",
+        "record-fields",
+        "missing-edits",
+        "edits-json",
+    ],
+)
+def test_damaged_pending_guidance_stays_readable_and_explicit_restore_preserves_bytes(
+    tmp_path, damage
+):
+    from test_matte_operations import prepared
+
+    _, project, result = prepared(tmp_path)
+    operations.save_guidance_draft(
+        project,
+        request(project),
+        [],
+        [
+            {
+                "action": "upsert",
+                "region": {"id": "pending", "role": "unknown", "shape": "point", "xy": [1, 1]},
+            }
+        ],
+    )
+    pointer = project / "viewer-draft.json"
+    pending = json.loads(pointer.read_bytes())
+    if damage == "pointer-json":
+        pointer.write_bytes(b"{broken pending pointer")
+    elif damage == "pointer-fields":
+        pointer.write_text("[]")
+    elif damage == "missing-record":
+        (project / pending["record_file"]).rename(project / "retained-record.json")
+    elif damage == "record-fields":
+        record = json.loads((project / pending["record_file"]).read_bytes())
+        del record["actions"]
+        (project / pending["record_file"]).write_text(json.dumps(record))
+    elif damage == "missing-edits":
+        (project / pending["guide_edits_file"]).rename(project / "retained-edits.json")
+    else:
+        (project / pending["guide_edits_file"]).write_text("{broken edits")
+    before = pointer.read_bytes()
+    state_before = read_project(project)
+    with pytest.raises(ProjectError):
+        operations.pending_guidance(project)
+    with pytest.raises(ProjectError):
+        operations.restore_revision(project, result["revision"])
+    with running(project) as server:
+        status, body, _ = http(server)
+        assert status == 200, body
+        assert json.loads(body)["draft_error"]
+        restored = perform(server, "restore", revision=result["revision"], replace_drafts=True)
+        assert (Path(restored["recovery_directory"]) / "viewer-draft.json").read_bytes() == before
+        assert http(server)[0] == 200
+    assert operations.pending_guidance(project) is None
+    assert read_project(project)["accepted_revision"] == state_before["accepted_revision"]
+    assert read_project(project)["master_id"] == state_before["master_id"]
+
+
+def test_snapshot_reuses_validated_master_and_revision_within_one_read(tmp_path, monkeypatch):
+    from test_matte_operations import prepared
+
+    from blackmask.viewer import ReviewServer
+
+    _, project, result = prepared(tmp_path)
+    operations.save_guidance_draft(project, request(project), [], [])
+    master = project / "masters" / (result["master_id"] + ".tif")
+    trimap = project / "revisions" / result["revision"] / "trimap.png"
+    reads = {master: 0, trimap: 0}
+    original = Path.read_bytes
+
+    def counted(path):
+        if path in reads:
+            reads[path] += 1
+        return original(path)
+
+    with ReviewServer(project) as server:
+        monkeypatch.setattr(Path, "read_bytes", counted)
+        snapshot = server.snapshot()
+        assert snapshot["pending"]["current"]
+        assert reads == {master: 1, trimap: 1}
+        snapshot = server.snapshot()
+        assert reads == {master: 2, trimap: 2}, "Validation must not survive a request"
+    pixels, _ = load_master(project, result["master_id"])
+    assert pixels.flags.writeable, "Read-only viewer buffers leaked into processing callers"
+
+
+@pytest.mark.parametrize("asset", ["master", "source", "trimap"])
+def test_snapshot_rejects_changes_during_reused_validation(tmp_path, monkeypatch, asset):
+    from test_matte_operations import prepared
+
+    from blackmask import viewer
+
+    _, project, result = prepared(tmp_path)
+    path = {
+        "master": project / "masters" / (result["master_id"] + ".tif"),
+        "source": project / "source.json",
+        "trimap": project / "revisions" / result["revision"] / "trimap.png",
+    }[asset]
+    original = viewer._validate_assets
+
+    def changed(*args, **kwargs):
+        data = path.read_bytes()
+        path.write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
+        return original(*args, **kwargs)
+
+    with viewer.ReviewServer(project) as server:
+        monkeypatch.setattr(viewer, "_validate_assets", changed)
+        with pytest.raises(ProjectError):
+            server.snapshot()

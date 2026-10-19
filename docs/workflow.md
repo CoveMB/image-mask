@@ -159,10 +159,65 @@ reviewed inputs; original stages remain retained. Closing the foreground server
 interrupts active work; reopen the project and use the displayed recovery status.
 Existing accepted exports remain usable. See [recovery details](troubleshooting.md).
 
-The intended human offline check closes the assistant and disconnects network after
-setup, then authors a new background core, support and partial lock from source,
-prepares, repairs, compares, accepts, restores and resumes using this page. Automated
-synthetic checks are separate from that human usability/photographic observation.
+## Numbered offline use check
+
+This short check is for an existing project with a complete saved matte and local
+model caches after setup. Use a source-supported correction that actually needs
+work; do not invent a defect or approve a result just to finish the check. If no
+correction is warranted, record that limitation rather than changing good detail.
+
+1. From the repository root, run `.venv/bin/blackmask open --project /path/to/project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache`.
+   Keep this terminal/server running. Open the printed launch URL in your usual
+   external browser before closing the assistant; keep the URL private and local.
+   Disconnect the network after the page loads. No further download should be needed.
+2. Inspect **Source / result** on matching native crops. Use **Native 1:1**; with
+   the canvas focused, arrows pan and +/- zoom, or Shift-drag pans. Confirm source
+   development before its separate approval if it is not already approved. Review
+   black, gray, white and alpha views; previews have reduced precision.
+3. Choose **Confirmed background core** and draw a NEW small core only over
+   source-visible empty background needing correction. Exclude uncertain wings,
+   webs, fine detail and protected subject pixels; leave ambiguity unknown.
+4. Choose **Repair support16** and draw surrounding support. If using **Inward
+   feather px**, keep the entire changed core inside the full-strength interior,
+   away from the feathered boundary. Do not include unrelated detail merely to
+   enlarge the correction. Choose **Saved alpha/RGB region lock**, select **Lock
+   saved revision**, and draw over saved partial-alpha detail that must stay exact.
+   Keep known cores away from incompatible locked/unknown detail. Numeric geometry
+   through **Native coordinates** and **Add numeric guide** is also available.
+5. Set a narrow **Write scope x0,y0,x1,y1** containing the intended support and a
+   larger **Repair context x0,y0,x1,y1** containing nearby source context. Choose
+   **Save groups and pending guides**, then **Prepare saved guidance**. Inspect
+   **Prepared trimap**, support and lock overlays against source. Correct conflicts
+   explicitly. Only when reviewed, check **I reviewed the current prepared trimap
+   against source** and choose **Approve prepared trimap**.
+6. Enter the actual defect in **Source-supported repair reason**, choose **Replace
+   within support** under **Merge**, and choose **Run scoped repair**. Wait for
+   completion. On any error, preserve saved work and address the displayed cause;
+   success in computation alone does not mean the photograph improved.
+7. Compare source, prior saved result and current result on the same native crop,
+   with overlays off, on black/gray/white and alpha. Check the corrected background,
+   support boundary, locked partial detail, transparency and seams. Only if the
+   result is acceptable, check the separate photographic-review box, choose
+   **Accept current photograph**, then **Export accepted result**. Otherwise retain
+   the earlier accepted result and revise or restore; do not accept automatically.
+8. Note the accepted export directory. Select an earlier **Restore saved revision**
+   and choose **Restore working inputs (acceptance unchanged)**. Use explicit draft
+   replacement only after reviewing its preservation warning. Confirm acceptance
+   and the existing export stay intact. Stop the server with Ctrl-C only after work
+   finishes; rerun the same open command to reopen saved state. The accepted export
+   remains usable independently. Do not reaccept a restored revision unless you
+   actually prefer and have reviewed it.
+
+Record what you observed and any step you could not perform. These instructions
+are not evidence that human photographic, usability or disconnected-network use
+has occurred. A partial-alpha lock check requires real saved partial detail.
+
+An optional interrupted-recovery check is separate from normal use. If an operation
+was interrupted, reopen, inspect **Interrupted operation**, and use **Resume verified
+work** only when its saved inputs remain valid. Do not deliberately interrupt a
+normal correction just to complete this walkthrough; retain accepted output and
+recovery artifacts when testing interruption separately.
+
 Contributors additionally need Node.js to execute the shipped JavaScript coordinate
 regression; Node is not required to install or operate the application.
 

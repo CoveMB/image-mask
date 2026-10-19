@@ -6,6 +6,9 @@
   uncompressed RGB16 sRGB TIFF through a trusted full-precision application. The importer
   recognizes a conservative canonical ICC representation; an sRGB name alone is
   insufficient. Do not convert high-depth data through Pillow RGB8.
+- **Multi-frame PNG/MPO or multi-image JPEG (including Ultra HDR gain maps):**
+  export a single-image SDR JPEG/PNG8 or trusted uncompressed sRGB RGB16 TIFF.
+  Gain maps are not decoded; the importer refuses to silently use only the base image.
 - **Invalid camera WB:** explicitly request a daylight preview or supply developed
   TIFF; inspect WB/clipping before development acceptance. No generic
   AsShotWhiteXY conversion is available. Actual camera coverage is unverified.
@@ -38,7 +41,8 @@ A publication collision means another tool/editor created a project asset while 
 - **Missing/corrupt SAM:** inference never downloads. Inspect the explicit cache;
   retain mismatched files for diagnosis and select a new empty cache for a separately
   authorized setup. Do not replace weights/configs with same-name alternatives.
-- **Stale request:** reopen to obtain actual master/base/draft digest. Finish external
+- **Stale request:** run `blackmask open --headless --project /path/to/project`
+  to obtain actual master/base/draft digest. Finish external
   edits, inspect source/trimap intent, and submit a fresh request. Newer text remains
   untouched. Typed edits already published need not be submitted again.
 - **FG/BG/lock/core-support conflict:** resolve the typed assertions from the source.
@@ -158,3 +162,15 @@ unconsumed stale batch with **Load retained pending guides for review**, recheck
 against source and save/prepare. Do not assume its former scope or lock binding is
 still appropriate. Native coordinate boxes must be nonempty and half-open; support
 must cover changed cores at full strength. See [manual workflow](workflow.md).
+
+
+A malformed `viewer-draft.json` pointer or missing/damaged retained authoring record
+is shown as a draft error while the review page remains available. Approvals and
+processing reject these unresolved edits. Choose a valid **Restore saved revision**,
+check **Preserve current draft bytes in recovery, then replace drafts**, and choose
+**Restore working inputs (acceptance unchanged)**. The CLI equivalent is
+`blackmask restore /path/to/project --revision rev-NNN --replace-drafts`.
+Recovery retains the exact old pointer bytes under `recovery/restore-*/`; the active
+pointer is marked unreadable and retired. Existing request records are preserved.
+This recovers saved inputs, not missing accepted dependencies; use an independent
+backup for those. Reinspect the restored inputs before processing or accepting.

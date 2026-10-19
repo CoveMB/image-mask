@@ -649,7 +649,19 @@
           ? "Retained pending guides have an older identity; load explicitly to review"
           : "Saved project inputs";
     }
-    async function refresh(reload = false) {
+    let refreshInFlight = null;
+    function refresh(reload = false) {
+      if (refreshInFlight) {
+        return reload
+          ? refreshInFlight.then(() => refresh(true))
+          : refreshInFlight;
+      }
+      refreshInFlight = refreshState(reload).finally(() => {
+        refreshInFlight = null;
+      });
+      return refreshInFlight;
+    }
+    async function refreshState(reload) {
       state = await (await api("/api/state")).json();
       const a = state.action,
         current = state.revisions.find(
@@ -1029,6 +1041,7 @@
       try {
         await api("/api/action", { ...identity, action: name, ...extra });
         actionWasRunning = true;
+        if (refreshInFlight) await refreshInFlight;
       } finally {
         actionSubmitting = false;
         updateBusyControls();
@@ -1328,6 +1341,9 @@
     };
     new ResizeObserver(draw).observe($("viewport"));
     refresh(true).catch((error) => message(error.message));
-    setInterval(() => refresh().catch((error) => message(error.message)), 1000);
+    setInterval(() => {
+      if (!refreshInFlight)
+        return refresh().catch((error) => message(error.message));
+    }, 1000);
   </script>
 </html>
