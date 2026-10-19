@@ -54,7 +54,8 @@ browser opening fails. The URL grants access to this project: keep it local.
 server. Model cache arguments select existing explicitly installed assets; they
 never download. Preparation can also use `BLACKMASK_SAM_CACHE`, and matting
 `BLACKMASK_VITMATTE_CACHE`. See [the complete manual workflow](docs/workflow.md)
-for new guide/support/lock authoring, separate approvals and recovery.
+for new guide/support/lock authoring, separate approvals and recovery, including
+the [numbered offline use check](docs/workflow.md#numbered-offline-use-check).
 
 The project location must be new/empty, separate from the capture and free of
 symlink aliases. Source paths are detected by content, never by extension. For
@@ -74,8 +75,10 @@ rather than falling back to that preview.
 Invalid camera WB requires an explicit `--white-balance daylight` preview or an
 already-developed trusted TIFF. There is no general RAW editor or crop control.
 The local page shows a labelled RGB8 source preview. Inspect the saved master TIFF in a trusted full-precision external viewer for
-orientation, WB and clipping. Copy the returned `master_id` only after that human
-review; this records development approval, leaving final-photo acceptance empty:
+orientation, WB and clipping. For CLI approval, obtain JSON identities in a second
+terminal with `.venv/bin/blackmask open --headless --project /path/to/new-photo-project`.
+Copy that `master_id` only after your human review; this records development
+approval, leaving final-photo acceptance empty:
 
 ```sh
 .venv/bin/blackmask accept /path/to/new-photo-project --development --master-id ACTUAL_INSPECTED_MASTER_ID
