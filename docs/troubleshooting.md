@@ -6,6 +6,9 @@
   uncompressed RGB16 sRGB TIFF through a trusted full-precision application. The importer
   recognizes a conservative canonical ICC representation; an sRGB name alone is
   insufficient. Do not convert high-depth data through Pillow RGB8.
+- **Multi-frame PNG/MPO or multi-image JPEG (including Ultra HDR gain maps):**
+  export a single-image SDR JPEG/PNG8 or trusted uncompressed sRGB RGB16 TIFF.
+  Gain maps are not decoded; the importer refuses to silently use only the base image.
 - **Invalid camera WB:** explicitly request a daylight preview or supply developed
   TIFF; inspect WB/clipping before development acceptance. No generic
   AsShotWhiteXY conversion is available. Actual camera coverage is unverified.

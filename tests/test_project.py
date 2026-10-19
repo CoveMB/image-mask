@@ -339,3 +339,19 @@ def test_tiff_raw_preview_creates_identity_bound_full_precision_master(tmp_path)
     assert metadata["source_sha256"] == hashlib.sha256(original).hexdigest()
     assert state["development_approved"] is False
     assert source.read_bytes() == original
+
+
+def test_gain_map_jpeg_rejection_never_publishes_project_assets(tmp_path):
+    from test_ingest import multi_image_jpeg
+
+    from blackmask.ingest import IngestError
+
+    source = tmp_path / "capture.png"
+    original = multi_image_jpeg(gain_map=True)
+    source.write_bytes(original)
+    project = tmp_path / "project"
+    with pytest.raises(IngestError, match="Multi-image JPEG"):
+        create_project(source, project, {"assume_srgb": True})
+    assert source.read_bytes() == original
+    assert not (project / "state.json").exists()
+    assert not (project / "masters").exists()

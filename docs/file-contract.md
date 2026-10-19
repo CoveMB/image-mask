@@ -179,6 +179,10 @@ between initial inspection and snapshot cannot be silently replaced. Explicit
 `--replace-drafts` can recover malformed current draft text; immutable state,
 source, master and revision validation remains mandatory.
 
+Without a working revision, default restore requires the current drafts to match
+the target revision's draft digest. Different draft bytes require explicit
+`--replace-drafts`; they remain preserved in the returned recovery directory.
+
 
 ## Interrupted matte/repair records
 

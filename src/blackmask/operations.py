@@ -1266,12 +1266,14 @@ def restore_revision(
         if target.get("kind") not in {"prepare", "matte", "repair"}:
             raise ProjectError("Unsupported saved revision for restore")
         current = state["working_revision"]
+        expected_draft_digest = target["draft_digest"]
         if current is not None:
             current_manifest = read_revision(project, current, state["master_id"])
-            if draft_digest(project) != current_manifest["draft_digest"] and not replace_drafts:
-                raise ProjectError(
-                    "Unsaved draft edits; preserve them or explicitly use --replace-drafts"
-                )
+            expected_draft_digest = current_manifest["draft_digest"]
+        if not replace_drafts and draft_digest(project) != expected_draft_digest:
+            raise ProjectError(
+                "Unsaved draft edits; preserve them or explicitly use --replace-drafts"
+            )
         snapshots = {
             name: _asset(project, name).read_bytes()
             for name in ("state.json", "source.json", "recipe.toml", "guides.json")
@@ -1282,10 +1284,9 @@ def restore_revision(
         if json.loads(snapshots["state.json"]) != state:
             raise ProjectError("Stale restore state before snapshot")
         if (
-            current is not None
-            and not replace_drafts
+            not replace_drafts
             and digest(snapshots["recipe.toml"] + b"\0" + snapshots["guides.json"])
-            != current_manifest["draft_digest"]
+            != expected_draft_digest
         ):
             raise ProjectError("Unsaved draft edits captured during restore")
         current_bytes = (

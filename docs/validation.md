@@ -133,7 +133,7 @@ arithmetic sentinels, native tile origins/positive weights and nonempty known/pa
 lock regions. A recorded-guide synthetic workflow exercised distinct development/trimap/final
 controls through CLI and engine; programmatic fixture confirmations are not human
 photographic acceptance. Real local CPU and diagnostic MPS ViTMatte inference
-verify actual pad/unpad/normalization/device/attention. Native1024 evidence and
+verify actual pad/unpad/normalization/device/attention. Native 1024 evidence and
 resource observations are in [provenance](model-provenance.md). Interruption,
 stale inputs, corruption, conflicts, low space and non-clobber exports preserve
 accepted state in covered paths. These native matting and base-export checks did
