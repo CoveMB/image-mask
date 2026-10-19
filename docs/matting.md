@@ -117,7 +117,8 @@ non-finite predictions, stale edits or corruption leave accepted files/pointer
 intact before publication. Reopen actual state after errors, especially directory
 sync errors after pointer replacement. Temporary files and complete orphans are
 not authoritative. Verified tiles may be reused on a fresh request; there is no
-resume/restore command yet. Cache is never the sole accepted copy.
+resume command yet. Saved working revisions can be restored explicitly (see
+[Restore working inputs](#restore-working-inputs)). Cache is never the sole accepted copy.
 
 Reserve 10 GiB plus conservative pending writes. Actual two-tile native synthetic
 CPU inference peaked near 7.86 GB RSS on the tested host; this is an observation,

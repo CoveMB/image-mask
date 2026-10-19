@@ -48,7 +48,8 @@ A publication collision means another tool/editor created a project asset while 
 - **Interrupted/failed prepare:** reopen actual state. The prior working revision
   remains authoritative until state advances. `.prepare-*` or a complete orphan is
   not accepted/working solely because it exists. Inspect retained diagnostics;
-  retry with current identities. Resume/restore/automatic cleanup are unavailable.
+  retry with current identities. Resume and automatic cleanup are unavailable;
+  saved working revisions can be restored explicitly.
   A failed pointer write may leave effective root guides updated; inspect them.
 - **MPS failure:** retry explicitly with recipe device `cpu`, preserving geometry.
   Auto remains CPU; upstream implicit MPS fallback must be disabled. One synthetic
@@ -69,7 +70,8 @@ A publication collision means another tool/editor created a project asset while 
   reviewed CPU request with identical geometry. Auto stays CPU. No resolution reduction.
 - **Interrupted matte:** reopen state; accepted layers remain separate and usable.
   `.matte-*` and complete orphans are not pointer authority. Submit a fresh current
-  request; verified cache can help, but resumability/restore are not yet supported.
+  request; verified cache can help, but resumability is not yet supported.
+  Saved working revisions can be restored explicitly.
 - **Final acceptance rejected:** require current complete matte and unchanged drafts,
   master/development and saved review assets. Prepared-only state never qualifies.
 - **Export collision:** keep prior delivery; identical output reuses it. Different

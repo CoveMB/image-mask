@@ -95,9 +95,9 @@ filesystem transaction or hostile-writer exclusion is claimed.
 
 Only state owns pointers. A directory name or complete orphan does not make it
 working or accepted. Incomplete `.prepare-*` directories are diagnostic remnants,
-never inference cache or accepted dependencies. No resume/restore/automatic
-cleanup is implemented yet. Later writers must reuse these transaction and
-identity owners and use current state validation for complete matte acceptance.
+never inference cache or accepted dependencies. Saved working revisions can be
+restored explicitly; resume and automatic cleanup are not implemented yet. Later
+writers must reuse these transaction and identity owners and use current state validation for complete matte acceptance.
 
 
 Optional per-group `morphology` saves explicit native foreground erosion and
@@ -178,3 +178,7 @@ mutable text. Default unsaved-edit checks bind the captured bytes, so an edit
 between initial inspection and snapshot cannot be silently replaced. Explicit
 `--replace-drafts` can recover malformed current draft text; immutable state,
 source, master and revision validation remains mandatory.
+
+Without a working revision, default restore requires the current drafts to match
+the target revision's draft digest. Different draft bytes require explicit
+`--replace-drafts`; they remain preserved in the returned recovery directory.
