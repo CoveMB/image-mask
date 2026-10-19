@@ -75,9 +75,13 @@ to its **repair** request:
 
 This is an envelope illustration, not a complete processing request or coordinates
 to apply to another photo. Choose a small actual native defect box within an
-inspected crop and the repair scope. Use a project-relative manifest path returned
-by the current `review` command. Its identity, crop transforms and image hashes
-are validated; modified or stale evidence is rejected. Unknown keys/operations,
+inspected crop and the repair scope. The current `review` command returns an
+absolute `manifest_file`. Set `review_manifest_file` to that path relative to the
+project root: for project `/path/to/photo-project`,
+`/path/to/photo-project/reviews/rev-NNN/<hash>/manifest.json` becomes
+`reviews/rev-NNN/<hash>/manifest.json`. Keep the returned revision and hash unchanged.
+Its identity, crop transforms and image hashes are validated; modified or stale
+evidence is rejected. Unknown keys/operations,
 off-image coordinates, stale draft/parent/master and contradictory/lock-conflicting
 guides fail through the shared validators. Unresolved source evidence and
 color appearance decisions and unavailable shading actions stop the automatic alpha cycle. Automatic preparation cannot
