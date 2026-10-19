@@ -152,3 +152,14 @@ model disagreement as a quality proxy; do not present scores/confidence as
 calibrated probabilities. A synthetic contract test is not a live photographic
 pilot. After assistance closes, continue on the same saved project using the
 manual workflow; do not make its commands depend on cycle history.
+
+## Explicit background appearance
+
+Background tone/variation use the same schema-1 effects operation and current
+master/base/draft identities as manual controls, with exclusive `background`
+settings and full native scope. They require explicit user appearance intent;
+the automatic alpha-repair cycle does not choose them. Preserve accepted state
+and pending foreground drafts. Review Result separately from pure-black and
+source/alpha diagnostics. Background changes do not repair stale foreground
+effects or imply photographic acceptance. See the [manual steps](workflow.md#background-appearance)
+and [saved contract](file-contract.md#saved-background-appearance).

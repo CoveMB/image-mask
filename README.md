@@ -29,6 +29,10 @@ supports exact editable exports. Default-off Local exposure adds independent off
 brush/rectangle areas, protections, reversible EV and exposure-only comparison.
 Default-off Shadow fade independently darkens soft subject areas in linear light,
 with Amount, Preserve highlights, explicit protection and fade-only comparison.
+Background appearance adds a saved tone and broad variation behind the matte.
+New projects start warm near-black (`#120708`, variation 55%); older projects stay
+black until explicitly changed. [Background instructions](docs/workflow.md#background-appearance)
+explain Result, diagnostic views and separate editable exports.
 Prepared revisions require explicit human trimap review before matting.
 Combined computational checks and saved-only reconstruction are documented in
 [validation](docs/validation.md#combined-workflow-validation). The representative
@@ -128,6 +132,7 @@ for explicit model setup, typed preparation and human review.
 | Source cleanup, protected inward W16 and independent effect publication | `src/blackmask/effects.py` |
 | Independent native area and linear-sRGB local exposure | `src/blackmask/exposure.py` |
 | Independent linear-sRGB Shadow fade and saved operands | `src/blackmask/shadow_fade.py` |
+| Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | One-project loopback server and packaged manual page | `src/blackmask/viewer.py`, `src/blackmask/ui/review.html` |
 | Shared inverse native coordinate mapping | `src/blackmask/ui/coordinates.js` |

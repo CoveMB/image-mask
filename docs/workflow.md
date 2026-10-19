@@ -102,7 +102,7 @@ accepted state and diagnostic artifacts. Fix the displayed cause before retrying
 
 ## Compare, accept and export
 
-Use **Source / result**, the revision selector, black/gray/white backgrounds and
+Use **Source / result**, the revision selector, Result and black/gray/white diagnostics and
 alpha view on identical native crops. Turn overlays off for photographic comparison.
 Inspect fragile detail, gaps, transparency and seams at native scale. Cached tile
 counts describe verified computation reuse, never visual quality. Previews are
@@ -355,3 +355,46 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
    [saved-layer replay order](file-contract.md#optional-shadow-fade); never apply
    fade a second time to the selected export. Decide photographic acceptance only
    after native inspection; synthetic checks cannot supply that decision.
+
+## Background appearance
+
+1. Open a project with a complete matte and choose **Result · saved background**
+   in **View**. The revision selector must show the current working revision
+   before applying. Prepared-only state still needs trimap review and matting.
+2. Under **Background appearance**, choose **Background tone** or enter a six-digit
+   `#RRGGBB` colour. **Pure black** selects `#000000`; **Warm dark** selects
+   `#120708`. Shortcuts keep the variation slider unchanged.
+3. Set **Background variation** with the slider or whole numeric percentage.
+   Zero is uniform; 55% gives up to ±0.55 stops and 100% up to ±1 stop over one
+   fixed broad wash. Pure black stays exactly black at every strength. New
+   projects explicitly start at warm dark / 55%; older saved projects remain
+   black until you apply a change. This default still needs your photographic judgment.
+4. Unsaved controls do not render. Click **Apply background** and wait for the
+   saved revision and saved settings to update. For an unaccepted candidate,
+   explicitly select the background candidate-comparison checkbox first.
+   Apply changes only the backdrop. Save/prepare pending matting guides first;
+   unrelated unsaved exposure/fade areas and values remain in the page.
+5. Inspect **Result**, then **Black diagnostic**, **Gray diagnostic**,
+   **White diagnostic**, **Source** and **Alpha8 view**. These diagnostics keep
+   their original meanings. Compare Shadow fade OFF independently: it retains
+   the same background. Exposure OFF also retains it. Global BASE and stale
+   foreground-effect comparisons use pure black with all foreground effects OFF.
+6. Use **Export labelled current draft** for a labelled unaccepted delivery, or accept the
+   inspected photo and export the accepted result. `result_rgb16.tif` is the
+   chosen-background image; `result_RGB8_VIEW.png` is a reduced-precision preview.
+   `black_rgb16.tif` and existing black viewing files always use pure black.
+   Retain `background_rgb16.tif`, `background_settings.json`, selected
+   `foreground_rgb16.tif`, `alpha16.png`, saved shading W16/opacity and the other
+   editable operands. Straight transparent RGBA8 does not include the backdrop.
+7. To return to black, select **Pure black** and **Apply background**. To recover
+   another appearance, use **Restore saved revision**; it restores that revision's
+   background, including legacy absence, without changing final acceptance.
+   **Reload saved inputs** discards unsaved controls and reloads saved values.
+
+The background changes flattened partial-alpha colours, including protected
+translucent edges; protection preserves underlying foreground RGB/alpha. It does
+not freeze their old black composite. The field is generated at native resolution
+and saved; crops slice those same pixels and screen resizing happens afterward.
+No model, internet, noise generation or photographed-detail synthesis is involved.
+RGB8 previews may band; inspect native RGB16 in a suitable colour-managed viewer.
+A processed sRGB RGB16 TIFF is not sensor RAW. See the [saved contract](file-contract.md#saved-background-appearance).

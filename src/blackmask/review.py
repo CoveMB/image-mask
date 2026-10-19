@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from .export import publish_artifacts, render_black, saved_layers, shading_factor
+from .export import publish_artifacts, render_background, render_black, saved_layers, shading_factor
 from .guidance import coordinates
 from .project import (
     ProjectError,
@@ -36,17 +36,26 @@ def review_panels(
     alpha16: np.ndarray,
     weight16: np.ndarray | None = None,
     opacity: float = 0,
+    *,
+    background16: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     """Shared labelled RGB8 approximations; authoritative layers remain RGB16/alpha16."""
     factor = alpha16.astype(np.float64)[..., None] / 65535
     appearance = (
         foreground.astype(np.float64) * shading_factor(alpha16.shape, weight16, opacity)[..., None]
     )
+    black = render_black(foreground, alpha16, weight16, opacity)
     return {
-        "source": np.rint(source.astype(np.float64) / 257).astype(np.uint8),
-        "black": np.rint(
-            render_black(foreground, alpha16, weight16, opacity).astype(np.float64) / 257
+        "result": np.rint(
+            (
+                black
+                if background16 is None
+                else render_background(foreground, alpha16, background16, weight16, opacity)
+            ).astype(np.float64)
+            / 257
         ).astype(np.uint8),
+        "source": np.rint(source.astype(np.float64) / 257).astype(np.uint8),
+        "black": np.rint(black.astype(np.float64) / 257).astype(np.uint8),
         "gray": np.rint((appearance * factor + 32768 * (1 - factor)) / 257).astype(np.uint8),
         "white": np.rint((appearance * factor + 65535 * (1 - factor)) / 257).astype(np.uint8),
         "alpha": np.repeat(
@@ -66,6 +75,7 @@ def write_review(
     crops: list[list[int]] | None = None,
     weight16: np.ndarray | None = None,
     opacity: float = 0,
+    background16: np.ndarray | None = None,
 ) -> dict[str, Any]:
     height, width = alpha16.shape
     if crops is None:
@@ -80,26 +90,24 @@ def write_review(
         source_crop = source[y0:y1, x0:x1]
         rgb = foreground[y0:y1, x0:x1]
         alpha = alpha16[y0:y1, x0:x1]
-        panels = {
-            name: pixels
-            for name, pixels in zip(
-                (
-                    "source_RGB8_VIEW",
-                    "black_RGB8_VIEW",
-                    "gray_RGB8_VIEW",
-                    "white_RGB8_VIEW",
-                    "alpha8_VIEW",
-                ),
-                review_panels(
-                    source_crop,
-                    rgb,
-                    alpha,
-                    None if weight16 is None else weight16[y0:y1, x0:x1],
-                    opacity,
-                ).values(),
-                strict=True,
-            )
+        native_panels = review_panels(
+            source_crop,
+            rgb,
+            alpha,
+            None if weight16 is None else weight16[y0:y1, x0:x1],
+            opacity,
+            background16=None if background16 is None else background16[y0:y1, x0:x1],
+        )
+        names = {
+            "source": "source_RGB8_VIEW",
+            "black": "black_RGB8_VIEW",
+            "gray": "gray_RGB8_VIEW",
+            "white": "white_RGB8_VIEW",
+            "alpha": "alpha8_VIEW",
         }
+        if background16 is not None:
+            names["result"] = "result_RGB8_VIEW"
+        panels = {label: native_panels[name] for name, label in names.items()}
         files = {}
         for label, pixels in panels.items():
             name = f"crop-{index:03d}-{label}.png"
@@ -128,7 +136,8 @@ def write_review(
         "master_id": master_id,
         "revision": revision,
         "label": "RGB8/alpha8 viewing approximations; native pixels, no resize; inspect saved RGB16/alpha16 separately",
-        "panel_order": ["source", "black", "gray", "white", "alpha"],
+        "panel_order": ["source", "black", "gray", "white", "alpha"]
+        + (["result"] if background16 is not None else []),
         "crops": records,
         "visual_review": "human photographic review pending",
     }
@@ -179,6 +188,13 @@ def review_project(
         root.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".review-", dir=root))
         directory = stage / "assets"
+        from .background import read_background
+
+        background = (
+            None
+            if effects_stale(revision_manifest)
+            else read_background(_asset(project, f"revisions/{revision}"), revision_manifest)
+        )
         record = write_review(
             directory,
             source,
@@ -187,6 +203,7 @@ def review_project(
             master_id=state["master_id"],
             revision=revision,
             crops=selected,
+            background16=background,
             weight16=weight,
             opacity=opacity,
         )

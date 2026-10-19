@@ -536,3 +536,68 @@ Fade operands are `shadow_fade_support16.png`, `shadow_fade_protection16.png`,
 directly with shading/alpha; applying fade again is incorrect. RGB8/RGBA8 views
 remain reduced-precision, with baked shading labelled. Retain all dependencies;
 saved-only reopen/reconstruction needs no models, original locator or network.
+
+## Saved background appearance
+
+An optional recipe `background` contains exactly `color_srgb` (`#RRGGBB`,
+case-insensitive input, uppercase on authoring) and finite numeric `variation`
+in [0,1], excluding booleans. New project creation explicitly writes
+`#120708` / 0.55. Missing legacy settings remain absent through reads, unrelated
+edits and restore; their rendering is uniform black. No schema migration is performed.
+
+Background-bearing revisions bind `background/background_rgb16.tif` and
+`background/settings.json` in `files`. The optional manifest `background` has
+exactly `schema_version:1`, `algorithm:"smooth-tonal-background-v1"`, `master_id`,
+`width`, `height`, `settings`, `background_sha256`, `settings_sha256`. The JSON
+file equals the two-key settings. Recipe/record/settings, identity, native shape,
+uint16 RGB, sRGB profile and hashes must agree. Unknown, missing or unbound assets
+are rejected before cache reuse; current hashes precede bounded semantic caching.
+Uniform and black pixels must agree exactly with settings. Nonuniform saved
+pixels are authoritative; reading never regenerates the field.
+
+For native x=i/(width-1), y=j/(height-1), with singleton axes zero:
+
+```text
+q = .48*cos(2*pi*(.58*x-.72*y)+1.2)
+  + .30*sin(2*pi*(1.12*x+.33*y)-.7)
+  + .22*cos(2*pi*(.24*x+1.23*y)+.5)
+field = (q-mean(q)) / max(abs(q-mean(q)))
+```
+
+A zero maximum gives zero field. Float64 generation uses two passes of at most
+64 rows, row sums in native order and `math.fsum` over row sums; extrema determine
+the full-raster normalization. Decode the tone through the shared sRGB transfer,
+multiply linear RGB by `2**(variation*field)`, clamp, encode and round ties-to-even
+once to RGB16. Zero variation copies RGB8*257; black is exact zero at all strengths.
+There is no crop/viewport normalization, seed or random pattern.
+
+Final Result is encoded-sRGB float64 `round(F*A*H + B*(1-A))`, ties-to-even,
+where F is selected RGB16 after cleanup/exposure/fade, A=alpha16/65535,
+H=1-opacity*W16/65535 and B is the saved RGB16 backdrop. H applies only to F;
+alpha applies once, with no earlier rounding. Black compatibility keeps the
+existing arithmetic order. Protected underlying RGB/alpha remain exact while
+partial-alpha flattened colour changes with B. Clipping diagnostics are independent.
+
+Schema-1 `kind:effects` accepts exclusive `background` settings with all existing
+master/base/draft/candidate identities and full native `scope_xyxy`. It cannot
+combine foreground controls, area/support/protection inputs or amount-only flags.
+It uses the canonical writer lock, snapshots, rechecks, immutable publication and
+state-last pointer. An effective recipe is retained with the revision; its editable
+copy is atomically updated before state publication. On interruption, accepted
+state stays intact, the draft may differ, and a complete orphan can be explicitly
+restored with draft replacement. Newer drafts are never silently overwritten.
+Other operations inherit exact assets/settings and reject unapplied background
+draft differences; alpha repair does not stale or rebuild B. Existing foreground
+stale flags still block acceptance/export. Prepared revisions remain non-acceptable.
+
+New background-bearing exports add `result_rgb16.tif`, `result_RGB8_VIEW.png`,
+`background_rgb16.tif`, `background_settings.json`, a `background` record and
+`result_compositing` description. Result uses B; existing black and transparent
+files retain their meanings. Selected foreground is pre-shading and already
+exposed/faded: do not replay these twice. Saved F/A/W/opacity/B reconstruct Result
+without source, models, cache or analytic generation. All RGB16 TIFFs carry sRGB.
+Legacy exports keep their old file set/metadata and identical-delivery reuse;
+differing-content collisions are refused. Existing immutable legacy reviews are
+not regenerated on open. Current readers restore prior revisions; old readers
+are not promised to understand new records. Retain a prior project/revision for
+recovery rather than stripping fields. No automatic cleanup occurs.

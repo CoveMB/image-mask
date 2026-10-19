@@ -200,3 +200,22 @@ reduce Amount, raise Preserve highlights, add explicit Protect shapes or reset f
 A pointer failure may leave a complete orphan revision; inspect actual working and
 accepted pointers and use existing explicit restore/retry. Do not delete dependencies
 or strip new effect records for use in an older binary.
+
+## Background appearance recovery
+
+If controls differ from the image, they are unsaved: **Apply background** and wait
+for the new saved revision, or **Reload saved inputs** to discard the control draft.
+Load the current working revision first. Background requires an accepted base or
+explicit candidate comparison, and cannot consume pending matting guidance.
+Changed background in an edited recipe blocks unrelated processing until an
+explicit background operation or restore resolves it. Saved foreground-effect
+staleness still requires each effect's own rebuild/disable; a background change
+cannot clear it. Pure black with nonzero variation is expected and exact.
+
+Missing, corrupt, unbound or mismatched saved background files stop reading;
+restore from an intact backup rather than regenerating or rewriting accepted
+assets. If state publication was interrupted, a complete saved orphan remains
+non-authoritative. Explicit restore with draft replacement preserves current drafts
+in recovery storage and selects that revision's background; acceptance is unchanged.
+Export collisions preserve the existing delivery. Do not delete original projects,
+accepted dependencies, failed stages or recovery material automatically.

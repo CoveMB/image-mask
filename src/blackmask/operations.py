@@ -356,7 +356,7 @@ def _prepare(
     raster = rasterize_regions(
         guides, scope_xyxy=scope, saved_alpha=saved_alpha, parent_alpha=parent_alpha
     )
-    check_space(project, pixels.nbytes * 8 + 1024**2)
+    check_space(project, pixels.nbytes * (9 if recipe.background is not None else 8) + 1024**2)
     revisions = _asset(project, "revisions")
     revisions.mkdir(exist_ok=True)
     existing = [
@@ -393,6 +393,11 @@ def _prepare(
     shading = inherit_shading(project, parent, stage, state["master_id"]) if parent else None
     exposure = inherit_exposure(project, parent, stage, state["master_id"]) if parent else None
     fade = inherit_shadow_fade(project, parent, stage, state["master_id"]) if parent else None
+    from .background import inherit_background
+
+    background = inherit_background(
+        project, parent, stage, state["master_id"], (height, width), recipe.background
+    )
     # RGB8 is a separately labelled proxy. It never becomes a precision output owner.
     proxy = np.rint(pixels.astype(np.float64) / 257).astype(np.uint8)
     cache = model_cache or (
@@ -509,6 +514,7 @@ def _prepare(
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
         **({"shadow_fade": fade} if fade is not None else {}),
+        **({"background": background} if background is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
     for path in stage.rglob("*"):
@@ -1024,7 +1030,7 @@ def _matte(
             if ancestor_manifest.get("kind") != "prepare":
                 break
             ancestor = ancestor_manifest["parent"]
-    check_space(project, pixels.nbytes * 40 + 1024**2)
+    check_space(project, pixels.nbytes * (42 if recipe.background is not None else 40) + 1024**2)
     foreground = pixels.copy()
     if repairing:
         foreground = tifffile.imread(_asset(project, f"revisions/{parent}/foreground_rgb16.tif"))
@@ -1224,6 +1230,11 @@ def _matte(
     shading = inherit_shading(project, parent, stage, state["master_id"], alpha)
     exposure = inherit_exposure(project, parent, stage, state["master_id"], alpha, rgb_protection)
     fade = inherit_shadow_fade(project, parent, stage, state["master_id"], alpha, rgb_protection)
+    from .background import inherit_background
+
+    background = inherit_background(
+        project, parent, stage, state["master_id"], (height, width), recipe.background
+    )
     stale_effects = effects_stale(
         {
             "color_cleanup": cleanup or {},
@@ -1259,11 +1270,19 @@ def _matte(
         {"master_id": state["master_id"], **({"shadow_fade": fade} if fade else {})},
         shadow_fade_off=stale_effects,
     )
+    from .export import read_rgb16
+
+    background_pixels = (
+        read_rgb16(stage / "background/background_rgb16.tif")
+        if background is not None and not stale_effects
+        else None
+    )
     write_review(
         stage / "review",
         pixels,
         review_foreground,
         alpha,
+        background16=background_pixels,
         master_id=state["master_id"],
         revision=revision,
         crops=[context] if repairing else None,
@@ -1293,6 +1312,7 @@ def _matte(
             pixels,
             before_foreground,
             parent_alpha,
+            background16=background_pixels,
             master_id=state["master_id"],
             revision=parent,
             crops=[context],
@@ -1372,6 +1392,7 @@ def _matte(
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
         **({"shadow_fade": fade} if fade is not None else {}),
+        **({"background": background} if background is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     files = {

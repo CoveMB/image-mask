@@ -167,10 +167,11 @@
           <label
             >View
             <select id="panel">
+              <option value="result">Result · saved background</option>
               <option value="source">Source</option>
-              <option value="black">Result · black</option>
-              <option value="gray">Result · gray</option>
-              <option value="white">Result · white</option>
+              <option value="black">Black diagnostic</option>
+              <option value="gray">Gray diagnostic</option>
+              <option value="white">White diagnostic</option>
               <option value="alpha">Alpha8 view</option>
             </select></label
           >
@@ -391,6 +392,21 @@
         <p class="small">Amount changes use only the saved area and protections; pending area edits stay unsaved. Reset retains the recoverable saved area. Clipped pixels count pixels with any channel above linear white before clipping, not photographic quality. Exposure cannot recover detail absent from the matte.</p>
       </fieldset>
       <fieldset>
+        <legend>Background appearance</legend>
+        <p class="small">Entire backdrop behind the saved matte. Subject RGB, alpha and effects remain editable and unchanged. Unsaved controls do not change the preview.</p>
+        <label>Background tone <input id="backgroundColor" type="color" value="#120708" /></label>
+        <label>Tone #RRGGBB <input id="backgroundHex" type="text" value="#120708" maxlength="7" pattern="#[0-9a-fA-F]{6}" /></label>
+        <button id="backgroundBlack">Pure black</button>
+        <button id="backgroundWarm">Warm dark</button>
+        <label>Background variation (%) <input id="backgroundRange" type="range" min="0" max="100" step="1" value="55" /></label>
+        <label>Variation (numeric %) <input id="backgroundVariation" type="number" min="0" max="100" step="1" value="55" /></label>
+        <p class="small">0% is uniform; 55% gives up to ±0.55 stops; 100% gives up to ±1 stop. Pure black stays exactly black at every variation; the slider is retained.</p>
+        <label><input id="backgroundCandidate" type="checkbox" /> Explicitly compare background on an unaccepted candidate</label>
+        <button id="backgroundApply">Apply background</button>
+        <p id="backgroundStatus" role="status" class="small"></p>
+        <p id="backgroundDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset>
         <legend>Shadow fade</legend>
         <p class="small">One independent, reversible soft-area fade. Darkens existing subject RGB by up to six stops in linear light; alpha is unchanged. Highlight preservation is tonal, not detail recognition. Protect dim hairs, saturated petals and translucent detail explicitly.</p>
         <label>Fade drawing <select id="fadeRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
@@ -470,6 +486,7 @@
       dirty = false,
       pendingSaved = false;
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
+    let backgroundDirty = false, backgroundPublished = false;
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let image = null,
       overlayImage = null,
@@ -679,7 +696,15 @@
       );
       draw();
     }
-    function loadAuthoring() {
+    function loadAuthoring(preserveSubjectDrafts = false) {
+      const subjectControls = [
+        "cleanupSupport", "cleanupCandidate",
+        "shadingSupport", "shadingProtection", "shadingWidth", "shadingDirection", "shadingOpacity", "shadingCandidate",
+        "exposureEV", "exposureRange", "exposureCandidate",
+        "fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate",
+      ];
+      const subjectDrafts = preserveSubjectDrafts ? subjectControls.map(id => [id, $(id).type === "checkbox" ? $(id).checked : $(id).value]) : [];
+
       // Review confirmation belongs to the authoring identity being replaced.
       $("trimapReviewed").checked = false;
       $("photoReviewed").checked = false;
@@ -708,6 +733,18 @@
       $("fadePreserveRange").value = $("fadePreserve").value;
       $("fadeCandidate").checked = false;
       renderFadeArea();
+      for (const [id, value] of subjectDrafts) {
+        if ($(id).type === "checkbox") $(id).checked = value; else $(id).value = value;
+      }
+      if (!backgroundDirty) {
+        const savedBackground = currentExposure?.background?.settings || (!currentExposure ? state.recipe?.background : null) || {color_srgb: "#000000", variation: 0};
+        $("backgroundHex").value = savedBackground.color_srgb;
+        $("backgroundColor").value = savedBackground.color_srgb.toLowerCase();
+        $("backgroundVariation").value = Math.round(savedBackground.variation * 100);
+        $("backgroundRange").value = $("backgroundVariation").value;
+        $("backgroundCandidate").checked = false;
+      }
+      backgroundDraftStatus();
       $("candidate").value = "";
       identity = {
         master_id: state.master_id,
@@ -810,7 +847,12 @@
       const completed = !actionSubmitting && actionWasRunning && !a.running;
       if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;
       if (reload || (completed && !a.error && fadeAreaPublished)) fadeDirty = false;
-      if (completed) { exposureAreaPublished = false; fadeAreaPublished = false; }
+      const preserveSubjectDrafts = completed && backgroundPublished && !a.error;
+      if (reload || preserveSubjectDrafts) backgroundDirty = false;
+      if (completed) { exposureAreaPublished = false; fadeAreaPublished = false; backgroundPublished = false; }
+      const savedBackground = current?.background?.settings || {color_srgb: "#000000", variation: 0};
+      $("backgroundStatus").textContent = "Saved background · " + (current?.revision || "no complete result") + " · " + savedBackground.color_srgb + " · variation " + Math.round(savedBackground.variation * 100) + "%" + (current && !current.final_acceptable ? " · prepared only" : "");
+      backgroundDraftStatus();
       const savedFade = current?.shadow_fade;
       $("fadeStatus").textContent = savedFade?.enabled
         ? savedFade.stale ? "Saved Shadow fade STALE · BASE comparison; rebuild area or reset; every other stale effect still needs recovery"
@@ -834,7 +876,7 @@
         !identity ||
         (completed && !a.error && (!dirty || authoringPublished))
       ) {
-        loadAuthoring();
+        loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";
       }
       if (
@@ -907,6 +949,7 @@
         "cleanupApply",
         "cleanupDisable",
         "exposureApply", "exposureAmount", "exposureReset",
+        "backgroundApply",
         "fadeApply", "fadeAmountApply", "fadeReset",
       ]) {
         $(id).disabled = authoringBusy();
@@ -914,6 +957,7 @@
       for (const element of $("groups").querySelectorAll("input,select"))
         element.disabled = authoringBusy();
       for (const id of [
+        "backgroundColor", "backgroundHex", "backgroundRange", "backgroundVariation", "backgroundBlack", "backgroundWarm", "backgroundCandidate",
         "fadeRole", "fadeShape", "fadeRadius", "fadeFeather", "fadeRectangle", "fadeAddRectangle", "fadeRemove", "fadeClear",
         "authorMode", "exposureRole", "exposureShape", "exposureRadius", "exposureFeather", "exposureRectangle", "exposureAddRectangle", "exposureRemove", "exposureClear",
         "addGroup",
@@ -940,7 +984,7 @@
         working = state.revisions.find(r => r.revision === state.working_revision);
       const stale = record => ["color_cleanup", "shading", "local_exposure", "shadow_fade"].some(name => record?.[name]?.enabled && record[name].stale);
       const isStale = stale(viewed) || stale(working);
-      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE · cleanup OFF · local exposure OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
+      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · local exposure OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
       const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · local exposure " + exposure + " · Shadow fade " + fade + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
@@ -1211,6 +1255,30 @@
       try { return await action("effects", fields); }
       catch(error) { fadeAreaPublished = false; throw error; }
     }
+    function backgroundDraftStatus() {
+      $("backgroundDraftStatus").textContent = (backgroundDirty ? "Unsaved background · preview still shows saved result" : "Controls match saved background") + ($("backgroundHex").value.toUpperCase() === "#000000" ? " · pure black at every variation" : "");
+    }
+    function editBackground() { backgroundDirty = true; backgroundDraftStatus(); }
+    $("backgroundColor").oninput = () => { $("backgroundHex").value = $("backgroundColor").value.toUpperCase(); editBackground(); };
+    $("backgroundHex").oninput = () => {
+      if (/^#[0-9a-fA-F]{6}$/.test($("backgroundHex").value)) $("backgroundColor").value = $("backgroundHex").value;
+      editBackground();
+    };
+    $("backgroundRange").oninput = () => { $("backgroundVariation").value = $("backgroundRange").value; editBackground(); };
+    $("backgroundVariation").oninput = () => { $("backgroundRange").value = $("backgroundVariation").value; editBackground(); };
+    for (const [id, color] of [["backgroundBlack", "#000000"], ["backgroundWarm", "#120708"]]) $(id).onclick = () => {
+      $("backgroundHex").value = color; $("backgroundColor").value = color; editBackground();
+    };
+    $("backgroundApply").onclick = guarded(async () => {
+      if (authoringBusy()) return;
+      if (dirty) throw Error("Save or reload pending matting guides before Apply background; unrelated drafts are preserved");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before Apply background");
+      const color_srgb = $("backgroundHex").value.toUpperCase(), percent = Number($("backgroundVariation").value);
+      if (!/^#[0-9A-F]{6}$/.test(color_srgb) || $("backgroundVariation").value.trim() === "" || !Number.isInteger(percent) || percent < 0 || percent > 100) throw Error("Use #RRGGBB and a whole variation percentage in [0,100]");
+      backgroundPublished = true;
+      try { return await action("effects", {scope_xyxy: [0,0,...state.dimensions_wh], background: {color_srgb, variation: percent / 100}, candidate_comparison: $("backgroundCandidate").checked}); }
+      catch (error) { backgroundPublished = false; throw error; }
+    });
     $("fadeAddRectangle").onclick = guarded(() => addFadeRegion(bounds("fadeRectangle"), "rectangle"));
     $("fadeRemove").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
@@ -1464,7 +1532,7 @@
       return loadImage();
     });
     $("toggle").onclick = guarded(() => {
-      $("panel").value = $("panel").value === "source" ? "black" : "source";
+      $("panel").value = $("panel").value === "source" ? "result" : "source";
       return loadImage();
     });
     $("fit").onclick = () => {

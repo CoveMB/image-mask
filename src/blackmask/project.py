@@ -209,7 +209,11 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
             "metadata": metadata,
         }
         (stage / "source.json").write_bytes(_json_bytes(source_record))
-        (stage / "recipe.toml").write_text(tomli_w.dumps(Recipe(master_id).to_dict()))
+        from .background import DEFAULT_BACKGROUND
+
+        (stage / "recipe.toml").write_text(
+            tomli_w.dumps(Recipe(master_id, background=dict(DEFAULT_BACKGROUND)).to_dict())
+        )
         (stage / "guides.json").write_bytes(
             _json_bytes(
                 {
@@ -448,6 +452,13 @@ def _validate_shadow_fade_semantics(directory: Path, manifest_bytes: bytes) -> N
     )
 
 
+@lru_cache(maxsize=128)
+def _validate_background_semantics(directory: Path, manifest_bytes: bytes) -> None:
+    from .background import read_background
+
+    read_background(directory, json.loads(manifest_bytes))
+
+
 def _validate_revision_directory(
     project: Path, revision: str, master_id: str, directory: str
 ) -> dict[str, Any]:
@@ -475,6 +486,16 @@ def _validate_revision_directory(
         and _asset(project, f"{directory}/effects/shadow-fade/area.json").exists()
     ):
         raise ProjectError("Unbound saved Shadow fade authored area")
+    from .background import validate_background_bindings
+
+    validate_background_bindings(_asset(project, directory), manifest)
+    if "background" in manifest:
+        record = manifest["background"]
+        metadata = _read_json(project, "source.json")["metadata"]
+        if not isinstance(record, dict) or any(
+            record.get(n) != metadata[n] for n in ("width", "height")
+        ):
+            raise ProjectError("Saved background dimensions differ from master")
     validation = _read_validation.get()
     key = (str(project), directory)
     signature = (
@@ -524,6 +545,7 @@ def _validate_revision_directory(
         "repair/merge.json",
     } <= set(manifest["files"]):
         raise ProjectError("Incomplete repair operands")
+    _validate_background_semantics(_asset(project, directory), _json_bytes(manifest))
     if "local_exposure" in manifest:
         record = manifest["local_exposure"]
         from .exposure import EXPOSURE_FILES

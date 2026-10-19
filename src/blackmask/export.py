@@ -40,7 +40,7 @@ def shading_factor(
     return 1 - opacity * (weight16.astype(np.float64) / 65535)
 
 
-def render_black(
+def _foreground_contribution(
     foreground: np.ndarray,
     alpha16: np.ndarray,
     weight16: np.ndarray | None = None,
@@ -54,10 +54,37 @@ def render_black(
         or alpha16.shape != foreground.shape[:2]
     ):
         raise ValueError("Renderer requires aligned saved RGB16 and scalar alpha16")
-    return np.rint(
+    return (
         foreground.astype(np.float64)
         * (alpha16.astype(np.float64) / 65535)[..., None]
         * shading_factor(alpha16.shape, weight16, opacity)[..., None]
+    )
+
+
+def render_black(
+    foreground: np.ndarray,
+    alpha16: np.ndarray,
+    weight16: np.ndarray | None = None,
+    opacity: float = 0,
+) -> np.ndarray:
+    return np.rint(_foreground_contribution(foreground, alpha16, weight16, opacity)).astype(
+        np.uint16
+    )
+
+
+def render_background(
+    foreground: np.ndarray,
+    alpha16: np.ndarray,
+    background16: np.ndarray,
+    weight16: np.ndarray | None = None,
+    opacity: float = 0,
+) -> np.ndarray:
+    contribution = _foreground_contribution(foreground, alpha16, weight16, opacity)
+    if background16.dtype != np.uint16 or background16.shape != foreground.shape:
+        raise ValueError("Background requires aligned saved RGB16")
+    return np.rint(
+        contribution
+        + background16.astype(np.float64) * (1 - alpha16.astype(np.float64) / 65535)[..., None]
     ).astype(np.uint16)
 
 
@@ -212,11 +239,29 @@ def export_project(
         weight, opacity = saved_shading(project, revision, alpha, manifest)
         before = _asset(project, "state.json").read_bytes()
         manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
-        check_space(project, foreground.nbytes * 18 + 1024**2)
+        check_space(project, foreground.nbytes * (22 if "background" in manifest else 18) + 1024**2)
         exports = _asset(project, "exports")
         exports.mkdir(exist_ok=True)
         label = f"{revision}-DRAFT" if draft else revision
         stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
+        from .background import read_background
+
+        background = read_background(_asset(project, f"revisions/{revision}"), manifest)
+        if background is not None:
+            result_pixels = render_background(foreground, alpha, background, weight, opacity)
+            write_master(stage / "result_rgb16.tif", result_pixels)
+            Image.fromarray(np.rint(result_pixels.astype(np.float64) / 257).astype(np.uint8)).save(
+                stage / "result_RGB8_VIEW.png"
+            )
+            for saved, delivered in (
+                ("background/background_rgb16.tif", "background_rgb16.tif"),
+                ("background/settings.json", "background_settings.json"),
+            ):
+                (stage / delivered).write_bytes(
+                    _asset(project, f"revisions/{revision}/{saved}").read_bytes()
+                )
+            if not np.array_equal(read_rgb16(stage / "result_rgb16.tif"), result_pixels):
+                raise ProjectError("Result RGB16 export round trip failed")
         black = render_black(foreground, alpha, weight, opacity)
         write_master(stage / "black_rgb16.tif", black)
         Image.fromarray(alpha).save(stage / "alpha16.png")
@@ -307,6 +352,7 @@ def export_project(
                 else {}
             ),
             **({"shadow_fade": manifest["shadow_fade"]} if "shadow_fade" in manifest else {}),
+            **({"background": manifest["background"]} if "background" in manifest else {}),
             "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; baked shading at saved p; editable W16 plus p retained separately"
             + (
                 "; selected foreground includes linear-sRGB local exposure once; unexposed foreground and independent support/protection/alpha/settings retained"
@@ -318,6 +364,13 @@ def export_project(
                 if "shadow_fade" in manifest
                 else ""
             ),
+            **(
+                {
+                    "result_compositing": "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-opacity*W16/65535, A=alpha16/65535; selected foreground already includes exposure/fade; B is saved background RGB16; processed sRGB TIFF, not sensor RAW"
+                }
+                if "background" in manifest
+                else {}
+            ),
             "files": {p.name: digest(p.read_bytes()) for p in stage.iterdir() if p.is_file()},
         }
         (stage / "manifest.json").write_bytes(_json_bytes(record))
@@ -325,6 +378,14 @@ def export_project(
             record["label"]
             + "\nRGB16 black TIFF and scalar alpha16 are lossless. "
             + record["views"]
+            + (
+                "\nResult RGB16 TIFF uses the saved chosen background; black TIFF stays pure black. Background RGB16/settings are independent editable operands; foreground RGB16 is pre-shading, already exposed/faded. Reconstruct: "
+                + record["result_compositing"]
+                + ". All RGB16 TIFFs carry sRGB profiles. Algorithm: "
+                + manifest["background"]["algorithm"]
+                if "background" in manifest
+                else ""
+            )
             + "\n"
         )
         if (

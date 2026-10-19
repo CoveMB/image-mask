@@ -629,3 +629,34 @@ This is synthetic computational and browser evidence. It does not establish WCAG
 conformance, disconnected-network human operation, a representative flower result,
 human photographic preference or regular-use acceptance. Those remain separate
 manual observations and decisions. No new model, dependency or download was needed.
+
+## Background appearance verification
+
+The complete deterministic suite passed **554 tests**, with **3 optional real-model
+checks skipped** because explicitly installed model-cache selections were absent.
+The 43 background checks cover independent scalar native-field/composition
+expectations, legacy absence/defaults, exact inheritance, saved-file corruption
+including warm caches, combined foreground effects, alpha repair/stale gates,
+writer exclusion, low space, pointer interruption, newer-draft races, native crops,
+Result/black/transparent export roles, collision refusal and fresh-process saved-only
+reconstruction. Ruff, formatting and mypy passed. These are computational and
+stub-matte checks, not new inference or photographic evidence. One independent
+review found pending cleanup/shading controls were reset by background completion;
+a shipped-page regression reproduced the loss, then passed after extending the
+existing preservation snapshot. The full suite above passed after that correction.
+
+A synthetic 2048×1536 native background took 0.443 seconds to generate, produced
+18,874,368 pixel bytes (18,875,184 bytes in its TIFF) and reached process peak RSS
+108,724,224 bytes, including imports. This measures generation/write only; it does
+not establish full-photograph workflow timing or memory requirements.
+
+Direct local browser observations on a generated 360×240 synthetic project
+covered the explicit warm default, uniform tone save, warm variation save, pure
+black save at unchanged 55%, new saved revision feedback, preservation of an
+unsaved fade rectangle plus exposure/fade values, and mutually exclusive comparison
+controls. Remaining browser save/restore/export and keyboard/busy/reload checks
+were paused by automatic approval review pending explicit authorization. Automated
+HTTP/transaction tests cover the corresponding application boundaries; they do not
+replace those unfinished direct observations. Accessibility certification, real
+photographic appearance/banding, the representative offline-use pilot and human
+acceptance remain separate and pending.

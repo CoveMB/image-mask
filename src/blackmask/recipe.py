@@ -21,6 +21,7 @@ class Recipe:
     shadow_fade: dict[str, Any] = field(
         default_factory=lambda: {"enabled": False, "amount": 0.0, "preserve_highlights": 1.0}
     )
+    background: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -34,6 +35,7 @@ class Recipe:
             "shading": self.shading,
             "local_exposure": self.local_exposure,
             "shadow_fade": self.shadow_fade,
+            **({"background": self.background} if self.background is not None else {}),
         }
 
     @classmethod
@@ -42,8 +44,8 @@ class Recipe:
     ) -> "Recipe":
         expected = cls(master_id).to_dict()
         if (
-            set(value) - {"local_exposure", "shadow_fade"}
-            != set(expected) - {"local_exposure", "shadow_fade"}
+            set(value) - {"local_exposure", "shadow_fade", "background"}
+            != set(expected) - {"local_exposure", "shadow_fade", "background"}
             or type(value.get("schema_version")) is not int
             or value["schema_version"] != 1
             or value["master_id"] != master_id
@@ -56,6 +58,10 @@ class Recipe:
         from .shadow_fade import validate_shadow_fade
 
         validate_shadow_fade(value.get("shadow_fade", cls(master_id).shadow_fade))
+        if "background" in value:
+            from .background import validate_background
+
+            validate_background(value["background"])
         validate_exposure(value.get("local_exposure", {"enabled": False, "ev": 0.0}))
         validate_cleanup(value["color_cleanup"])
         validate_shading(value["shading"])
@@ -121,4 +127,5 @@ class Recipe:
             dict(value["shading"]),
             dict(value.get("local_exposure", {"enabled": False, "ev": 0.0})),
             dict(value.get("shadow_fade", cls(master_id).shadow_fade)),
+            dict(value["background"]) if "background" in value else None,
         )

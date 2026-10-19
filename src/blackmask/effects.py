@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 import tifffile
+import tomli_w
 from PIL import Image
 from scipy.ndimage import distance_transform_edt, gaussian_filter
 
@@ -25,6 +26,7 @@ from .ingest import write_master
 from .project import (
     ProjectError,
     _asset,
+    _atomic_bytes,
     _atomic_json,
     _json_bytes,
     _root,
@@ -464,7 +466,7 @@ def run_effects(
     project: Path, operation: dict[str, Any], request_file: Path | None
 ) -> dict[str, Any]:
     """Caller holds the canonical writer lock; preserve all prior complete revisions."""
-    from .export import publish_artifacts, saved_layers
+    from .export import publish_artifacts, read_rgb16, saved_layers
     from .operations import _input_file, _reject_pending_guidance, draft_digest
     from .review import write_review
 
@@ -482,6 +484,7 @@ def run_effects(
         or set(operation)
         - required
         - {
+            "background",
             "support_file",
             "color_cleanup",
             "shading",
@@ -502,6 +505,13 @@ def run_effects(
         or type(operation["candidate_comparison"]) is not bool
     ):
         raise ProjectError("Invalid schema-1 effects request")
+    background_changed = "background" in operation
+    if background_changed:
+        from .background import validate_background
+
+        validate_background(operation["background"])
+        if set(operation) != required | {"background"}:
+            raise ProjectError("Background must be an exclusive effects operation")
     fade_changed = "shadow_fade" in operation
     exposure_changed = "local_exposure" in operation
     exposure_fields = {"exposure_area", "exposure_protection_file", "exposure_amount_only"}
@@ -537,7 +547,12 @@ def run_effects(
             )
         ):
             raise ProjectError("Exposure rebuild requires exactly one registered area source")
-    elif set(operation) & exposure_fields or not fade_changed and "support_file" not in operation:
+    elif (
+        set(operation) & exposure_fields
+        or not fade_changed
+        and not background_changed
+        and "support_file" not in operation
+    ):
         raise ProjectError("Invalid effects support/exposure fields")
     fade_fields = {"shadow_fade_area", "shadow_fade_protection_file", "shadow_fade_amount_only"}
     if fade_changed:
@@ -587,7 +602,7 @@ def run_effects(
         raise ProjectError("Stale effects master, base revision or draft identity")
     parent = state["working_revision"]
     cleanup_changed = "color_cleanup" in operation or not (
-        "shading" in operation or exposure_changed or fade_changed
+        "shading" in operation or exposure_changed or fade_changed or background_changed
     )
     settings = operation.get(
         "color_cleanup", tomllib.loads(_asset(project, "recipe.toml").read_text())["color_cleanup"]
@@ -607,6 +622,14 @@ def run_effects(
     source, _ = load_master(project, state["master_id"])
     height, width = alpha.shape
     scope = coordinates(operation["scope_xyxy"], width, height, box=True)
+    if background_changed and scope != [0, 0, width, height]:
+        raise ProjectError("Background scope must cover the full native image")
+    if (
+        background_changed
+        and parent != state["accepted_revision"]
+        and not operation["candidate_comparison"]
+    ):
+        raise ProjectError("Background requires accepted base or explicit candidate comparison")
     support_path = (
         _input_file(project, operation["support_file"]) if "support_file" in operation else None
     )
@@ -631,13 +654,18 @@ def run_effects(
     parent_recipe = tomllib.loads(_asset(project, f"revisions/{parent}/recipe.toml").read_text())
     current_recipe = tomllib.loads(snapshots["recipe.toml"].decode())
     if json.loads(snapshots["guides.json"]) != json.loads(parent_guides) or any(
-        current_recipe[name] != parent_recipe[name]
+        current_recipe[name] != parent_recipe.get(name)
         for name in current_recipe
-        if name not in {"color_cleanup", "shading", "local_exposure", "shadow_fade", "notes"}
+        if name
+        not in {"color_cleanup", "shading", "local_exposure", "shadow_fade", "background", "notes"}
     ):
         raise ProjectError(
             "Changed guidance/base recipe requires prepare and complete matte before effects"
         )
+    if not background_changed and current_recipe.get("background") != parent_recipe.get(
+        "background"
+    ):
+        raise ProjectError("Changed background draft requires explicit Apply background")
     with Image.open(_asset(project, f"revisions/{parent}/trimap.png")) as image:
         trimap = np.array(image)
     with Image.open(_asset(project, f"revisions/{parent}/supports/protection.png")) as image:
@@ -667,7 +695,10 @@ def run_effects(
         lock_values[mask] = rgb[mask]
         locked |= mask
     protection |= locked
-    check_space(project, source.nbytes * 45 + 1024**2)
+    check_space(
+        project,
+        source.nbytes * (47 if background_changed or "background" in manifest else 45) + 1024**2,
+    )
     record: dict[str, Any] | None
     if cleanup_changed:
         corrected = make_corrected_rgb(
@@ -1059,7 +1090,29 @@ def run_effects(
     (stage / "inputs").mkdir()
     for name, data in snapshots.items():
         (stage / "inputs" / name).write_bytes(data)
+    from .background import inherit_background, save_background
+
+    background_record: dict[str, Any] | None
+    published_recipe = snapshots["recipe.toml"]
+    if background_changed:
+        background_record = save_background(
+            stage, state["master_id"], (height, width), operation["background"]
+        )
+        current_recipe["background"] = background_record["settings"]
+        published_recipe = tomli_w.dumps(current_recipe).encode()
+        (stage / "recipe.toml").write_bytes(published_recipe)
+    else:
+        background_record = inherit_background(
+            project,
+            parent,
+            stage,
+            state["master_id"],
+            (height, width),
+            current_recipe.get("background"),
+        )
     effect_records = {}
+    if background_record is not None:
+        effect_records["background"] = background_record
     if record is not None:
         effect_records["color_cleanup"] = record
     if shading_record is not None:
@@ -1096,6 +1149,9 @@ def run_effects(
         alpha,
         master_id=state["master_id"],
         revision=revision,
+        background16=read_rgb16(stage / "background/background_rgb16.tif")
+        if background_record is not None and not stale
+        else None,
         weight16=review_weight,
         opacity=opacity,
     )
@@ -1142,7 +1198,7 @@ def run_effects(
         files=files,
         parent_manifest_sha256=digest(parent_bytes),
         scope_xyxy=scope,
-        draft_digest=operation["inputs_digest"],
+        draft_digest=digest(published_recipe + b"\0" + snapshots["guides.json"]),
         foreground_asset="corrected_rgb16.tif" if enabled else "foreground_rgb16.tif",
     )
     (stage / "manifest.json").write_bytes(_json_bytes(new_manifest))
@@ -1179,6 +1235,11 @@ def run_effects(
     destination = revisions / revision
     publish_artifacts(stage, destination)
     read_revision(project, revision, state["master_id"])
+    if background_changed:
+        _atomic_bytes(
+            _asset(project, "recipe.toml"), published_recipe, validate_before_replace=recheck
+        )
+        snapshots["recipe.toml"] = published_recipe
     state.update(working_revision=revision, status="review_needed")
     _atomic_json(_asset(project, "state.json"), state, validate_before_replace=recheck)
     return dict(

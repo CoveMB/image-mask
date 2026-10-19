@@ -127,6 +127,7 @@ class ReviewServer(ThreadingHTTPServer):
                             "shadow_fade", {"enabled": False, "stale": False}
                         ),
                         "shadow_fade_area": fade_area,
+                        "background": manifest.get("background"),
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
                             for k in ("inferred_tiles", "reused_tiles")
@@ -168,6 +169,7 @@ class ReviewServer(ThreadingHTTPServer):
                 "shadow_fade_area",
                 "shadow_fade_protection_file",
                 "shadow_fade_amount_only",
+                "background",
             }
             fields["effects"] |= set(data) & optional
         if action not in fields or set(data) != fields[action] | {
@@ -271,6 +273,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "shadow_fade_area",
                         "shadow_fade_protection_file",
                         "shadow_fade_amount_only",
+                        "background",
                     )
                     if k in data
                 }
@@ -288,7 +291,7 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/shadow-fade-off|/p(?:0|0.12|0.24))?",
+            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/shadow-fade-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -325,12 +328,20 @@ class ReviewServer(ThreadingHTTPServer):
             )
             if base and base.startswith("/p") and weight is not None:
                 opacity = float(base[2:])
+            from .background import read_background
+
+            background = (
+                read_background(_asset(self.project, f"revisions/{identity}"), manifest)
+                if panel == "result" and not (base == "/base" or stale or effects_stale(manifest))
+                else None
+            )
             pixels = review_panels(
                 source[y0:y1, x0:x1],
                 foreground[y0:y1, x0:x1],
                 alpha[y0:y1, x0:x1],
                 None if weight is None else weight[y0:y1, x0:x1],
                 opacity,
+                background16=None if background is None else background[y0:y1, x0:x1],
             )[panel]
         buffer = io.BytesIO()
         Image.fromarray(pixels).save(buffer, format="PNG")

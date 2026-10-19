@@ -492,3 +492,41 @@ imageLoading=true;canvas.onpointerdown({clientX:70,clientY:20,pointerId:1,shiftK
 imageLoading=false;canvas.onpointerdown({clientX:70,clientY:20,pointerId:2,shiftKey:false});canvas.onpointermove({clientX:90,clientY:40});canvas.onpointerup({clientX:90,clientY:40,pointerId:2});assert.equal(fadeArea.regions[1].radius_px,3);
 await $('reload').onclick();assert.equal(fadeArea.regions.length,1);assert.equal(fadeDirty,false);
 """)
+
+
+def test_background_completion_preserves_all_pending_subject_controls():
+    run_page(r"""
+await ready();
+const pending = {
+ cleanupSupport:'pending-cleanup16.png',
+ shadingSupport:'pending-shading16.png',shadingProtection:'pending-protection16.png',
+ shadingWidth:'17',shadingDirection:'78',shadingOpacity:'.22',
+ exposureEV:'1.5',exposureRange:'1.5',fadeAmount:'37',fadeRange:'37',
+ fadePreserve:'82',fadePreserveRange:'82'
+};
+for(const [id,value] of Object.entries(pending))$(id).value=value;
+const candidates=['cleanupCandidate','shadingCandidate','exposureCandidate','fadeCandidate'];
+for(const id of candidates){$(id).type='checkbox';$(id).checked=true;}
+const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{
+ if(options.method==='POST'){
+   const payload=JSON.parse(options.body);
+   assert.deepEqual(payload.background,{color_srgb:'#243050',variation:.55});
+   assert(!('shading' in payload));assert(!('color_cleanup' in payload));
+   servedState.working_revision='rev-002';servedState.inputs_digest='next-draft';
+   servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',draft_digest:'next-draft',
+     background:{settings:payload.background}});
+   servedState.action={name:'effects',running:false,error:null,result:{revision:'rev-002'}};
+ }
+ return originalFetch(path,options);
+};
+$('backgroundHex').value='#243050';$('backgroundVariation').value='55';
+await $('backgroundApply').onclick();
+assert.equal(identity.base_revision,'rev-002');
+assert.equal($('backgroundStatus').textContent,'Saved background · rev-002 · #243050 · variation 55%');
+for(const [id,value] of Object.entries(pending))assert.equal($(id).value,value,'Background discarded '+id);
+for(const id of candidates)assert.equal($(id).checked,true,'Background discarded '+id);
+await $('reload').onclick();
+assert.equal($('shadingWidth').value,'');assert.equal($('shadingCandidate').checked,false);
+assert.equal($('cleanupSupport').value,'revisions/rev-002/supports/support16.png');
+""")
