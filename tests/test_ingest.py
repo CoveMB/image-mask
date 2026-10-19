@@ -312,3 +312,56 @@ def test_unrecognized_dng_cannot_be_imported_as_ordinary_rgb16_tiff():
         pytest.raises(IngestError, match="RAW"),
     ):
         decode_source(buffer.getvalue(), {})
+
+
+def multi_image_jpeg(*, gain_map=False):
+    """Build two actual JPEG payloads and an MPF directory, without photo assets."""
+    buffer = io.BytesIO()
+    options = {}
+    if gain_map:
+        options["xmp"] = (
+            b'<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+            b'<rdf:Description xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" '
+            b'hdrgm:Version="1.0"/></x:xmpmeta>'
+        )
+    Image.new("RGB", (8, 6), (20, 80, 160)).save(
+        buffer,
+        format="MPO",
+        save_all=True,
+        append_images=[Image.new("RGB", (8, 6), (100, 100, 100))],
+        **options,
+    )
+    return buffer.getvalue()
+
+
+def test_mpo_rejection_names_actual_format_and_recovery():
+    data = multi_image_jpeg()
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.format == "MPO" and image.n_frames == 2
+    with pytest.raises(IngestError, match="Multi-frame MPO.*single-image SDR JPEG/PNG8"):
+        decode_source(data, {"assume_srgb": True})
+
+
+def test_gain_map_jpeg_cannot_silently_become_an_sdr_master():
+    data = multi_image_jpeg(gain_map=True)
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.format == "JPEG" and getattr(image, "n_frames", 1) == 1
+        assert image._getmp()[0xB001] == 2
+    with pytest.raises(
+        IngestError, match="Multi-image JPEG.*Ultra HDR.*single-image SDR JPEG/PNG8"
+    ):
+        decode_source(data, {"assume_srgb": True})
+
+
+def test_animated_png_rejection_names_actual_format_and_recovery():
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 6), (20, 80, 160)).save(
+        buffer,
+        format="PNG",
+        save_all=True,
+        append_images=[Image.new("RGB", (8, 6), (100, 100, 100))],
+    )
+    with Image.open(io.BytesIO(buffer.getvalue())) as image:
+        assert image.format == "PNG" and image.n_frames == 2
+    with pytest.raises(IngestError, match="Multi-frame PNG.*single-image SDR JPEG/PNG8"):
+        decode_source(buffer.getvalue(), {"assume_srgb": True})

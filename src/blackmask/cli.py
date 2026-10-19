@@ -34,7 +34,7 @@ def doctor(path: Path, model_cache: Path | None = None, model: str = "sam") -> d
         "reserve_bytes": 10 * 1024**3,
         "models": (verify_sam(model_cache) if model == "sam" else verify_vitmatte(model_cache))
         if model_cache is not None
-        else "pass --model-cache to verify pinned SAM assets",
+        else f"pass --model-cache to verify pinned {'SAM' if model == 'sam' else 'ViTMatte'} assets",
         "auto_device": "cpu",
         "backend": "CPU float32 baseline; explicit MPS is diagnostic for SAM and ViTMatte",
     }

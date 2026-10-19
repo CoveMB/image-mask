@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from test_ingest import tiff
 
 from blackmask.ingest import srgb_profile
@@ -140,3 +141,11 @@ def test_cli_recorded_known_only_journey_and_explicit_review_controls(tmp_path):
     exported = run("export", project)
     assert exported.returncode == 0, exported.stderr
     assert Path(json.loads(exported.stdout)["directory"]).is_dir()
+
+
+@pytest.mark.parametrize("model,label", [("sam", "SAM"), ("vitmatte", "ViTMatte")])
+def test_doctor_missing_cache_hint_names_selected_model(tmp_path, model, label):
+    completed = run("doctor", "--project", tmp_path, "--model", model)
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    assert report["models"] == f"pass --model-cache to verify pinned {label} assets"
