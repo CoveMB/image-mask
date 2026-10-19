@@ -197,14 +197,14 @@ correction is warranted, record that limitation rather than changing good detail
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
    success in computation alone does not mean the photograph improved.
-7. If cleanup, shading or Local exposure was enabled, changed alpha can make it
+7. If cleanup, shading, Local exposure or Shadow fade was enabled, changed alpha can make it
    **STALE** and switch comparisons to labelled BASE views. Before accepting or
    exporting the current appearance, rebuild each stale effect from its reviewed
    support/protection or explicitly disable it: **Explicitly disable cleanup**,
-   **Explicitly disable shading**, or **Reset exposure**. Follow the existing
+   **Explicitly disable shading**, **Reset exposure**, or **Reset Shadow fade**. Follow the existing
    [cleanup recovery](#compare-accept-and-export),
    [shading recovery](#protected-inward-shading) and
-   [exposure recovery](#local-exposure) instructions; an amount/opacity change alone
+   [exposure recovery](#local-exposure) and [fade recovery](#shadow-fade) instructions; an amount/opacity change alone
    does not rebuild an alpha dependency. Earlier accepted results/exports stay saved.
 8. Compare source, prior saved result and current result on the same native crop,
    with overlays off, on black/gray/white and alpha. Check the corrected background,
@@ -255,7 +255,7 @@ Compare the same native crop at 0%, 12% and 24% with the preview selector. Label
 show the displayed revision, effective opacity, encoded sRGB, width, cleanup
 and baked RGB8 preview precision. BASE and stale views label all optional effects OFF. These are
 comparison strengths, not defaults or photographic approval. The BASE checkbox
-turns cleanup, local exposure and shading off. The global opacity button reuses saved W
+turns cleanup, local exposure, Shadow fade and shading off. The global opacity button reuses saved W
 without a model or mask rebuild; it does not change geometry/protection. Explicit
 disable preserves saved layers. Rebuilding one effect never rebuilds the other.
 
@@ -301,7 +301,7 @@ or restore captured sharpness. Final photographic acceptance remains your decisi
    separately. Repeated application starts from unexposed RGB, so it never stacks
    exposure on previous exposure.
 5. **Compare exposure OFF** previews the same alpha with saved cleanup/shading
-   retained. Source/alpha views are unaffected; the BASE checkbox turns all
+   retained, with Shadow fade recalculated from the exposure-OFF input. Source/alpha views are unaffected; the BASE checkbox turns all
    optional effects off. Comparison is read-only. Check native black/gray/white
    views, feather edges, noise and highlights. The clipping count is affected
    pixels with at least one channel above linear white before clamping, over
@@ -318,3 +318,40 @@ CLI/assistant requests use the same `run PROJECT --request FILE` effects operati
 See [the local exposure file contract](file-contract.md#optional-local-exposure)
 for authored/scalar inputs, strict field rules, scope coverage and reconstruction.
 The exposure-only comparison is distinct from all-effects-off BASE comparison.
+
+
+## Shadow fade
+
+Use **Shadow fade** for soft interior subject fading independently of Local exposure.
+It works offline with saved layers and never runs a model. Keep any accepted exposure
+adjustment; fade has its own area, settings, protection, comparison and reset.
+
+1. Complete the matte/repair and load the working native view. Choose **Canvas
+   authoring mode → Shadow fade area**, then Apply/Protect and Brush/Rectangle.
+   Softness is inward feather in native pixels on Apply shapes; Protect is hard.
+   For a non-drag route, enter half-open native rectangle coordinates and click
+   **Add fade rectangle**. Review, remove or clear draft shapes. Saved locks apply too.
+2. Set **Amount** and **Preserve highlights** with sliders or numeric percentages.
+   Amount 100% gives at most six stops of linear-light darkening. Highlight
+   preservation is tonal: explicitly protect dim hairs, saturated petals and
+   translucent detail. It cannot recognize detail or restore absent capture data.
+3. For an unaccepted complete candidate, explicitly check candidate comparison.
+   **Apply / replace fade area** saves the one area and removes the old one.
+   **Apply fade amount to saved area** changes settings using saved operands only;
+   pending area edits remain unsaved. Settings apply afresh without compounding.
+4. **Compare Shadow fade OFF** retains cleanup, exposure and shading. **Compare
+   exposure OFF** retains fade, recalculated from exposure-OFF RGB. BASE disables
+   every optional effect; selecting a comparison clears the others. Inspect the
+   same native crop on black/gray/white and alpha. Source and alpha stay unchanged.
+5. **Reset Shadow fade** saves OFF / 0% and retains the saved area, other effects
+   and pending area edits. Reload discards unsaved area edits and loads saved geometry.
+   Scalar-input areas remain usable for amount changes even without authored shapes.
+6. If alpha changed, rebuild fade or reset it. Each other stale effect needs its
+   own rebuild/disable before accepting or exporting appearance. Prepared revisions
+   still need explicit trimap review and completed matte; acceptance is separate.
+7. Export a labelled draft and preserve selected, unfaded, unexposed, base and source
+   RGB16 plus alpha, independent settings/support/protection and any shading W16.
+   The selected foreground already contains fade and exposure once. Follow the
+   [saved-layer replay order](file-contract.md#optional-shadow-fade); never apply
+   fade a second time to the selected export. Decide photographic acceptance only
+   after native inspection; synthetic checks cannot supply that decision.

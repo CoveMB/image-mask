@@ -421,26 +421,27 @@ Request, draft, source, parent, area and protection inputs are rechecked before
 atomic publication under the canonical writer lock. Accepted state is unchanged.
 
 Selection order is original saved foreground, optional saved cleanup, local
-exposure, existing encoded-sRGB shading, alpha composition. For eligible pixels,
+exposure, optional Shadow fade, existing encoded-sRGB shading, alpha composition. For eligible pixels,
 decode sRGB to linear RGB, multiply by `2 ** (ev * support16 / 65535)`, clamp to
 [0,1], encode to sRGB and quantize once with float64/ties-to-even RGB16.
 The sRGB thresholds are .04045 (decode) and .0031308 (encode). Alpha does not
 scale the exposure gain. Zero-alpha, zero-support and protected RGB are exact;
 alpha never changes. OFF and 0 EV take exact identity paths. Exposure always
 starts from the unexposed saved layers and cannot compound on repeated requests.
-Saved RGB locks snapshot selected exposure RGB and exclude those pixels from
-subsequent exposure. Prepare/matte/repair retain operands; changed alpha makes
+Saved RGB locks snapshot selected pre-shading RGB, including exposure and fade,
+and exclude those pixels from subsequent exposure and fade. Prepare/matte/repair retain operands; changed alpha makes
 enabled exposure stale until explicit rebuild or disable. Any stale enabled
 effect produces a labelled BASE comparison; acceptance/export is blocked.
 
 Review metadata reports `local_exposure_clipping`: `clipped_pixels` counts
 eligible pixels with any *unclamped* linear channel above 1; `eligible_pixels`
-counts nonzero-area, nonzero-alpha, unprotected pixels. These are warnings, not a
+counts nonzero-area, nonzero-alpha, unprotected pixels. Counts use cleanup-selected
+RGB before exposure and before fade; downstream fading cannot hide clipping. These are warnings, not a
 quality score or a promise of highlight recovery. A current review also exposes
 `local_exposure_stale` and the effect record with clipping. The viewer reuses saved
 clipping metadata rather than reprocessing the photograph on every status poll.
-`/image/.../exposure-off` selects the unexposed foreground while retaining saved
-cleanup and shading; `/base` disables all optional effects. Source and alpha
+`/image/.../exposure-off` recomputes fade from exposure-OFF RGB, retaining saved
+cleanup, fade and shading; `/base` disables all optional effects. Source and alpha
 panels remain unaffected. Comparison creates no revision.
 
 When exposure is present, exports retain selected `foreground_rgb16.tif`,
@@ -448,8 +449,90 @@ When exposure is present, exports retain selected `foreground_rgb16.tif`,
 `exposure_support16.png`, `exposure_protection16.png`,
 `exposure_alpha16.png`, `exposure_settings.json`, and authored
 `exposure_area.json` where present. Shading W16/opacity remain independent.
-Reconstruct by applying the recorded exposure once to unexposed foreground,
-then the existing shading/alpha renderer. The selected foreground already
+The unexposed export remains cleanup-selected RGB before both exposure and fade.
+Reconstruct by applying exposure once, then optional fade once, then the existing
+shading/alpha renderer. The selected foreground already
 contains exposure; applying it again would be incorrect. Reduced-precision
 views remain explicitly labelled. Restore selects immutable saved inputs without
 changing final acceptance; no model inference or download is involved.
+
+
+## Optional Shadow fade
+
+The optional schema-1 recipe section `shadow_fade` has exactly `enabled` (strict
+boolean), `amount` and `preserve_highlights` (finite int/float, excluding booleans,
+in [0,1]). Defaults are OFF / 0 / 1. Either this section or `local_exposure` may
+be absent independently. Missing means OFF in memory; read/reopen never rewrites
+legacy root or immutable recipe bytes. Existing revisions stay recoverable through
+explicit restore. Older applications are not promised forward compatibility with
+new effect records; preserve a separate pre-extension project for older binaries.
+Never strip a new effect record to force an older reader to accept it.
+
+A separate schema-1 `effects` operation uses the common identities,
+`scope_xyxy`, `candidate_comparison` and `shadow_fade`. It cannot mutate another
+effect. An enabled rebuild takes exactly one area source: `shadow_fade_area`
+with the same strict `regions`/`protection` support shapes as exposure, or
+`support_file` plus `shadow_fade_protection_file` (registered scalar16 support and
+categorical16/8 protection). Stable IDs are unique across both shape lists;
+protection feather is zero. Saved guide protection and RGB/alpha locks always
+join explicit protection. Rebuild replaces the area and explicit protection;
+scope must cover both old and new nonzero support, including removed regions.
+`shadow_fade_amount_only=true` changes settings using saved current operands and
+rejects replacement fields. Enabled selections need nonempty eligible pixels,
+even at amount 0. Explicit disable works without a previous area and with stale
+alpha; it retains saved operands. UI whole-adjustment requests use full-image scope.
+
+Fade follows cleanup and local exposure, before encoded-sRGB shading and alpha.
+Start every render from unfaded RGB16, never from flattened or previously faded
+pixels. Decode normalized sRGB with threshold .04045. In float64, compute linear
+luminance `Y = .2126 R + .7152 G + .0722 B`, `t = clip((Y-.10)/.65,0,1)`,
+`h = t*t*(3-2*t)`, `w = (support16/65535)*(1-preserve_highlights*h)` and
+`gain = 2**(-6*amount*w)`. Multiply linear RGB by gain, encode at threshold
+.0031308 and quantize once with ties-to-even RGB16. OFF, amount 0, zero effective
+weight, zero alpha, zero support and protected RGB take exact copy paths. Alpha
+only gates eligibility; partial alpha does not scale the gain and never changes.
+Full amount is at most six stops, not guaranteed black. Full preservation leaves
+Y>=.75 exact; saturated low-luminance or dim detail still needs explicit protection.
+No detail synthesis, alpha erosion or new compositing mode occurs.
+
+Immutable `effects/shadow-fade/` contains `support16.png`, `protection16.png`,
+`alpha16.png`, `settings.json`, and optional `area.json`. Every asset and the
+revision's `base_alpha16.png` are manifest-bound, including prepared revisions.
+The optional manifest `shadow_fade` record has exactly `schema_version=1`,
+`enabled`, `settings`, `stale`, `source_id`,
+`algorithm="linear-srgb-shadow-fade-v1"`, `scope_xyxy`, `candidate_comparison`,
+`support_sha256`, `protection_sha256`, `alpha_sha256`, `area_sha256` (null for
+scalar input). Settings JSON equals the record. Hashes, types, dimensions,
+categorical protection, geometry equality and stale/dependency status validate
+even OFF. Unbound area files reject before warm-cache return. Bounded semantic
+caches retain no image arrays and never bypass current asset hashing.
+
+Prepare retains operands; matte/repair recompute alpha staleness and union new RGB
+locks into protection. RGB locks save the selected pre-shading appearance and
+cannot receive fade twice. Changed upstream cleanup/exposure settings recompute
+luminance from current unfaded RGB; there is no cached tonal mask to rebind.
+Changed alpha makes enabled fade stale until explicit rebuild or disable.
+Any stale enabled effect disables all optional effects in labelled BASE comparisons
+and blocks final acceptance/export. Recover each stale effect independently.
+Writes use the shared nonblocking project lock, staged complete revision and
+state-last atomic pointer update, with snapshot rechecks before publication and
+pointer replacement. Interrupted pointer replacement may retain a complete orphan;
+only state is authoritative. Explicit restore/retry preserves accepted work.
+
+`shadow_fade_off=true` in layer selection and `/image/.../shadow-fade-off` in
+review retain cleanup, exposure and shading. Exposure-OFF retains fade and
+recomputes its weighting from exposure-OFF RGB. BASE disables all optional effects.
+The UI selects one comparison at a time. Comparison writes no revision.
+Reset saves fade OFF / amount 0, retaining area, other effects and pending area edits.
+
+Exports retain selected `foreground_rgb16.tif` (exposure and fade applied once),
+`unfaded_foreground_rgb16.tif` (cleanup+exposure),
+`unexposed_foreground_rgb16.tif` (cleanup before both exposure and fade),
+`base_foreground_rgb16.tif`, source/alpha and all existing exposure/shading operands.
+Fade operands are `shadow_fade_support16.png`, `shadow_fade_protection16.png`,
+`shadow_fade_alpha16.png`, `shadow_fade_settings.json`, optional
+`shadow_fade_area.json`. Replay unexposed -> exposure once -> unfaded -> fade once
+-> selected -> encoded-sRGB shading/alpha once. Alternatively render selected RGB
+directly with shading/alpha; applying fade again is incorrect. RGB8/RGBA8 views
+remain reduced-precision, with baked shading labelled. Retain all dependencies;
+saved-only reopen/reconstruction needs no models, original locator or network.

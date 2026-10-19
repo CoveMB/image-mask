@@ -217,9 +217,15 @@ def review_project(
             "local_exposure"
         ].get("stale"):
             stale.append("local_exposure_stale")
+        if revision_manifest.get("shadow_fade", {}).get("enabled") and revision_manifest[
+            "shadow_fade"
+        ].get("stale"):
+            stale.append("shadow_fade_stale")
         from .exposure import selected_exposure
 
-        unexposed = saved_layers(project, revision, state["master_id"], exposure_off=True)[0]
+        unexposed = saved_layers(
+            project, revision, state["master_id"], exposure_off=True, shadow_fade_off=True
+        )[0]
         _, clipping = selected_exposure(
             _asset(project, f"revisions/{revision}"),
             unexposed,
@@ -233,6 +239,13 @@ def review_project(
                 if effects_stale(revision_manifest)
                 or not revision_manifest["local_exposure"]["enabled"]
                 else f"; local exposure ON {revision_manifest['local_exposure']['settings']['ev']} EV"
+            )
+        if "shadow_fade" in revision_manifest:
+            record["label"] += (
+                "; Shadow fade OFF"
+                if effects_stale(revision_manifest)
+                or not revision_manifest["shadow_fade"]["enabled"]
+                else "; Shadow fade ON"
             )
         if effects_stale(revision_manifest):
             record["label"] += (
@@ -258,7 +271,10 @@ def review_project(
                 "local_exposure": f"{prefix}/effects/exposure/settings.json"
                 if "local_exposure" in revision_manifest
                 else None,
-                "foreground_selection": "base, optional cleanup, local exposure once; shading at render",
+                "shadow_fade": f"{prefix}/effects/shadow-fade/settings.json"
+                if "shadow_fade" in revision_manifest
+                else None,
+                "foreground_selection": "base, optional cleanup, local exposure once, Shadow fade once; shading at render",
                 "base_foreground_rgb16": f"{prefix}/foreground_rgb16.tif",
                 "alpha16": f"{prefix}/base_alpha16.png",
                 "before_manifest": f"{prefix}/review-before/manifest.json"
@@ -270,6 +286,9 @@ def review_project(
             qa=_read_json(project, f"{prefix}/qa.json"),
             effects={
                 "available": True,
+                "shadow_fade": revision_manifest.get(
+                    "shadow_fade", {"enabled": False, "stale": False}
+                ),
                 "color_cleanup": revision_manifest.get(
                     "color_cleanup", {"enabled": False, "stale": False}
                 ),

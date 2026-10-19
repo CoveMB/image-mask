@@ -222,7 +222,7 @@
         <canvas
           id="canvas"
           tabindex="0"
-          aria-label="Source and result; native-coordinate guide or Local exposure authoring. Numeric alternatives in each section."
+          aria-label="Source and result; native-coordinate guide, Local exposure or Shadow fade authoring. Numeric alternatives in each section."
         ></canvas>
       </div>
     </section>
@@ -363,13 +363,13 @@
         <label><input id="cleanupCandidate" type="checkbox" /> Explicitly compare cleanup on an unaccepted complete candidate</label>
         <button id="cleanupApply">Enable / rebuild within declared support</button>
         <button id="cleanupDisable">Explicitly disable cleanup</button>
-        <label><input id="cleanupBase" type="checkbox" /> Compare BASE with cleanup, local exposure and shading OFF (same alpha)</label>
+        <label><input id="cleanupBase" type="checkbox" /> Compare BASE with cleanup, local exposure, Shadow fade and shading OFF (same alpha)</label>
         <p id="cleanupStatus" class="small" role="status"></p>
       </fieldset>
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="exposure">Local exposure area</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -385,10 +385,35 @@
         <button id="exposureApply">Apply / replace exposure area</button>
         <button id="exposureAmount">Apply amount to saved area</button>
         <button id="exposureReset">Reset exposure (OFF / 0 EV)</button>
-        <label><input id="exposureCompare" type="checkbox" /> Compare exposure OFF (keep saved cleanup and shading)</label>
+        <label><input id="exposureCompare" type="checkbox" /> Compare exposure OFF (keep cleanup and shading; recalculate Shadow fade)</label>
         <p id="exposureStatus" role="status" class="small"></p>
         <p id="exposureDraftStatus" role="status" class="small"></p>
         <p class="small">Amount changes use only the saved area and protections; pending area edits stay unsaved. Reset retains the recoverable saved area. Clipped pixels count pixels with any channel above linear white before clipping, not photographic quality. Exposure cannot recover detail absent from the matte.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Shadow fade</legend>
+        <p class="small">One independent, reversible soft-area fade. Darkens existing subject RGB by up to six stops in linear light; alpha is unchanged. Highlight preservation is tonal, not detail recognition. Protect dim hairs, saturated petals and translucent detail explicitly.</p>
+        <label>Fade drawing <select id="fadeRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
+        <label>Fade shape <select id="fadeShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+        <label>Fade brush radius (native pixels) <input id="fadeRadius" type="number" min="1" step="1" value="10" /></label>
+        <label>Softness (inward feather, native pixels; Apply only) <input id="fadeFeather" type="number" min="0" step="1" value="0" /></label>
+        <label>Fade numeric rectangle x0,y0,x1,y1 <input id="fadeRectangle" class="wide" /></label>
+        <button id="fadeAddRectangle">Add fade rectangle</button>
+        <label>Draft fade shapes <select id="fadeRegions" class="wide" size="4"></select></label>
+        <button id="fadeRemove">Remove fade shape</button>
+        <button id="fadeClear">Clear draft fade area</button>
+        <label>Amount (%) <input id="fadeRange" type="range" min="0" max="100" step="1" value="0" /></label>
+        <label>Amount (numeric %) <input id="fadeAmount" type="number" min="0" max="100" step="1" value="0" /></label>
+        <label>Preserve highlights (%) <input id="fadePreserveRange" type="range" min="0" max="100" step="1" value="100" /></label>
+        <label>Preserve highlights (numeric %) <input id="fadePreserve" type="number" min="0" max="100" step="1" value="100" /></label>
+        <label><input id="fadeCandidate" type="checkbox" /> Explicitly compare fade on an unaccepted candidate</label>
+        <button id="fadeApply">Apply / replace fade area</button>
+        <button id="fadeAmountApply">Apply fade amount to saved area</button>
+        <button id="fadeReset">Reset Shadow fade (OFF / 0%)</button>
+        <label><input id="fadeCompare" type="checkbox" /> Compare Shadow fade OFF (keep cleanup, exposure and shading)</label>
+        <p id="fadeStatus" role="status" class="small"></p>
+        <p id="fadeDraftStatus" role="status" class="small"></p>
+        <p class="small">Choose Shadow fade area in Canvas authoring mode above. Amount/reset use the saved area and keep pending area edits unsaved. Replacement includes removal of the old area. Reload discards unsaved area edits and loads saved geometry. Exposure remains independently editable. No model or internet needed.</p>
       </fieldset>
       <fieldset>
         <legend>Optional protected inward shading</legend>
@@ -445,6 +470,7 @@
       dirty = false,
       pendingSaved = false;
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
+    let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let image = null,
       overlayImage = null,
       crop = null,
@@ -675,6 +701,13 @@
       $("exposureRange").value = $("exposureEV").value;
       $("exposureCandidate").checked = false;
       renderExposureArea();
+      if (!fadeDirty) fadeArea = structuredClone(currentExposure?.shadow_fade_area || {regions: [], protection: []});
+      $("fadeAmount").value = (currentExposure?.shadow_fade?.settings?.amount ?? 0) * 100;
+      $("fadeRange").value = $("fadeAmount").value;
+      $("fadePreserve").value = (currentExposure?.shadow_fade?.settings?.preserve_highlights ?? 1) * 100;
+      $("fadePreserveRange").value = $("fadePreserve").value;
+      $("fadeCandidate").checked = false;
+      renderFadeArea();
       $("candidate").value = "";
       identity = {
         master_id: state.master_id,
@@ -776,7 +809,14 @@
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
       if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;
-      if (completed) exposureAreaPublished = false;
+      if (reload || (completed && !a.error && fadeAreaPublished)) fadeDirty = false;
+      if (completed) { exposureAreaPublished = false; fadeAreaPublished = false; }
+      const savedFade = current?.shadow_fade;
+      $("fadeStatus").textContent = savedFade?.enabled
+        ? savedFade.stale ? "Saved Shadow fade STALE · BASE comparison; rebuild area or reset; every other stale effect still needs recovery"
+          : "Saved Shadow fade ON · amount " + Math.round(savedFade.settings.amount * 100) + "% · preserve highlights " + Math.round(savedFade.settings.preserve_highlights * 100) + "%" + (current.final_acceptable ? " · complete" : " · prepared; complete matte before appearance review")
+        : "Saved Shadow fade OFF";
+      renderFadeArea();
       const savedExposure = current?.local_exposure;
       $("exposureStatus").textContent = savedExposure?.enabled
         ? savedExposure.stale ? "Saved local exposure STALE · BASE comparison; rebuild area or reset before export/acceptance"
@@ -867,12 +907,14 @@
         "cleanupApply",
         "cleanupDisable",
         "exposureApply", "exposureAmount", "exposureReset",
+        "fadeApply", "fadeAmountApply", "fadeReset",
       ]) {
         $(id).disabled = authoringBusy();
       }
       for (const element of $("groups").querySelectorAll("input,select"))
         element.disabled = authoringBusy();
       for (const id of [
+        "fadeRole", "fadeShape", "fadeRadius", "fadeFeather", "fadeRectangle", "fadeAddRectangle", "fadeRemove", "fadeClear",
         "authorMode", "exposureRole", "exposureShape", "exposureRadius", "exposureFeather", "exposureRectangle", "exposureAddRectangle", "exposureRemove", "exposureClear",
         "addGroup",
         "addGeometry",
@@ -896,11 +938,12 @@
       if (panel === "alpha") return "Alpha8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       const viewed = state.revisions.find(r => r.revision === revision),
         working = state.revisions.find(r => r.revision === state.working_revision);
-      const stale = record => ["color_cleanup", "shading", "local_exposure"].some(name => record?.[name]?.enabled && record[name].stale);
+      const stale = record => ["color_cleanup", "shading", "local_exposure", "shadow_fade"].some(name => record?.[name]?.enabled && record[name].stale);
       const isStale = stale(viewed) || stale(working);
-      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE · cleanup OFF · local exposure OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
+      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE · cleanup OFF · local exposure OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
-      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · local exposure " + exposure;
+      const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
+      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · local exposure " + exposure + " · Shadow fade " + fade + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
       if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF";
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
@@ -920,6 +963,7 @@
           : "");
       const key = [
         $("exposureCompare").checked,
+        $("fadeCompare").checked,
         panel,
         revision,
         requestedCrop.join(","),
@@ -943,7 +987,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.master_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("exposureCompare").checked ? "/exposure-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = await bitmap(path);
         if (imageKey !== key) return;
         if (mask && workingRevision)
@@ -1006,9 +1050,10 @@
         );
         ctx.globalAlpha = 1;
       }
-      if ($("overlay").value === "guides" || $("authorMode").value === "exposure") {
-        const drawnRegions = $("authorMode").value === "exposure"
-          ? [...exposureArea.regions.map(r => ({...r, role: "support"})), ...exposureArea.protection.map(r => ({...r, role: "lock"}))] : regions;
+      if ($("overlay").value === "guides" || ["exposure", "fade"].includes($("authorMode").value)) {
+        const area = $("authorMode").value === "fade" ? fadeArea : exposureArea;
+        const drawnRegions = ["exposure", "fade"].includes($("authorMode").value)
+          ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions;
         for (const region of drawnRegions) {
           ctx.strokeStyle = {
             keep: "#6f6",
@@ -1117,24 +1162,30 @@
       markDirty();
       renderRegions();
     }
-    function renderExposureArea() {
-      select("exposureRegions", ["regions", "protection"].flatMap(kind => exposureArea[kind].map(r => [kind + ":" + r.id, (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
-      $("exposureDraftStatus").textContent = (exposureDirty ? "Unsaved exposure area edits" : "Saved exposure area loaded") + " · apply shapes " + exposureArea.regions.length + ", protection shapes " + exposureArea.protection.length + ". Matting guides are independent.";
+    function renderEffectArea(prefix, area, unsaved, title) {
+      select(prefix + "Regions", ["regions", "protection"].flatMap(kind => area[kind].map(r => [kind + ":" + r.id, (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
+      $(prefix + "DraftStatus").textContent = (unsaved ? "Unsaved " : "Saved ") + title + " area" + " · apply shapes " + area.regions.length + ", protection shapes " + area.protection.length + ". Matting guides and other effects are independent.";
     }
-    function addExposureRegion(geometry, shape = $("exposureShape").value) {
-      if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before exposure authoring");
-      const kind = $("exposureRole").value, [w, h] = state.dimensions_wh;
-      const feather = kind === "protection" ? 0 : Number($("exposureFeather").value);
-      const radius = Number($("exposureRadius").value);
+    function renderExposureArea() { renderEffectArea("exposure", exposureArea, exposureDirty, "exposure"); }
+    function renderFadeArea() { renderEffectArea("fade", fadeArea, fadeDirty, "Shadow fade"); }
+    function addEffectRegion(prefix, geometry, shape) {
+      if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before area authoring");
+      const kind = $(prefix + "Role").value, [w, h] = state.dimensions_wh;
+      const feather = kind === "protection" ? 0 : Number($(prefix + "Feather").value);
+      const radius = Number($(prefix + "Radius").value);
       if (!Number.isInteger(feather) || feather < 0 || feather > Math.max(w,h)) throw Error("Use a valid native inward feather");
       if (shape === "stroke" && (!Number.isInteger(radius) || radius < 1 || radius > Math.max(w,h))) throw Error("Use a valid native brush radius");
-      const region = {id: "exposure-" + crypto.randomUUID().slice(0,8), role: "support", shape, feather_px: feather};
+      const region = {id: prefix + "-" + crypto.randomUUID().slice(0,8), role: "support", shape, feather_px: feather};
       if (shape === "rectangle") region.xyxy = geometry;
       else { region.points = geometry; region.radius_px = radius; }
-      exposureArea[kind].push(region);
-      exposureDirty = true;
-      renderExposureArea(); draw();
+      const area = prefix === "fade" ? fadeArea : exposureArea;
+      area[kind].push(region);
+      if (prefix === "fade") { fadeDirty = true; renderFadeArea(); }
+      else { exposureDirty = true; renderExposureArea(); }
+      draw();
     }
+    function addExposureRegion(geometry, shape = $("exposureShape").value) { addEffectRegion("exposure", geometry, shape); }
+    function addFadeRegion(geometry, shape = $("fadeShape").value) { addEffectRegion("fade", geometry, shape); }
     async function exposure(enabled, replaceArea) {
       requireSaved();
       if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing exposure");
@@ -1147,6 +1198,44 @@
       try { return await action("effects", fields); }
       catch(error) { exposureAreaPublished = false; throw error; }
     }
+    async function shadowFade(enabled, replaceArea) {
+      requireSaved();
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing Shadow fade");
+      const amount = enabled ? Number($("fadeAmount").value) / 100 : 0;
+      const preserve = Number($("fadePreserve").value) / 100;
+      if ((enabled && String($("fadeAmount").value).trim() === "") || String($("fadePreserve").value).trim() === "" || !Number.isFinite(amount) || !Number.isFinite(preserve) || amount < 0 || amount > 1 || preserve < 0 || preserve > 1) throw Error("Use finite Amount and Preserve highlights percentages in [0,100]");
+      const fields = {scope_xyxy: [0,0,...state.dimensions_wh], shadow_fade: {enabled, amount, preserve_highlights: preserve}, candidate_comparison: $("fadeCandidate").checked};
+      if (replaceArea) fields.shadow_fade_area = structuredClone(fadeArea);
+      else if (enabled) fields.shadow_fade_amount_only = true;
+      fadeAreaPublished = replaceArea;
+      try { return await action("effects", fields); }
+      catch(error) { fadeAreaPublished = false; throw error; }
+    }
+    $("fadeAddRectangle").onclick = guarded(() => addFadeRegion(bounds("fadeRectangle"), "rectangle"));
+    $("fadeRemove").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const [kind, id] = $("fadeRegions").value.split(":");
+      if (!id) return;
+      fadeArea[kind] = fadeArea[kind].filter(r => r.id !== id);
+      fadeDirty = true; renderFadeArea(); draw();
+    });
+    $("fadeClear").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      fadeArea = {regions: [], protection: []}; fadeDirty = true; renderFadeArea(); draw();
+    });
+    $("fadeApply").onclick = guarded(() => shadowFade(true, true));
+    $("fadeAmountApply").onclick = guarded(() => shadowFade(true, false));
+    $("fadeReset").onclick = guarded(() => shadowFade(false, false));
+    $("fadeRange").oninput = () => { $("fadeAmount").value = $("fadeRange").value; };
+    $("fadeAmount").oninput = () => { $("fadeRange").value = $("fadeAmount").value; };
+    $("fadePreserveRange").oninput = () => { $("fadePreserve").value = $("fadePreserveRange").value; };
+    $("fadePreserve").oninput = () => { $("fadePreserveRange").value = $("fadePreserve").value; };
+    function compareChanged(id) {
+      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare"]) if (other !== id) $(other).checked = false;
+      if (id !== "shadingPreview") $("shadingPreview").value = "";
+      imageKey = ""; return loadImage();
+    }
+    $("fadeCompare").onchange = guarded(() => compareChanged("fadeCompare"));
     $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
     $("exposureRemove").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
@@ -1164,7 +1253,7 @@
     $("exposureReset").onclick = guarded(() => exposure(false, false));
     $("exposureRange").oninput = () => { $("exposureEV").value = $("exposureRange").value; };
     $("exposureEV").oninput = () => { $("exposureRange").value = $("exposureEV").value; };
-    $("exposureCompare").onchange = guarded(() => { imageKey = ""; return loadImage(); });
+    $("exposureCompare").onchange = guarded(() => compareChanged("exposureCompare"));
     $("authorMode").onchange = () => { gesture = null; draw(); };
     function guarded(fn) {
       return async () => {
@@ -1304,10 +1393,10 @@
     $("shadingApply").onclick = guarded(() => shading(true, false));
     $("shadingOpacityApply").onclick = guarded(() => shading(true, true));
     $("shadingDisable").onclick = guarded(() => shading(false, false));
-    $("shadingPreview").onchange = guarded(() => { imageKey = ""; return refresh(); });
+    $("shadingPreview").onchange = guarded(() => compareChanged("shadingPreview"));
     $("cleanupApply").onclick = guarded(() => cleanup(true));
     $("cleanupDisable").onclick = guarded(() => cleanup(false));
-    $("cleanupBase").onchange = guarded(() => { imageKey = ""; return loadImage(); });
+    $("cleanupBase").onchange = guarded(() => compareChanged("cleanupBase"));
     $("restore").onclick = guarded(() => {
       if (dirty)
         throw Error("Save current authoring first so recovery can preserve it");
@@ -1410,8 +1499,8 @@
       return loadImage();
     });
     canvas.onpointerdown = (event) => {
-      const exposureMode = $("authorMode").value === "exposure";
-      const panMode = event.shiftKey || (!exposureMode && $("shape").value === "pan");
+      const effectMode = ["exposure", "fade"].includes($("authorMode").value) ? $("authorMode").value : null;
+      const panMode = event.shiftKey || (!effectMode && $("shape").value === "pan");
       const point = nativePosition(event);
       if (!panMode && (authoringBusy() || imageLoading)) {
         message(
@@ -1421,7 +1510,7 @@
       }
       if (!panMode && !point) return;
       gesture = {
-        panMode, exposureMode, shape: exposureMode ? $("exposureShape").value : $("shape").value,
+        panMode, effectMode, shape: effectMode ? $(effectMode + "Shape").value : $("shape").value,
         start: [event.clientX, event.clientY],
         pan: [...pan],
         points: point ? [point] : [],
@@ -1462,7 +1551,7 @@
       try {
         const shape = g.shape,
           start = g.points[0];
-        const add = geometry => g.exposureMode ? addExposureRegion(geometry, shape) : addRegion(geometry);
+        const add = geometry => g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
         if (shape === "rectangle") {
           const rectangle = nativeBox(start, end);
           if (rectangle[0] === rectangle[2] || rectangle[1] === rectangle[3])

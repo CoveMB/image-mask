@@ -23,6 +23,19 @@ def validate_exposure(settings: Any) -> None:
         raise ProjectError("Local exposure requires enabled boolean and finite EV in [-3,3]")
 
 
+def srgb_to_linear(encoded: np.ndarray) -> np.ndarray:
+    """Decode normalized sRGB samples in float64."""
+    encoded = encoded.astype(np.float64)
+    return np.where(encoded <= 0.04045, encoded / 12.92, ((encoded + 0.055) / 1.055) ** 2.4)
+
+
+def linear_to_rgb16(linear: np.ndarray) -> np.ndarray:
+    """Encode and quantize once, with NumPy's ties-to-even rounding."""
+    linear = np.clip(linear.astype(np.float64), 0, 1)
+    encoded = np.where(linear <= 0.0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - 0.055)
+    return np.rint(np.clip(encoded, 0, 1) * 65535).astype(np.uint16)
+
+
 def apply_exposure(
     foreground: np.ndarray,
     alpha: np.ndarray,
@@ -52,16 +65,21 @@ def apply_exposure(
     if not settings["enabled"] or settings["ev"] == 0 or not eligible.any():
         return result, counts
     encoded = foreground[eligible].astype(np.float64) / 65535
-    linear = np.where(encoded <= 0.04045, encoded / 12.92, ((encoded + 0.055) / 1.055) ** 2.4)
+    linear = srgb_to_linear(encoded)
     linear *= np.exp2(settings["ev"] * support[eligible].astype(np.float64) / 65535)[:, None]
     counts["clipped_pixels"] = int(np.any(linear > 1, axis=1).sum())
-    linear = np.clip(linear, 0, 1)
-    encoded = np.where(linear <= 0.0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - 0.055)
-    result[eligible] = np.rint(np.clip(encoded, 0, 1) * 65535).astype(np.uint16)
+    result[eligible] = linear_to_rgb16(linear)
     return result, counts
 
 
 def rasterize_exposure_area(
+    area: dict[str, Any], master_id: str, width: int, height: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compatibility entry point for the shared registered area primitive."""
+    return rasterize_effect_area(area, master_id, width, height)
+
+
+def rasterize_effect_area(
     area: dict[str, Any], master_id: str, width: int, height: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Reuse canonical native geometry without changing any matting guides."""
@@ -70,7 +88,7 @@ def rasterize_exposure_area(
         or set(area) != {"regions", "protection"}
         or any(not isinstance(area[name], list) for name in ("regions", "protection"))
     ):
-        raise ProjectError("Exposure area requires regions and protection lists")
+        raise ProjectError("Effect area requires regions and protection lists")
     guides = {
         "schema_version": 1,
         "master_id": master_id,
@@ -82,7 +100,7 @@ def rasterize_exposure_area(
     if any(region["role"] != "support" for region in guides["regions"]) or any(
         region["feather_px"] != 0 for region in area["protection"]
     ):
-        raise ProjectError("Exposure uses support shapes; protection must have zero feather")
+        raise ProjectError("Effect area uses support shapes; protection must have zero feather")
     support = rasterize_regions(dict(guides, regions=area["regions"])).support16
     protection = rasterize_regions(dict(guides, regions=area["protection"])).support16 != 0
     return support, protection

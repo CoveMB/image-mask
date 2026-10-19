@@ -592,3 +592,40 @@ redistributable fixture. No private pixels were uploaded for this reconciliation
    or CPU result substitutes for MPS quality acceptance.
 8. Record unresolved observations and each human decision. Source-development
    approval, test passes and independent review cannot supply regular-use acceptance.
+
+
+## Shadow fade verification
+
+The settled deterministic suite passed **511 tests**, with **3 optional real-model
+checks skipped**; Ruff lint/format and mypy passed. New tests cover the independent
+scalar gain oracle, exact excluded/partial-alpha behavior, default-OFF optional
+recipe combinations, present-null rejection, immutable/warm validation, replaced-area scope, upstream
+recomputation, partial RGB locks through prepare/matte/repair, stale blocking,
+writer/input races, low space and orphan recovery. A fresh process with the original
+locator unavailable and network/inference boundaries forbidden reproduced saved
+selected RGB and export. Exposure clipping stayed 1/1 on a full-white +2 EV pixel
+under full fade. The preexisting encoded shading/alpha equation remains unchanged.
+These checks do not exercise real model inference or establish photo quality.
+
+A 1024×768 arithmetic RGB16 project using an explicit matting test double exercised
+real fade save/export. The measured process peak RSS was **372,326,400 bytes**;
+project files totaled **53,011,122 bytes** after its first export. The setup,
+stub-matte, exposure, fade and export sequence took **2.50 seconds** on the test
+host. These are one synthetic run's values, not full-photo throughput targets or
+OS memory-pressure evidence. The existing reserve plus conservative pending-write
+estimate remains required.
+
+In the actual loopback browser, numeric and pointer rectangle authoring, native
+softness, explicit partial-alpha protection, saved area replacement, amount/highlight
+changes with a dirty area, exclusive fade-OFF/exposure-OFF, reset, reload, labelled
+draft export and keyboard focus were observed. Dirty geometry survived amount/reset
+and export; reload loaded saved geometry. A real second process holding the project
+lock displayed busy state. An old viewed revision rejected adjustment; reload
+recovered the working view. A candidate authorization rejection was resolved by
+explicitly enabling candidate comparison. Automated page checks separately cover
+brush coordinates, transition guards and saved/prepared state.
+
+This is synthetic computational and browser evidence. It does not establish WCAG
+conformance, disconnected-network human operation, a representative flower result,
+human photographic preference or regular-use acceptance. Those remain separate
+manual observations and decisions. No new model, dependency or download was needed.

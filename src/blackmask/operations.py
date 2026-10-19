@@ -205,7 +205,7 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
 
         if effects_stale(manifest):
             raise ProjectError(
-                "Stale enabled cleanup/shading/local exposure: scoped rebuild or explicit disable required before acceptance"
+                "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before acceptance"
             )
         captured = draft_digest(project)
         if (
@@ -387,11 +387,12 @@ def _prepare(
                 (stage / name).write_bytes(
                     _asset(project, f"revisions/{parent}/{name}").read_bytes()
                 )
-    from .effects import inherit_cleanup, inherit_exposure, inherit_shading
+    from .effects import inherit_cleanup, inherit_exposure, inherit_shading, inherit_shadow_fade
 
     cleanup = inherit_cleanup(project, parent, stage, state["master_id"]) if parent else None
     shading = inherit_shading(project, parent, stage, state["master_id"]) if parent else None
     exposure = inherit_exposure(project, parent, stage, state["master_id"]) if parent else None
+    fade = inherit_shadow_fade(project, parent, stage, state["master_id"]) if parent else None
     # RGB8 is a separately labelled proxy. It never becomes a precision output owner.
     proxy = np.rint(pixels.astype(np.float64) / 257).astype(np.uint8)
     cache = model_cache or (
@@ -507,6 +508,7 @@ def _prepare(
         **({"color_cleanup": cleanup} if cleanup is not None else {}),
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
+        **({"shadow_fade": fade} if fade is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
     for path in stage.rglob("*"):
@@ -1030,7 +1032,8 @@ def _matte(
             raise ProjectError("Invalid repair parent foreground RGB16")
     applicable_parent_foreground = foreground
     if repairing and any(
-        manifest.get(name, {}).get("enabled") for name in ("color_cleanup", "local_exposure")
+        manifest.get(name, {}).get("enabled")
+        for name in ("color_cleanup", "local_exposure", "shadow_fade")
     ):
         from .effects import saved_effect_lock_layers
 
@@ -1056,7 +1059,7 @@ def _matte(
             values = tifffile.imread(_asset(project, f"revisions/{rev}/{name}"))
             if any(
                 locked_manifest.get(name, {}).get("enabled")
-                for name in ("color_cleanup", "local_exposure")
+                for name in ("color_cleanup", "local_exposure", "shadow_fade")
             ):
                 from .effects import saved_effect_lock_layers
 
@@ -1207,15 +1210,27 @@ def _matte(
             raise ProjectError("Alpha16 round trip failed")
     if not np.array_equal(tifffile.imread(stage / "foreground_rgb16.tif"), foreground):
         raise ProjectError("Foreground RGB16 round trip failed")
-    from .effects import effects_stale, inherit_cleanup, inherit_exposure, inherit_shading
+    from .effects import (
+        effects_stale,
+        inherit_cleanup,
+        inherit_exposure,
+        inherit_shading,
+        inherit_shadow_fade,
+    )
 
     cleanup = inherit_cleanup(
         project, parent, stage, state["master_id"], alpha, foreground, rgb_protection
     )
     shading = inherit_shading(project, parent, stage, state["master_id"], alpha)
     exposure = inherit_exposure(project, parent, stage, state["master_id"], alpha, rgb_protection)
+    fade = inherit_shadow_fade(project, parent, stage, state["master_id"], alpha, rgb_protection)
     stale_effects = effects_stale(
-        {"color_cleanup": cleanup or {}, "shading": shading or {}, "local_exposure": exposure or {}}
+        {
+            "color_cleanup": cleanup or {},
+            "shading": shading or {},
+            "local_exposure": exposure or {},
+            "shadow_fade": fade or {},
+        }
     )
     review_weight = (
         scalar16(stage / "shadow_weight16.png")
@@ -1234,6 +1249,15 @@ def _matte(
         alpha,
         {"master_id": state["master_id"], **({"local_exposure": exposure} if exposure else {})},
         exposure_off=stale_effects,
+    )
+    from .shadow_fade import selected_shadow_fade
+
+    review_foreground = selected_shadow_fade(
+        stage,
+        review_foreground,
+        alpha,
+        {"master_id": state["master_id"], **({"shadow_fade": fade} if fade else {})},
+        shadow_fade_off=stale_effects,
     )
     write_review(
         stage / "review",
@@ -1260,7 +1284,7 @@ def _matte(
             before_foreground = read_rgb16(
                 _asset(project, f"revisions/{parent}/corrected_rgb16.tif")
             )
-        if exposure and not stale_effects:
+        if (exposure or fade) and not stale_effects:
             from .effects import saved_effect_lock_layers
 
             before_foreground, _, _ = saved_effect_lock_layers(project, parent, state["master_id"])
@@ -1313,6 +1337,17 @@ def _matte(
                 else f"; local exposure {'ON' if exposure['enabled'] else 'OFF'}"
             )
             path.write_bytes(_json_bytes(record))
+    if fade:
+        for review_name in ("review", "review-before") if repairing else ("review",):
+            path = stage / review_name / "manifest.json"
+            record = json.loads(path.read_bytes())
+            record["shadow_fade"] = fade
+            record["label"] += (
+                "; Shadow fade OFF; BASE comparison"
+                if stale_effects
+                else f"; Shadow fade {'ON' if fade['enabled'] else 'OFF'}"
+            )
+            path.write_bytes(_json_bytes(record))
     (stage / "qa.json").write_bytes(
         _json_bytes(
             {
@@ -1336,6 +1371,7 @@ def _matte(
         **({"color_cleanup": cleanup} if cleanup is not None else {}),
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
+        **({"shadow_fade": fade} if fade is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     files = {

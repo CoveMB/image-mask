@@ -441,3 +441,54 @@ def test_failed_poll_releases_refresh_guard_for_the_next_poll():
  globalThis.fetch=originalFetch;await poll();
  assert.equal(authoringBusy(),false);addRegion([10,10]);assert.equal(regions.length,1);
  """)
+
+
+def test_fade_native_area_and_amount_reset_keep_independent_dirty_drafts():
+    run_page(r"""
+await ready();$('authorMode').value='fade';$('fadeRole').value='regions';$('fadeShape').value='rectangle';$('fadeFeather').value='2';
+$('crop').value='20,20,80,80';await $('cropApply').onclick();
+canvas.onpointerdown({clientX:100,clientY:50,pointerId:1,shiftKey:false});
+canvas.onpointerup({clientX:200,clientY:150,pointerId:1});
+assert.deepEqual(fadeArea.regions[0].xyxy,[35,35,65,65]);
+assert.equal(fadeArea.regions[0].feather_px,2);assert.equal(regions.length,0);assert.equal(exposureArea.regions.length,0);
+$('fadeRole').value='protection';$('fadeRectangle').value='40,40,50,50';await $('fadeAddRectangle').onclick();
+assert.equal(fadeArea.protection[0].feather_px,0);
+const draft=JSON.stringify(fadeArea);$('fadeAmount').value='50';$('fadePreserve').value='70';$('fadeCandidate').checked=true;
+await $('fadeAmountApply').onclick();
+assert.equal(posts.at(-1).shadow_fade_amount_only,true);assert(!('shadow_fade_area' in posts.at(-1)));assert(!('local_exposure' in posts.at(-1)));
+assert.deepEqual(posts.at(-1).shadow_fade,{enabled:true,amount:.5,preserve_highlights:.7});
+assert.equal(JSON.stringify(fadeArea),draft);assert.equal(fadeDirty,true);
+servedState.revisions[0].shadow_fade={settings:structuredClone(posts.at(-1).shadow_fade)};actionWasRunning=false;await refresh();$('fadePreserve').value='70';await $('fadeReset').onclick();
+assert.deepEqual(posts.at(-1).shadow_fade,{enabled:false,amount:0,preserve_highlights:.7});
+assert.equal(JSON.stringify(fadeArea),draft);assert.equal(dirty,false);
+""")
+
+
+def test_fade_comparisons_are_mutually_exclusive_and_labels_match_route():
+    run_page(r"""
+await ready();const paths=[];const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{paths.push(path);return originalFetch(path.replace('/shadow-fade-off','').replace('/exposure-off','').replace('/base',''),options);};
+$('panel').value='black';$('cleanupBase').checked=true;await $('cleanupBase').onchange();
+$('fadeCompare').checked=true;await $('fadeCompare').onchange();
+assert.equal($('cleanupBase').checked,false);assert.equal($('exposureCompare').checked,false);
+assert(paths.at(-1).endsWith('/shadow-fade-off'));assert($('shadingStatus').textContent.includes('Shadow fade OFF comparison'));
+$('exposureCompare').checked=true;await $('exposureCompare').onchange();
+assert.equal($('fadeCompare').checked,false);assert(paths.at(-1).endsWith('/exposure-off'));
+assert($('shadingStatus').textContent.includes('fade recalculated'));
+$('cleanupBase').checked=true;await $('cleanupBase').onchange();
+assert.equal($('fadeCompare').checked,false);assert.equal($('exposureCompare').checked,false);assert(paths.at(-1).endsWith('/base'));
+assert.equal(posts.length,0);
+""")
+
+
+def test_fade_rejects_stale_view_and_prepared_reload_recovers_saved_area():
+    run_page(r"""
+servedState.revisions[0].shadow_fade={enabled:true,stale:false,settings:{enabled:true,amount:.35,preserve_highlights:.8}};
+servedState.revisions[0].shadow_fade_area={regions:[{id:'a',role:'support',shape:'rectangle',xyxy:[1,2,40,50],feather_px:2}],protection:[]};
+await ready();assert.equal($('fadeAmount').value,35);assert.equal(fadeArea.regions.length,1);
+$('viewRevision').value='old';await $('fadeAmountApply').onclick();assert.equal(posts.length,0);
+$('viewRevision').value='rev-001';$('authorMode').value='fade';$('fadeShape').value='stroke';$('fadeRole').value='regions';$('fadeRadius').value='3';$('fadeFeather').value='1';
+imageLoading=true;canvas.onpointerdown({clientX:70,clientY:20,pointerId:1,shiftKey:false});canvas.onpointerup({clientX:80,clientY:30,pointerId:1});assert.equal(fadeArea.regions.length,1);
+imageLoading=false;canvas.onpointerdown({clientX:70,clientY:20,pointerId:2,shiftKey:false});canvas.onpointermove({clientX:90,clientY:40});canvas.onpointerup({clientX:90,clientY:40,pointerId:2});assert.equal(fadeArea.regions[1].radius_px,3);
+await $('reload').onclick();assert.equal(fadeArea.regions.length,1);assert.equal(fadeDirty,false);
+""")

@@ -437,6 +437,17 @@ def _validate_exposure_semantics(directory: Path, manifest_bytes: bytes) -> None
     read_exposure(directory, json.loads(manifest_bytes), scalar16(directory / "base_alpha16.png"))
 
 
+@lru_cache(maxsize=128)
+def _validate_shadow_fade_semantics(directory: Path, manifest_bytes: bytes) -> None:
+    """Bound successful checks only; callers must rehash every operand before reuse."""
+    from .repair import scalar16
+    from .shadow_fade import read_shadow_fade
+
+    read_shadow_fade(
+        directory, json.loads(manifest_bytes), scalar16(directory / "base_alpha16.png")
+    )
+
+
 def _validate_revision_directory(
     project: Path, revision: str, master_id: str, directory: str
 ) -> dict[str, Any]:
@@ -457,6 +468,13 @@ def _validate_revision_directory(
         and _asset(project, f"{directory}/effects/exposure/area.json").exists()
     ):
         raise ProjectError("Unbound saved local exposure authored area")
+    record = manifest.get("shadow_fade")
+    if (
+        isinstance(record, dict)
+        and record.get("area_sha256") is None
+        and _asset(project, f"{directory}/effects/shadow-fade/area.json").exists()
+    ):
+        raise ProjectError("Unbound saved Shadow fade authored area")
     validation = _read_validation.get()
     key = (str(project), directory)
     signature = (
@@ -507,6 +525,7 @@ def _validate_revision_directory(
     } <= set(manifest["files"]):
         raise ProjectError("Incomplete repair operands")
     if "local_exposure" in manifest:
+        record = manifest["local_exposure"]
         from .exposure import EXPOSURE_FILES
 
         required_exposure = {"base_alpha16.png"} | {
@@ -521,6 +540,22 @@ def _validate_revision_directory(
         ):
             raise ProjectError("Missing bound local exposure authored area")
         _validate_exposure_semantics(_asset(project, directory), _json_bytes(manifest))
+    if "shadow_fade" in manifest:
+        record = manifest["shadow_fade"]
+        from .shadow_fade import SHADOW_FADE_FILES
+
+        required_fade = {"base_alpha16.png"} | {
+            f"effects/shadow-fade/{name}" for name in SHADOW_FADE_FILES
+        }
+        if not required_fade <= set(manifest["files"]):
+            raise ProjectError("Incomplete Shadow fade assets")
+        if (
+            isinstance(record, dict)
+            and record.get("area_sha256") is not None
+            and "effects/shadow-fade/area.json" not in manifest["files"]
+        ):
+            raise ProjectError("Missing bound Shadow fade authored area")
+        _validate_shadow_fade_semantics(_asset(project, directory), _json_bytes(manifest))
     if (
         validation is not None
         and _revision_signature(project, directory, manifest) == signature

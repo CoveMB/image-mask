@@ -175,3 +175,28 @@ Recovery retains the exact old pointer bytes under `recovery/restore-*/`; the ac
 pointer is marked unreadable and retired. Existing request records are preserved.
 This recovers saved inputs, not missing accepted dependencies; use an independent
 backup for those. Reinspect the restored inputs before processing or accepting.
+
+
+## Shadow fade recovery
+
+An empty enabled selection needs nonzero support over nonzero alpha outside
+protection. Use Apply shapes, then **Apply / replace fade area**; amount-only
+requires a saved area. Changes to Softness/geometry need an area rebuild.
+If a replacement removes old regions, its scope must include both old and new
+support; viewer whole-adjustment actions use full-image scope.
+
+STALE fade means alpha changed. Rebuild its area or **Reset Shadow fade**;
+amount/preserve-only edits cannot refresh alpha. Other stale effects retain their
+own recovery requirement. BASE disables all optional effects while stale and
+acceptance/export remains blocked. Earlier accepted revisions stay retained.
+Reset preserves the saved area and unsaved browser area edits. Reload explicitly
+discards unsaved area edits and restores saved geometry/settings. Busy/stale-view
+errors save no replacement; wait for the writer, reload and recheck the current view.
+
+Clipping warnings belong to exposure before fade. Strong fade can darken displayed
+white while exposure still reports clipping; this is expected. Full highlight
+preservation does not guarantee fine-detail protection. If the result is too dark,
+reduce Amount, raise Preserve highlights, add explicit Protect shapes or reset fade.
+A pointer failure may leave a complete orphan revision; inspect actual working and
+accepted pointers and use existing explicit restore/retry. Do not delete dependencies
+or strip new effect records for use in an older binary.

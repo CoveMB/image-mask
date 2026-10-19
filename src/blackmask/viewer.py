@@ -56,6 +56,8 @@ class ReviewServer(ThreadingHTTPServer):
 
     @_validation_scope()
     def snapshot(self) -> dict[str, Any]:
+        # Capture action first: completion must never be paired with pre-action state.
+        action = dict(self.action)
         state = operations.operation_status(self.project)
         master, _ = _validate_assets(self.project, state, validate_drafts=False)
         height, width = master.shape[:2]
@@ -63,7 +65,7 @@ class ReviewServer(ThreadingHTTPServer):
             dimensions_wh=[width, height],
             source_url=f"/image/source/{state['master_id']}/0,0,{width},{height}",
         )
-        state["action"] = dict(self.action)
+        state["action"] = action
         state["draft_error"] = None
         try:
             state["inputs_digest"] = operations.draft_digest(self.project)
@@ -87,6 +89,13 @@ class ReviewServer(ThreadingHTTPServer):
                     exposure_area = json.loads(
                         _asset(
                             self.project, f"revisions/{path.name}/effects/exposure/area.json"
+                        ).read_bytes()
+                    )
+                fade_area = None
+                if manifest.get("shadow_fade", {}).get("area_sha256"):
+                    fade_area = json.loads(
+                        _asset(
+                            self.project, f"revisions/{path.name}/effects/shadow-fade/area.json"
                         ).read_bytes()
                     )
                 exposure = dict(manifest.get("local_exposure", {"enabled": False, "stale": False}))
@@ -114,6 +123,10 @@ class ReviewServer(ThreadingHTTPServer):
                         "shading": manifest.get("shading", {"enabled": False, "stale": False}),
                         "local_exposure": exposure,
                         "exposure_area": exposure_area,
+                        "shadow_fade": manifest.get(
+                            "shadow_fade", {"enabled": False, "stale": False}
+                        ),
+                        "shadow_fade_area": fade_area,
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
                             for k in ("inferred_tiles", "reused_tiles")
@@ -151,6 +164,10 @@ class ReviewServer(ThreadingHTTPServer):
                 "exposure_area",
                 "exposure_protection_file",
                 "exposure_amount_only",
+                "shadow_fade",
+                "shadow_fade_area",
+                "shadow_fade_protection_file",
+                "shadow_fade_amount_only",
             }
             fields["effects"] |= set(data) & optional
         if action not in fields or set(data) != fields[action] | {
@@ -250,6 +267,10 @@ class ReviewServer(ThreadingHTTPServer):
                         "exposure_area",
                         "exposure_protection_file",
                         "exposure_amount_only",
+                        "shadow_fade",
+                        "shadow_fade_area",
+                        "shadow_fade_protection_file",
+                        "shadow_fade_amount_only",
                     )
                     if k in data
                 }
@@ -267,7 +288,7 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/p(?:0|0.12|0.24))?",
+            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/shadow-fade-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -297,6 +318,7 @@ class ReviewServer(ThreadingHTTPServer):
                 state["master_id"],
                 effects_off=bool(base == "/base" or stale),
                 exposure_off=base == "/exposure-off",
+                shadow_fade_off=base == "/shadow-fade-off",
             )
             weight, opacity = saved_shading(
                 self.project, identity, alpha, manifest, effects_off=bool(base == "/base" or stale)

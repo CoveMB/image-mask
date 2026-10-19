@@ -18,6 +18,10 @@ class Recipe:
 
     local_exposure: dict[str, Any] = field(default_factory=lambda: {"enabled": False, "ev": 0.0})
 
+    shadow_fade: dict[str, Any] = field(
+        default_factory=lambda: {"enabled": False, "amount": 0.0, "preserve_highlights": 1.0}
+    )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": 1,
@@ -29,6 +33,7 @@ class Recipe:
             "color_cleanup": {"enabled": self.cleanup_enabled, "strength": self.cleanup_strength},
             "shading": self.shading,
             "local_exposure": self.local_exposure,
+            "shadow_fade": self.shadow_fade,
         }
 
     @classmethod
@@ -37,7 +42,8 @@ class Recipe:
     ) -> "Recipe":
         expected = cls(master_id).to_dict()
         if (
-            set(value) not in (set(expected), set(expected) - {"local_exposure"})
+            set(value) - {"local_exposure", "shadow_fade"}
+            != set(expected) - {"local_exposure", "shadow_fade"}
             or type(value.get("schema_version")) is not int
             or value["schema_version"] != 1
             or value["master_id"] != master_id
@@ -47,7 +53,9 @@ class Recipe:
             raise ValueError("Invalid recipe keys, schema or master identity")
         from .effects import validate_cleanup, validate_shading
         from .exposure import validate_exposure
+        from .shadow_fade import validate_shadow_fade
 
+        validate_shadow_fade(value.get("shadow_fade", cls(master_id).shadow_fade))
         validate_exposure(value.get("local_exposure", {"enabled": False, "ev": 0.0}))
         validate_cleanup(value["color_cleanup"])
         validate_shading(value["shading"])
@@ -112,4 +120,5 @@ class Recipe:
             float(value["color_cleanup"]["strength"]),
             dict(value["shading"]),
             dict(value.get("local_exposure", {"enabled": False, "ev": 0.0})),
+            dict(value.get("shadow_fade", cls(master_id).shadow_fade)),
         )

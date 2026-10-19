@@ -104,6 +104,7 @@ def saved_layers(
     *,
     effects_off: bool = False,
     exposure_off: bool = False,
+    shadow_fade_off: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     manifest = read_revision(project, revision, master_id)
     if (
@@ -153,6 +154,7 @@ def saved_layers(
         manifest,
         effects_off=effects_off,
         exposure_off=exposure_off,
+        shadow_fade_off=shadow_fade_off,
     )
     return foreground, alpha, manifest
 
@@ -205,12 +207,12 @@ def export_project(
 
         if effects_stale(manifest):
             raise ProjectError(
-                "Stale enabled cleanup/shading/local exposure: scoped rebuild or explicit disable required before export"
+                "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before export"
             )
         weight, opacity = saved_shading(project, revision, alpha, manifest)
         before = _asset(project, "state.json").read_bytes()
         manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
-        check_space(project, foreground.nbytes * 12 + 1024**2)
+        check_space(project, foreground.nbytes * 18 + 1024**2)
         exports = _asset(project, "exports")
         exports.mkdir(exist_ok=True)
         label = f"{revision}-DRAFT" if draft else revision
@@ -235,7 +237,9 @@ def export_project(
                 raise ProjectError("Scalar16 export round trip/profile failed")
         write_master(stage / "foreground_rgb16.tif", foreground)
         if "local_exposure" in manifest:
-            unexposed, _, _ = saved_layers(project, revision, state["master_id"], exposure_off=True)
+            unexposed, _, _ = saved_layers(
+                project, revision, state["master_id"], exposure_off=True, shadow_fade_off=True
+            )
             write_master(stage / "unexposed_foreground_rgb16.tif", unexposed)
             base = _asset(project, f"revisions/{revision}/foreground_rgb16.tif")
             (stage / "base_foreground_rgb16.tif").write_bytes(base.read_bytes())
@@ -249,6 +253,28 @@ def export_project(
                 asset = f"effects/exposure/{name}"
                 if asset in manifest["files"]:
                     (stage / ("exposure_" + name)).write_bytes(
+                        _asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                    )
+        if "shadow_fade" in manifest:
+            unfaded, _, _ = saved_layers(
+                project, revision, state["master_id"], shadow_fade_off=True
+            )
+            write_master(stage / "unfaded_foreground_rgb16.tif", unfaded)
+            if "local_exposure" not in manifest:
+                write_master(stage / "unexposed_foreground_rgb16.tif", unfaded)
+                (stage / "base_foreground_rgb16.tif").write_bytes(
+                    _asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
+                )
+            for name in (
+                "support16.png",
+                "protection16.png",
+                "alpha16.png",
+                "settings.json",
+                "area.json",
+            ):
+                asset = f"effects/shadow-fade/{name}"
+                if asset in manifest["files"]:
+                    (stage / ("shadow_fade_" + name)).write_bytes(
                         _asset(project, f"revisions/{revision}/{asset}").read_bytes()
                     )
         write_master(stage / "source_rgb16.tif", load_master(project, state["master_id"])[0])
@@ -280,10 +306,16 @@ def export_project(
                 if "local_exposure" in manifest
                 else {}
             ),
+            **({"shadow_fade": manifest["shadow_fade"]} if "shadow_fade" in manifest else {}),
             "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; baked shading at saved p; editable W16 plus p retained separately"
             + (
                 "; selected foreground includes linear-sRGB local exposure once; unexposed foreground and independent support/protection/alpha/settings retained"
                 if "local_exposure" in manifest
+                else ""
+            )
+            + (
+                "; replay unexposed -> exposure once -> unfaded -> linear-sRGB Shadow fade once -> selected foreground -> encoded-sRGB shading and alpha once; selected foreground is already faded; independent fade operands retained"
+                if "shadow_fade" in manifest
                 else ""
             ),
             "files": {p.name: digest(p.read_bytes()) for p in stage.iterdir() if p.is_file()},

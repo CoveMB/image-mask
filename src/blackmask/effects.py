@@ -14,6 +14,7 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter
 
 from .exposure import (
     EXPOSURE_FILES,
+    rasterize_effect_area,
     rasterize_exposure_area,
     read_exposure,
     selected_exposure,
@@ -34,6 +35,12 @@ from .project import (
     read_revision,
 )
 from .repair import scalar16, validate_support
+from .shadow_fade import (
+    SHADOW_FADE_FILES,
+    read_shadow_fade,
+    selected_shadow_fade,
+    validate_shadow_fade,
+)
 
 
 def validate_shading(settings: Any) -> None:
@@ -210,7 +217,7 @@ SHADING_FILES = (
 def effects_stale(manifest: dict[str, Any]) -> bool:
     return any(
         manifest.get(name, {}).get("enabled") and manifest[name].get("stale")
-        for name in ("color_cleanup", "shading", "local_exposure")
+        for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade")
     )
 
 
@@ -298,6 +305,38 @@ def inherit_exposure(
     return record
 
 
+def inherit_shadow_fade(
+    project: Path,
+    parent: str,
+    stage: Path,
+    master_id: str,
+    alpha: np.ndarray | None = None,
+    rgb_protection: np.ndarray | None = None,
+) -> dict[str, Any] | None:
+    manifest = read_revision(project, parent, master_id)
+    previous = manifest.get("shadow_fade")
+    if previous is None:
+        return None
+    record = dict(previous)
+    directory = stage / "effects/shadow-fade"
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in (*SHADOW_FADE_FILES, *(("area.json",) if record["area_sha256"] else ())):
+        (directory / name).write_bytes(
+            _asset(project, f"revisions/{parent}/effects/shadow-fade/{name}").read_bytes()
+        )
+    if alpha is not None:
+        record["stale"] = bool(
+            record["enabled"] and not np.array_equal(scalar16(directory / "alpha16.png"), alpha)
+        )
+    if rgb_protection is not None:
+        protection = scalar16(directory / "protection16.png")
+        protection[rgb_protection] = 65535
+        Image.fromarray(protection).save(directory / "protection16.png")
+        record["protection_sha256"] = digest((directory / "protection16.png").read_bytes())
+    (directory / "settings.json").write_bytes(_json_bytes(record))
+    return record
+
+
 def inherit_cleanup(
     project: Path,
     parent: str,
@@ -340,6 +379,7 @@ def selected_foreground(
     *,
     effects_off: bool = False,
     exposure_off: bool = False,
+    shadow_fade_off: bool = False,
 ) -> np.ndarray:
     from .export import read_rgb16
 
@@ -376,13 +416,20 @@ def selected_foreground(
         if not record or not record["enabled"] or effects_off or record["stale"]
         else corrected
     )
-    return selected_exposure(
+    exposed = selected_exposure(
         _asset(project, f"revisions/{revision}"),
         unexposed,
         alpha,
         manifest,
         exposure_off=exposure_off or effects_off,
     )[0]
+    return selected_shadow_fade(
+        _asset(project, f"revisions/{revision}"),
+        exposed,
+        alpha,
+        manifest,
+        shadow_fade_off=shadow_fade_off or effects_off,
+    )
 
 
 def saved_effect_lock_layers(project: Path, revision: str, master_id: str):
@@ -403,6 +450,12 @@ def saved_effect_lock_layers(project: Path, revision: str, master_id: str):
             if name.startswith("effects/exposure/")
         ):
             raise ProjectError("Prepared lock must retain inherited local exposure")
+        if manifest.get("shadow_fade") != parent.get("shadow_fade") or any(
+            manifest["files"].get(name) != parent["files"].get(name)
+            for name in parent["files"]
+            if name.startswith("effects/shadow-fade/") or name == "base_alpha16.png"
+        ):
+            raise ProjectError("Prepared lock must retain inherited Shadow fade and alpha")
         revision = parent["revision"]
     return saved_layers(project, revision, master_id)
 
@@ -438,6 +491,10 @@ def run_effects(
             "exposure_area",
             "exposure_protection_file",
             "exposure_amount_only",
+            "shadow_fade",
+            "shadow_fade_area",
+            "shadow_fade_protection_file",
+            "shadow_fade_amount_only",
         }
         or type(operation["schema_version"]) is not int
         or operation["schema_version"] != 1
@@ -445,11 +502,21 @@ def run_effects(
         or type(operation["candidate_comparison"]) is not bool
     ):
         raise ProjectError("Invalid schema-1 effects request")
+    fade_changed = "shadow_fade" in operation
     exposure_changed = "local_exposure" in operation
     exposure_fields = {"exposure_area", "exposure_protection_file", "exposure_amount_only"}
     if exposure_changed:
         validate_exposure(operation["local_exposure"])
-        if set(operation) & {"color_cleanup", "shading", "shading_protection_file", "opacity_only"}:
+        if set(operation) & {
+            "color_cleanup",
+            "shading",
+            "shading_protection_file",
+            "opacity_only",
+            "shadow_fade",
+            "shadow_fade_area",
+            "shadow_fade_amount_only",
+            "shadow_fade_protection_file",
+        }:
             raise ProjectError("Local exposure must be a separate effects operation")
         if type(operation.get("exposure_amount_only", False)) is not bool:
             raise ProjectError("exposure_amount_only must be boolean")
@@ -470,8 +537,40 @@ def run_effects(
             )
         ):
             raise ProjectError("Exposure rebuild requires exactly one registered area source")
-    elif set(operation) & exposure_fields or "support_file" not in operation:
+    elif set(operation) & exposure_fields or not fade_changed and "support_file" not in operation:
         raise ProjectError("Invalid effects support/exposure fields")
+    fade_fields = {"shadow_fade_area", "shadow_fade_protection_file", "shadow_fade_amount_only"}
+    if fade_changed:
+        validate_shadow_fade(operation["shadow_fade"])
+        if set(operation) & {
+            "color_cleanup",
+            "shading",
+            "shading_protection_file",
+            "opacity_only",
+            "local_exposure",
+        }:
+            raise ProjectError("Shadow fade must be a separate effects operation")
+        if type(operation.get("shadow_fade_amount_only", False)) is not bool:
+            raise ProjectError("shadow_fade_amount_only must be boolean")
+        fade_reuse = (
+            operation.get("shadow_fade_amount_only", False)
+            or not operation["shadow_fade"]["enabled"]
+        )
+        if fade_reuse and set(operation) & {
+            "support_file",
+            "shadow_fade_area",
+            "shadow_fade_protection_file",
+        }:
+            raise ProjectError("Shadow fade amount-only/disable cannot replace area or protection")
+        if not fade_reuse and not (
+            "shadow_fade_area" in operation
+            and not set(operation) & {"support_file", "shadow_fade_protection_file"}
+            or "shadow_fade_area" not in operation
+            and {"support_file", "shadow_fade_protection_file"} <= set(operation)
+        ):
+            raise ProjectError("Shadow fade rebuild requires exactly one registered area source")
+    elif set(operation) & fade_fields:
+        raise ProjectError("Shadow fade fields require shadow_fade settings")
     operation = json.loads(_json_bytes(operation))
     request_bytes = request_file.read_bytes() if request_file else _json_bytes(operation)
     if json.loads(request_bytes) != operation:
@@ -488,7 +587,7 @@ def run_effects(
         raise ProjectError("Stale effects master, base revision or draft identity")
     parent = state["working_revision"]
     cleanup_changed = "color_cleanup" in operation or not (
-        "shading" in operation or exposure_changed
+        "shading" in operation or exposure_changed or fade_changed
     )
     settings = operation.get(
         "color_cleanup", tomllib.loads(_asset(project, "recipe.toml").read_text())["color_cleanup"]
@@ -534,7 +633,7 @@ def run_effects(
     if json.loads(snapshots["guides.json"]) != json.loads(parent_guides) or any(
         current_recipe[name] != parent_recipe[name]
         for name in current_recipe
-        if name not in {"color_cleanup", "shading", "local_exposure", "notes"}
+        if name not in {"color_cleanup", "shading", "local_exposure", "shadow_fade", "notes"}
     ):
         raise ProjectError(
             "Changed guidance/base recipe requires prepare and complete matte before effects"
@@ -568,7 +667,7 @@ def run_effects(
         lock_values[mask] = rgb[mask]
         locked |= mask
     protection |= locked
-    check_space(project, source.nbytes * 35 + 1024**2)
+    check_space(project, source.nbytes * 45 + 1024**2)
     record: dict[str, Any] | None
     if cleanup_changed:
         corrected = make_corrected_rgb(
@@ -727,6 +826,73 @@ def run_effects(
             (exposure_support != 0) & (alpha != 0) & ~exposure_protection
         ):
             raise ProjectError("Enabled local exposure requires a nonempty eligible selection")
+    if not fade_changed and current_recipe.get(
+        "shadow_fade", {"enabled": False, "amount": 0, "preserve_highlights": 1}
+    ) != parent_recipe.get(
+        "shadow_fade", {"enabled": False, "amount": 0, "preserve_highlights": 1}
+    ):
+        raise ProjectError("Changed Shadow fade recipe requires explicit Shadow fade operation")
+    fade_record = manifest.get("shadow_fade")
+    fade_inputs = {}
+    fade_area_bytes = None
+    if fade_changed:
+        fade_settings = operation["shadow_fade"]
+        saved = read_shadow_fade(_asset(project, f"revisions/{parent}"), manifest, alpha)
+        if (
+            fade_settings["enabled"]
+            and parent != state["accepted_revision"]
+            and not operation["candidate_comparison"]
+        ):
+            raise ProjectError("Local fade requires accepted base or explicit candidate comparison")
+        if operation.get("shadow_fade_amount_only") and fade_settings["enabled"] and saved is None:
+            raise ProjectError("Shadow fade amount-only requires a saved area")
+        if fade_reuse:
+            if saved is None:
+                fade_support = np.zeros(alpha.shape, dtype=np.uint16)
+                fade_protection = protection.copy()
+                fade_dependency = alpha.copy()
+            else:
+                fade_support, fade_protection, old_record = saved
+                fade_dependency = scalar16(
+                    _asset(project, f"revisions/{parent}/effects/shadow-fade/alpha16.png")
+                )
+                if fade_settings["enabled"] and not np.array_equal(fade_dependency, alpha):
+                    raise ProjectError("Stale Shadow fade alpha: rebuild or disable")
+                if old_record["area_sha256"]:
+                    fade_area_bytes = _asset(
+                        project, f"revisions/{parent}/effects/shadow-fade/area.json"
+                    ).read_bytes()
+        else:
+            if "shadow_fade_area" in operation:
+                fade_support, fade_protection = rasterize_effect_area(
+                    operation["shadow_fade_area"], state["master_id"], width, height
+                )
+                fade_area_bytes = _json_bytes(operation["shadow_fade_area"])
+            else:
+                assert support_path is not None
+                fade_inputs[support_path] = support_bytes
+                fade_support = support
+                path = _input_file(project, operation["shadow_fade_protection_file"])
+                fade_inputs[path] = path.read_bytes()
+                explicit = read_shading_protection(path)
+                if explicit.shape != alpha.shape or not np.isin(explicit, [0, 65535]).all():
+                    raise ProjectError(
+                        "Shadow fade protection must be aligned categorical scalar16/8"
+                    )
+                fade_protection = explicit != 0
+            fade_dependency = alpha.copy()
+        fade_protection |= protection
+        # Replacing A with B removes A as well: both areas must be inside the declared scope.
+        combined = (fade_support != 0) | (saved[0] != 0 if saved else False)
+        x0, y0, x1, y1 = scope
+        outside = combined.copy()
+        outside[y0:y1, x0:x1] = False
+        if outside.any():
+            raise ProjectError("Shadow fade scope must contain both previous and replacement area")
+        if fade_settings["enabled"] and not np.any(
+            (fade_support != 0) & (alpha != 0) & ~fade_protection
+        ):
+            raise ProjectError("Enabled Shadow fade requires a nonempty eligible selection")
     revisions = _asset(project, "revisions")
     existing = [
         int(p.name[4:]) for p in revisions.iterdir() if re.fullmatch(r"rev-[0-9]{3,}", p.name)
@@ -854,6 +1020,41 @@ def run_effects(
             },
         }
         (directory / "settings.json").write_bytes(_json_bytes(exposure_record))
+    fade_record = inherit_shadow_fade(project, parent, stage, state["master_id"])
+    if fade_changed:
+        directory = stage / "effects/shadow-fade"
+        directory.mkdir(parents=True, exist_ok=True)
+        for name, value in (
+            ("support16", fade_support),
+            ("protection16", fade_protection.astype(np.uint16) * 65535),
+            ("alpha16", fade_dependency),
+        ):
+            Image.fromarray(value).save(directory / (name + ".png"))
+        if fade_area_bytes is not None:
+            (directory / "area.json").write_bytes(fade_area_bytes)
+        elif (directory / "area.json").exists():
+            # Stage is new; omit inherited authored geometry when replacing with scalar inputs.
+            (directory / "area.json").unlink()
+        fade_record = {
+            "schema_version": 1,
+            "enabled": fade_settings["enabled"],
+            "settings": fade_settings,
+            "stale": bool(fade_settings["enabled"] and not np.array_equal(fade_dependency, alpha)),
+            "source_id": state["master_id"],
+            "algorithm": "linear-srgb-shadow-fade-v1",
+            "scope_xyxy": scope,
+            "candidate_comparison": operation["candidate_comparison"],
+            "area_sha256": digest(fade_area_bytes) if fade_area_bytes is not None else None,
+            **{
+                key: digest((directory / name).read_bytes())
+                for name, key in (
+                    ("support16.png", "support_sha256"),
+                    ("protection16.png", "protection_sha256"),
+                    ("alpha16.png", "alpha_sha256"),
+                )
+            },
+        }
+        (directory / "settings.json").write_bytes(_json_bytes(fade_record))
     (stage / "request.json").write_bytes(request_bytes)
     (stage / "inputs").mkdir()
     for name, data in snapshots.items():
@@ -865,6 +1066,8 @@ def run_effects(
         effect_records["shading"] = shading_record
     if exposure_record is not None:
         effect_records["local_exposure"] = exposure_record
+    if fade_record is not None:
+        effect_records["shadow_fade"] = fade_record
     stale = effects_stale(effect_records)
     appearance = corrected if enabled and not stale else foreground
     appearance, clipping = selected_exposure(
@@ -873,6 +1076,13 @@ def run_effects(
         alpha,
         dict(effect_records, master_id=state["master_id"]),
         exposure_off=stale,
+    )
+    appearance = selected_shadow_fade(
+        stage,
+        appearance,
+        alpha,
+        dict(effect_records, master_id=state["master_id"]),
+        shadow_fade_off=stale,
     )
     review_weight, opacity = (
         (scalar16(stage / "shadow_weight16.png"), shading_record["opacity"])
@@ -896,6 +1106,10 @@ def run_effects(
             "; local exposure OFF"
             if stale or not exposure_record["enabled"]
             else f"; local exposure ON {exposure_record['settings']['ev']} EV"
+        )
+    if fade_record is not None:
+        review["label"] += (
+            "; Shadow fade ON" if fade_record["enabled"] and not stale else "; Shadow fade OFF"
         )
     review["label"] += "; cleanup ON" if enabled and not stale else "; cleanup OFF"
     review["label"] += (
@@ -934,6 +1148,9 @@ def run_effects(
     (stage / "manifest.json").write_bytes(_json_bytes(new_manifest))
 
     def recheck():
+        for path, data in fade_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale Shadow fade input")
         for path, data in exposure_inputs.items():
             if path.read_bytes() != data:
                 raise ProjectError("Stale local exposure input")
