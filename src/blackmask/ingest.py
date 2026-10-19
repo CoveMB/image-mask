@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 import rawpy
 import tifffile
-from PIL import Image, ImageCms, UnidentifiedImageError
+from PIL import Image, ImageCms, JpegImagePlugin, UnidentifiedImageError
 
 RGB16 = npt.NDArray[np.uint16]
 
@@ -206,8 +206,26 @@ def decode_source(data: bytes, development: dict[str, Any]) -> tuple[RGB16, dict
                     raise IngestError(
                         "Only opaque RGB JPEG/PNG8 supported; alpha/transparency or other modes require a trusted TIFF"
                     )
+                recovery = (
+                    "export a single-image SDR JPEG/PNG8 or trusted uncompressed sRGB RGB16 TIFF"
+                )
                 if getattr(image, "n_frames", 1) != 1:
-                    raise IngestError("Animated PNG is not a single photograph")
+                    raise IngestError(
+                        f"Multi-frame {image.format} is not a single photograph; {recovery}"
+                    )
+                if isinstance(image, JpegImagePlugin.JpegImageFile):
+                    # Pillow 12.3 exposes Ultra HDR gain-map JPEGs as one frame.
+                    # Its MPF parser still reports the additional image payloads.
+                    try:
+                        multi_picture = image._getmp()
+                        if multi_picture is not None and multi_picture[0xB001] != 1:
+                            raise IngestError(
+                                f"Multi-image JPEG (including Ultra HDR gain maps) is unsupported; {recovery}"
+                            )
+                    except (SyntaxError, TypeError, IndexError, KeyError) as error:
+                        raise IngestError(
+                            f"Invalid JPEG multi-picture metadata; {recovery}"
+                        ) from error
                 profile = image.info.get("icc_profile")
                 if profile and normalize_profile(profile) != srgb_profile():
                     try:
