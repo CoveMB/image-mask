@@ -5,6 +5,8 @@ import os
 import re
 import tempfile
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -661,11 +663,11 @@ def _run_matte(
         raise
 
 
-def resume_operation(
-    project: Path, operation_id: str, *, model_cache: Path | None = None, source: Path | None = None
-) -> dict[str, Any]:
+@contextmanager
+def _recovery_record_errors() -> Iterator[None]:
+    """Convert saved-record failures without relabelling retryable processing errors."""
     try:
-        return _resume_operation(project, operation_id, model_cache=model_cache, source=source)
+        yield
     except (OSError, ValueError, KeyError, TypeError) as error:
         if isinstance(error, ProjectError):
             raise
@@ -674,7 +676,7 @@ def resume_operation(
         ) from error
 
 
-def _resume_operation(
+def resume_operation(
     project: Path, operation_id: str, *, model_cache: Path | None = None, source: Path | None = None
 ) -> dict[str, Any]:
     """Resume the same snapshotted matte/repair under the canonical writer lock."""
@@ -683,52 +685,64 @@ def _resume_operation(
         raise ProjectError("Invalid recovery operation identity")
     with project_lock(project):
         directory = _asset(project, f"requests/{operation_id}")
-        if source is not None:
-            record = json.loads(_asset(project, "source.json").read_bytes())
-            if digest(source.read_bytes()) != record["source_sha256"]:
-                raise ProjectError("Moved source hash differs from recorded capture")
-        completion = directory / "completion.json"
-        if completion.is_file():
-            completed = json.loads(
-                _asset(project, f"requests/{directory.name}/completion.json").read_bytes()
-            )
-            revision = completed["revision"]
-            if not isinstance(revision, str) or re.fullmatch(r"rev-[0-9]{3,}", revision) is None:
-                raise ProjectError("Invalid recovery completion revision")
-            state = read_project(project)
-            already_current = state["working_revision"] == revision
-            operation = _verify_matte_request(
-                project, directory, completed_revision=revision if already_current else None
-            )
-            destination = _asset(project, f"revisions/{revision}")
-            stage_name = completed["stage"]
-            if (
-                not isinstance(stage_name, str)
-                or re.fullmatch(r"\.matte-[a-z0-9_]+", stage_name) is None
-            ):
-                raise ProjectError("Invalid recovery stage")
-            retained = (
-                destination if destination.exists() else _asset(project, f"revisions/{stage_name}")
-            )
-            manifest = _validate_revision_directory(
-                project, revision, operation["master_id"], f"revisions/{retained.name}"
-            )
-            if (
-                digest((retained / "manifest.json").read_bytes()) != completed["manifest_sha256"]
-                or manifest["parent"] != operation["base_revision"]
-                or manifest["draft_digest"] != operation["inputs_digest"]
-            ):
-                raise ProjectError(
-                    "Invalid completed recovery manifest; restart from current inputs"
+        with _recovery_record_errors():
+            if source is not None:
+                record = json.loads(_asset(project, "source.json").read_bytes())
+                if digest(source.read_bytes()) != record["source_sha256"]:
+                    raise ProjectError("Moved source hash differs from recorded capture")
+            completion = directory / "completion.json"
+            has_completion = completion.is_file()
+        if has_completion:
+            with _recovery_record_errors():
+                completed = json.loads(
+                    _asset(project, f"requests/{directory.name}/completion.json").read_bytes()
                 )
-
-            def recheck():
-                _verify_matte_request(
+                revision = completed["revision"]
+                if (
+                    not isinstance(revision, str)
+                    or re.fullmatch(r"rev-[0-9]{3,}", revision) is None
+                ):
+                    raise ProjectError("Invalid recovery completion revision")
+                state = read_project(project)
+                already_current = state["working_revision"] == revision
+                operation = _verify_matte_request(
                     project, directory, completed_revision=revision if already_current else None
                 )
-                _validate_revision_directory(
+                destination = _asset(project, f"revisions/{revision}")
+                stage_name = completed["stage"]
+                if (
+                    not isinstance(stage_name, str)
+                    or re.fullmatch(r"\.matte-[a-z0-9_]+", stage_name) is None
+                ):
+                    raise ProjectError("Invalid recovery stage")
+                retained = (
+                    destination
+                    if destination.exists()
+                    else _asset(project, f"revisions/{stage_name}")
+                )
+                manifest = _validate_revision_directory(
                     project, revision, operation["master_id"], f"revisions/{retained.name}"
                 )
+                if (
+                    digest((retained / "manifest.json").read_bytes())
+                    != completed["manifest_sha256"]
+                    or manifest["parent"] != operation["base_revision"]
+                    or manifest["draft_digest"] != operation["inputs_digest"]
+                ):
+                    raise ProjectError(
+                        "Invalid completed recovery manifest; restart from current inputs"
+                    )
+
+                result = dict(json.loads((retained / "result.json").read_bytes()))
+
+            def recheck():
+                with _recovery_record_errors():
+                    _verify_matte_request(
+                        project, directory, completed_revision=revision if already_current else None
+                    )
+                    _validate_revision_directory(
+                        project, revision, operation["master_id"], f"revisions/{retained.name}"
+                    )
 
             check_space(project, 1024**2)
             recheck()
@@ -739,21 +753,22 @@ def _resume_operation(
             if not already_current:
                 state.update(working_revision=revision, status="review_needed")
                 _atomic_json(_asset(project, "state.json"), state, validate_before_replace=recheck)
-            result = json.loads((destination / "result.json").read_bytes())
             _atomic_json(
                 directory / "progress.json",
                 {"status": "review_needed", "phase": "complete", "revision": revision},
             )
             return dict(result, operation_id=operation_id, resumed_completed_stage=True)
-        operation = _verify_matte_request(project, directory)
-        manifest = json.loads(
-            _asset(project, f"requests/{directory.name}/manifest.json").read_bytes()
-        )
+        with _recovery_record_errors():
+            operation = _verify_matte_request(project, directory)
+            manifest = json.loads(
+                _asset(project, f"requests/{directory.name}/manifest.json").read_bytes()
+            )
+            request_file = Path(manifest["request_file"]) if manifest["request_file"] else None
         return _run_matte(
             project,
             operation,
             model_cache,
-            Path(manifest["request_file"]) if manifest["request_file"] else None,
+            request_file,
             directory,
         )
 
