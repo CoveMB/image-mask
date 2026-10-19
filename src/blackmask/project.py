@@ -1,5 +1,6 @@
 """Canonical project identity, writer lock and safe publication boundaries."""
 
+import copy
 import ctypes
 import errno
 import fcntl
@@ -13,6 +14,7 @@ import tempfile
 import tomllib
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -256,6 +258,44 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
     return project
 
 
+# Read-only viewer requests reuse validated immutable bytes, never across requests.
+_read_validation: ContextVar[dict[str, Any] | None] = ContextVar("read_validation", default=None)
+
+
+@contextmanager
+def _validation_scope() -> Iterator[None]:
+    token = _read_validation.set({"master": None, "revisions": {}})
+    try:
+        yield
+    finally:
+        _read_validation.reset(token)
+
+
+def _file_signature(path: Path) -> tuple[int, ...]:
+    value = path.stat()
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _revision_signature(project: Path, directory: str, manifest: dict[str, Any]) -> tuple[Any, ...]:
+    signatures = []
+    for name in manifest["files"]:
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            raise ProjectError("Invalid revision asset path")
+        try:
+            signatures.append((name, _file_signature(_asset(project, f"{directory}/{name}"))))
+        except OSError as error:
+            raise ProjectError(f"Missing saved revision asset: {name}") from error
+    return (digest(_json_bytes(manifest)), tuple(signatures))
+
+
 def _validate_assets(
     project: Path, state: dict[str, Any], *, validate_drafts: bool = True
 ) -> tuple[RGB16, dict[str, Any]]:
@@ -268,26 +308,35 @@ def _validate_assets(
         raise ProjectError("Source/master identity mismatch")
     master = _asset(project, f"masters/{master_id}.tif")
     try:
-        if digest(master.read_bytes()) != record.get("master_file_sha256"):
-            raise ProjectError("Master file hash mismatch")
-        with tifffile.TiffFile(master) as image:
-            page = image.pages[0]
-            if not isinstance(page, tifffile.TiffPage):
-                raise ProjectError("Invalid master TIFF page")
+        validation = _read_validation.get()
+        key = (str(master), digest(_json_bytes(record)), _file_signature(master))
+        cached = validation["master"] if validation is not None else None
+        if cached is not None and cached[0] == key:
+            pixels = cached[1]
+        else:
+            if digest(master.read_bytes()) != record.get("master_file_sha256"):
+                raise ProjectError("Master file hash mismatch")
+            with tifffile.TiffFile(master) as image:
+                page = image.pages[0]
+                if not isinstance(page, tifffile.TiffPage):
+                    raise ProjectError("Invalid master TIFF page")
+                if (
+                    len(image.pages) != 1
+                    or int(page.compression) != 1
+                    or page.dtype != np.dtype("uint16")
+                    or page.tags[34675].value != srgb_profile()
+                ):
+                    raise ProjectError("Invalid master precision/profile/compression")
+                pixels = page.asarray()
             if (
-                len(image.pages) != 1
-                or int(page.compression) != 1
-                or page.dtype != np.dtype("uint16")
-                or page.tags[34675].value != srgb_profile()
+                pixels.ndim != 3
+                or pixels.shape[2] != 3
+                or _master_identity(pixels, metadata) != master_id
             ):
-                raise ProjectError("Invalid master precision/profile/compression")
-            pixels = page.asarray()
-        if (
-            pixels.ndim != 3
-            or pixels.shape[2] != 3
-            or _master_identity(pixels, metadata) != master_id
-        ):
-            raise ProjectError("Master sample/metadata identity mismatch")
+                raise ProjectError("Master sample/metadata identity mismatch")
+            if validation is not None and _file_signature(master) == key[2]:
+                pixels.flags.writeable = False
+                validation["master"] = (key, pixels)
         if validate_drafts:
             recipe = tomllib.loads(_asset(project, "recipe.toml").read_text())
             Recipe.from_dict(recipe, master_id, max_margin_px=max(pixels.shape[:2]))
@@ -390,6 +439,15 @@ def _validate_revision_directory(
         or not isinstance(manifest.get("files"), dict)
     ):
         raise ProjectError("Invalid saved revision/master/complete manifest")
+    validation = _read_validation.get()
+    key = (str(project), directory)
+    signature = (
+        _revision_signature(project, directory, manifest) if validation is not None else None
+    )
+    if validation is not None:
+        cached = validation["revisions"].get(key)
+        if cached is not None and cached[0] == signature:
+            return copy.deepcopy(cached[1])
     for name, expected_hash in manifest["files"].items():
         relative = Path(name)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
@@ -430,4 +488,10 @@ def _validate_revision_directory(
         "repair/merge.json",
     } <= set(manifest["files"]):
         raise ProjectError("Incomplete repair operands")
+    if (
+        validation is not None
+        and _revision_signature(project, directory, manifest) == signature
+        and (len(validation["revisions"]) < 128 or key in validation["revisions"])
+    ):
+        validation["revisions"][key] = (signature, copy.deepcopy(manifest))
     return manifest

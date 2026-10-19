@@ -672,7 +672,19 @@
           ? "Retained pending guides have an older identity; load explicitly to review"
           : "Saved project inputs";
     }
-    async function refresh(reload = false) {
+    let refreshInFlight = null;
+    function refresh(reload = false) {
+      if (refreshInFlight) {
+        return reload
+          ? refreshInFlight.then(() => refresh(true))
+          : refreshInFlight;
+      }
+      refreshInFlight = refreshState(reload).finally(() => {
+        refreshInFlight = null;
+      });
+      return refreshInFlight;
+    }
+    async function refreshState(reload) {
       state = await (await api("/api/state")).json();
       const a = state.action,
         current = state.revisions.find(
@@ -1076,6 +1088,7 @@
       try {
         await api("/api/action", { ...identity, action: name, ...extra });
         actionWasRunning = true;
+        if (refreshInFlight) await refreshInFlight;
       } finally {
         actionSubmitting = false;
         updateBusyControls();
@@ -1159,10 +1172,19 @@
     async function cleanup(enabled) {
       requireSaved();
       if (imageLoading || !image || !transform) throw Error("Wait for the matching native view before changing cleanup");
+      let strength = 0;
+      if (enabled) {
+        const raw = $("cleanupStrength").value.trim();
+        strength = Number(raw);
+        if (raw === "" || !Number.isFinite(strength) || strength < 0 || strength > 1)
+          throw Error("Cleanup strength must be a finite number from 0 to 1");
+        if (strength === 0)
+          throw Error("Strength 0 means cleanup is OFF; use Explicitly disable cleanup");
+      }
       return action("effects", {
         scope_xyxy: bounds("cleanupScope"),
         support_file: $("cleanupSupport").value,
-        color_cleanup: {enabled, strength: Number($("cleanupStrength").value)},
+        color_cleanup: {enabled, strength},
         candidate_comparison: $("cleanupCandidate").checked,
       });
     }
@@ -1385,6 +1407,9 @@
     };
     new ResizeObserver(draw).observe($("viewport"));
     refresh(true).catch((error) => message(error.message));
-    setInterval(() => refresh().catch((error) => message(error.message)), 1000);
+    setInterval(() => {
+      if (!refreshInFlight)
+        return refresh().catch((error) => message(error.message));
+    }, 1000);
   </script>
 </html>
