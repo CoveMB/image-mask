@@ -12,6 +12,13 @@ import tifffile
 from PIL import Image
 from scipy.ndimage import distance_transform_edt, gaussian_filter
 
+from .exposure import (
+    EXPOSURE_FILES,
+    rasterize_exposure_area,
+    read_exposure,
+    selected_exposure,
+    validate_exposure,
+)
 from .guidance import coordinates, rasterize_regions
 from .ingest import write_master
 from .project import (
@@ -203,7 +210,7 @@ SHADING_FILES = (
 def effects_stale(manifest: dict[str, Any]) -> bool:
     return any(
         manifest.get(name, {}).get("enabled") and manifest[name].get("stale")
-        for name in ("color_cleanup", "shading")
+        for name in ("color_cleanup", "shading", "local_exposure")
     )
 
 
@@ -259,6 +266,38 @@ def saved_shading(
     )
 
 
+def inherit_exposure(
+    project: Path,
+    parent: str,
+    stage: Path,
+    master_id: str,
+    alpha: np.ndarray | None = None,
+    rgb_protection: np.ndarray | None = None,
+) -> dict[str, Any] | None:
+    manifest = read_revision(project, parent, master_id)
+    previous = manifest.get("local_exposure")
+    if previous is None:
+        return None
+    record = dict(previous)
+    directory = stage / "effects/exposure"
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in (*EXPOSURE_FILES, *(("area.json",) if record["area_sha256"] else ())):
+        (directory / name).write_bytes(
+            _asset(project, f"revisions/{parent}/effects/exposure/{name}").read_bytes()
+        )
+    if alpha is not None:
+        record["stale"] = bool(
+            record["enabled"] and not np.array_equal(scalar16(directory / "alpha16.png"), alpha)
+        )
+    if rgb_protection is not None:
+        protection = scalar16(directory / "protection16.png")
+        protection[rgb_protection] = 65535
+        Image.fromarray(protection).save(directory / "protection16.png")
+        record["protection_sha256"] = digest((directory / "protection16.png").read_bytes())
+    (directory / "settings.json").write_bytes(_json_bytes(record))
+    return record
+
+
 def inherit_cleanup(
     project: Path,
     parent: str,
@@ -300,6 +339,7 @@ def selected_foreground(
     manifest: dict[str, Any],
     *,
     effects_off: bool = False,
+    exposure_off: bool = False,
 ) -> np.ndarray:
     from .export import read_rgb16
 
@@ -331,9 +371,18 @@ def selected_foreground(
             and record["stale"] != (not np.array_equal(dependency, alpha))
         ):
             raise ProjectError("Invalid saved cleanup dependency/status")
-    if not record or not record["enabled"] or effects_off or record["stale"]:
-        return foreground
-    return corrected
+    unexposed = (
+        foreground
+        if not record or not record["enabled"] or effects_off or record["stale"]
+        else corrected
+    )
+    return selected_exposure(
+        _asset(project, f"revisions/{revision}"),
+        unexposed,
+        alpha,
+        manifest,
+        exposure_off=exposure_off or effects_off,
+    )[0]
 
 
 def saved_effect_lock_layers(project: Path, revision: str, master_id: str):
@@ -348,6 +397,12 @@ def saved_effect_lock_layers(project: Path, revision: str, master_id: str):
             "corrected_rgb16.tif"
         ) != parent["files"].get("corrected_rgb16.tif"):
             raise ProjectError("Prepared lock must retain its inherited corrected RGB")
+        if manifest.get("local_exposure") != parent.get("local_exposure") or any(
+            manifest["files"].get(name) != parent["files"].get(name)
+            for name in parent["files"]
+            if name.startswith("effects/exposure/")
+        ):
+            raise ProjectError("Prepared lock must retain inherited local exposure")
         revision = parent["revision"]
     return saved_layers(project, revision, master_id)
 
@@ -367,20 +422,56 @@ def run_effects(
         "base_revision",
         "inputs_digest",
         "scope_xyxy",
-        "support_file",
         "candidate_comparison",
     }
     if (
         not required <= set(operation)
         or set(operation)
         - required
-        - {"color_cleanup", "shading", "shading_protection_file", "opacity_only"}
+        - {
+            "support_file",
+            "color_cleanup",
+            "shading",
+            "shading_protection_file",
+            "opacity_only",
+            "local_exposure",
+            "exposure_area",
+            "exposure_protection_file",
+            "exposure_amount_only",
+        }
         or type(operation["schema_version"]) is not int
         or operation["schema_version"] != 1
         or operation["kind"] != "effects"
         or type(operation["candidate_comparison"]) is not bool
     ):
         raise ProjectError("Invalid schema-1 effects request")
+    exposure_changed = "local_exposure" in operation
+    exposure_fields = {"exposure_area", "exposure_protection_file", "exposure_amount_only"}
+    if exposure_changed:
+        validate_exposure(operation["local_exposure"])
+        if set(operation) & {"color_cleanup", "shading", "shading_protection_file", "opacity_only"}:
+            raise ProjectError("Local exposure must be a separate effects operation")
+        if type(operation.get("exposure_amount_only", False)) is not bool:
+            raise ProjectError("exposure_amount_only must be boolean")
+        reuse = (
+            operation.get("exposure_amount_only", False)
+            or not operation["local_exposure"]["enabled"]
+        )
+        if reuse and set(operation) & {"support_file", "exposure_area", "exposure_protection_file"}:
+            raise ProjectError("Exposure amount-only/disable cannot replace area or protection")
+        if not reuse and not (
+            (
+                "exposure_area" in operation
+                and not set(operation) & {"support_file", "exposure_protection_file"}
+            )
+            or (
+                "exposure_area" not in operation
+                and {"support_file", "exposure_protection_file"} <= set(operation)
+            )
+        ):
+            raise ProjectError("Exposure rebuild requires exactly one registered area source")
+    elif set(operation) & exposure_fields or "support_file" not in operation:
+        raise ProjectError("Invalid effects support/exposure fields")
     operation = json.loads(_json_bytes(operation))
     request_bytes = request_file.read_bytes() if request_file else _json_bytes(operation)
     if json.loads(request_bytes) != operation:
@@ -396,7 +487,9 @@ def run_effects(
     ):
         raise ProjectError("Stale effects master, base revision or draft identity")
     parent = state["working_revision"]
-    cleanup_changed = "color_cleanup" in operation or "shading" not in operation
+    cleanup_changed = "color_cleanup" in operation or not (
+        "shading" in operation or exposure_changed
+    )
     settings = operation.get(
         "color_cleanup", tomllib.loads(_asset(project, "recipe.toml").read_text())["color_cleanup"]
     )
@@ -415,10 +508,12 @@ def run_effects(
     source, _ = load_master(project, state["master_id"])
     height, width = alpha.shape
     scope = coordinates(operation["scope_xyxy"], width, height, box=True)
-    support_path = _input_file(project, operation["support_file"])
-    support_bytes = support_path.read_bytes()
-    support = scalar16(support_path)
-    if enabled:
+    support_path = (
+        _input_file(project, operation["support_file"]) if "support_file" in operation else None
+    )
+    support_bytes = support_path.read_bytes() if support_path else b""
+    support = scalar16(support_path) if support_path else np.zeros(alpha.shape, dtype=np.uint16)
+    if cleanup_changed and enabled:
         validate_support(support, alpha.shape, [0, 0, width, height], scope)
     elif support.shape != alpha.shape:
         raise ProjectError("Cleanup support must align with master even when disabled")
@@ -439,7 +534,7 @@ def run_effects(
     if json.loads(snapshots["guides.json"]) != json.loads(parent_guides) or any(
         current_recipe[name] != parent_recipe[name]
         for name in current_recipe
-        if name not in {"color_cleanup", "shading", "notes"}
+        if name not in {"color_cleanup", "shading", "local_exposure", "notes"}
     ):
         raise ProjectError(
             "Changed guidance/base recipe requires prepare and complete matte before effects"
@@ -567,6 +662,71 @@ def run_effects(
         for key in current_recipe["shading"]
     ):
         raise ProjectError("Changed shading recipe requires explicit shading operation")
+    if not exposure_changed and current_recipe.get(
+        "local_exposure", {"enabled": False, "ev": 0}
+    ) != parent_recipe.get("local_exposure", {"enabled": False, "ev": 0}):
+        raise ProjectError("Changed exposure recipe requires explicit exposure operation")
+    exposure_record = manifest.get("local_exposure")
+    exposure_inputs = {}
+    exposure_area_bytes = None
+    if exposure_changed:
+        exposure_settings = operation["local_exposure"]
+        saved = read_exposure(_asset(project, f"revisions/{parent}"), manifest, alpha)
+        if (
+            exposure_settings["enabled"]
+            and parent != state["accepted_revision"]
+            and not operation["candidate_comparison"]
+        ):
+            raise ProjectError(
+                "Local exposure requires accepted base or explicit candidate comparison"
+            )
+        if operation.get("exposure_amount_only") and saved is None:
+            raise ProjectError("Exposure amount-only requires a saved area")
+        if reuse:
+            if saved is None:
+                exposure_support = np.zeros(alpha.shape, dtype=np.uint16)
+                exposure_protection = protection.copy()
+                exposure_dependency = alpha.copy()
+            else:
+                exposure_support, exposure_protection, old_record = saved
+                exposure_dependency = scalar16(
+                    _asset(project, f"revisions/{parent}/effects/exposure/alpha16.png")
+                )
+                if exposure_settings["enabled"] and not np.array_equal(exposure_dependency, alpha):
+                    raise ProjectError("Stale local exposure alpha: rebuild or disable")
+                if old_record["area_sha256"]:
+                    exposure_area_bytes = _asset(
+                        project, f"revisions/{parent}/effects/exposure/area.json"
+                    ).read_bytes()
+        else:
+            if "exposure_area" in operation:
+                exposure_support, exposure_protection = rasterize_exposure_area(
+                    operation["exposure_area"], state["master_id"], width, height
+                )
+                exposure_area_bytes = _json_bytes(operation["exposure_area"])
+            else:
+                assert support_path is not None
+                exposure_inputs[support_path] = support_bytes
+                exposure_support = support
+                path = _input_file(project, operation["exposure_protection_file"])
+                exposure_inputs[path] = path.read_bytes()
+                explicit = read_shading_protection(path)
+                if explicit.shape != alpha.shape or not np.isin(explicit, [0, 65535]).all():
+                    raise ProjectError("Exposure protection must be aligned categorical scalar16/8")
+                exposure_protection = explicit != 0
+            exposure_dependency = alpha.copy()
+        exposure_protection |= protection
+        # Replacing A with B removes A as well: both areas must be inside the declared scope.
+        combined = (exposure_support != 0) | (saved[0] != 0 if saved else False)
+        x0, y0, x1, y1 = scope
+        outside = combined.copy()
+        outside[y0:y1, x0:x1] = False
+        if outside.any():
+            raise ProjectError("Exposure scope must contain both previous and replacement area")
+        if exposure_settings["enabled"] and not np.any(
+            (exposure_support != 0) & (alpha != 0) & ~exposure_protection
+        ):
+            raise ProjectError("Enabled local exposure requires a nonempty eligible selection")
     revisions = _asset(project, "revisions")
     existing = [
         int(p.name[4:]) for p in revisions.iterdir() if re.fullmatch(r"rev-[0-9]{3,}", p.name)
@@ -657,6 +817,43 @@ def run_effects(
         (directory / "settings.json").write_bytes(_json_bytes(shading_record))
         if not np.array_equal(scalar16(stage / "shadow_weight16.png"), weight):
             raise ProjectError("Shadow W16 round trip failed")
+    exposure_record = inherit_exposure(project, parent, stage, state["master_id"])
+    if exposure_changed:
+        directory = stage / "effects/exposure"
+        directory.mkdir(parents=True, exist_ok=True)
+        for name, value in (
+            ("support16", exposure_support),
+            ("protection16", exposure_protection.astype(np.uint16) * 65535),
+            ("alpha16", exposure_dependency),
+        ):
+            Image.fromarray(value).save(directory / (name + ".png"))
+        if exposure_area_bytes is not None:
+            (directory / "area.json").write_bytes(exposure_area_bytes)
+        elif (directory / "area.json").exists():
+            # Stage is new; omit inherited authored geometry when replacing with scalar inputs.
+            (directory / "area.json").unlink()
+        exposure_record = {
+            "schema_version": 1,
+            "enabled": exposure_settings["enabled"],
+            "settings": exposure_settings,
+            "stale": bool(
+                exposure_settings["enabled"] and not np.array_equal(exposure_dependency, alpha)
+            ),
+            "source_id": state["master_id"],
+            "algorithm": "linear-srgb-local-exposure-v1",
+            "scope_xyxy": scope,
+            "candidate_comparison": operation["candidate_comparison"],
+            "area_sha256": digest(exposure_area_bytes) if exposure_area_bytes is not None else None,
+            **{
+                key: digest((directory / name).read_bytes())
+                for name, key in (
+                    ("support16.png", "support_sha256"),
+                    ("protection16.png", "protection_sha256"),
+                    ("alpha16.png", "alpha_sha256"),
+                )
+            },
+        }
+        (directory / "settings.json").write_bytes(_json_bytes(exposure_record))
     (stage / "request.json").write_bytes(request_bytes)
     (stage / "inputs").mkdir()
     for name, data in snapshots.items():
@@ -666,8 +863,17 @@ def run_effects(
         effect_records["color_cleanup"] = record
     if shading_record is not None:
         effect_records["shading"] = shading_record
+    if exposure_record is not None:
+        effect_records["local_exposure"] = exposure_record
     stale = effects_stale(effect_records)
     appearance = corrected if enabled and not stale else foreground
+    appearance, clipping = selected_exposure(
+        stage,
+        appearance,
+        alpha,
+        dict(effect_records, master_id=state["master_id"]),
+        exposure_off=stale,
+    )
     review_weight, opacity = (
         (scalar16(stage / "shadow_weight16.png"), shading_record["opacity"])
         if shading_record and shading_record["enabled"] and not stale
@@ -684,6 +890,13 @@ def run_effects(
         opacity=opacity,
     )
     review.update(effect_records)
+    if exposure_record is not None:
+        review["local_exposure_clipping"] = clipping
+        review["label"] += (
+            "; local exposure OFF"
+            if stale or not exposure_record["enabled"]
+            else f"; local exposure ON {exposure_record['settings']['ev']} EV"
+        )
     review["label"] += "; cleanup ON" if enabled and not stale else "; cleanup OFF"
     review["label"] += (
         "; shading ON; baked shading preview" if review_weight is not None else "; shading OFF"
@@ -721,6 +934,9 @@ def run_effects(
     (stage / "manifest.json").write_bytes(_json_bytes(new_manifest))
 
     def recheck():
+        for path, data in exposure_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale local exposure input")
         for path, data in shading_inputs.items():
             if path.read_bytes() != data:
                 raise ProjectError("Stale shading protection input")
@@ -728,7 +944,8 @@ def run_effects(
             if _asset(project, name).read_bytes() != data:
                 raise ProjectError(f"Stale effects input: {name}")
         if (
-            support_path.read_bytes() != support_bytes
+            support_path is not None
+            and support_path.read_bytes() != support_bytes
             or _asset(project, f"revisions/{parent}/manifest.json").read_bytes() != parent_bytes
             or request_file
             and request_file.read_bytes() != request_bytes

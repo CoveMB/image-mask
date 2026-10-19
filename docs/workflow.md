@@ -189,9 +189,9 @@ the explicit candidate-comparison checkbox. W16 stays separate from opacity.
 
 Compare the same native crop at 0%, 12% and 24% with the preview selector. Labels
 show the displayed revision, effective opacity, encoded sRGB, width, cleanup
-and baked RGB8 preview precision. BASE and stale views label both effects OFF. These are
+and baked RGB8 preview precision. BASE and stale views label all optional effects OFF. These are
 comparison strengths, not defaults or photographic approval. The BASE checkbox
-turns BOTH cleanup and shading off. The global opacity button reuses saved W
+turns cleanup, local exposure and shading off. The global opacity button reuses saved W
 without a model or mask rebuild; it does not change geometry/protection. Explicit
 disable preserves saved layers. Rebuilding one effect never rebuilds the other.
 
@@ -211,3 +211,46 @@ only, keep geometry identical, set `opacity_only=true`, omit protection file,
 and supply the new scalar opacity. Omit cleanup to retain its saved state.
 See [the file contract](file-contract.md#optional-protected-inward-shading) for
 exact assets, stale rules and editable editor handoff.
+
+
+## Local exposure
+
+Use **Local exposure** to brighten or darken existing photographed detail in one
+selected area. It works offline without models or an external mask editor.
+It cannot recover detail absent from the saved matte, recover clipped highlights,
+or restore captured sharpness. Final photographic acceptance remains your decision.
+
+1. Complete the matte/repair and load the current working revision. Choose
+   **Canvas authoring mode → Local exposure area**. This authoring is separate
+   from the matting guides and needs no trimap approval or model pass.
+2. Select **Apply area** or **Protect area** and draw a brush or rectangle.
+   Brush radius and inward feather are native pixels; protection has hard edges.
+   For keyboard authoring, enter a native half-open rectangle and activate
+   **Add exposure rectangle**. Review the draft shape list; remove individual
+   shapes or clear the draft when needed. Existing saved guide locks always apply.
+3. Set EV from -3 to +3 (0.1 steps). Default OFF / 0 EV is unchanged appearance.
+   If the complete candidate is unaccepted, explicitly enable candidate comparison.
+   **Apply / replace exposure area** saves this one adjustment and replaces its
+   previous area. Saved area/protection/settings remain independently recoverable.
+4. **Apply amount to saved area** reuses its saved selection and protections.
+   It leaves pending area edits unsaved. Saved and draft status are shown
+   separately. Repeated application starts from unexposed RGB, so it never stacks
+   exposure on previous exposure.
+5. **Compare exposure OFF** previews the same alpha with saved cleanup/shading
+   retained. Source/alpha views are unaffected; the BASE checkbox turns all
+   optional effects off. Comparison is read-only. Check native black/gray/white
+   views, feather edges, noise and highlights. The clipping count is affected
+   pixels with at least one channel above linear white before clamping, over
+   eligible selected pixels; it is not a photographic quality score.
+6. **Reset exposure** saves OFF / 0 EV while retaining the recoverable saved area.
+   Reload reopens saved authored geometry; scalar-input areas remain available
+   for amount changes. If alpha changed, rebuild the area or reset exposure
+   before acceptance/export. Other stale effects require their own recovery.
+7. Export a labelled draft for comparison. Exposure exports include both selected
+   and unexposed RGB16 plus editable support/protection/alpha/settings. Preserve
+   them together; the selected foreground already includes exposure once.
+
+CLI/assistant requests use the same `run PROJECT --request FILE` effects operation.
+See [the local exposure file contract](file-contract.md#optional-local-exposure)
+for authored/scalar inputs, strict field rules, scope coverage and reconstruction.
+The exposure-only comparison is distinct from all-effects-off BASE comparison.

@@ -278,3 +278,97 @@ $('shadingScope').value='0,0,100,100';$('shadingCandidate').checked=true;
 await shading(true, false);
 assert.equal(posts.at(-1).shading_protection_file,'revisions/rev-001/supports/protection.png');
 """)
+
+
+def test_exposure_area_authoring_is_independent_and_uses_native_crop():
+    run_page(r"""
+await ready();$('authorMode').value='exposure';$('exposureRole').value='regions';$('exposureShape').value='rectangle';$('exposureFeather').value='2';
+$('crop').value='20,20,80,80';await $('cropApply').onclick();
+canvas.onpointerdown({clientX:100,clientY:50,pointerId:1,shiftKey:false});
+canvas.onpointerup({clientX:200,clientY:150,pointerId:1});
+assert.deepEqual(exposureArea.regions[0].xyxy,[35,35,65,65]);
+assert.equal(exposureArea.regions[0].feather_px,2);
+assert.equal(regions.length,0);assert.equal(dirty,false);assert.equal(exposureDirty,true);
+$('exposureRole').value='protection';$('exposureRectangle').value='40,40,50,50';await $('exposureAddRectangle').onclick();
+assert.equal(exposureArea.protection[0].feather_px,0);
+assert.deepEqual(exposureArea.protection[0].xyxy,[40,40,50,50]);
+""")
+
+
+def test_exposure_amount_does_not_publish_pending_area_and_reset_keeps_it():
+    run_page(r"""
+await ready();$('exposureRole').value='regions';$('exposureShape').value='rectangle';$('exposureFeather').value='0';
+$('exposureRectangle').value='10,10,40,40';await $('exposureAddRectangle').onclick();
+const draft=JSON.stringify(exposureArea);$('exposureEV').value='0.5';$('exposureCandidate').checked=true;
+await $('exposureAmount').onclick();
+assert.equal(posts.at(-1).exposure_amount_only,true);
+assert(!('exposure_area' in posts.at(-1)));assert(!('support_file' in posts.at(-1)));
+assert.equal(posts.at(-1).local_exposure.ev,.5);
+assert.equal(JSON.stringify(exposureArea),draft);assert.equal(exposureDirty,true);
+actionWasRunning=false;await refresh();await $('exposureReset').onclick();
+assert.deepEqual(posts.at(-1).local_exposure,{enabled:false,ev:0});
+assert.equal(JSON.stringify(exposureArea),draft);
+""")
+
+
+def test_exposure_comparison_is_read_only_and_keeps_other_effects():
+    run_page(r"""
+await ready();const paths=[];const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path, options)=>{paths.push(path);return originalFetch(path.replace('/exposure-off',''),options);};
+$('panel').value='black';$('exposureCompare').checked=true;await $('exposureCompare').onchange();
+assert(paths.includes('/image/black/rev-001/0,0,100,100/exposure-off'));
+assert.equal(posts.length,0);assert.equal($('cleanupBase').checked,false);
+""")
+
+
+def test_exposure_rejects_stale_view_and_transitional_pointer():
+    run_page(r"""
+await ready();$('exposureEV').value='1';$('viewRevision').value='rev-old';
+await $('exposureAmount').onclick();assert.equal(posts.length,0);
+$('viewRevision').value='rev-001';$('authorMode').value='exposure';$('exposureShape').value='stroke';$('exposureRole').value='regions';$('exposureRadius').value='3';$('exposureFeather').value='1';
+imageLoading=true;canvas.onpointerdown({clientX:70,clientY:20,pointerId:1,shiftKey:false});
+canvas.onpointerup({clientX:80,clientY:30,pointerId:1});assert.equal(exposureArea.regions.length,0);
+imageLoading=false;canvas.onpointerdown({clientX:70,clientY:20,pointerId:2,shiftKey:false});
+canvas.onpointermove({clientX:90,clientY:40});canvas.onpointerup({clientX:90,clientY:40,pointerId:2});
+assert.deepEqual(exposureArea.regions[0].points,[[10,10],[20,20]]);
+assert.equal(exposureArea.regions[0].radius_px,3);assert.equal(dirty,false);
+""")
+
+
+def test_exposure_prepare_transition_keeps_review_controls_and_current_identity():
+    run_page(r"""
+servedState.revisions[0].local_exposure={enabled:true,stale:false,settings:{enabled:true,ev:.5},clipping:{clipped_pixels:2,eligible_pixels:100}};
+await ready();
+assert($('exposureStatus').textContent.includes('clipped 2 / 100'));
+servedState.action={name:'prepare',running:true,error:null,result:null};await refresh();
+assert.equal($('trimap').disabled,true);
+servedState.working_revision='rev-002';servedState.inputs_digest='prepared-draft';servedState.authoring_digest='prepared-author';
+servedState.revisions.push({revision:'rev-002',kind:'prepare',draft_digest:'prepared-draft',final_acceptable:false,candidates:[],local_exposure:{enabled:true,stale:false,settings:{enabled:true,ev:.5}}});
+servedState.action={name:'prepare',running:false,error:null,result:{revision:'rev-002'}};
+await refresh();
+assert($('exposureStatus').textContent.includes('clipping unavailable'),$('exposureStatus').textContent);
+assert(!$('exposureStatus').textContent.includes('clipped 0'),'Invented zero clipping counts');
+assert.equal(identity.base_revision,'rev-002');assert.equal(identity.inputs_digest,'prepared-draft');
+assert.equal($('trimap').disabled,false);assert.equal($('matte').disabled,false);
+$('trimapReviewed').checked=true;await $('trimap').onclick();
+assert.equal(posts.at(-1).action,'trimap');assert.equal(posts.at(-1).revision,'rev-002');
+assert.equal(posts.at(-1).base_revision,'rev-002');assert.equal(posts.at(-1).authoring_digest,'prepared-author');
+await $('matte').onclick();assert.equal(posts.at(-1).action,'matte');
+assert.equal(posts.at(-1).base_revision,'rev-002');assert.equal(posts.at(-1).inputs_digest,'prepared-draft');
+""")
+
+
+def test_reload_prepared_exposure_reports_unavailable_clipping_without_blocking():
+    run_page(r"""
+servedState.working_revision='rev-002';servedState.inputs_digest='prepared-draft';servedState.authoring_digest='prepared-author';
+servedState.revisions.push({revision:'rev-002',kind:'prepare',draft_digest:'prepared-draft',final_acceptable:false,candidates:[],local_exposure:{enabled:true,stale:false,settings:{enabled:true,ev:1}}});
+await ready();
+assert($('exposureStatus').textContent.includes('clipping unavailable'),$('exposureStatus').textContent);
+assert(!$('exposureStatus').textContent.includes('clipped 0'),'Invented zero clipping counts');
+identity.base_revision='rev-old';$('viewRevision').value='rev-001';$('photoReviewed').checked=true;$('trimapReviewed').checked=true;
+await $('reload').onclick();
+assert.equal(identity.base_revision,'rev-002');assert.equal(identity.inputs_digest,'prepared-draft');
+assert.equal($('viewRevision').value,'rev-002');assert.equal($('photoReviewed').checked,false);assert.equal($('trimapReviewed').checked,false);
+assert.equal($('trimap').disabled,false);assert.equal($('matte').disabled,false);
+assert.equal($('message').textContent,'');
+""")

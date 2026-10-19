@@ -352,15 +352,15 @@ shaded foreground quantization, flattened-black foreground reuse, second alpha
 application or second compositing mode is permitted. Off/p=0 is identity relative
 to the selected unshaded foreground/alpha rendering.
 
-Prepare carries both effects; matte/repair recompute their independent alpha
+Prepare carries the optional effects; matte/repair recompute their independent alpha
 dependency status. Any stale enabled effect selects BASE-to-BASE comparisons,
-with BOTH effects disabled on BOTH sides and labels stating this. Viewer labels
+with all optional effects disabled on both sides and labels stating this. Viewer labels
 bind to the successfully displayed revision and effective BASE/stale/opacity
 mode; loading or failed images cannot retain misleading appearance labels. Acceptance
 and draft appearance export remain blocked until EACH stale enabled effect is
 explicitly disabled or independently rebuilt. Prior accepted complete exports
 remain usable. Review manifests expose `cleanup_stale` and `shading_stale`.
-`/image/.../base` selects both effects off; `/image/.../p0`, `/p0.12`, `/p0.24`
+`/image/.../base` selects all optional effects off; `/image/.../p0`, `/p0.12`, `/p0.24`
 compare identical native crops using saved W and selected cleanup, without
 changing saved opacity or accepting appearance. Stale comparisons stay base-only.
 
@@ -373,3 +373,79 @@ and W+p: mask the foreground group with alpha ONCE, use a solid black layer
 with W and chosen p over foreground, and place black background below. No
 baked overlay or GIF is generated. If a downstream editor bakes p into overlay
 alpha, label that strength and use 100% layer opacity.
+
+
+## Optional local exposure
+
+`local_exposure` is an optional schema-1 recipe section with exactly `enabled`
+(boolean) and `ev` (finite number in [-3,3], excluding booleans). Missing means
+OFF / 0 EV in memory. Reading legacy recipes does not rewrite their bytes or
+immutable revision digests. New projects default to OFF / 0 EV.
+
+An exposure-only schema-1 `effects` request uses the existing master/base/draft
+identities, `scope_xyxy` and `candidate_comparison`, plus `local_exposure`. It
+cannot also change cleanup or shading. An enabled area rebuild takes exactly one
+of:
+
+- `exposure_area`: exactly `regions` and `protection` lists of typed native
+  support shapes (stable `id`, `role="support"`, `shape`, geometry and
+  `feather_px`). Point, rectangle and stroke use the guide geometry contract.
+  Protection feather must be zero. This document is independent of matting guides.
+- `support_file`: project-relative scalar16 PNG and explicit
+  `exposure_protection_file`: project-relative categorical16 PNG (0/65535) or
+  authored categorical8 PNG (0/255), both registered to the complete master.
+
+One adjustment exists per revision. Rebuild **replaces** its previous area and
+explicit protection; it never unions old selection silently. Saved guide
+protections and RGB/alpha locks remain protected. Declared scope must cover both
+the previous and replacement nonzero support, including the area being removed.
+An enabled selection must contain eligible pixels. `exposure_amount_only=true`
+changes only enabled/EV settings and requires saved area/protection with current
+alpha. Disable uses `enabled=false`, retains the area and offers recovery from
+stale alpha. Amount-only and disable reject replacement geometry/file fields;
+their scope must cover the saved area. Viewer actions use the full-image scope.
+
+Immutable revisions save `effects/exposure/support16.png`, `protection16.png`,
+`alpha16.png`, `settings.json`, and `area.json` for authored geometry. Every asset
+is revision-hashed. The strict manifest `local_exposure` record contains
+`schema_version=1`, enabled/settings/stale, `source_id`, scope, candidate comparison,
+`support_sha256`, `protection_sha256`, `alpha_sha256`, optional `area_sha256`
+(null for scalar inputs), and algorithm `linear-srgb-local-exposure-v1`.
+The settings asset equals the record. Dependency types, identities, hashes,
+dimensions, categorical protection and authored geometry are validated even OFF.
+Request, draft, source, parent, area and protection inputs are rechecked before
+atomic publication under the canonical writer lock. Accepted state is unchanged.
+
+Selection order is original saved foreground, optional saved cleanup, local
+exposure, existing encoded-sRGB shading, alpha composition. For eligible pixels,
+decode sRGB to linear RGB, multiply by `2 ** (ev * support16 / 65535)`, clamp to
+[0,1], encode to sRGB and quantize once with float64/ties-to-even RGB16.
+The sRGB thresholds are .04045 (decode) and .0031308 (encode). Alpha does not
+scale the exposure gain. Zero-alpha, zero-support and protected RGB are exact;
+alpha never changes. OFF and 0 EV take exact identity paths. Exposure always
+starts from the unexposed saved layers and cannot compound on repeated requests.
+Saved RGB locks snapshot selected exposure RGB and exclude those pixels from
+subsequent exposure. Prepare/matte/repair retain operands; changed alpha makes
+enabled exposure stale until explicit rebuild or disable. Any stale enabled
+effect produces a labelled BASE comparison; acceptance/export is blocked.
+
+Review metadata reports `local_exposure_clipping`: `clipped_pixels` counts
+eligible pixels with any *unclamped* linear channel above 1; `eligible_pixels`
+counts nonzero-area, nonzero-alpha, unprotected pixels. These are warnings, not a
+quality score or a promise of highlight recovery. A current review also exposes
+`local_exposure_stale` and the effect record with clipping. The viewer reuses saved
+clipping metadata rather than reprocessing the photograph on every status poll.
+`/image/.../exposure-off` selects the unexposed foreground while retaining saved
+cleanup and shading; `/base` disables all optional effects. Source and alpha
+panels remain unaffected. Comparison creates no revision.
+
+When exposure is present, exports retain selected `foreground_rgb16.tif`,
+`unexposed_foreground_rgb16.tif`, `base_foreground_rgb16.tif`, source/alpha,
+`exposure_support16.png`, `exposure_protection16.png`,
+`exposure_alpha16.png`, `exposure_settings.json`, and authored
+`exposure_area.json` where present. Shading W16/opacity remain independent.
+Reconstruct by applying the recorded exposure once to unexposed foreground,
+then the existing shading/alpha renderer. The selected foreground already
+contains exposure; applying it again would be incorrect. Reduced-precision
+views remain explicitly labelled. Restore selects immutable saved inputs without
+changing final acceptance; no model inference or download is involved.

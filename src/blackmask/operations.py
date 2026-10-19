@@ -203,7 +203,7 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
 
         if effects_stale(manifest):
             raise ProjectError(
-                "Stale enabled cleanup/shading: scoped rebuild or explicit disable required before acceptance"
+                "Stale enabled cleanup/shading/local exposure: scoped rebuild or explicit disable required before acceptance"
             )
         captured = draft_digest(project)
         if (
@@ -385,10 +385,11 @@ def _prepare(
                 (stage / name).write_bytes(
                     _asset(project, f"revisions/{parent}/{name}").read_bytes()
                 )
-    from .effects import inherit_cleanup, inherit_shading
+    from .effects import inherit_cleanup, inherit_exposure, inherit_shading
 
     cleanup = inherit_cleanup(project, parent, stage, state["master_id"]) if parent else None
     shading = inherit_shading(project, parent, stage, state["master_id"]) if parent else None
+    exposure = inherit_exposure(project, parent, stage, state["master_id"]) if parent else None
     # RGB8 is a separately labelled proxy. It never becomes a precision output owner.
     proxy = np.rint(pixels.astype(np.float64) / 257).astype(np.uint8)
     cache = model_cache or (
@@ -503,6 +504,7 @@ def _prepare(
         "trimap_review": "human review required; selection membership does not prove opacity",
         **({"color_cleanup": cleanup} if cleanup is not None else {}),
         **({"shading": shading} if shading is not None else {}),
+        **({"local_exposure": exposure} if exposure is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
     for path in stage.rglob("*"):
@@ -1012,7 +1014,9 @@ def _matte(
         if foreground.shape != pixels.shape or foreground.dtype != np.uint16:
             raise ProjectError("Invalid repair parent foreground RGB16")
     applicable_parent_foreground = foreground
-    if repairing and manifest.get("color_cleanup", {}).get("enabled"):
+    if repairing and any(
+        manifest.get(name, {}).get("enabled") for name in ("color_cleanup", "local_exposure")
+    ):
         from .effects import saved_effect_lock_layers
 
         # The write boundary preserves the saved selected appearance, which may
@@ -1035,7 +1039,10 @@ def _matte(
         )
         if name:
             values = tifffile.imread(_asset(project, f"revisions/{rev}/{name}"))
-            if locked_manifest.get("color_cleanup", {}).get("enabled"):
+            if any(
+                locked_manifest.get(name, {}).get("enabled")
+                for name in ("color_cleanup", "local_exposure")
+            ):
                 from .effects import saved_effect_lock_layers
 
                 values, _, _ = saved_effect_lock_layers(project, rev, state["master_id"])
@@ -1185,13 +1192,16 @@ def _matte(
             raise ProjectError("Alpha16 round trip failed")
     if not np.array_equal(tifffile.imread(stage / "foreground_rgb16.tif"), foreground):
         raise ProjectError("Foreground RGB16 round trip failed")
-    from .effects import effects_stale, inherit_cleanup, inherit_shading
+    from .effects import effects_stale, inherit_cleanup, inherit_exposure, inherit_shading
 
     cleanup = inherit_cleanup(
         project, parent, stage, state["master_id"], alpha, foreground, rgb_protection
     )
     shading = inherit_shading(project, parent, stage, state["master_id"], alpha)
-    stale_effects = effects_stale({"color_cleanup": cleanup or {}, "shading": shading or {}})
+    exposure = inherit_exposure(project, parent, stage, state["master_id"], alpha, rgb_protection)
+    stale_effects = effects_stale(
+        {"color_cleanup": cleanup or {}, "shading": shading or {}, "local_exposure": exposure or {}}
+    )
     review_weight = (
         scalar16(stage / "shadow_weight16.png")
         if shading and shading["enabled"] and not stale_effects
@@ -1201,6 +1211,15 @@ def _matte(
     review_foreground = foreground
     if cleanup and cleanup["enabled"] and not stale_effects:
         review_foreground = tifffile.imread(stage / "corrected_rgb16.tif")
+    from .exposure import selected_exposure
+
+    review_foreground, clipping = selected_exposure(
+        stage,
+        review_foreground,
+        alpha,
+        {"master_id": state["master_id"], **({"local_exposure": exposure} if exposure else {})},
+        exposure_off=stale_effects,
+    )
     write_review(
         stage / "review",
         pixels,
@@ -1226,6 +1245,10 @@ def _matte(
             before_foreground = read_rgb16(
                 _asset(project, f"revisions/{parent}/corrected_rgb16.tif")
             )
+        if exposure and not stale_effects:
+            from .effects import saved_effect_lock_layers
+
+            before_foreground, _, _ = saved_effect_lock_layers(project, parent, state["master_id"])
         write_review(
             stage / "review-before",
             pixels,
@@ -1263,6 +1286,18 @@ def _matte(
                 else "; shading OFF"
             )
             path.write_bytes(_json_bytes(record))
+    if exposure:
+        for review_name in ("review", "review-before") if repairing else ("review",):
+            path = stage / review_name / "manifest.json"
+            record = json.loads(path.read_bytes())
+            record["local_exposure"] = exposure
+            record["local_exposure_clipping"] = clipping
+            record["label"] += (
+                "; local exposure OFF; BASE comparison, rebuild or disable stale effects"
+                if stale_effects
+                else f"; local exposure {'ON' if exposure['enabled'] else 'OFF'}"
+            )
+            path.write_bytes(_json_bytes(record))
     (stage / "qa.json").write_bytes(
         _json_bytes(
             {
@@ -1285,6 +1320,7 @@ def _matte(
         "model": model_record,
         **({"color_cleanup": cleanup} if cleanup is not None else {}),
         **({"shading": shading} if shading is not None else {}),
+        **({"local_exposure": exposure} if exposure is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     files = {

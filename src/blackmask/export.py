@@ -98,7 +98,12 @@ def read_rgb16(path: Path) -> np.ndarray:
 
 
 def saved_layers(
-    project: Path, revision: str, master_id: str, *, effects_off: bool = False
+    project: Path,
+    revision: str,
+    master_id: str,
+    *,
+    effects_off: bool = False,
+    exposure_off: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     manifest = read_revision(project, revision, master_id)
     if (
@@ -141,7 +146,13 @@ def saved_layers(
     saved_shading(project, revision, alpha, manifest, effects_off=effects_off)
 
     foreground = selected_foreground(
-        project, revision, foreground, alpha, manifest, effects_off=effects_off
+        project,
+        revision,
+        foreground,
+        alpha,
+        manifest,
+        effects_off=effects_off,
+        exposure_off=exposure_off,
     )
     return foreground, alpha, manifest
 
@@ -194,7 +205,7 @@ def export_project(
 
         if effects_stale(manifest):
             raise ProjectError(
-                "Stale enabled cleanup/shading: scoped rebuild or explicit disable required before export"
+                "Stale enabled cleanup/shading/local exposure: scoped rebuild or explicit disable required before export"
             )
         weight, opacity = saved_shading(project, revision, alpha, manifest)
         before = _asset(project, "state.json").read_bytes()
@@ -223,6 +234,23 @@ def export_project(
             ):
                 raise ProjectError("Scalar16 export round trip/profile failed")
         write_master(stage / "foreground_rgb16.tif", foreground)
+        if "local_exposure" in manifest:
+            unexposed, _, _ = saved_layers(project, revision, state["master_id"], exposure_off=True)
+            write_master(stage / "unexposed_foreground_rgb16.tif", unexposed)
+            base = _asset(project, f"revisions/{revision}/foreground_rgb16.tif")
+            (stage / "base_foreground_rgb16.tif").write_bytes(base.read_bytes())
+            for name in (
+                "support16.png",
+                "protection16.png",
+                "alpha16.png",
+                "settings.json",
+                "area.json",
+            ):
+                asset = f"effects/exposure/{name}"
+                if asset in manifest["files"]:
+                    (stage / ("exposure_" + name)).write_bytes(
+                        _asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                    )
         write_master(stage / "source_rgb16.tif", load_master(project, state["master_id"])[0])
         for name in ("shadow_weight16.png", "corrected_rgb16.tif", "recipe.toml"):
             if name in manifest["files"]:
@@ -247,7 +275,17 @@ def export_project(
             "compositing": manifest["compositing"],
             "color_cleanup": manifest.get("color_cleanup", {"enabled": False}),
             "shading": manifest.get("shading", {"enabled": False}),
-            "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; baked shading at saved p; editable W16 plus p retained separately",
+            **(
+                {"local_exposure": manifest["local_exposure"]}
+                if "local_exposure" in manifest
+                else {}
+            ),
+            "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; baked shading at saved p; editable W16 plus p retained separately"
+            + (
+                "; selected foreground includes linear-sRGB local exposure once; unexposed foreground and independent support/protection/alpha/settings retained"
+                if "local_exposure" in manifest
+                else ""
+            ),
             "files": {p.name: digest(p.read_bytes()) for p in stage.iterdir() if p.is_file()},
         }
         (stage / "manifest.json").write_bytes(_json_bytes(record))

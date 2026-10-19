@@ -213,6 +213,27 @@ def review_project(
             "stale"
         ):
             stale.append("shading_stale")
+        if revision_manifest.get("local_exposure", {}).get("enabled") and revision_manifest[
+            "local_exposure"
+        ].get("stale"):
+            stale.append("local_exposure_stale")
+        from .exposure import selected_exposure
+
+        unexposed = saved_layers(project, revision, state["master_id"], exposure_off=True)[0]
+        _, clipping = selected_exposure(
+            _asset(project, f"revisions/{revision}"),
+            unexposed,
+            alpha,
+            revision_manifest,
+            exposure_off=effects_stale(revision_manifest),
+        )
+        if "local_exposure" in revision_manifest:
+            record["label"] += (
+                "; local exposure OFF"
+                if effects_stale(revision_manifest)
+                or not revision_manifest["local_exposure"]["enabled"]
+                else f"; local exposure ON {revision_manifest['local_exposure']['settings']['ev']} EV"
+            )
         if effects_stale(revision_manifest):
             record["label"] += (
                 "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need independent rebuild or disable"
@@ -234,6 +255,10 @@ def review_project(
                 if revision_manifest.get("color_cleanup", {}).get("enabled")
                 and not effects_stale(revision_manifest)
                 else f"{prefix}/foreground_rgb16.tif",
+                "local_exposure": f"{prefix}/effects/exposure/settings.json"
+                if "local_exposure" in revision_manifest
+                else None,
+                "foreground_selection": "base, optional cleanup, local exposure once; shading at render",
                 "base_foreground_rgb16": f"{prefix}/foreground_rgb16.tif",
                 "alpha16": f"{prefix}/base_alpha16.png",
                 "before_manifest": f"{prefix}/review-before/manifest.json"
@@ -249,6 +274,10 @@ def review_project(
                     "color_cleanup", {"enabled": False, "stale": False}
                 ),
                 "shading": revision_manifest.get("shading", {"enabled": False, "stale": False}),
+                "local_exposure": dict(
+                    revision_manifest.get("local_exposure", {"enabled": False, "stale": False}),
+                    clipping=clipping,
+                ),
             },
             status="review_needed",
             view_files={p.name: digest(p.read_bytes()) for p in directory.glob("*.png")},

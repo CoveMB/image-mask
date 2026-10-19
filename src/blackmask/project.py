@@ -430,4 +430,23 @@ def _validate_revision_directory(
         "repair/merge.json",
     } <= set(manifest["files"]):
         raise ProjectError("Incomplete repair operands")
+    if "local_exposure" in manifest:
+        from .exposure import EXPOSURE_FILES, read_exposure
+        from .repair import scalar16
+
+        required_exposure = {f"effects/exposure/{name}" for name in EXPOSURE_FILES}
+        if not required_exposure <= set(manifest["files"]):
+            raise ProjectError("Incomplete local exposure assets")
+        record = manifest["local_exposure"]
+        if (
+            isinstance(record, dict)
+            and record.get("area_sha256") is not None
+            and "effects/exposure/area.json" not in manifest["files"]
+        ):
+            raise ProjectError("Missing bound local exposure authored area")
+        read_exposure(
+            _asset(project, directory),
+            manifest,
+            scalar16(_asset(project, f"{directory}/base_alpha16.png")),
+        )
     return manifest

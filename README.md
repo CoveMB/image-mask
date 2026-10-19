@@ -25,7 +25,8 @@ authoring, native comparisons and the same processing/recovery controls. Optiona
 recorded, bounded source-based assisted review uses the same operations. Optional
 default-off source-guided color cleanup saves RGB16 layers with scoped stale/rebuild
 controls. Default-off protected inward shading saves independent W16/opacity and
-supports exact editable exports.
+supports exact editable exports. Default-off Local exposure adds independent offline
+brush/rectangle areas, protections, reversible EV and exposure-only comparison.
 Prepared revisions require explicit human trimap review before matting.
 Combined computational checks and saved-only reconstruction are documented in
 [validation](docs/validation.md#combined-workflow-validation). The representative
@@ -118,6 +119,7 @@ for explicit model setup, typed preparation and human review.
 | Same-native-crop review assets | `src/blackmask/review.py` |
 | Canonical precision renderer and accepted/draft exports | `src/blackmask/export.py` |
 | Source cleanup, protected inward W16 and independent effect publication | `src/blackmask/effects.py` |
+| Independent native area and linear-sRGB local exposure | `src/blackmask/exposure.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | One-project loopback server and packaged manual page | `src/blackmask/viewer.py`, `src/blackmask/ui/review.html` |
 | Shared inverse native coordinate mapping | `src/blackmask/ui/coordinates.js` |

@@ -76,6 +76,21 @@ class ReviewServer(ThreadingHTTPServer):
         for path in sorted(_asset(self.project, "revisions").glob("rev-*")):
             if re.fullmatch(r"rev-[0-9]{3,}", path.name):
                 manifest = read_revision(self.project, path.name, state["master_id"])
+                exposure_area = None
+                if manifest.get("local_exposure", {}).get("area_sha256"):
+                    exposure_area = json.loads(
+                        _asset(
+                            self.project, f"revisions/{path.name}/effects/exposure/area.json"
+                        ).read_bytes()
+                    )
+                exposure = dict(manifest.get("local_exposure", {"enabled": False, "stale": False}))
+                if "local_exposure" in manifest and manifest["final_acceptable"]:
+                    saved_review = json.loads(
+                        _asset(
+                            self.project, f"revisions/{path.name}/review/manifest.json"
+                        ).read_bytes()
+                    )
+                    exposure["clipping"] = saved_review["local_exposure_clipping"]
                 revisions.append(
                     {
                         "revision": path.name,
@@ -91,6 +106,8 @@ class ReviewServer(ThreadingHTTPServer):
                             "color_cleanup", {"enabled": False, "stale": False}
                         ),
                         "shading": manifest.get("shading", {"enabled": False, "stale": False}),
+                        "local_exposure": exposure,
+                        "exposure_area": exposure_area,
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
                             for k in ("inferred_tiles", "reused_tiles")
@@ -111,14 +128,24 @@ class ReviewServer(ThreadingHTTPServer):
             "trimap": {"revision"},
             "accept": {"revision"},
             "matte": set(),
-            "effects": {"scope_xyxy", "support_file", "candidate_comparison"},
+            "effects": {"scope_xyxy", "candidate_comparison"},
             "repair": {"context_xyxy", "scope_xyxy", "reason", "merge_policy"},
             "restore": {"revision", "replace_drafts"},
             "resume": {"operation_id"},
             "export": {"revision", "draft"},
         }
         if action == "effects":
-            optional = {"color_cleanup", "shading", "shading_protection_file", "opacity_only"}
+            optional = {
+                "support_file",
+                "color_cleanup",
+                "shading",
+                "shading_protection_file",
+                "opacity_only",
+                "local_exposure",
+                "exposure_area",
+                "exposure_protection_file",
+                "exposure_amount_only",
+            }
             fields["effects"] |= set(data) & optional
         if action not in fields or set(data) != fields[action] | {
             "action",
@@ -214,6 +241,10 @@ class ReviewServer(ThreadingHTTPServer):
                         "shading",
                         "shading_protection_file",
                         "opacity_only",
+                        "local_exposure",
+                        "exposure_area",
+                        "exposure_protection_file",
+                        "exposure_amount_only",
                     )
                     if k in data
                 }
@@ -230,7 +261,7 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/p(?:0|0.12|0.24))?",
+            r"/image/(source|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -259,6 +290,7 @@ class ReviewServer(ThreadingHTTPServer):
                 identity,
                 state["master_id"],
                 effects_off=bool(base == "/base" or stale),
+                exposure_off=base == "/exposure-off",
             )
             weight, opacity = saved_shading(
                 self.project, identity, alpha, manifest, effects_off=bool(base == "/base" or stale)
