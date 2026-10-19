@@ -413,3 +413,97 @@ def test_request_edit_between_capture_and_record_rejects_completed_resume(tmp_pa
         operations.resume_operation(project, operation_id)
     assert (project / "state.json").read_bytes() == state
     assert json.loads(path.read_bytes()) == changed
+
+
+@pytest.mark.parametrize("repairing", [False, True])
+@pytest.mark.parametrize(
+    "boundary,error_type",
+    [
+        ("rerun", OSError),
+        ("rerun", ValueError),
+        ("rerun", KeyError),
+        ("rerun", TypeError),
+        ("rerun", ProjectError),
+        ("publication", OSError),
+        ("sync", OSError),
+        ("pointer", OSError),
+    ],
+)
+def test_valid_resume_failure_preserves_cause_acceptance_and_retry(
+    tmp_path, repairing, boundary, error_type
+):
+    from test_repair_operations import parent_project, repair_guides, repair_request
+
+    from blackmask.export import export_project
+
+    source, project, accepted = parent_project(tmp_path)
+    original_source = source.read_bytes()
+    export = Path(export_project(project)["directory"])
+    accepted_files = {p.name: p.read_bytes() for p in export.iterdir() if p.is_file()}
+    if repairing:
+        prepared_result = repair_guides(project, [1, 1, 4, 3])
+        operation = repair_request(project, prepared_result, [0, 0, 5, 4], [1, 1, 4, 3])
+    else:
+        prepared_result = operations.apply_operation(project, request(project))
+        approve(project, prepared_result)
+        operation = request(project, kind="matte")
+    initial_boundary = (
+        "blackmask.review.write_review"
+        if boundary == "rerun"
+        else "blackmask.operations._publish_new_directory"
+    )
+    with (
+        patch("blackmask.operations.VitMatteSession", StubSession),
+        patch(initial_boundary, side_effect=OSError("initial interruption")),
+        pytest.raises(OSError, match="initial interruption"),
+    ):
+        operations.apply_operation(project, operation, model_cache=Path("unused"))
+    operation_id = recovery_id(project)
+    saved_state = (project / "state.json").read_bytes()
+    error = error_type("temporary storage failure")
+    original_json = operations._atomic_json
+
+    def fail_pointer(path, value, **kwargs):
+        if path.name == "state.json":
+            raise error
+        return original_json(path, value, **kwargs)
+
+    target = {
+        "rerun": "blackmask.review.write_review",
+        "publication": "blackmask.operations._publish_new_directory",
+        "sync": "blackmask.operations._sync_directory",
+        "pointer": "blackmask.operations._atomic_json",
+    }[boundary]
+    with (
+        patch("blackmask.operations.VitMatteSession", StubSession),
+        patch(target, side_effect=fail_pointer if boundary == "pointer" else error),
+        pytest.raises(error_type) as caught,
+    ):
+        operations.resume_operation(project, operation_id, model_cache=Path("unused"))
+    assert caught.value is error
+    assert (project / "state.json").read_bytes() == saved_state
+    assert source.read_bytes() == original_source
+    assert {p.name: p.read_bytes() for p in export.iterdir() if p.is_file()} == accepted_files
+    with patch("blackmask.operations.VitMatteSession", StubSession):
+        resumed = operations.resume_operation(project, operation_id, model_cache=Path("unused"))
+    assert resumed["status"] == "review_needed"
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
+    assert export_project(project)["directory"] == str(export)
+    assert {p.name: p.read_bytes() for p in export.iterdir() if p.is_file()} == accepted_files
+
+
+@pytest.mark.parametrize("broken", ["json", "missing", "type"])
+def test_unreadable_recovery_record_stays_actionable(tmp_path, broken):
+    _, project, result = prepared(tmp_path)
+    approve(project, result)
+    operation_id = interrupted(project, "_publish_new_directory")
+    directory = project / "requests" / operation_id
+    if broken == "json":
+        (directory / "manifest.json").write_text("{")
+    elif broken == "missing":
+        (directory / "operation.json").rename(directory / "operation-retained.json")
+    else:
+        (directory / "completion.json").write_text("null")
+    with pytest.raises(ProjectError, match="Invalid recovery record") as caught:
+        operations.resume_operation(project, operation_id)
+    assert caught.value.__cause__ is not None
