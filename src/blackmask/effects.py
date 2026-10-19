@@ -76,7 +76,7 @@ def make_corrected_rgb(
     if not known_empty.any():
         raise ProjectError("Cleanup needs confirmed empty source pixels; revise guides explicitly")
     indices = distance_transform_edt(~known_empty, return_distances=False, return_indices=True)
-    background = source16[tuple(indices)][permitted].astype(np.float64)
+    background = source16[indices[0][permitted], indices[1][permitted]].astype(np.float64)
     amount = settings["strength"] * (1 - alpha16[permitted].astype(np.float64) / 65535)
     amount *= support16[permitted].astype(np.float64) / 65535
     corrected = (source16[permitted].astype(np.float64) - amount[:, None] * background) / (

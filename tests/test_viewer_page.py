@@ -210,3 +210,36 @@ def test_same_alpha_cleanup_toggle_requests_explicit_base_pixels():
  await $('cleanupBase').onchange();
  assert(paths.some(p=>p==='/image/black/rev-001/0,0,100,100/base'));
  """)
+
+
+def test_cleanup_enable_rejects_empty_invalid_and_off_strength_without_submitting():
+    run_page(r"""
+ await ready();$('cleanupScope').value='0,0,100,100';$('cleanupSupport').value='support16.png';
+ for(const value of ['', '   ', 'bad', 'Infinity', '-0.1', '1.1', '0']){
+   $('cleanupStrength').value=value;await $('cleanupApply').onclick();
+   assert.equal(posts.length,0,'Invalid Enable input submitted an effects action: '+value);
+   assert.match($('message').textContent,/Cleanup strength|Strength 0/);
+ }
+ """)
+
+
+def test_cleanup_disable_remains_available_with_invalid_strength():
+    run_page(r"""
+ await ready();$('cleanupScope').value='0,0,100,100';$('cleanupSupport').value='support16.png';
+ for(const value of ['', 'bad', 'Infinity', '-0.1', '1.1']){
+   $('cleanupStrength').value=value;await $('cleanupDisable').onclick();
+   assert.deepEqual(posts.at(-1).color_cleanup,{enabled:false,strength:0});
+   actionWasRunning=false;servedState.action.running=false;await refresh();
+ }
+ """)
+
+
+def test_cleanup_enable_accepts_finite_positive_strength_and_upper_boundary():
+    run_page(r"""
+ await ready();$('cleanupScope').value='0,0,100,100';$('cleanupSupport').value='support16.png';
+ for(const value of [' 0.35 ', '1']){
+   $('cleanupStrength').value=value;await $('cleanupApply').onclick();
+   assert.deepEqual(posts.at(-1).color_cleanup,{enabled:true,strength:Number(value)});
+   actionWasRunning=false;servedState.action.running=false;await refresh();
+ }
+ """)
