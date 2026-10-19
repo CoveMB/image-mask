@@ -503,3 +503,39 @@ def test_snapshot_rejects_changes_during_reused_validation(tmp_path, monkeypatch
         monkeypatch.setattr(viewer, "_validate_assets", changed)
         with pytest.raises(ProjectError):
             server.snapshot()
+
+
+def test_request_local_master_reuse_keeps_buffers_readonly_and_metadata_independent(tmp_path):
+    import copy
+
+    from blackmask.project import _validation_scope
+
+    _, project = opened(tmp_path)
+    master_id = read_project(project)["master_id"]
+    with _validation_scope():
+        pixels, metadata = load_master(project, master_id)
+        expected_metadata = copy.deepcopy(metadata)
+        assert not pixels.flags.writeable
+        with pytest.raises(ValueError, match="read-only"):
+            pixels[0, 0] = 0
+        metadata["reader_note"] = "not saved"
+        reused_pixels, fresh_metadata = load_master(project, master_id)
+        assert not reused_pixels.flags.writeable
+        assert fresh_metadata == expected_metadata
+    assert load_master(project, master_id)[0].flags.writeable
+
+
+def test_request_local_revision_reuse_preserves_identity_and_manifest_copies(tmp_path):
+    from test_matte_operations import prepared
+
+    from blackmask.project import _validation_scope, read_revision
+
+    _, project, result = prepared(tmp_path)
+    with _validation_scope():
+        expected = read_revision(project, result["revision"], result["master_id"])
+        changed_by_reader = read_revision(project, result["revision"], result["master_id"])
+        changed_by_reader["files"].clear()
+        assert read_revision(project, result["revision"], result["master_id"]) == expected
+        with pytest.raises(ProjectError, match="master"):
+            read_revision(project, result["revision"], "0" * 64)
+        assert read_revision(project, result["revision"], result["master_id"]) == expected

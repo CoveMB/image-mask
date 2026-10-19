@@ -449,6 +449,14 @@ def _validate_revision_directory(
         or not isinstance(manifest.get("files"), dict)
     ):
         raise ProjectError("Invalid saved revision/master/complete manifest")
+    # An unlisted area is absent from file signatures; reject it before either cache can return.
+    record = manifest.get("local_exposure")
+    if (
+        isinstance(record, dict)
+        and record.get("area_sha256") is None
+        and _asset(project, f"{directory}/effects/exposure/area.json").exists()
+    ):
+        raise ProjectError("Unbound saved local exposure authored area")
     validation = _read_validation.get()
     key = (str(project), directory)
     signature = (
@@ -506,20 +514,12 @@ def _validate_revision_directory(
         }
         if not required_exposure <= set(manifest["files"]):
             raise ProjectError("Incomplete local exposure assets")
-        record = manifest["local_exposure"]
         if (
             isinstance(record, dict)
             and record.get("area_sha256") is not None
             and "effects/exposure/area.json" not in manifest["files"]
         ):
             raise ProjectError("Missing bound local exposure authored area")
-        # This optional, unlisted path is not covered by the asset hashes above.
-        if (
-            isinstance(record, dict)
-            and record.get("area_sha256") is None
-            and _asset(project, f"{directory}/effects/exposure/area.json").exists()
-        ):
-            raise ProjectError("Unbound saved local exposure authored area")
         _validate_exposure_semantics(_asset(project, directory), _json_bytes(manifest))
     if (
         validation is not None

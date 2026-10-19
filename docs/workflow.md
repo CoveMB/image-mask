@@ -197,13 +197,22 @@ correction is warranted, record that limitation rather than changing good detail
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
    success in computation alone does not mean the photograph improved.
-7. Compare source, prior saved result and current result on the same native crop,
+7. If cleanup, shading or Local exposure was enabled, changed alpha can make it
+   **STALE** and switch comparisons to labelled BASE views. Before accepting or
+   exporting the current appearance, rebuild each stale effect from its reviewed
+   support/protection or explicitly disable it: **Explicitly disable cleanup**,
+   **Explicitly disable shading**, or **Reset exposure**. Follow the existing
+   [cleanup recovery](#compare-accept-and-export),
+   [shading recovery](#protected-inward-shading) and
+   [exposure recovery](#local-exposure) instructions; an amount/opacity change alone
+   does not rebuild an alpha dependency. Earlier accepted results/exports stay saved.
+8. Compare source, prior saved result and current result on the same native crop,
    with overlays off, on black/gray/white and alpha. Check the corrected background,
    support boundary, locked partial detail, transparency and seams. Only if the
    result is acceptable, check the separate photographic-review box, choose
    **Accept current photograph**, then **Export accepted result**. Otherwise retain
    the earlier accepted result and revise or restore; do not accept automatically.
-8. Note the accepted export directory. Select an earlier **Restore saved revision**
+9. Note the accepted export directory. Select an earlier **Restore saved revision**
    and choose **Restore working inputs (acceptance unchanged)**. Use explicit draft
    replacement only after reviewing its preservation warning. Confirm acceptance
    and the existing export stay intact. Stop the server with Ctrl-C only after work

@@ -1,6 +1,7 @@
 """Source-supported local exposure math, saved state and offline controls."""
 
 import json
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -605,24 +606,31 @@ def test_warm_viewer_snapshot_reuses_exposure_semantics_without_decoding_masks(t
         "effects/exposure/area.json",
     ],
 )
-def test_warm_exposure_validation_still_checks_every_asset_hash(tmp_path, asset):
+@pytest.mark.parametrize("request_local", [False, True])
+def test_warm_exposure_validation_still_checks_every_asset_hash(tmp_path, asset, request_local):
+    from blackmask.project import _validation_scope
+
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, exposure_request(project))
     master_id = read_project(project)["master_id"]
-    expected = read_revision(project, result["revision"], master_id)
-    path = project / "revisions" / result["revision"] / asset
-    saved = path.read_bytes()
-    try:
-        path.write_bytes(saved + b" ")
-        with pytest.raises(ProjectError, match="hash mismatch"):
-            read_revision(project, result["revision"], master_id)
-    finally:
-        path.write_bytes(saved)
-    assert read_revision(project, result["revision"], master_id) == expected
+    with _validation_scope() if request_local else nullcontext():
+        expected = read_revision(project, result["revision"], master_id)
+        path = project / "revisions" / result["revision"] / asset
+        saved = path.read_bytes()
+        try:
+            path.write_bytes(saved + b" ")
+            with pytest.raises(ProjectError, match="hash mismatch"):
+                read_revision(project, result["revision"], master_id)
+        finally:
+            path.write_bytes(saved)
+        assert read_revision(project, result["revision"], master_id) == expected
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-def test_warm_scalar_exposure_rejects_new_unbound_authored_area(tmp_path, enabled):
+@pytest.mark.parametrize("request_local", [False, True])
+def test_warm_scalar_exposure_rejects_new_unbound_authored_area(tmp_path, enabled, request_local):
+    from blackmask.project import _validation_scope
+
     project, _, _ = fixture_project(tmp_path)
     Image.fromarray(np.full((4, 6), 65535, np.uint16)).save(project / "area.png")
     Image.fromarray(np.zeros((4, 6), np.uint16)).save(project / "protection.png")
@@ -633,15 +641,16 @@ def test_warm_scalar_exposure_rejects_new_unbound_authored_area(tmp_path, enable
     if not enabled:
         result = operations.apply_operation(project, exposure_request(project, enabled=False))
     master_id = read_project(project)["master_id"]
-    expected = read_revision(project, result["revision"], master_id)
-    path = project / "revisions" / result["revision"] / "effects/exposure/area.json"
-    path.write_text("{}")
-    try:
-        with pytest.raises(ProjectError, match="Unbound"):
-            read_revision(project, result["revision"], master_id)
-    finally:
-        path.unlink()
-    assert read_revision(project, result["revision"], master_id) == expected
+    with _validation_scope() if request_local else nullcontext():
+        expected = read_revision(project, result["revision"], master_id)
+        path = project / "revisions" / result["revision"] / "effects/exposure/area.json"
+        path.write_text("{}")
+        try:
+            with pytest.raises(ProjectError, match="Unbound"):
+                read_revision(project, result["revision"], master_id)
+        finally:
+            path.unlink()
+        assert read_revision(project, result["revision"], master_id) == expected
 
 
 def test_changed_rehashed_exposure_operands_invalidate_prior_semantic_validation(tmp_path):
