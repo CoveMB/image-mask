@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from test_ingest import tiff
 
 from blackmask.ingest import srgb_profile
@@ -172,3 +173,11 @@ def test_open_defaults_to_viewer_and_explicit_headless_preserves_json(
     assert cli.main() == 0
     assert len(calls) == 1
     assert json.loads(capsys.readouterr().out)["development_approved"] is False
+
+
+@pytest.mark.parametrize("model,label", [("sam", "SAM"), ("vitmatte", "ViTMatte")])
+def test_doctor_missing_cache_hint_names_selected_model(tmp_path, model, label):
+    completed = run("doctor", "--project", tmp_path, "--model", model)
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    assert report["models"] == f"pass --model-cache to verify pinned {label} assets"

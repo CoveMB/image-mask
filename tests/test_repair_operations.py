@@ -750,3 +750,94 @@ def test_restore_rechecks_unsaved_default_text_during_snapshot(tmp_path):
         operations.restore_revision(project, parent["revision"])
     assert "newly saved external text" in (project / "recipe.toml").read_text()
     assert (project / "state.json").read_bytes() == before
+
+
+def orphan_preparation(tmp_path):
+    from test_operations import opened
+
+    source, project = opened(tmp_path)
+    filename = edits(
+        project,
+        [
+            {
+                "id": "support",
+                "role": "support",
+                "shape": "rectangle",
+                "xyxy": [0, 0, 2, 1],
+                "feather_px": 0,
+            }
+        ],
+    )
+    atomic_json = operations._atomic_json
+
+    def fail_working_pointer(path, value, **kwargs):
+        if path.name == "state.json":
+            raise OSError("injected initial preparation pointer failure")
+        return atomic_json(path, value, **kwargs)
+
+    with (
+        patch("blackmask.operations._atomic_json", side_effect=fail_working_pointer),
+        pytest.raises(OSError, match="pointer failure"),
+    ):
+        operations.apply_operation(project, request(project, guide_edits_file=filename))
+    state = read_project(project)
+    assert state["working_revision"] is None and state["accepted_revision"] is None
+    revisions = [path for path in (project / "revisions").iterdir() if path.name.startswith("rev-")]
+    assert len(revisions) == 1
+    return source, project, revisions[0].name
+
+
+@pytest.mark.parametrize("filename", ["recipe.toml", "guides.json"])
+def test_restore_orphan_rejects_unsaved_drafts_without_explicit_replacement(tmp_path, filename):
+    source, project, revision = orphan_preparation(tmp_path)
+    capture = source.read_bytes()
+    path = project / filename
+    path.write_bytes(
+        path.read_bytes() + (b"\n# unsaved recipe text\n" if filename == "recipe.toml" else b"\n\n")
+    )
+    before = {
+        name: (project / name).read_bytes() for name in ("recipe.toml", "guides.json", "state.json")
+    }
+    with pytest.raises(ProjectError, match="Unsaved|replace-drafts"):
+        operations.restore_revision(project, revision)
+    assert all((project / name).read_bytes() == value for name, value in before.items())
+    assert not (project / "recovery").exists()
+    result = operations.restore_revision(project, revision, replace_drafts=True)
+    assert result["working_revision"] == revision and result["accepted_revision"] is None
+    recovery = Path(result["recovery_directory"])
+    assert all((recovery / name).read_bytes() == value for name, value in before.items())
+    assert operations.draft_digest(project) == result["inputs_digest"]
+    assert source.read_bytes() == capture
+
+
+def test_restore_orphan_with_matching_drafts_needs_no_replacement_flag(tmp_path):
+    source, project, revision = orphan_preparation(tmp_path)
+    capture = source.read_bytes()
+    before = {name: (project / name).read_bytes() for name in ("recipe.toml", "guides.json")}
+    result = operations.restore_revision(project, revision)
+    assert result["working_revision"] == revision and result["accepted_revision"] is None
+    assert all((project / name).read_bytes() == value for name, value in before.items())
+    assert source.read_bytes() == capture
+
+
+def test_restore_orphan_binds_default_check_to_captured_draft_bytes(tmp_path):
+    source, project, revision = orphan_preparation(tmp_path)
+    capture = source.read_bytes()
+    state = (project / "state.json").read_bytes()
+    original = operations.draft_digest
+
+    def edit_after_initial_check(root):
+        captured = original(root)
+        with (root / "recipe.toml").open("a") as stream:
+            stream.write("\n# intervening unsaved text\n")
+        return captured
+
+    with (
+        patch("blackmask.operations.draft_digest", side_effect=edit_after_initial_check),
+        pytest.raises(ProjectError, match="Unsaved|Stale"),
+    ):
+        operations.restore_revision(project, revision)
+    assert "intervening unsaved text" in (project / "recipe.toml").read_text()
+    assert (project / "state.json").read_bytes() == state
+    assert source.read_bytes() == capture
+    assert not (project / "recovery").exists()

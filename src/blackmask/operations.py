@@ -1300,7 +1300,13 @@ def restore_revision(
             )
         ):
             raise ProjectError("Stale restore viewer identity")
-        pending = pending_guidance(project)
+        pending_invalid = False
+        try:
+            pending = pending_guidance(project)
+        except ProjectError:
+            if not replace_drafts:
+                raise
+            pending, pending_invalid = None, True
         if pending and pending["current"] and pending["actions"] and not replace_drafts:
             raise ProjectError(
                 "Saved pending authoring needs explicit draft replacement for restore"
@@ -1309,12 +1315,14 @@ def restore_revision(
         if target.get("kind") not in {"prepare", "matte", "repair"}:
             raise ProjectError("Unsupported saved revision for restore")
         current = state["working_revision"]
+        expected_draft_digest = target["draft_digest"]
         if current is not None:
             current_manifest = read_revision(project, current, state["master_id"])
-            if draft_digest(project) != current_manifest["draft_digest"] and not replace_drafts:
-                raise ProjectError(
-                    "Unsaved draft edits; preserve them or explicitly use --replace-drafts"
-                )
+            expected_draft_digest = current_manifest["draft_digest"]
+        if not replace_drafts and draft_digest(project) != expected_draft_digest:
+            raise ProjectError(
+                "Unsaved draft edits; preserve them or explicitly use --replace-drafts"
+            )
         snapshots = {
             name: _asset(project, name).read_bytes()
             for name in ("state.json", "source.json", "recipe.toml", "guides.json")
@@ -1325,10 +1333,9 @@ def restore_revision(
         if json.loads(snapshots["state.json"]) != state:
             raise ProjectError("Stale restore state before snapshot")
         if (
-            current is not None
-            and not replace_drafts
+            not replace_drafts
             and digest(snapshots["recipe.toml"] + b"\0" + snapshots["guides.json"])
-            != current_manifest["draft_digest"]
+            != expected_draft_digest
         ):
             raise ProjectError("Unsaved draft edits captured during restore")
         current_bytes = (
@@ -1401,7 +1408,11 @@ def restore_revision(
             _atomic_bytes(_asset(project, name), data, validate_before_replace=recheck)
             publication_inputs[name] = data
         if "viewer-draft.json" in snapshots:
-            retired = dict(json.loads(snapshots["viewer-draft.json"]), superseded_by_restore=True)
+            retired = (
+                {"superseded_by_restore": True, "unreadable": True}
+                if pending_invalid or pending is None
+                else dict(json.loads(snapshots["viewer-draft.json"]), superseded_by_restore=True)
+            )
             _atomic_json(pending_path, retired, validate_before_replace=recheck)
             publication_inputs["viewer-draft.json"] = _json_bytes(retired)
         state.update(
@@ -1511,43 +1522,54 @@ def prepare_guidance_draft(
 
 def pending_guidance(project: Path) -> dict[str, Any] | None:
     """A restored identity must never reapply a previously consumed edit batch."""
-    path = _asset(project, "viewer-draft.json")
-    if not path.exists():
-        return None
-    pending = json.loads(path.read_bytes())
-    if (
-        not isinstance(pending, dict)
-        or re.fullmatch(r"requests/viewer-[a-f0-9]{32}\.json", str(pending.get("record_file")))
-        is None
-        or re.fullmatch(
-            r"requests/viewer-edits-[a-f0-9]{32}\.json", str(pending.get("guide_edits_file"))
+    try:
+        path = _asset(project, "viewer-draft.json")
+        if not path.exists():
+            return None
+        pending = json.loads(path.read_bytes())
+        if pending == {"superseded_by_restore": True, "unreadable": True}:
+            return None
+        if (
+            not isinstance(pending, dict)
+            or re.fullmatch(r"requests/viewer-[a-f0-9]{32}\.json", str(pending.get("record_file")))
+            is None
+            or re.fullmatch(
+                r"requests/viewer-edits-[a-f0-9]{32}\.json", str(pending.get("guide_edits_file"))
+            )
+            is None
+        ):
+            raise ProjectError("Invalid saved authoring record identity")
+        edits = json.loads(_input_file(project, pending["guide_edits_file"]).read_bytes())
+        record = json.loads(_input_file(project, pending["record_file"]).read_bytes())
+        if (
+            edits
+            != {
+                "schema_version": 1,
+                "master_id": pending["master_id"],
+                "actions": pending["actions"],
+            }
+            or record["actions"] != pending["actions"]
+        ):
+            raise ProjectError("Saved authoring snapshot differs from pending typed edits")
+        state = read_project(project, validate_drafts=False)
+        consumed = any(
+            pending["guide_edits_file"]
+            in read_revision(project, p.name, state["master_id"]).get("external_inputs", {})
+            for p in _asset(project, "revisions").glob("rev-*")
+            if re.fullmatch(r"rev-[0-9]{3,}", p.name)
         )
-        is None
-    ):
-        raise ProjectError("Invalid saved authoring record identity")
-    edits = json.loads(_input_file(project, pending["guide_edits_file"]).read_bytes())
-    record = json.loads(_input_file(project, pending["record_file"]).read_bytes())
-    if (
-        edits
-        != {"schema_version": 1, "master_id": pending["master_id"], "actions": pending["actions"]}
-        or record["actions"] != pending["actions"]
-    ):
-        raise ProjectError("Saved authoring snapshot differs from pending typed edits")
-    state = read_project(project, validate_drafts=False)
-    consumed = any(
-        pending["guide_edits_file"]
-        in read_revision(project, p.name, state["master_id"]).get("external_inputs", {})
-        for p in _asset(project, "revisions").glob("rev-*")
-        if re.fullmatch(r"rev-[0-9]{3,}", p.name)
-    )
-    current = (
-        not consumed
-        and not pending.get("superseded_by_restore", False)
-        and pending["master_id"] == state["master_id"]
-        and pending["base_revision"] == state["working_revision"]
-        and pending["inputs_digest"] == draft_digest(project)
-    )
-    return dict(pending, current=current, consumed=consumed, groups=record["groups"])
+        current = (
+            not consumed
+            and not pending.get("superseded_by_restore", False)
+            and pending["master_id"] == state["master_id"]
+            and pending["base_revision"] == state["working_revision"]
+            and pending["inputs_digest"] == draft_digest(project)
+        )
+        return dict(pending, current=current, consumed=consumed, groups=record["groups"])
+    except ProjectError:
+        raise
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ProjectError(f"Invalid saved authoring record: {error}") from error
 
 
 def guidance_draft_digest(project: Path) -> str:

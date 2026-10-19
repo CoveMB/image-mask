@@ -24,7 +24,7 @@ globalThis.document = {
 };
 globalThis.location={hash:'#synthetic-test-only'};
 globalThis.ResizeObserver=class {observe(){}};
-globalThis.setInterval=()=>0;
+let poll;globalThis.setInterval=callback=>{poll=callback;return 0;};
 globalThis.confirm=()=>true;
 globalThis.createImageBitmap=async blob=>({width:blob.width,height:blob.height,close(){}});
 const servedState={
@@ -184,4 +184,40 @@ def test_rejected_dispatch_releases_authoring_and_retains_unsaved_edits():
  assert.equal(JSON.stringify(regions),before);
  assert.equal($('message').textContent,'Synthetic dispatch rejection');
  addRegion([20,20]);assert.equal(regions.length,2);
+ """)
+
+
+def test_state_polls_do_not_overlap_manual_refresh_or_replay_completed_actions():
+    run_page(r"""
+ await ready();
+ const originalFetch=globalThis.fetch;let release;let stateRequests=0;
+ globalThis.fetch=async(path,options)=>{
+   if(path==='/api/state'){
+     stateRequests++;
+     const captured=structuredClone(servedState);
+     return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>captured});});
+   }
+   return originalFetch(path,options);
+ };
+ servedState.action={name:'save',running:true,error:null};
+ const first=refresh();poll();poll();
+ assert.equal(stateRequests,1,'Polling overlapped an active manual refresh');
+ release();await first;
+ globalThis.fetch=originalFetch;
+ servedState.action={name:'save',running:false,error:null,result:{record_file:'saved'}};
+ await poll();addRegion([10,10]);const before=JSON.stringify(regions);
+ await poll();
+ assert.equal(dirty,true);assert.equal(JSON.stringify(regions),before);
+ """)
+
+
+def test_failed_poll_releases_refresh_guard_for_the_next_poll():
+    run_page(r"""
+ await ready();const originalFetch=globalThis.fetch;let reject;let calls=0;
+ globalThis.fetch=(path,options)=>path==='/api/state'?(calls++,new Promise((resolve,rejectRequest)=>{reject=rejectRequest;})):originalFetch(path,options);
+ const first=poll();poll();assert.equal(calls,1);
+ reject(Error('Synthetic state failure'));await first;
+ assert.equal($('message').textContent,'Synthetic state failure');
+ globalThis.fetch=originalFetch;await poll();
+ assert.equal(authoringBusy(),false);addRegion([10,10]);assert.equal(regions.length,1);
  """)
