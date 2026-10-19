@@ -24,7 +24,7 @@ globalThis.document = {
 };
 globalThis.location={hash:'#synthetic-test-only'};
 globalThis.ResizeObserver=class {observe(){}};
-globalThis.setInterval=()=>0;
+let poll;globalThis.setInterval=callback=>{poll=callback;return 0;};
 globalThis.confirm=()=>true;
 globalThis.createImageBitmap=async blob=>({width:blob.width,height:blob.height,close(){}});
 const servedState={
@@ -372,3 +372,72 @@ assert.equal($('viewRevision').value,'rev-002');assert.equal($('photoReviewed').
 assert.equal($('trimap').disabled,false);assert.equal($('matte').disabled,false);
 assert.equal($('message').textContent,'');
 """)
+
+
+def test_cleanup_enable_rejects_empty_invalid_and_off_strength_without_submitting():
+    run_page(r"""
+ await ready();$('cleanupScope').value='0,0,100,100';$('cleanupSupport').value='support16.png';
+ for(const value of ['', '   ', 'bad', 'Infinity', '-0.1', '1.1', '0']){
+   $('cleanupStrength').value=value;await $('cleanupApply').onclick();
+   assert.equal(posts.length,0,'Invalid Enable input submitted an effects action: '+value);
+   assert.match($('message').textContent,/Cleanup strength|Strength 0/);
+ }
+ """)
+
+
+def test_cleanup_disable_remains_available_with_invalid_strength():
+    run_page(r"""
+ await ready();$('cleanupScope').value='0,0,100,100';$('cleanupSupport').value='support16.png';
+ for(const value of ['', 'bad', 'Infinity', '-0.1', '1.1']){
+   $('cleanupStrength').value=value;await $('cleanupDisable').onclick();
+   assert.deepEqual(posts.at(-1).color_cleanup,{enabled:false,strength:0});
+   actionWasRunning=false;servedState.action.running=false;await refresh();
+ }
+ """)
+
+
+def test_cleanup_enable_accepts_finite_positive_strength_and_upper_boundary():
+    run_page(r"""
+ await ready();$('cleanupScope').value='0,0,100,100';$('cleanupSupport').value='support16.png';
+ for(const value of [' 0.35 ', '1']){
+   $('cleanupStrength').value=value;await $('cleanupApply').onclick();
+   assert.deepEqual(posts.at(-1).color_cleanup,{enabled:true,strength:Number(value)});
+   actionWasRunning=false;servedState.action.running=false;await refresh();
+ }
+ """)
+
+
+def test_state_polls_do_not_overlap_manual_refresh_or_replay_completed_actions():
+    run_page(r"""
+ await ready();
+ const originalFetch=globalThis.fetch;let release;let stateRequests=0;
+ globalThis.fetch=async(path,options)=>{
+   if(path==='/api/state'){
+     stateRequests++;
+     const captured=structuredClone(servedState);
+     return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>captured});});
+   }
+   return originalFetch(path,options);
+ };
+ servedState.action={name:'save',running:true,error:null};
+ const first=refresh();poll();poll();
+ assert.equal(stateRequests,1,'Polling overlapped an active manual refresh');
+ release();await first;
+ globalThis.fetch=originalFetch;
+ servedState.action={name:'save',running:false,error:null,result:{record_file:'saved'}};
+ await poll();addRegion([10,10]);const before=JSON.stringify(regions);
+ await poll();
+ assert.equal(dirty,true);assert.equal(JSON.stringify(regions),before);
+ """)
+
+
+def test_failed_poll_releases_refresh_guard_for_the_next_poll():
+    run_page(r"""
+ await ready();const originalFetch=globalThis.fetch;let reject;let calls=0;
+ globalThis.fetch=(path,options)=>path==='/api/state'?(calls++,new Promise((resolve,rejectRequest)=>{reject=rejectRequest;})):originalFetch(path,options);
+ const first=poll();poll();assert.equal(calls,1);
+ reject(Error('Synthetic state failure'));await first;
+ assert.equal($('message').textContent,'Synthetic state failure');
+ globalThis.fetch=originalFetch;await poll();
+ assert.equal(authoringBusy(),false);addRegion([10,10]);assert.equal(regions.length,1);
+ """)
