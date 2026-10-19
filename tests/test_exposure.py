@@ -563,3 +563,127 @@ def test_saved_exposure_rejects_inconsistent_or_unsupported_record(tmp_path, fie
     (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError):
         read_revision(project, result["revision"], master_id)
+
+
+def test_warm_viewer_snapshot_reuses_exposure_semantics_without_decoding_masks(tmp_path):
+    from blackmask import exposure, repair
+    from blackmask.viewer import ReviewServer
+
+    project, _, _ = fixture_project(tmp_path)
+    operations.apply_operation(project, exposure_request(project))
+    server = ReviewServer(project)
+    try:
+        expected = server.snapshot()
+        with (
+            patch.object(exposure, "scalar16", wraps=exposure.scalar16) as exposure_decode,
+            patch.object(repair, "scalar16", wraps=repair.scalar16) as base_decode,
+            patch.object(
+                exposure, "rasterize_exposure_area", wraps=exposure.rasterize_exposure_area
+            ) as rasterize,
+        ):
+            assert server.snapshot() == expected
+            assert server.snapshot() == expected
+            assert exposure_decode.call_count == 0, "Unchanged polls decoded saved exposure masks"
+            assert base_decode.call_count == 0, (
+                "Unchanged polls decoded exposure alpha dependencies"
+            )
+            assert rasterize.call_count == 0, (
+                "Unchanged polls rasterized authored exposure geometry"
+            )
+    finally:
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    "asset",
+    [
+        "base_alpha16.png",
+        "effects/exposure/support16.png",
+        "effects/exposure/protection16.png",
+        "effects/exposure/alpha16.png",
+        "effects/exposure/settings.json",
+        "effects/exposure/area.json",
+    ],
+)
+def test_warm_exposure_validation_still_checks_every_asset_hash(tmp_path, asset):
+    project, _, _ = fixture_project(tmp_path)
+    result = operations.apply_operation(project, exposure_request(project))
+    master_id = read_project(project)["master_id"]
+    expected = read_revision(project, result["revision"], master_id)
+    path = project / "revisions" / result["revision"] / asset
+    saved = path.read_bytes()
+    try:
+        path.write_bytes(saved + b" ")
+        with pytest.raises(ProjectError, match="hash mismatch"):
+            read_revision(project, result["revision"], master_id)
+    finally:
+        path.write_bytes(saved)
+    assert read_revision(project, result["revision"], master_id) == expected
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_warm_scalar_exposure_rejects_new_unbound_authored_area(tmp_path, enabled):
+    project, _, _ = fixture_project(tmp_path)
+    Image.fromarray(np.full((4, 6), 65535, np.uint16)).save(project / "area.png")
+    Image.fromarray(np.zeros((4, 6), np.uint16)).save(project / "protection.png")
+    operation = exposure_request(project)
+    operation.pop("exposure_area")
+    operation.update(support_file="area.png", exposure_protection_file="protection.png")
+    result = operations.apply_operation(project, operation)
+    if not enabled:
+        result = operations.apply_operation(project, exposure_request(project, enabled=False))
+    master_id = read_project(project)["master_id"]
+    expected = read_revision(project, result["revision"], master_id)
+    path = project / "revisions" / result["revision"] / "effects/exposure/area.json"
+    path.write_text("{}")
+    try:
+        with pytest.raises(ProjectError, match="Unbound"):
+            read_revision(project, result["revision"], master_id)
+    finally:
+        path.unlink()
+    assert read_revision(project, result["revision"], master_id) == expected
+
+
+def test_changed_rehashed_exposure_operands_invalidate_prior_semantic_validation(tmp_path):
+    from blackmask.project import _json_bytes, digest
+    from blackmask.repair import scalar16
+
+    project, _, _ = fixture_project(tmp_path)
+    result = operations.apply_operation(project, exposure_request(project))
+    master_id = read_project(project)["master_id"]
+    read_revision(project, result["revision"], master_id)
+    directory = project / "revisions" / result["revision"]
+    manifest_path = directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    support_path = directory / "effects/exposure/support16.png"
+    support = scalar16(support_path)
+    assert support[0, 1] == 65535
+    support[0, 1] = 0
+    Image.fromarray(support).save(support_path)
+    checksum = digest(support_path.read_bytes())
+    manifest["local_exposure"]["support_sha256"] = checksum
+    manifest["files"]["effects/exposure/support16.png"] = checksum
+    settings_path = directory / "effects/exposure/settings.json"
+    settings_path.write_bytes(_json_bytes(manifest["local_exposure"]))
+    manifest["files"]["effects/exposure/settings.json"] = digest(settings_path.read_bytes())
+    manifest_path.write_bytes(_json_bytes(manifest))
+    for _ in range(2):
+        with pytest.raises(ProjectError, match="area differs"):
+            read_revision(project, result["revision"], master_id)
+
+
+def test_prepared_exposure_requires_manifest_bound_base_alpha(tmp_path):
+    from blackmask.project import _json_bytes
+
+    project, _, _ = fixture_project(tmp_path)
+    operations.apply_operation(project, exposure_request(project))
+    prepared = operations.apply_operation(project, request(project))
+    master_id = read_project(project)["master_id"]
+    read_revision(project, prepared["revision"], master_id)
+    directory = project / "revisions" / prepared["revision"]
+    manifest_path = directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    del manifest["files"]["base_alpha16.png"]
+    manifest_path.write_bytes(_json_bytes(manifest))
+    with pytest.raises(ProjectError, match="Incomplete local exposure"):
+        read_revision(project, prepared["revision"], master_id)

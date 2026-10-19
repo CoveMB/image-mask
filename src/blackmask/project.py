@@ -13,6 +13,7 @@ import tempfile
 import tomllib
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -378,6 +379,15 @@ def read_revision(project: Path, revision: str, master_id: str) -> dict[str, Any
     return _validate_revision_directory(project, revision, master_id, f"revisions/{revision}")
 
 
+@lru_cache(maxsize=128)
+def _validate_exposure_semantics(directory: Path, manifest_bytes: bytes) -> None:
+    """Bound successful checks only; callers must rehash every operand before reuse."""
+    from .exposure import read_exposure
+    from .repair import scalar16
+
+    read_exposure(directory, json.loads(manifest_bytes), scalar16(directory / "base_alpha16.png"))
+
+
 def _validate_revision_directory(
     project: Path, revision: str, master_id: str, directory: str
 ) -> dict[str, Any]:
@@ -431,10 +441,11 @@ def _validate_revision_directory(
     } <= set(manifest["files"]):
         raise ProjectError("Incomplete repair operands")
     if "local_exposure" in manifest:
-        from .exposure import EXPOSURE_FILES, read_exposure
-        from .repair import scalar16
+        from .exposure import EXPOSURE_FILES
 
-        required_exposure = {f"effects/exposure/{name}" for name in EXPOSURE_FILES}
+        required_exposure = {"base_alpha16.png"} | {
+            f"effects/exposure/{name}" for name in EXPOSURE_FILES
+        }
         if not required_exposure <= set(manifest["files"]):
             raise ProjectError("Incomplete local exposure assets")
         record = manifest["local_exposure"]
@@ -444,9 +455,12 @@ def _validate_revision_directory(
             and "effects/exposure/area.json" not in manifest["files"]
         ):
             raise ProjectError("Missing bound local exposure authored area")
-        read_exposure(
-            _asset(project, directory),
-            manifest,
-            scalar16(_asset(project, f"{directory}/base_alpha16.png")),
-        )
+        # This optional, unlisted path is not covered by the asset hashes above.
+        if (
+            isinstance(record, dict)
+            and record.get("area_sha256") is None
+            and _asset(project, f"{directory}/effects/exposure/area.json").exists()
+        ):
+            raise ProjectError("Unbound saved local exposure authored area")
+        _validate_exposure_semantics(_asset(project, directory), _json_bytes(manifest))
     return manifest
