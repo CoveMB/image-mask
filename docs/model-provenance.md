@@ -111,28 +111,28 @@ matting requires its separately pinned revision/hash and its own CPU/MPS/geometr
 ## Native ViTMatte evidence — checked 2026-10-18
 
 Pinned [official checkpoint](https://huggingface.co/hustvl/vitmatte-small-composition-1k/tree/6a58ad7646403c1df626fbd746900aec7361ea1d)
-has Apache-2.0 label. Weight103294572bytes SHA256
+has Apache-2.0 label. Weight 103294572 bytes, SHA-256
 `bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb`;
-config837bytes SHA256 `ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f`;
-processor284bytes SHA256 `0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0`.
+config 837 bytes, SHA-256 `ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f`;
+processor 284 bytes, SHA-256 `0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0`.
 The pinned assets were explicitly downloaded and verified; runtime
 revalidates all bytes per session. Explicit VitMatteConfig/VitMatteForImageMatting/
 VitMatteImageProcessor only, local safetensors, eager attention, float32.
 No Auto classes, remote custom code, checkpoint conversion, Trainer/generation or
 processor saving. The same Transformers advisory exposure decision above applies
-to these bounded APIs; current PyPI metadata still lists those11 records. Torch/
+to these bounded APIs; current PyPI metadata still lists those 11 records. Torch/
 torchvision pins retain no listed advisories at check. No dependency upgrade.
 
 Installed version-specific processor source and official pinned configs establish
-mean/std `[.5,.5,.5]`, rescale1/255 and bottom/right divisor32 padding, no resize.
+mean/std `[.5,.5,.5]`, rescale 1/255 and bottom/right divisor 32 padding, no resize.
 Legacy config `size_divisibility` is explicitly mapped to identical `size_divisor`
-before construction, avoiding the deprecated property setter. Actual65×97 input
-is `[1,4,96,128]`, output `[1,1,96,128]`, unpadded to65×97; RGB zero corner is
-`[-1,-1,-1]`, categorical trimap128 becomes128/255. CPU and explicit MPS smokes
-passed finite/native/core checks separately. Observed CPU~.046s, MPS~1.92s,
-peak RSS~560MB for that small run; auto remains CPU. Two actual1024-native CPU
-tiles for1025×1024 used origins0,1 and tensors `[1,4,1024,1024]`, positive coverage,
-~3.49s stage and~7.86GB peak RSS. Costs are bounded smoke observations, not general
+before construction, avoiding the deprecated property setter. Actual 65×97 input
+is `[1,4,96,128]`, output `[1,1,96,128]`, unpadded to 65×97; RGB zero corner is
+`[-1,-1,-1]`, categorical trimap 128 becomes 128/255. CPU and explicit MPS smokes
+passed finite/native/core checks separately. Observed CPU ~.046 s, MPS ~1.92 s,
+peak RSS ~560 MB for that small run; auto remains CPU. Two actual 1024-native CPU
+tiles for 1025×1024 used origins 0,1 and tensors `[1,4,1024,1024]`, positive coverage,
+~3.49 s stage and ~7.86 GB peak RSS. Costs are bounded smoke observations, not general
 latency/memory guarantees or photographic quality. Synthetic mixed alpha/core and
 backend differences do not establish human seam/wing/web quality.
 

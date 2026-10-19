@@ -133,7 +133,7 @@ arithmetic sentinels, native tile origins/positive weights and nonempty known/pa
 lock regions. A recorded-guide synthetic workflow exercised distinct development/trimap/final
 controls through CLI and engine; programmatic fixture confirmations are not human
 photographic acceptance. Real local CPU and diagnostic MPS ViTMatte inference
-verify actual pad/unpad/normalization/device/attention. Native1024 evidence and
+verify actual pad/unpad/normalization/device/attention. Native 1024 evidence and
 resource observations are in [provenance](model-provenance.md). Interruption,
 stale inputs, corruption, conflicts, low space and non-clobber exports preserve
 accepted state in covered paths. These native matting and base-export checks did
@@ -246,7 +246,7 @@ writer and Resume completed from validated saved inputs, preserving all 25 parti
 locks and the accepted pointer/export hashes. Its actual tile counts are recorded
 separately from the earlier successful cropped repair; no post-tile kill is claimed.
 
-The settled full deterministic run passed 227 tests (three unchanged model integration
+An earlier full deterministic run passed 227 tests (three unchanged model integration
 tests deselected). Ruff, formatting, mypy and UI formatting passed after two test-only
 import-order corrections; the affected two tests passed after those corrections.
 An initial partial run was interrupted because a legacy JSON-only CLI test did not select the new
@@ -262,7 +262,7 @@ revision; resume requires saved authoring. Matching image/overlay publication is
 atomic from the page’s perspective. These checks are distinct from native browser
 rendering and human usability observations.
 
-The repaired full deterministic suite passed 233 tests (three unchanged integrations
+An intermediate repaired full deterministic suite passed 233 tests (three unchanged integrations
 deselected). Changed page/test formatting and lint passed; the six affected tests
 passed after a test-only import-spacing correction. Python source/type inputs
 are byte-identical to the successful mypy run. Actual browser export retained
@@ -402,3 +402,44 @@ behavior.
 Categorical8 authored protection normalizes losslessly to separately saved
 categorical16 without changing the scalar16 precision contract. No unchanged
 model/dependency/full-suite rerun was needed. Human acceptance limits above remain.
+
+The final review-window candidate added two dispatch-guard regressions, bringing
+that page-test set to eight. A delayed save POST blocks guide/group authoring even
+when an idle state poll arrives; a rejected POST releases controls while preserving
+unsaved edits and allowing subsequent authoring. Both failed before their repair.
+That final candidate passed **235 deterministic tests**, with three unchanged model
+integration tests deselected; lint, formatting and type evidence passed as recorded
+above. The earlier 227- and 233-test runs remain historical evidence, rather than
+counts for the same final candidate. The subsequent review fixes below have their
+own verification counts.
+
+
+### Review-window recovery and polling corrections
+
+The subsequent deterministic suite passed **247 tests**, with three unchanged
+model integration tests deselected. Twelve added cases cover damaged/missing
+pending-authoring records and explicit recovery, request-local validation reuse,
+changed-asset rejection, serialized polling and recovery after a failed poll.
+Nine cases failed before the fixes; the three corruption-rejection controls already
+passed and protect integrity while introducing reuse. The page suite now has ten
+behavioral tests. One lint-only conditional simplification and a timer guard that
+skips pending reads were then checked with the affected page and validation tests;
+final lint, Python/UI formatting and type checks passed. No inference or browser
+walkthrough was repeated for these fixes.
+
+A warm-cache snapshot of one synthetic 6,000×4,000 RGB16 project took about 0.50 s
+and decoded the master three times before the change; one subsequent snapshot
+took about 0.17 s and decoded it once. These single local observations are not
+full-photo processing benchmarks. Immutable validation is reused only within one
+read request, checking file identity, size, modification/change times, metadata
+and manifests. The next request revalidates bytes; mutable drafts and write/approval
+paths retain their checks. Memory retains at most one master and 128 revision
+validation entries per request, and is released at its end. No persistent pixel
+cache or weaker accepted-data contract was introduced.
+
+Damaged pending authoring is reported in a readable page; explicit draft-replacing
+restore preserves the raw pointer in recovery and retires unreadable authoring.
+It does not silently approve, reconstruct or delete missing data. Historical real
+backend, geometry and human acceptance limits above remain unchanged. The
+[numbered offline use check](workflow.md#numbered-offline-use-check) is an instruction
+for the user, not an observed human acceptance result.

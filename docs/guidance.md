@@ -86,7 +86,7 @@ create blanket locks. Preparation carries parent alpha/corrected RGB unchanged.
 
 ## Prepare and review
 
-`blackmask open --project /path/to/project` returns current master, working revision
+`blackmask open --headless --project /path/to/project` returns current master, working revision
 and draft `inputs_digest`. Copy those actual identities into a request, with null
 base before the first revision:
 
