@@ -118,7 +118,8 @@ support file. The default support is the current saved guide support. To change 
 author support guides, prepare and approve the trimap, then run a complete matte/repair.
 Enable on an accepted base, or explicitly check candidate comparison. Compare with
 cleanup OFF using the same alpha before human appearance acceptance. Strength .35 is
-a starting point, never a recommendation for every photo. Shading is unavailable.
+a starting point, never a recommendation for every photo. Optional protected shading
+is described below.
 
 Cleanup estimates nearby background only from confirmed empty source pixels. It
 approximates decontamination; it cannot recover true missing colors/detail. Repeated
