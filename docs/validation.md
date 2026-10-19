@@ -654,9 +654,15 @@ Direct local browser observations on a generated 360×240 synthetic project
 covered the explicit warm default, uniform tone save, warm variation save, pure
 black save at unchanged 55%, new saved revision feedback, preservation of an
 unsaved fade rectangle plus exposure/fade values, and mutually exclusive comparison
-controls. Remaining browser save/restore/export and keyboard/busy/reload checks
-were paused by automatic approval review pending explicit authorization. Automated
-HTTP/transaction tests cover the corresponding application boundaries; they do not
-replace those unfinished direct observations. Accessibility certification, real
-photographic appearance/banding, the representative offline-use pilot and human
-acceptance remain separate and pending.
+controls. After explicit authorization, the retained generated project also passed
+native browser warm-background save, keyboard slider/numeric synchronization,
+stale-view refusal, real competing-writer busy/recovery, explicit reload, saved
+revision restore and labelled draft export checks. Pending cleanup/shading support,
+protection, geometry and opacity values also survived background completion. Restore
+recovered the saved uniform tone/zero variation; reload discarded an unsaved black
+choice and restored the saved warm settings. Both actual draft exports reconstructed
+from saved layers, with the accepted pointer unchanged. Fit/native zoom and crop/full
+image transitions were observed. No new code defect or model call was needed.
+These direct observations complement the automated HTTP/transaction checks.
+Accessibility certification, real photographic appearance/banding, the representative
+offline-use pilot and human acceptance remain separate and pending.
