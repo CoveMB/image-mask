@@ -298,8 +298,12 @@ or restore captured sharpness. Final photographic acceptance remains your decisi
    previous area. Saved area/protection/settings remain independently recoverable.
 4. **Apply amount to saved area** reuses its saved selection and protections.
    It leaves pending area edits unsaved. Saved and draft status are shown
-   separately. Repeated application starts from unexposed RGB, so it never stacks
-   exposure on previous exposure.
+   separately. Unsaved EV and candidate-comparison edits survive unrelated actions
+   such as export. If project inputs change, those settings stay visibly stale;
+   reload saved inputs before applying them to the new revision. Successful exposure
+   application/reset or an explicit reload clears the settings draft; area edits
+   remain separate. Repeated application starts from unexposed RGB, so it never
+   stacks exposure on previous exposure.
 5. **Compare exposure OFF** previews the same alpha with saved cleanup/shading
    retained, with Shadow fade recalculated from the exposure-OFF input. Source/alpha views are unaffected; the BASE checkbox turns all
    optional effects off. Comparison is read-only. Check native black/gray/white
