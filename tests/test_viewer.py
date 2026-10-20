@@ -539,3 +539,85 @@ def test_request_local_revision_reuse_preserves_identity_and_manifest_copies(tmp
         with pytest.raises(ProjectError, match="master"):
             read_revision(project, result["revision"], "0" * 64)
         assert read_revision(project, result["revision"], result["master_id"]) == expected
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (IndexError("synthetic worker failure"), "synthetic worker failure"),
+        (ValueError(), "ValueError"),
+        (ValueError("   "), "ValueError"),
+    ],
+)
+def test_background_action_failure_is_visible_and_next_action_succeeds(
+    tmp_path, monkeypatch, error, expected
+):
+    _, project = opened(tmp_path)
+    with running(project) as server:
+        execute = server.execute
+
+        def fail(data):
+            raise error
+
+        monkeypatch.setattr(server, "execute", fail)
+        status, body, _ = http(server)
+        assert status == 200
+        state = json.loads(body)
+        data = {key: state[key] for key in ("master_id", "inputs_digest", "authoring_digest")}
+        data.update(action="development", base_revision=state["working_revision"])
+        assert http(server, "/api/action", "POST", data)[0] == 202
+        for _ in range(100):
+            status, body, _ = http(server)
+            assert status == 200
+            action = json.loads(body)["action"]
+            if not action["running"]:
+                break
+        assert action["running"] is False
+        assert action["error"] == expected
+        assert action["result"] is None
+        assert server.action_lock.acquire(blocking=False), "Failed worker retained its lock"
+        server.action_lock.release()
+        monkeypatch.setattr(server, "execute", execute)
+        result = perform(server, "development")
+        assert result["master_id"] == state["master_id"]
+        assert result["development_approved"] is True
+
+
+@pytest.mark.parametrize("error", [SystemExit(), KeyboardInterrupt()])
+def test_background_action_base_exception_propagates_after_cleanup(tmp_path, monkeypatch, error):
+    _, project = opened(tmp_path)
+    observed = []
+    propagated = threading.Event()
+
+    def capture(arguments):
+        observed.append(arguments.exc_value)
+        propagated.set()
+
+    monkeypatch.setattr(threading, "excepthook", capture)
+    with running(project) as server:
+        execute = server.execute
+
+        def fail(data):
+            raise error
+
+        monkeypatch.setattr(server, "execute", fail)
+        status, body, _ = http(server)
+        assert status == 200
+        state = json.loads(body)
+        data = {key: state[key] for key in ("master_id", "inputs_digest", "authoring_digest")}
+        data.update(action="development", base_revision=state["working_revision"])
+        assert http(server, "/api/action", "POST", data)[0] == 202
+        assert propagated.wait(3), "BaseException was swallowed by the worker"
+        assert observed == [error]
+        status, body, _ = http(server)
+        assert status == 200
+        assert json.loads(body)["action"] == {
+            "running": False,
+            "name": "development",
+            "error": None,
+            "result": None,
+        }
+        assert server.action_lock.acquire(blocking=False)
+        server.action_lock.release()
+        monkeypatch.setattr(server, "execute", execute)
+        assert perform(server, "development")["development_approved"] is True
