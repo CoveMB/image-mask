@@ -261,6 +261,13 @@ alpha/support hashes, native scope, algorithm and parent manifest identity. The 
 chain retains prior scoped settings; latest strength describes the latest patch, not
 an implicit global rewrite. Cumulative support/dependency maps describe retained layers;
 each immutable effects revision retains its exact write support and settings.
+Current review exports project `settings.color_cleanup` from the validated saved
+manifest's applied enabled/strength values, including inherited effects and zero/off
+semantics. Stale enabled cleanup retains those settings; `effects.color_cleanup.stale`,
+`cleanup_stale` and the selected base asset identify its temporary exclusion from the
+view. Other settings come from the consumed recipe snapshot. The saved `recipe.toml`
+and `draft_digest` remain exact consumed draft inputs, including when an operation
+overrode cleanup settings.
 
 Nearest confirmed-empty (trimap=0 AND alpha=0) source RGB supplies background;
 amount=strength*(1-alpha16/65535)*(support16/65535). Correction is

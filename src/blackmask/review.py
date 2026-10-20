@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from .effects import validate_cleanup
 from .export import publish_artifacts, render_black, saved_layers, shading_factor
 from .guidance import coordinates
 from .project import (
@@ -150,6 +151,16 @@ def review_project(
 
         weight, opacity = saved_shading(project, revision, alpha, revision_manifest)
         source, _ = load_master(project, state["master_id"])
+        prefix = f"revisions/{revision}"
+        settings = tomllib.loads(_asset(project, f"{prefix}/recipe.toml").read_text())
+        cleanup = revision_manifest.get("color_cleanup")
+        if cleanup is not None:
+            applied_cleanup = {
+                "enabled": cleanup.get("enabled"),
+                "strength": cleanup.get("strength"),
+            }
+            validate_cleanup(applied_cleanup)
+            settings["color_cleanup"] = applied_cleanup
         height, width = alpha.shape
         if crops is None:
             saved_review = _read_json(project, f"revisions/{revision}/review/manifest.json")
@@ -221,7 +232,6 @@ def review_project(
             record["label"] += (
                 f"; encoded-sRGB; baked shading p={opacity}; width={revision_manifest['shading']['settings']['width_px']} native px; cleanup={revision_manifest.get('color_cleanup', {}).get('enabled', False)}"
             )
-        prefix = f"revisions/{revision}"
         record.update(
             inputs_digest=current_digest,
             revision_inputs_digest=revision_manifest["draft_digest"],
@@ -240,7 +250,7 @@ def review_project(
                 if revision_manifest["kind"] == "repair"
                 else None,
             },
-            settings=tomllib.loads(_asset(project, f"{prefix}/recipe.toml").read_text()),
+            settings=settings,
             model=revision_manifest.get("model"),
             qa=_read_json(project, f"{prefix}/qa.json"),
             effects={
