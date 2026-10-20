@@ -462,7 +462,7 @@ assert.deepEqual(posts.at(-1).shadow_fade,{enabled:true,amount:.5,preserve_highl
 assert.equal(JSON.stringify(fadeArea),draft);assert.equal(fadeDirty,true);
 servedState.revisions[0].shadow_fade={settings:structuredClone(posts.at(-1).shadow_fade)};actionWasRunning=false;await refresh();$('fadePreserve').value='70';await $('fadeReset').onclick();
 assert.deepEqual(posts.at(-1).shadow_fade,{enabled:false,amount:0,preserve_highlights:.7});
-assert.equal(JSON.stringify(fadeArea),draft);assert.equal(dirty,false);
+assert.equal(JSON.stringify(fadeArea),draft);assert.equal(fadeDirty,true);assert.equal(dirty,false);
 """)
 
 
@@ -609,3 +609,167 @@ assert(!$('exposureDraftStatus').textContent.includes('Stale exposure settings')
 $('exposureEV').value='1.2';$('exposureEV').oninput();$('exposureCandidate').checked=true;$('exposureCandidate').onchange?.();
 await $('exposureAmount').onclick();assert.equal(posts.at(-1).action,'effects');assert.equal(posts.at(-1).base_revision,'rev-002');assert.equal(posts.at(-1).inputs_digest,'restored-draft');
 """)
+
+
+@pytest.mark.parametrize(
+    "control", ["fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate"]
+)
+def test_export_completion_preserves_unsaved_fade_controls(control):
+    run_page(
+        r"""
+servedState.revisions[0].shadow_fade={enabled:true,stale:false,settings:{enabled:true,amount:.5,preserve_highlights:.8}};
+await ready();
+const control=CONTROL;
+if(control==='fadeCandidate') {$(control).checked=true;$(control).onchange?.();}
+else {$(control).value='65';$(control).oninput();}
+const draft={amount:Number($('fadeAmount').value),range:Number($('fadeRange').value),preserve:Number($('fadePreserve').value),preserveRange:Number($('fadePreserveRange').value),candidate:$('fadeCandidate').checked};
+await poll();
+assert.deepEqual({amount:Number($('fadeAmount').value),range:Number($('fadeRange').value),preserve:Number($('fadePreserve').value),preserveRange:Number($('fadePreserveRange').value),candidate:$('fadeCandidate').checked},draft,'Idle poll changed fade controls');
+const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST')servedState.action={name:'export',running:false,error:null,result:{revision:'rev-001',directory:'exports/rev-001'}};
+ return response;
+};
+await $('exportAccepted').onclick();assert.equal(posts.at(-1).action,'export');
+assert.deepEqual({amount:Number($('fadeAmount').value),range:Number($('fadeRange').value),preserve:Number($('fadePreserve').value),preserveRange:Number($('fadePreserveRange').value),candidate:$('fadeCandidate').checked},draft,'Export discarded pending fade controls');
+assert.equal(dirty,false,'Shadow fade controls dirtied matting guides');
+assert($('fadeDraftStatus').textContent.includes('Unsaved Shadow fade settings'));
+""".replace("CONTROL", repr(control))
+    )
+
+
+@pytest.mark.parametrize("button", ["fadeAmountApply", "fadeApply", "fadeReset"])
+def test_applied_fade_controls_clear_only_after_success_and_keep_area_semantics(button):
+    run_page(
+        r"""
+const savedArea={regions:[{id:'saved-area',role:'support',shape:'rectangle',xyxy:[10,10,40,40],feather_px:0}],protection:[]};
+servedState.revisions[0].shadow_fade_area=structuredClone(savedArea);
+servedState.revisions[0].shadow_fade={enabled:true,stale:false,settings:{enabled:true,amount:.5,preserve_highlights:.8}};
+await ready();$('fadeAmount').value='65';$('fadeAmount').oninput();$('fadePreserve').value='30';$('fadePreserve').oninput();$('fadeCandidate').checked=true;$('fadeCandidate').onchange?.();
+$('fadeRole').value='regions';$('fadeShape').value='rectangle';$('fadeFeather').value='0';$('fadeRectangle').value='50,50,60,60';await $('fadeAddRectangle').onclick();
+const areaDraft=JSON.stringify(fadeArea),button=BUTTON;
+const originalFetch=globalThis.fetch;let release;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST'){
+   const sent=JSON.parse(options.body),record={enabled:sent.shadow_fade.enabled,stale:false,settings:sent.shadow_fade};
+   servedState.working_revision='rev-002';servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',shadow_fade:record,shadow_fade_area:sent.shadow_fade_area||savedArea});
+   servedState.action={name:'effects',running:false,error:null,result:{revision:'rev-002',parent:sent.base_revision,shadow_fade:record}};
+   return new Promise(resolve=>{release=()=>resolve(response);});
+ }
+ return response;
+};
+const applying=$(button).onclick();for(let i=0;i<30&&!release;i++)await Promise.resolve();assert(release);
+for(const id of ['fadeAmount','fadeRange','fadePreserve','fadePreserveRange','fadeCandidate'])assert.equal($(id).disabled,true,'Editable control could change after payload serialization: '+id);
+release();await applying;
+assert.equal(Number($('fadeAmount').value),button==='fadeReset'?0:65);assert.equal(Number($('fadeRange').value),button==='fadeReset'?0:65);
+assert.equal(Number($('fadePreserve').value),30);assert.equal(Number($('fadePreserveRange').value),30);
+assert.equal($('fadeCandidate').checked,false);assert(!$('fadeDraftStatus').textContent.includes('Unsaved Shadow fade settings'));
+assert.equal(JSON.stringify(fadeArea),areaDraft);
+assert.equal(fadeDirty,button!=='fadeApply','Controls changed independent area publication state');
+for(const id of ['fadeAmount','fadeRange','fadePreserve','fadePreserveRange','fadeCandidate'])assert.equal($(id).disabled,false);
+""".replace("BUTTON", repr(button))
+    )
+
+
+@pytest.mark.parametrize("failure", ["dispatch", "processing", "other_action_result"])
+def test_fade_failure_or_other_action_result_keeps_pending_controls_for_retry(failure):
+    run_page(
+        r"""
+servedState.revisions[0].shadow_fade={enabled:true,stale:false,settings:{enabled:true,amount:.5,preserve_highlights:.8}};
+await ready();$('fadeAmount').value='65';$('fadeAmount').oninput();$('fadePreserve').value='30';$('fadePreserve').oninput();$('fadeCandidate').checked=true;$('fadeCandidate').onchange?.();
+const originalFetch=globalThis.fetch,failure=FAILURE;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST'){
+   if(failure==='dispatch')throw Error('Synthetic rejected dispatch');
+   servedState.action=failure==='processing'?{name:'effects',running:false,error:'Synthetic processing failure',result:null}:{name:'export',running:false,error:null,result:{directory:'exports/rev-001'}};
+ }
+ return response;
+};
+await $('fadeAmountApply').onclick();
+for(const id of ['fadeAmount','fadeRange','fadePreserve','fadePreserveRange','fadeCandidate'])assert.equal($(id).disabled,false,'Failure left controls disabled');
+assert.equal(Number($('fadeAmount').value),65);assert.equal(Number($('fadePreserve').value),30);assert.equal($('fadeCandidate').checked,true);
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST')servedState.action={name:'export',running:false,error:null,result:{directory:'exports/rev-001'}};
+ return response;
+};
+await $('exportAccepted').onclick();
+assert.equal(Number($('fadeAmount').value),65);assert.equal(Number($('fadeRange').value),65);assert.equal(Number($('fadePreserve').value),30);assert.equal(Number($('fadePreserveRange').value),30);assert.equal($('fadeCandidate').checked,true);
+assert($('fadeDraftStatus').textContent.includes('Unsaved Shadow fade settings'));
+""".replace("FAILURE", repr(failure))
+    )
+
+
+def test_fade_control_draft_stays_bound_after_restore_and_explicit_reload_recovers():
+    run_page(r"""
+const record={enabled:true,stale:false,settings:{enabled:true,amount:.5,preserve_highlights:.8}};
+servedState.revisions[0].shadow_fade=record;servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',shadow_fade:record});
+await ready();$('fadeAmount').value='65';$('fadeAmount').oninput();$('fadePreserve').value='30';$('fadePreserve').oninput();$('fadeCandidate').checked=true;$('fadeCandidate').onchange?.();
+$('restoreRevision').value='rev-002';const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST'&&JSON.parse(options.body).action==='restore'){
+   servedState.working_revision='rev-002';servedState.inputs_digest='restored-draft';servedState.authoring_digest='restored-author';
+   servedState.action={name:'restore',running:false,error:null,result:{revision:'rev-002'}};
+ }
+ return response;
+};
+await $('restore').onclick();
+assert.equal(identity.base_revision,'rev-002');assert.equal(Number($('fadeAmount').value),65);assert.equal(Number($('fadePreserve').value),30);assert.equal($('fadeCandidate').checked,true);
+assert($('fadeDraftStatus').textContent.includes('Stale Shadow fade settings'),$('fadeDraftStatus').textContent);
+const before=posts.length;await $('fadeAmountApply').onclick();assert.equal(posts.length,before,'Applied controls against a different project identity');
+assert.match($('message').textContent,/reload/i);
+await $('reload').onclick();assert.equal(Number($('fadeAmount').value),50);assert.equal(Number($('fadeRange').value),50);assert.equal(Number($('fadePreserve').value),80);assert.equal(Number($('fadePreserveRange').value),80);assert.equal($('fadeCandidate').checked,false);
+assert(!$('fadeDraftStatus').textContent.includes('Stale Shadow fade settings'));
+$('fadeAmount').value='65';$('fadeAmount').oninput();$('fadePreserve').value='30';$('fadePreserve').oninput();$('fadeCandidate').checked=true;$('fadeCandidate').onchange?.();
+await $('fadeAmountApply').onclick();assert.equal(posts.at(-1).action,'effects');assert.equal(posts.at(-1).base_revision,'rev-002');assert.equal(posts.at(-1).inputs_digest,'restored-draft');
+""")
+
+
+@pytest.mark.parametrize("mismatch", ["parent", "enabled", "amount", "preserve_highlights"])
+def test_fade_controls_do_not_clear_for_nonmatching_effect_completion(mismatch):
+    run_page(
+        r"""
+await ready();$('fadeAmount').value='65';$('fadeAmount').oninput();$('fadePreserve').value='30';$('fadePreserve').oninput();$('fadeCandidate').checked=true;$('fadeCandidate').onchange?.();
+const mismatch=MISMATCH,originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST'){
+   const sent=JSON.parse(options.body),settings={...sent.shadow_fade},result={parent:sent.base_revision,shadow_fade:{settings}};
+   if(mismatch==='parent')result.parent='rev-other';
+   else settings[mismatch]=mismatch==='enabled'?false:.9;
+   servedState.action={name:'effects',running:false,error:null,result};
+ }
+ return response;
+};
+await $('fadeAmountApply').onclick();
+assert.equal(Number($('fadeAmount').value),65);assert.equal(Number($('fadePreserve').value),30);assert.equal($('fadeCandidate').checked,true);
+assert($('fadeDraftStatus').textContent.includes('Unsaved Shadow fade settings'));
+""".replace("MISMATCH", repr(mismatch))
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("master_id", "other-master"),
+        ("working_revision", "rev-002"),
+        ("inputs_digest", "other-draft"),
+        ("authoring_digest", "other-author"),
+    ],
+)
+def test_fade_controls_reject_each_changed_project_identity(field, value):
+    run_page(
+        r"""
+await ready();$('fadeAmount').value='65';$('fadeAmount').oninput();$('fadePreserve').value='30';$('fadePreserve').oninput();
+servedState.revisions.push({...servedState.revisions[0],revision:'rev-002'});servedState[FIELD]=VALUE;
+await refresh();
+assert.equal(Number($('fadeAmount').value),65);assert.equal(Number($('fadePreserve').value),30);
+assert($('fadeDraftStatus').textContent.includes('Stale Shadow fade settings'));
+await $('fadeAmountApply').onclick();await $('fadeApply').onclick();assert.equal(posts.length,0,'Applied settings to changed inputs');
+assert.match($('message').textContent,/reload/i);
+""".replace("FIELD", repr(field)).replace("VALUE", repr(value))
+    )

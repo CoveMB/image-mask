@@ -472,6 +472,7 @@
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let exposureControlsIdentity = null, exposureControlsSubmitted = null;
+    let fadeControlsIdentity = null, fadeControlsSubmitted = null;
     let image = null,
       overlayImage = null,
       crop = null,
@@ -705,11 +706,13 @@
       }
       renderExposureArea();
       if (!fadeDirty) fadeArea = structuredClone(currentExposure?.shadow_fade_area || {regions: [], protection: []});
-      $("fadeAmount").value = (currentExposure?.shadow_fade?.settings?.amount ?? 0) * 100;
-      $("fadeRange").value = $("fadeAmount").value;
-      $("fadePreserve").value = (currentExposure?.shadow_fade?.settings?.preserve_highlights ?? 1) * 100;
-      $("fadePreserveRange").value = $("fadePreserve").value;
-      $("fadeCandidate").checked = false;
+      if (!fadeControlsIdentity) {
+        $("fadeAmount").value = (currentExposure?.shadow_fade?.settings?.amount ?? 0) * 100;
+        $("fadeRange").value = $("fadeAmount").value;
+        $("fadePreserve").value = (currentExposure?.shadow_fade?.settings?.preserve_highlights ?? 1) * 100;
+        $("fadePreserveRange").value = $("fadePreserve").value;
+        $("fadeCandidate").checked = false;
+      }
       renderFadeArea();
       $("candidate").value = "";
       identity = {
@@ -822,7 +825,16 @@
         exposureControlsSubmitted = null;
       }
       if (reload || (completed && !a.error && fadeAreaPublished)) fadeDirty = false;
-      if (completed) fadeAreaPublished = false;
+      const appliedFade = a.result?.shadow_fade?.settings;
+      if (reload || (completed && !a.error && fadeControlsSubmitted &&
+          a.name === "effects" && a.result?.parent === fadeControlsSubmitted.base_revision &&
+          appliedFade?.enabled === fadeControlsSubmitted.enabled &&
+          appliedFade?.amount === fadeControlsSubmitted.amount &&
+          appliedFade?.preserve_highlights === fadeControlsSubmitted.preserve_highlights)) fadeControlsIdentity = null;
+      if (completed) {
+        fadeAreaPublished = false;
+        fadeControlsSubmitted = null;
+      }
       const savedFade = current?.shadow_fade;
       $("fadeStatus").textContent = savedFade?.enabled
         ? savedFade.stale ? "Saved Shadow fade STALE · BASE comparison; rebuild area or reset; every other stale effect still needs recovery"
@@ -927,6 +939,7 @@
         element.disabled = authoringBusy();
       for (const id of [
         "fadeRole", "fadeShape", "fadeRadius", "fadeFeather", "fadeRectangle", "fadeAddRectangle", "fadeRemove", "fadeClear",
+        "fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate",
         "authorMode", "exposureRole", "exposureShape", "exposureRadius", "exposureFeather", "exposureRectangle", "exposureAddRectangle", "exposureRemove", "exposureClear",
         "exposureEV", "exposureRange", "exposureCandidate",
         "addGroup",
@@ -1187,6 +1200,18 @@
       exposureControlsIdentity ??= {...identity};
       renderExposureArea();
     }
+    function fadeControlsStale() {
+      return fadeControlsIdentity && state && (
+        fadeControlsIdentity.master_id !== state.master_id ||
+        fadeControlsIdentity.base_revision !== state.working_revision ||
+        fadeControlsIdentity.inputs_digest !== state.inputs_digest ||
+        fadeControlsIdentity.authoring_digest !== state.authoring_digest
+      );
+    }
+    function markFadeControlsDirty() {
+      fadeControlsIdentity ??= {...identity};
+      renderFadeArea();
+    }
     function renderEffectArea(prefix, area, unsaved, title) {
       select(prefix + "Regions", ["regions", "protection"].flatMap(kind => area[kind].map(r => [kind + ":" + r.id, (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
       $(prefix + "DraftStatus").textContent = (unsaved ? "Unsaved " : "Saved ") + title + " area" + " · apply shapes " + area.regions.length + ", protection shapes " + area.protection.length + ". Matting guides and other effects are independent.";
@@ -1196,7 +1221,11 @@
       if (exposureControlsIdentity) $("exposureDraftStatus").textContent += exposureControlsStale()
         ? " Stale exposure settings; reload before applying." : " Unsaved exposure settings.";
     }
-    function renderFadeArea() { renderEffectArea("fade", fadeArea, fadeDirty, "Shadow fade"); }
+    function renderFadeArea() {
+      renderEffectArea("fade", fadeArea, fadeDirty, "Shadow fade");
+      if (fadeControlsIdentity) $("fadeDraftStatus").textContent += fadeControlsStale()
+        ? " Stale Shadow fade settings; reload before applying." : " Unsaved Shadow fade settings.";
+    }
     function addEffectRegion(prefix, geometry, shape) {
       if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before area authoring");
       const kind = $(prefix + "Role").value, [w, h] = state.dimensions_wh;
@@ -1231,6 +1260,7 @@
     }
     async function shadowFade(enabled, replaceArea) {
       requireSaved();
+      if (enabled && fadeControlsStale()) throw Error("Shadow fade settings belong to older project inputs; reload before applying");
       if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing Shadow fade");
       const amount = enabled ? Number($("fadeAmount").value) / 100 : 0;
       const preserve = Number($("fadePreserve").value) / 100;
@@ -1239,8 +1269,9 @@
       if (replaceArea) fields.shadow_fade_area = structuredClone(fadeArea);
       else if (enabled) fields.shadow_fade_amount_only = true;
       fadeAreaPublished = replaceArea;
+      fadeControlsSubmitted = {base_revision: identity.base_revision, enabled, amount, preserve_highlights: preserve};
       try { return await action("effects", fields); }
-      catch(error) { fadeAreaPublished = false; throw error; }
+      catch(error) { fadeAreaPublished = false; fadeControlsSubmitted = null; throw error; }
     }
     $("fadeAddRectangle").onclick = guarded(() => addFadeRegion(bounds("fadeRectangle"), "rectangle"));
     $("fadeRemove").onclick = guarded(() => {
@@ -1257,10 +1288,11 @@
     $("fadeApply").onclick = guarded(() => shadowFade(true, true));
     $("fadeAmountApply").onclick = guarded(() => shadowFade(true, false));
     $("fadeReset").onclick = guarded(() => shadowFade(false, false));
-    $("fadeRange").oninput = () => { $("fadeAmount").value = $("fadeRange").value; };
-    $("fadeAmount").oninput = () => { $("fadeRange").value = $("fadeAmount").value; };
-    $("fadePreserveRange").oninput = () => { $("fadePreserve").value = $("fadePreserveRange").value; };
-    $("fadePreserve").oninput = () => { $("fadePreserveRange").value = $("fadePreserve").value; };
+    $("fadeRange").oninput = () => { $("fadeAmount").value = $("fadeRange").value; markFadeControlsDirty(); };
+    $("fadeAmount").oninput = () => { $("fadeRange").value = $("fadeAmount").value; markFadeControlsDirty(); };
+    $("fadePreserveRange").oninput = () => { $("fadePreserve").value = $("fadePreserveRange").value; markFadeControlsDirty(); };
+    $("fadePreserve").oninput = () => { $("fadePreserveRange").value = $("fadePreserve").value; markFadeControlsDirty(); };
+    $("fadeCandidate").onchange = markFadeControlsDirty;
     function compareChanged(id) {
       for (const other of ["cleanupBase", "exposureCompare", "fadeCompare"]) if (other !== id) $(other).checked = false;
       if (id !== "shadingPreview") $("shadingPreview").value = "";
