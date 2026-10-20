@@ -133,8 +133,8 @@ class ReviewServer(ThreadingHTTPServer):
         def run() -> None:
             try:
                 self.action["result"] = self.execute(data)
-            except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
-                self.action["error"] = str(error)
+            except Exception as error:  # noqa: BLE001 - report all ordinary failures to the page.
+                self.action["error"] = str(error).strip() or type(error).__name__
             finally:
                 self.action["running"] = False
                 self.action_lock.release()

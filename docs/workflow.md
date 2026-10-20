@@ -183,8 +183,8 @@ correction is warranted, record that limitation rather than changing good detail
    actually prefer and have reviewed it.
 
 Record what you observed and any step you could not perform. These instructions
-are not evidence that human photographic, usability or disconnected-network use
-has occurred. A partial-alpha lock check requires real saved partial detail.
+do not show that human photographic review, usability testing, or offline use has
+occurred. A partial-alpha lock check requires real saved partial detail.
 
 An optional interrupted-recovery check is separate from normal use. If an operation
 was interrupted, reopen, inspect **Interrupted operation**, and use **Resume verified
