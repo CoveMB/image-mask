@@ -19,7 +19,8 @@
 - **Interrupted/incomplete creation:** retain the capture and diagnostic project.
   No state means no published usable project; no incomplete master can be approved.
   Create at a new empty location. Inspect retained files before any separately
-  authorized cleanup. Initial creation cannot resume; saved working revisions can be restored.
+  authorized cleanup. Initial creation cannot resume. Restore is available only for
+  existing valid projects with a saved revision.
 - **Failed approval:** reopen the project and inspect its actual state. Before
   atomic replacement, failure preserves old state. After replacement, the update
   may be visible even if a later directory sync fails; never infer success/failure
