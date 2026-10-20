@@ -445,6 +445,7 @@
       dirty = false,
       pendingSaved = false;
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
+    let exposureControlsIdentity = null, exposureControlsSubmitted = null;
     let image = null,
       overlayImage = null,
       crop = null,
@@ -671,9 +672,11 @@
       if (!exposureDirty) {
         exposureArea = structuredClone(currentExposure?.exposure_area || {regions: [], protection: []});
       }
-      $("exposureEV").value = currentExposure?.local_exposure?.settings?.ev ?? 0;
-      $("exposureRange").value = $("exposureEV").value;
-      $("exposureCandidate").checked = false;
+      if (!exposureControlsIdentity) {
+        $("exposureEV").value = currentExposure?.local_exposure?.settings?.ev ?? 0;
+        $("exposureRange").value = $("exposureEV").value;
+        $("exposureCandidate").checked = false;
+      }
       renderExposureArea();
       $("candidate").value = "";
       identity = {
@@ -776,7 +779,15 @@
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
       if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;
-      if (completed) exposureAreaPublished = false;
+      const appliedExposure = a.result?.local_exposure?.settings;
+      if (reload || (completed && !a.error && exposureControlsSubmitted &&
+          a.name === "effects" && a.result?.parent === exposureControlsSubmitted.base_revision &&
+          appliedExposure?.enabled === exposureControlsSubmitted.enabled &&
+          appliedExposure?.ev === exposureControlsSubmitted.ev)) exposureControlsIdentity = null;
+      if (completed) {
+        exposureAreaPublished = false;
+        exposureControlsSubmitted = null;
+      }
       const savedExposure = current?.local_exposure;
       $("exposureStatus").textContent = savedExposure?.enabled
         ? savedExposure.stale ? "Saved local exposure STALE · BASE comparison; rebuild area or reset before export/acceptance"
@@ -874,6 +885,7 @@
         element.disabled = authoringBusy();
       for (const id of [
         "authorMode", "exposureRole", "exposureShape", "exposureRadius", "exposureFeather", "exposureRectangle", "exposureAddRectangle", "exposureRemove", "exposureClear",
+        "exposureEV", "exposureRange", "exposureCandidate",
         "addGroup",
         "addGeometry",
         "removeRegion",
@@ -1117,9 +1129,23 @@
       markDirty();
       renderRegions();
     }
+    function exposureControlsStale() {
+      return exposureControlsIdentity && state && (
+        exposureControlsIdentity.master_id !== state.master_id ||
+        exposureControlsIdentity.base_revision !== state.working_revision ||
+        exposureControlsIdentity.inputs_digest !== state.inputs_digest ||
+        exposureControlsIdentity.authoring_digest !== state.authoring_digest
+      );
+    }
+    function markExposureControlsDirty() {
+      exposureControlsIdentity ??= {...identity};
+      renderExposureArea();
+    }
     function renderExposureArea() {
       select("exposureRegions", ["regions", "protection"].flatMap(kind => exposureArea[kind].map(r => [kind + ":" + r.id, (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
-      $("exposureDraftStatus").textContent = (exposureDirty ? "Unsaved exposure area edits" : "Saved exposure area loaded") + " · apply shapes " + exposureArea.regions.length + ", protection shapes " + exposureArea.protection.length + ". Matting guides are independent.";
+      $("exposureDraftStatus").textContent = (exposureDirty ? "Unsaved exposure area edits" : "Saved exposure area loaded") + " · apply shapes " + exposureArea.regions.length + ", protection shapes " + exposureArea.protection.length + ". Matting guides are independent." + (exposureControlsIdentity
+        ? exposureControlsStale() ? " Stale exposure settings; reload before applying." : " Unsaved exposure settings."
+        : "");
     }
     function addExposureRegion(geometry, shape = $("exposureShape").value) {
       if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before exposure authoring");
@@ -1137,6 +1163,7 @@
     }
     async function exposure(enabled, replaceArea) {
       requireSaved();
+      if (enabled && exposureControlsStale()) throw Error("Exposure settings belong to older project inputs; reload before applying");
       if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing exposure");
       const ev = enabled ? Number($("exposureEV").value) : 0;
       if (!Number.isFinite(ev) || ev < -3 || ev > 3) throw Error("Exposure EV must be in [-3,3]");
@@ -1144,8 +1171,9 @@
       if (replaceArea) fields.exposure_area = structuredClone(exposureArea);
       else if (enabled) fields.exposure_amount_only = true;
       exposureAreaPublished = replaceArea;
+      exposureControlsSubmitted = {base_revision: identity.base_revision, enabled, ev};
       try { return await action("effects", fields); }
-      catch(error) { exposureAreaPublished = false; throw error; }
+      catch(error) { exposureAreaPublished = false; exposureControlsSubmitted = null; throw error; }
     }
     $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
     $("exposureRemove").onclick = guarded(() => {
@@ -1162,8 +1190,9 @@
     $("exposureApply").onclick = guarded(() => exposure(true, true));
     $("exposureAmount").onclick = guarded(() => exposure(true, false));
     $("exposureReset").onclick = guarded(() => exposure(false, false));
-    $("exposureRange").oninput = () => { $("exposureEV").value = $("exposureRange").value; };
-    $("exposureEV").oninput = () => { $("exposureRange").value = $("exposureEV").value; };
+    $("exposureRange").oninput = () => { $("exposureEV").value = $("exposureRange").value; markExposureControlsDirty(); };
+    $("exposureEV").oninput = () => { $("exposureRange").value = $("exposureEV").value; markExposureControlsDirty(); };
+    $("exposureCandidate").onchange = markExposureControlsDirty;
     $("exposureCompare").onchange = guarded(() => { imageKey = ""; return loadImage(); });
     $("authorMode").onchange = () => { gesture = null; draw(); };
     function guarded(fn) {
