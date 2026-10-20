@@ -7,6 +7,8 @@ not substitute for browser rendering, accessibility or human photographic review
 import subprocess
 from pathlib import Path
 
+import pytest
+
 PRELUDE = r"""
 const assert = require('node:assert/strict');
 const nodes = new Map();
@@ -491,4 +493,119 @@ $('viewRevision').value='rev-001';$('authorMode').value='fade';$('fadeShape').va
 imageLoading=true;canvas.onpointerdown({clientX:70,clientY:20,pointerId:1,shiftKey:false});canvas.onpointerup({clientX:80,clientY:30,pointerId:1});assert.equal(fadeArea.regions.length,1);
 imageLoading=false;canvas.onpointerdown({clientX:70,clientY:20,pointerId:2,shiftKey:false});canvas.onpointermove({clientX:90,clientY:40});canvas.onpointerup({clientX:90,clientY:40,pointerId:2});assert.equal(fadeArea.regions[1].radius_px,3);
 await $('reload').onclick();assert.equal(fadeArea.regions.length,1);assert.equal(fadeDirty,false);
+""")
+
+
+@pytest.mark.parametrize("control", ["exposureEV", "exposureRange", "exposureCandidate"])
+def test_export_completion_preserves_unsaved_exposure_controls(control):
+    run_page(
+        r"""
+servedState.revisions[0].local_exposure={enabled:true,stale:false,settings:{enabled:true,ev:.5},clipping:{clipped_pixels:0,eligible_pixels:100}};
+await ready();
+const control=CONTROL;
+if(control==='exposureCandidate') {$(control).checked=true;$(control).onchange?.();}
+else {$(control).value='1.2';$(control).oninput();}
+const draft={ev:Number($('exposureEV').value),range:Number($('exposureRange').value),candidate:$('exposureCandidate').checked};
+await poll();
+assert.deepEqual({ev:Number($('exposureEV').value),range:Number($('exposureRange').value),candidate:$('exposureCandidate').checked},draft,'Idle poll changed exposure controls');
+const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST')servedState.action={name:'export',running:false,error:null,result:{revision:'rev-001',directory:'exports/rev-001'}};
+ return response;
+};
+await $('exportAccepted').onclick();assert.equal(posts.at(-1).action,'export');
+assert.deepEqual({ev:Number($('exposureEV').value),range:Number($('exposureRange').value),candidate:$('exposureCandidate').checked},draft,'Export discarded pending exposure controls');
+assert.equal(dirty,false,'Exposure controls dirtied matting guides');
+assert($('exposureDraftStatus').textContent.includes('Unsaved exposure settings'));
+""".replace("CONTROL", repr(control))
+    )
+
+
+@pytest.mark.parametrize("button", ["exposureAmount", "exposureApply", "exposureReset"])
+def test_applied_exposure_controls_clear_only_after_success_and_keep_area_semantics(button):
+    run_page(
+        r"""
+const savedArea={regions:[{id:'saved-area',role:'support',shape:'rectangle',xyxy:[10,10,40,40],feather_px:0}],protection:[]};
+servedState.revisions[0].exposure_area=structuredClone(savedArea);
+servedState.revisions[0].local_exposure={enabled:true,stale:false,settings:{enabled:true,ev:.5},clipping:{clipped_pixels:0,eligible_pixels:100}};
+await ready();$('exposureEV').value='1.2';$('exposureEV').oninput();$('exposureCandidate').checked=true;$('exposureCandidate').onchange?.();
+$('exposureRole').value='regions';$('exposureShape').value='rectangle';$('exposureFeather').value='0';$('exposureRectangle').value='50,50,60,60';await $('exposureAddRectangle').onclick();
+const areaDraft=JSON.stringify(exposureArea),button=BUTTON;
+const originalFetch=globalThis.fetch;let release;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST'){
+   const sent=JSON.parse(options.body),record={enabled:sent.local_exposure.enabled,stale:false,settings:sent.local_exposure,clipping:{clipped_pixels:0,eligible_pixels:100}};
+   servedState.working_revision='rev-002';servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',local_exposure:record,exposure_area:sent.exposure_area||savedArea});
+   servedState.action={name:'effects',running:false,error:null,result:{revision:'rev-002',parent:sent.base_revision,local_exposure:record}};
+   return new Promise(resolve=>{release=()=>resolve(response);});
+ }
+ return response;
+};
+const applying=$(button).onclick();for(let i=0;i<30&&!release;i++)await Promise.resolve();assert(release);
+for(const id of ['exposureEV','exposureRange','exposureCandidate'])assert.equal($(id).disabled,true,'Editable control could change after payload serialization: '+id);
+release();await applying;
+assert.equal(Number($('exposureEV').value),button==='exposureReset'?0:1.2);assert.equal(Number($('exposureRange').value),button==='exposureReset'?0:1.2);
+assert.equal($('exposureCandidate').checked,false);assert(!$('exposureDraftStatus').textContent.includes('Unsaved exposure settings'));
+assert.equal(JSON.stringify(exposureArea),areaDraft);
+assert.equal(exposureDirty,button!=='exposureApply','Controls changed independent area publication state');
+for(const id of ['exposureEV','exposureRange','exposureCandidate'])assert.equal($(id).disabled,false);
+""".replace("BUTTON", repr(button))
+    )
+
+
+@pytest.mark.parametrize("failure", ["dispatch", "processing", "other_action_result"])
+def test_exposure_failure_or_other_action_result_keeps_pending_controls_for_retry(failure):
+    run_page(
+        r"""
+servedState.revisions[0].local_exposure={enabled:true,stale:false,settings:{enabled:true,ev:.5},clipping:{clipped_pixels:0,eligible_pixels:100}};
+await ready();$('exposureEV').value='1.2';$('exposureEV').oninput();$('exposureCandidate').checked=true;$('exposureCandidate').onchange?.();
+const originalFetch=globalThis.fetch,failure=FAILURE;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST'){
+   if(failure==='dispatch')throw Error('Synthetic rejected dispatch');
+   servedState.action=failure==='processing'?{name:'effects',running:false,error:'Synthetic processing failure',result:null}:{name:'export',running:false,error:null,result:{directory:'exports/rev-001'}};
+ }
+ return response;
+};
+await $('exposureAmount').onclick();
+for(const id of ['exposureEV','exposureRange','exposureCandidate'])assert.equal($(id).disabled,false,'Failure left controls disabled');
+assert.equal(Number($('exposureEV').value),1.2);assert.equal($('exposureCandidate').checked,true);
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST')servedState.action={name:'export',running:false,error:null,result:{directory:'exports/rev-001'}};
+ return response;
+};
+await $('exportAccepted').onclick();
+assert.equal(Number($('exposureEV').value),1.2);assert.equal(Number($('exposureRange').value),1.2);assert.equal($('exposureCandidate').checked,true);
+assert($('exposureDraftStatus').textContent.includes('Unsaved exposure settings'));
+""".replace("FAILURE", repr(failure))
+    )
+
+
+def test_exposure_control_draft_stays_bound_after_restore_and_explicit_reload_recovers():
+    run_page(r"""
+const record={enabled:true,stale:false,settings:{enabled:true,ev:.5},clipping:{clipped_pixels:0,eligible_pixels:100}};
+servedState.revisions[0].local_exposure=record;servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',local_exposure:record});
+await ready();$('exposureEV').value='1.2';$('exposureEV').oninput();$('exposureCandidate').checked=true;$('exposureCandidate').onchange?.();
+$('restoreRevision').value='rev-002';const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST'&&JSON.parse(options.body).action==='restore'){
+   servedState.working_revision='rev-002';servedState.inputs_digest='restored-draft';servedState.authoring_digest='restored-author';
+   servedState.action={name:'restore',running:false,error:null,result:{revision:'rev-002'}};
+ }
+ return response;
+};
+await $('restore').onclick();
+assert.equal(identity.base_revision,'rev-002');assert.equal(Number($('exposureEV').value),1.2);assert.equal($('exposureCandidate').checked,true);
+assert($('exposureDraftStatus').textContent.includes('Stale exposure settings'),$('exposureDraftStatus').textContent);
+const before=posts.length;await $('exposureAmount').onclick();assert.equal(posts.length,before,'Applied controls against a different project identity');
+assert.match($('message').textContent,/reload/i);
+await $('reload').onclick();assert.equal(Number($('exposureEV').value),.5);assert.equal(Number($('exposureRange').value),.5);assert.equal($('exposureCandidate').checked,false);
+assert(!$('exposureDraftStatus').textContent.includes('Stale exposure settings'));
+$('exposureEV').value='1.2';$('exposureEV').oninput();$('exposureCandidate').checked=true;$('exposureCandidate').onchange?.();
+await $('exposureAmount').onclick();assert.equal(posts.at(-1).action,'effects');assert.equal(posts.at(-1).base_revision,'rev-002');assert.equal(posts.at(-1).inputs_digest,'restored-draft');
 """)
