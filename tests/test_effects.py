@@ -177,6 +177,9 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
         assert "cleanup OFF" in review["label"]
     reviewed = json.loads(Path(review_project(project)["manifest_file"]).read_bytes())
     assert "cleanup_stale" in reviewed["stale_labels"]
+    assert reviewed["settings"]["color_cleanup"] == {"enabled": True, "strength": 0.35}
+    assert reviewed["effects"]["color_cleanup"]["stale"] is True
+    assert reviewed["assets"]["foreground_rgb16"].endswith("/foreground_rgb16.tif")
     with pytest.raises(ProjectError, match="Stale.*cleanup"):
         operations.accept_revision(project, repaired["revision"])
     with pytest.raises(ProjectError, match="Stale.*cleanup"):
@@ -406,18 +409,63 @@ def test_explicit_disable_works_with_empty_current_guide_support(tmp_path):
     np.testing.assert_array_equal(rgb, source)
 
 
-def test_review_manifest_identifies_selected_corrected_rgb_and_actual_strength(tmp_path):
+@pytest.mark.parametrize("enabled,strength", [(True, 0.7), (False, 0.6), (True, 0.0)])
+@pytest.mark.parametrize("inherited", [False, True])
+def test_review_manifest_reports_applied_cleanup_without_rewriting_recipe(
+    tmp_path, enabled, strength, inherited
+):
+    import tomllib
+
+    from blackmask.operations import draft_digest
+    from blackmask.review import review_project
+
+    project, _, _ = fixture_project(tmp_path)
+    recipe_bytes = (project / "recipe.toml").read_bytes()
+    original_digest = draft_digest(project)
+    assert tomllib.loads(recipe_bytes.decode())["color_cleanup"]["enabled"] is False
+    result = operations.apply_operation(
+        project, effect_request(project, enabled=enabled, strength=strength)
+    )
+    saved_review = json.loads(
+        (project / "revisions" / result["revision"] / "review/manifest.json").read_bytes()
+    )
+    assert saved_review["color_cleanup"]["strength"] == strength
+    assert ("cleanup ON" if enabled and strength != 0 else "cleanup OFF") in saved_review["label"]
+    if inherited:
+        prepared = operations.apply_operation(project, request(project))
+        approve(project, prepared)
+        result = run_matte(project)
+    directory = project / "revisions" / result["revision"]
+    manifest_bytes = (directory / "manifest.json").read_bytes()
+    manifest = json.loads(manifest_bytes)
+    record = json.loads(Path(review_project(project)["manifest_file"]).read_bytes())
+    effective = enabled and strength != 0
+    assert record["settings"]["color_cleanup"] == {"enabled": effective, "strength": strength}
+    assert record["effects"]["color_cleanup"]["enabled"] is effective
+    assert record["effects"]["color_cleanup"]["stale"] is False
+    assert "cleanup_stale" not in record["stale_labels"]
+    foreground = "corrected_rgb16.tif" if effective else "foreground_rgb16.tif"
+    assert record["assets"]["foreground_rgb16"].endswith("/" + foreground)
+    assert record["revision_inputs_digest"] == manifest["draft_digest"] == original_digest
+    assert draft_digest(project) == original_digest
+    assert (project / "recipe.toml").read_bytes() == recipe_bytes
+    assert (directory / "recipe.toml").read_bytes() == recipe_bytes
+    assert (directory / "manifest.json").read_bytes() == manifest_bytes
+
+
+@pytest.mark.parametrize("strength", [None, True, -0.1, 1.1])
+def test_review_rejects_invalid_saved_cleanup_strength(tmp_path, strength):
     from blackmask.review import review_project
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, effect_request(project))
-    record = json.loads(Path(review_project(project)["manifest_file"]).read_bytes())
-    assert record["assets"]["foreground_rgb16"].endswith("/corrected_rgb16.tif")
-    saved = json.loads(
-        (project / "revisions" / result["revision"] / "review/manifest.json").read_bytes()
-    )
-    assert saved["color_cleanup"]["strength"] == 0.35
-    assert "cleanup ON" in saved["label"]
+    manifest_file = project / "revisions" / result["revision"] / "manifest.json"
+    manifest = json.loads(manifest_file.read_bytes())
+    manifest["color_cleanup"]["strength"] = strength
+    manifest_file.write_text(json.dumps(manifest))
+    with pytest.raises(ProjectError, match="Cleanup requires"):
+        review_project(project)
+    assert not (project / "reviews" / result["revision"]).exists()
 
 
 @pytest.mark.parametrize("repairing", [False, True])
