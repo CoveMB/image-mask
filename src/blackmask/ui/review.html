@@ -1,0 +1,1737 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  />
+  <title>Image Mask · Local review</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font: 15px system-ui;
+    }
+    body {
+      margin: 0;
+      background: #171b20;
+      color: #edf1f5;
+    }
+    header {
+      padding: 12px 18px;
+      border-bottom: 1px solid #44505a;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 6px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(360px, 1fr) 360px;
+      height: calc(100vh - 115px);
+    }
+    aside {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      overflow: auto;
+      padding: 12px;
+      border-left: 1px solid #44505a;
+    }
+    fieldset {
+      min-inline-size: 0;
+      border: 1px solid #56616a;
+      margin: 0 0 12px;
+      padding: 10px;
+    }
+    legend {
+      font-weight: 650;
+    }
+    label {
+      display: block;
+      margin: 6px 0;
+    }
+    input,
+    select,
+    button,
+    textarea {
+      font: inherit;
+      color: inherit;
+      background: #252d36;
+      border: 1px solid #75828d;
+      border-radius: 4px;
+      padding: 5px;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      cursor: pointer;
+      margin: 3px;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: wait;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    canvas:focus-visible {
+      outline: 3px solid #73c5ff;
+      outline-offset: 2px;
+    }
+    input[type="number"] {
+      width: 78px;
+    }
+    input[type="checkbox"] {
+      width: auto;
+    }
+    textarea {
+      width: 100%;
+      height: 60px;
+    }
+    .row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .view {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+    .toolbar {
+      padding: 8px;
+      background: #202730;
+    }
+    #viewport {
+      flex: 1;
+      min-height: 180px;
+      position: relative;
+    }
+    canvas {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      background: #090b0e;
+    }
+    #status {
+      white-space: pre-wrap;
+      min-height: 40px;
+    }
+    #message {
+      color: #ffcf85;
+      white-space: pre-wrap;
+      max-height: 120px;
+      overflow: auto;
+    }
+    .small {
+      font-size: 13px;
+      color: #c0ccd6;
+    }
+    .group {
+      padding: 6px;
+      border-bottom: 1px solid #56616a;
+    }
+    .wide {
+      width: 100%;
+    }
+    @media (max-width: 800px) {
+      main {
+        display: block;
+        height: auto;
+      }
+      #viewport {
+        height: 55vh;
+      }
+      aside {
+        border-left: 0;
+      }
+      .view {
+        height: auto;
+      }
+    }
+  </style>
+  <header>
+    <h1>Image Mask · Offline local review</h1>
+    <div id="status" role="status" aria-live="polite">
+      Opening current project…
+    </div>
+    <div id="message" role="alert"></div>
+  </header>
+  <main>
+    <section class="view" aria-label="Native image review">
+      <div class="toolbar">
+        <div class="row">
+          <label
+            >View
+            <select id="panel">
+              <option value="result">Result · saved background</option>
+              <option value="source">Source</option>
+              <option value="black">Black diagnostic</option>
+              <option value="gray">Gray diagnostic</option>
+              <option value="white">White diagnostic</option>
+              <option value="alpha">Alpha8 view</option>
+            </select></label
+          >
+          <label
+            >Compare revision
+            <select id="viewRevision"></select
+          ></label>
+          <button id="toggle">Source / result</button
+          ><button id="fit">Fit</button><button id="native">Native 1:1</button>
+          <label
+            >Zoom
+            <input
+              id="zoom"
+              type="number"
+              min="0.05"
+              max="32"
+              step="0.1"
+              value="1"
+          /></label>
+          <label
+            >Overlay
+            <select id="overlay">
+              <option value="guides">Typed guides</option>
+              <option value="trimap">Prepared trimap</option>
+              <option value="support">Prepared support8 view</option>
+              <option value="lock">Prepared lock region</option>
+              <option value="proposal">Unreviewed trimap proposal</option>
+              <option value="boundary">Proposal unknown boundary</option>
+              <option value="membership">SAM membership</option>
+              <option value="none">None</option>
+            </select></label
+          >
+        </div>
+        <p class="small">
+          RGB8/alpha8 viewing approximations. Saved master/foreground remain
+          RGB16 and masks alpha16. Canvas: +/- zoom, arrows pan, Shift-drag pan.
+          Use numeric authoring below with keyboard.
+        </p>
+        <div class="row">
+          <label
+            >Native crop x0,y0,x1,y1
+            <input id="crop" value="" size="22" /></label
+          ><button id="cropApply">Apply crop</button
+          ><button id="full">Full image</button
+          ><span id="coordinate" aria-live="polite"></span>
+        </div>
+      </div>
+      <div id="viewport">
+        <canvas
+          id="canvas"
+          tabindex="0"
+          aria-label="Source and result; native-coordinate guide, Local exposure or Shadow fade authoring. Numeric alternatives in each section."
+        ></canvas>
+      </div>
+    </section>
+    <aside>
+      <button id="reload">Reload saved inputs</button
+      ><span id="draftStatus" class="small"></span
+      ><button id="recoverPending">
+        Load retained pending guides for review
+      </button>
+      <fieldset>
+        <legend>1 · Source development review</legend>
+        <p class="small">
+          Inspect orientation, white balance and clipping. For precision,
+          inspect the saved master TIFF in an RGB16 viewer before approval. No
+          automatic photo approval.
+        </p>
+        <label
+          ><input type="checkbox" id="developmentReviewed" /> I reviewed this
+          master’s development</label
+        ><button id="development">Approve development</button>
+      </fieldset>
+      <fieldset>
+        <legend>2 · Named SAM groups</legend>
+        <div class="row">
+          <label
+            >Group name
+            <input id="newGroup" placeholder="subject" size="16" /></label
+          ><button id="addGroup">Add group</button>
+        </div>
+        <div id="groups"></div>
+        <p class="small">
+          Prepare generates three candidates per prompted group. Choose a
+          candidate, save and prepare again. Membership is a suggestion, never
+          confirmed opacity.
+        </p>
+        <label
+          >Candidate preview
+          <select id="candidate">
+            <option value="">None</option>
+          </select></label
+        >
+      </fieldset>
+      <fieldset>
+        <legend>3 · Typed native guide</legend>
+        <label
+          >Role
+          <select id="role">
+            <option value="keep">SAM keep hint</option>
+            <option value="remove">SAM remove hint</option>
+            <option value="foreground">Confirmed foreground core</option>
+            <option value="background">Confirmed background core</option>
+            <option value="unknown">Unknown corridor</option>
+            <option value="support">Repair support16</option>
+            <option value="lock">Saved alpha/RGB region lock</option>
+          </select></label
+        >
+        <div class="row">
+          <label
+            >Shape
+            <select id="shape">
+              <option value="point">Point</option>
+              <option value="rectangle">Rectangle / SAM box</option>
+              <option value="stroke">Coarse stroke</option>
+              <option value="pan">Pan only</option>
+            </select></label
+          ><label
+            >Group
+            <select id="guideGroup"></select
+          ></label>
+        </div>
+        <div class="row">
+          <label
+            >Stroke radius px
+            <input id="radius" type="number" min="1" value="2" /></label
+          ><label
+            >Inward feather px
+            <input id="feather" type="number" min="0" value="0"
+          /></label>
+        </div>
+        <label
+          >Lock saved revision
+          <select id="lockRevision"></select
+        ></label>
+        <label
+          >Native coordinates
+          <input
+            id="geometry"
+            class="wide"
+            placeholder="x,y or x0,y0,x1,y1 or x,y;x,y" /></label
+        ><button id="addGeometry">Add numeric guide</button>
+        <p class="small">
+          Locks copy saved partial alpha and RGB exactly on every rerun. Remove
+          a lock explicitly, save and prepare before replacing its binding.
+          Support feather must leave a full-strength interior under changed
+          cores.
+        </p>
+        <label
+          >Recorded guides
+          <select id="regions" class="wide" size="5"></select></label
+        ><button id="removeRegion">Remove selected guide explicitly</button
+        ><button id="save">Save groups and pending guides</button>
+      </fieldset>
+      <fieldset>
+        <legend>4 · Prepare and review</legend>
+        <label>Write scope x0,y0,x1,y1 <input id="scope" class="wide" /></label
+        ><label
+          >Repair context x0,y0,x1,y1 <input id="context" class="wide" /></label
+        ><button id="prepare">Prepare saved guidance</button
+        ><label
+          ><input id="trimapReviewed" type="checkbox" /> I reviewed the current
+          prepared trimap against source</label
+        ><button id="trimap">Approve prepared trimap</button
+        ><button id="matte">Run full matte</button>
+        <p class="small">
+          Prepare preserves previous alpha; it cannot be accepted as a final
+          photo. Use a context larger than the permitted write scope for local
+          repair.
+        </p>
+        <label
+          >Source-supported repair reason
+          <textarea id="reason"></textarea></label
+        ><label
+          >Merge
+          <select id="policy">
+            <option value="replace">Replace within support</option>
+            <option value="increase-only">Increase only</option>
+            <option value="decrease-only">Decrease only</option>
+          </select></label
+        ><button id="repair">Run scoped repair</button>
+      </fieldset>
+      <fieldset>
+        <legend>5 · Optional source-guided color cleanup</legend>
+        <p class="small">Default OFF. Approximate decontamination, not recovery of true color or detail. Review with unchanged alpha.</p>
+        <label>Strength (0–1; 0.35 is a starting point) <input id="cleanupStrength" type="number" min="0" max="1" step="0.01" value="0.35" /></label>
+        <label>Declared cleanup write scope x0,y0,x1,y1 <input id="cleanupScope" class="wide" /></label>
+        <label>Project-relative scalar16 support file <input id="cleanupSupport" class="wide" /></label>
+        <p class="small">Uses the saved support from your current guides by default. Author repair-support guides and run the reviewed matte/repair to change it. Nonzero support must fit the declared cleanup scope. A rebuild retains prior corrected RGB outside this support and saved locks inside.</p>
+        <label><input id="cleanupCandidate" type="checkbox" /> Explicitly compare cleanup on an unaccepted complete candidate</label>
+        <button id="cleanupApply">Enable / rebuild within declared support</button>
+        <button id="cleanupDisable">Explicitly disable cleanup</button>
+        <label><input id="cleanupBase" type="checkbox" /> Compare BASE with cleanup, local exposure, Shadow fade and shading OFF (same alpha)</label>
+        <p id="cleanupStatus" class="small" role="status"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Local exposure</legend>
+        <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option></select></label>
+        <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
+        <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+        <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
+        <label>Inward feather (native pixels; apply area only) <input id="exposureFeather" type="number" min="0" step="1" value="0" /></label>
+        <label>Numeric rectangle x0,y0,x1,y1 <input id="exposureRectangle" class="wide" /></label>
+        <button id="exposureAddRectangle">Add exposure rectangle</button>
+        <label>Draft exposure shapes <select id="exposureRegions" class="wide" size="4"></select></label>
+        <button id="exposureRemove">Remove exposure shape</button>
+        <button id="exposureClear">Clear draft exposure area</button>
+        <label>Exposure EV <input id="exposureRange" type="range" min="-3" max="3" step="0.1" value="0" /></label>
+        <label>Exposure EV (numeric) <input id="exposureEV" type="number" min="-3" max="3" step="0.1" value="0" /></label>
+        <label><input id="exposureCandidate" type="checkbox" /> Explicitly compare exposure on an unaccepted candidate</label>
+        <button id="exposureApply">Apply / replace exposure area</button>
+        <button id="exposureAmount">Apply amount to saved area</button>
+        <button id="exposureReset">Reset exposure (OFF / 0 EV)</button>
+        <label><input id="exposureCompare" type="checkbox" /> Compare exposure OFF (keep cleanup and shading; recalculate Shadow fade)</label>
+        <p id="exposureStatus" role="status" class="small"></p>
+        <p id="exposureDraftStatus" role="status" class="small"></p>
+        <p class="small">Amount changes use only the saved area and protections; pending area edits stay unsaved. Reset retains the recoverable saved area. Clipped pixels count pixels with any channel above linear white before clipping, not photographic quality. Exposure cannot recover detail absent from the matte.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Background appearance</legend>
+        <p class="small">Entire backdrop behind the saved matte. Subject RGB, alpha and effects remain editable and unchanged. Unsaved controls do not change the preview.</p>
+        <label>Background tone <input id="backgroundColor" type="color" value="#120708" /></label>
+        <label>Tone #RRGGBB <input id="backgroundHex" type="text" value="#120708" maxlength="7" pattern="#[0-9a-fA-F]{6}" /></label>
+        <button id="backgroundBlack">Pure black</button>
+        <button id="backgroundWarm">Warm dark</button>
+        <label>Background variation (%) <input id="backgroundRange" type="range" min="0" max="100" step="1" value="55" /></label>
+        <label>Variation (numeric %) <input id="backgroundVariation" type="number" min="0" max="100" step="1" value="55" /></label>
+        <p class="small">0% is uniform; 55% gives up to ±0.55 stops; 100% gives up to ±1 stop. Pure black stays exactly black at every variation; the slider is retained.</p>
+        <label><input id="backgroundCandidate" type="checkbox" /> Explicitly compare background on an unaccepted candidate</label>
+        <button id="backgroundApply">Apply background</button>
+        <p id="backgroundStatus" role="status" class="small"></p>
+        <p id="backgroundDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Shadow fade</legend>
+        <p class="small">One independent, reversible soft-area fade. Darkens existing subject RGB by up to six stops in linear light; alpha is unchanged. Highlight preservation is tonal, not detail recognition. Protect dim hairs, saturated petals and translucent detail explicitly.</p>
+        <label>Fade drawing <select id="fadeRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
+        <label>Fade shape <select id="fadeShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+        <label>Fade brush radius (native pixels) <input id="fadeRadius" type="number" min="1" step="1" value="10" /></label>
+        <label>Softness (inward feather, native pixels; Apply only) <input id="fadeFeather" type="number" min="0" step="1" value="0" /></label>
+        <label>Fade numeric rectangle x0,y0,x1,y1 <input id="fadeRectangle" class="wide" /></label>
+        <button id="fadeAddRectangle">Add fade rectangle</button>
+        <label>Draft fade shapes <select id="fadeRegions" class="wide" size="4"></select></label>
+        <button id="fadeRemove">Remove fade shape</button>
+        <button id="fadeClear">Clear draft fade area</button>
+        <label>Amount (%) <input id="fadeRange" type="range" min="0" max="100" step="1" value="0" /></label>
+        <label>Amount (numeric %) <input id="fadeAmount" type="number" min="0" max="100" step="1" value="0" /></label>
+        <label>Preserve highlights (%) <input id="fadePreserveRange" type="range" min="0" max="100" step="1" value="100" /></label>
+        <label>Preserve highlights (numeric %) <input id="fadePreserve" type="number" min="0" max="100" step="1" value="100" /></label>
+        <label><input id="fadeCandidate" type="checkbox" /> Explicitly compare fade on an unaccepted candidate</label>
+        <button id="fadeApply">Apply / replace fade area</button>
+        <button id="fadeAmountApply">Apply fade amount to saved area</button>
+        <button id="fadeReset">Reset Shadow fade (OFF / 0%)</button>
+        <label><input id="fadeCompare" type="checkbox" /> Compare Shadow fade OFF (keep cleanup, exposure and shading)</label>
+        <p id="fadeStatus" role="status" class="small"></p>
+        <p id="fadeDraftStatus" role="status" class="small"></p>
+        <p class="small">Choose Shadow fade area in Canvas authoring mode above. Amount/reset use the saved area and keep pending area edits unsaved. Replacement includes removal of the old area. Reload discards unsaved area edits and loads saved geometry. Exposure remains independently editable. No model or internet needed.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Optional protected inward shading</legend>
+        <label>Per-photo inward width (native pixels; required) <input id="shadingWidth" type="number" min="0.01" step="0.1" /></label>
+        <label>Direction (degrees clockwise: 0 right, 90 down) <input id="shadingDirection" type="number" min="0" max="359.99" step="1" /></label>
+        <label>Opacity (0–1; default OFF) <input id="shadingOpacity" type="number" min="0" max="1" step="0.01" value="0" /></label>
+        <label>Declared shading write scope x0,y0,x1,y1 <input id="shadingScope" class="wide" /></label>
+        <label>Project-relative scalar16 support file <input id="shadingSupport" class="wide" /></label>
+        <label>Explicit protection file (authored categorical8 or scalar16) <input id="shadingProtection" class="wide" /></label>
+        <p class="small">Uses the current saved guide protection by default; it may be empty. Author saved alpha/RGB lock guides for protected details, then prepare, review the trimap and complete matte/repair before enabling shading. Choose protection for hairs, antennae, web, tips, highlights and bee explicitly. Heuristics cannot identify these details. Rebuild preserves prior W outside its own support and prior protection inside. Alpha is unchanged.</p>
+        <label><input id="shadingCandidate" type="checkbox" /> Explicitly compare an unaccepted candidate</label>
+        <button id="shadingApply">Enable / rebuild shading within declared support</button>
+        <button id="shadingOpacityApply">Apply global opacity only (reuse saved W)</button>
+        <button id="shadingDisable">Explicitly disable shading</button>
+        <label>Same native crop shading comparison <select id="shadingPreview"><option value="">Saved opacity</option><option value="0">0%</option><option value="0.12">12%</option><option value="0.24">24%</option></select></label>
+        <p id="shadingStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset>
+        <legend>6 · Recovery and photographic acceptance</legend>
+        <label
+          >Interrupted operation
+          <select id="operation"></select></label
+        ><button id="resume">Resume verified work</button
+        ><label
+          >Restore saved revision
+          <select id="restoreRevision"></select></label
+        ><label
+          ><input type="checkbox" id="replaceDrafts" /> Preserve current draft
+          bytes in recovery, then replace drafts</label
+        ><button id="restore">
+          Restore working inputs (acceptance unchanged)
+        </button>
+        <label
+          ><input type="checkbox" id="photoReviewed" /> I reviewed current
+          result at native scale on black/gray/white, including fine detail,
+          transparency and seams</label
+        ><button id="accept">Accept current photograph</button
+        ><button id="exportAccepted">Export accepted result</button
+        ><button id="exportDraft">Export labelled current draft</button>
+        <p id="result" class="small" style="white-space: pre-wrap"></p>
+      </fieldset>
+    </aside>
+  </main>
+  <script src="/coordinates.js"></script>
+  <script>
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const token = location.hash.slice(1);
+    let state = null,
+      identity = null,
+      groups = [],
+      regions = [],
+      originalRegions = [],
+      dirty = false,
+      pendingSaved = false;
+    let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
+    let backgroundDirty = false, backgroundPublished = false;
+    let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
+    let exposureControlsIdentity = null, exposureControlsSubmitted = null;
+    let fadeControlsIdentity = null, fadeControlsSubmitted = null;
+    let image = null,
+      overlayImage = null,
+      crop = null,
+      pan = [0, 0],
+      zoom = 1,
+      gesture = null,
+      transform = null,
+      imageKey = "",
+      actionWasRunning = false,
+      actionSubmitting = false,
+      imageLoading = false;
+    const canvas = $("canvas"),
+      ctx = canvas.getContext("2d");
+    function message(value) {
+      $("message").textContent = value || "";
+    }
+    async function api(path, data) {
+      const headers = { "X-Blackmask-Token": token };
+      if (data !== undefined) headers["Content-Type"] = "application/json";
+      const response = await fetch(path, {
+        method: data === undefined ? "GET" : "POST",
+        headers,
+        body: data === undefined ? undefined : JSON.stringify(data),
+      });
+      if (!response.ok) {
+        let error = await response.json();
+        throw Error(error.error || "Local request failed");
+      }
+      return response;
+    }
+    function select(id, values, selected) {
+      const node = $(id),
+        previous = selected === undefined ? node.value : selected;
+      if (
+        JSON.stringify(
+          Array.from(node.options, (o) => [o.value, o.textContent]),
+        ) === JSON.stringify(values)
+      ) {
+        if (values.some((v) => v[0] === previous)) node.value = previous;
+        return;
+      }
+      node.replaceChildren();
+      for (const [value, label] of values) {
+        let option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        node.append(option);
+      }
+      if (values.some((v) => v[0] === previous)) node.value = previous;
+    }
+    function bounds(id) {
+      const values = $(id)
+        .value.split(",")
+        .map((v) => Number(v.trim()));
+      if (values.length !== 4 || values.some((v) => !Number.isInteger(v)))
+        throw Error("Use four native integer coordinates");
+      const [x0, y0, x1, y1] = values,
+        [w, h] = state.dimensions_wh;
+      if (!(0 <= x0 && x0 < x1 && x1 <= w && 0 <= y0 && y0 < y1 && y1 <= h))
+        throw Error("Empty or out-of-master half-open rectangle");
+      return values;
+    }
+    function markDirty() {
+      dirty = true;
+      pendingSaved = false;
+      $("draftStatus").textContent = "Unsaved authoring edits";
+    }
+    function actions() {
+      const old = new Map(originalRegions.map((r) => [r.id, r])),
+        current = new Map(regions.map((r) => [r.id, r]));
+      const result = [];
+      for (const r of originalRegions)
+        if (!current.has(r.id)) result.push({ action: "remove", id: r.id });
+      for (const r of regions)
+        if (
+          !old.has(r.id) ||
+          JSON.stringify(old.get(r.id)) !== JSON.stringify(r)
+        )
+          result.push({ action: "upsert", region: r });
+      return result;
+    }
+    function renderGroups() {
+      $("groups").replaceChildren();
+      for (const group of groups) {
+        let row = document.createElement("div");
+        row.className = "group";
+        let name = document.createElement("strong");
+        name.textContent = group.id;
+        row.append(name);
+        function field(title, type, value, onChange) {
+          let label = document.createElement("label"),
+            control = document.createElement(
+              type === "select" ? "select" : "input",
+            );
+          label.append(document.createTextNode(title + " "));
+          if (type === "checkbox") {
+            control.type = type;
+            control.checked = value;
+          } else if (type === "number") {
+            control.type = type;
+            control.min = 0;
+            control.value = value;
+          } else {
+            for (const [v, l] of value) {
+              let option = document.createElement("option");
+              option.value = v;
+              option.textContent = l;
+              control.append(option);
+            }
+          }
+          control.onchange = () => {
+            if (authoringBusy()) return;
+            onChange(control);
+            markDirty();
+          };
+          label.append(control);
+          row.append(label);
+          return control;
+        }
+        field(
+          "Retain group",
+          "checkbox",
+          group.keep,
+          (c) => (group.keep = c.checked),
+        );
+        let material = field(
+          "Material",
+          "select",
+          [
+            ["opaque_core", "Opaque core"],
+            ["unknown_interior", "Unknown / translucent interior"],
+          ],
+          (c) => (group.material_policy = c.value),
+        );
+        material.value = group.material_policy;
+        let candidate = field(
+          "Selected candidate",
+          "select",
+          [
+            ["", "Unselected"],
+            ["0", "0"],
+            ["1", "1"],
+            ["2", "2"],
+          ],
+          (c) => {
+            delete group.morphology;
+            if (c.value === "") delete group.selected_candidate;
+            else group.selected_candidate = Number(c.value);
+          },
+        );
+        candidate.value =
+          group.selected_candidate === undefined
+            ? ""
+            : String(group.selected_candidate);
+        let morphology = field(
+          "Propose morphology",
+          "checkbox",
+          !!group.morphology,
+          (c) => {
+            if (c.checked) {
+              if (group.selected_candidate === undefined || !group.keep) {
+                c.checked = false;
+                message("Choose and retain a candidate first");
+                return;
+              }
+              group.morphology = {
+                foreground_erosion_px: 2,
+                unknown_dilation_px: 2,
+              };
+            } else delete group.morphology;
+            renderGroups();
+          },
+        );
+        if (group.morphology) {
+          field(
+            "Foreground erosion px",
+            "number",
+            group.morphology.foreground_erosion_px,
+            (c) => (group.morphology.foreground_erosion_px = Number(c.value)),
+          );
+          field(
+            "Unknown dilation px",
+            "number",
+            group.morphology.unknown_dilation_px,
+            (c) => (group.morphology.unknown_dilation_px = Number(c.value)),
+          );
+        }
+        $("groups").append(row);
+      }
+      select(
+        "guideGroup",
+        groups.map((g) => [g.id, g.id]),
+      );
+    }
+    function renderRegions() {
+      select(
+        "regions",
+        regions.map((r) => [
+          r.id,
+          r.id +
+            " · " +
+            r.role +
+            " · " +
+            JSON.stringify(r.xyxy || r.xy || r.points),
+        ]),
+      );
+      draw();
+    }
+    function loadAuthoring(preserveSubjectDrafts = false) {
+      const subjectControls = [
+        "cleanupSupport", "cleanupCandidate",
+        "shadingSupport", "shadingProtection", "shadingWidth", "shadingDirection", "shadingOpacity", "shadingCandidate",
+        "exposureEV", "exposureRange", "exposureCandidate",
+        "fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate",
+      ];
+      const subjectDrafts = preserveSubjectDrafts ? subjectControls.map(id => [id, $(id).type === "checkbox" ? $(id).checked : $(id).value]) : [];
+
+      // Review confirmation belongs to the authoring identity being replaced.
+      $("trimapReviewed").checked = false;
+      $("photoReviewed").checked = false;
+      $("viewRevision").value = state.working_revision || "";
+      $("cleanupSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
+      $("cleanupCandidate").checked = false;
+      $("shadingSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
+      $("shadingCandidate").checked = false;
+      $("shadingProtection").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/protection.png" : "";
+      const shadingSettings = state.revisions.find(r => r.revision === state.working_revision)?.shading?.settings;
+      $("shadingWidth").value = shadingSettings?.width_px ?? "";
+      $("shadingDirection").value = shadingSettings?.direction_degrees ?? "";
+      $("shadingOpacity").value = shadingSettings?.opacity ?? 0;
+      const currentExposure = state.revisions.find(r => r.revision === state.working_revision);
+      if (!exposureDirty) {
+        exposureArea = structuredClone(currentExposure?.exposure_area || {regions: [], protection: []});
+      }
+      if (!exposureControlsIdentity) {
+        $("exposureEV").value = currentExposure?.local_exposure?.settings?.ev ?? 0;
+        $("exposureRange").value = $("exposureEV").value;
+        $("exposureCandidate").checked = false;
+      }
+      renderExposureArea();
+      if (!fadeDirty) fadeArea = structuredClone(currentExposure?.shadow_fade_area || {regions: [], protection: []});
+      if (!fadeControlsIdentity) {
+        $("fadeAmount").value = (currentExposure?.shadow_fade?.settings?.amount ?? 0) * 100;
+        $("fadeRange").value = $("fadeAmount").value;
+        $("fadePreserve").value = (currentExposure?.shadow_fade?.settings?.preserve_highlights ?? 1) * 100;
+        $("fadePreserveRange").value = $("fadePreserve").value;
+        $("fadeCandidate").checked = false;
+      }
+      renderFadeArea();
+      for (const [id, value] of subjectDrafts) {
+        if ($(id).type === "checkbox") $(id).checked = value; else $(id).value = value;
+      }
+      if (!backgroundDirty) {
+        const savedBackground = currentExposure?.background?.settings || (!currentExposure ? state.recipe?.background : null) || {color_srgb: "#000000", variation: 0};
+        $("backgroundHex").value = savedBackground.color_srgb;
+        $("backgroundColor").value = savedBackground.color_srgb.toLowerCase();
+        $("backgroundVariation").value = Math.round(savedBackground.variation * 100);
+        $("backgroundRange").value = $("backgroundVariation").value;
+        $("backgroundCandidate").checked = false;
+      }
+      backgroundDraftStatus();
+      $("candidate").value = "";
+      identity = {
+        master_id: state.master_id,
+        base_revision: state.working_revision,
+        inputs_digest: state.inputs_digest,
+        authoring_digest: state.authoring_digest,
+      };
+      groups = structuredClone(state.recipe?.groups || []);
+      originalRegions = structuredClone(state.guides?.regions || []);
+      regions = structuredClone(originalRegions);
+      const p = state.pending;
+      pendingSaved = !!p && p.current;
+      if (pendingSaved) {
+        for (const action of p.actions) {
+          regions = regions.filter(
+            (r) => r.id !== (action.id || action.region.id),
+          );
+          if (action.action === "upsert") regions.push(action.region);
+        }
+      }
+      dirty = false;
+      $("recoverPending").disabled = !p || p.current || p.consumed;
+      renderGroups();
+      renderRegions();
+      $("draftStatus").textContent = pendingSaved
+        ? "Saved pending guides; prepare to apply"
+        : p && !p.current && !p.consumed
+          ? "Retained pending guides have an older identity; load explicitly to review"
+          : "Saved project inputs";
+    }
+    let refreshInFlight = null;
+    function refresh(reload = false) {
+      if (refreshInFlight) {
+        return reload
+          ? refreshInFlight.then(() => refresh(true))
+          : refreshInFlight;
+      }
+      refreshInFlight = refreshState(reload).finally(() => {
+        refreshInFlight = null;
+      });
+      return refreshInFlight;
+    }
+    async function refreshState(reload) {
+      state = await (await api("/api/state")).json();
+      const a = state.action,
+        current = state.revisions.find(
+          (r) => r.revision === state.working_revision,
+        );
+      $("cleanupStatus").textContent = current?.color_cleanup?.enabled
+        ? current.color_cleanup.stale
+          ? "STALE cleanup: BASE-to-BASE views, cleanup OFF on both sides. Appearance acceptance/export blocked; rebuild every changed-alpha dependency within declared support or explicitly disable. Prior accepted complete result remains saved."
+          : "Working cleanup enabled · saved RGB16 · strength " + current.color_cleanup.strength
+        : "Working cleanup OFF · master-based RGB with explicit saved-value locks";
+      $("status").textContent =
+        (a.running
+          ? "Running " + a.name
+          : state.writer_busy
+            ? "Project busy · another writer"
+            : state.status) +
+        " · working " +
+        (state.working_revision || "none") +
+        " · accepted " +
+        (state.accepted_revision || "none") +
+        " · development " +
+        (state.development_approved ? "approved" : "review required") +
+        "\n" +
+        (current && current.draft_digest !== state.inputs_digest
+          ? "Draft changed · prepared inputs stale"
+          : "Saved revision identities current; RGB8 preview") +
+        (current?.tile_summary?.inferred_tiles !== undefined &&
+        current.tile_summary.inferred_tiles !== null
+          ? " · inferred tiles " +
+            current.tile_summary.inferred_tiles +
+            ", verified cache reuse " +
+            current.tile_summary.reused_tiles
+          : "");
+      if (a.error)
+        message(
+          a.error +
+            " · Reload inputs, fix guidance/model/space, or use recovery controls.",
+        );
+      else if (state.draft_error)
+        message(
+          state.draft_error +
+            " · Explicit restore can preserve and replace malformed drafts.",
+        );
+      if (a.result) {
+        const r = a.result;
+        $("result").textContent = [
+          r.revision ? "Revision: " + r.revision : "",
+          r.status ? "Status: " + r.status : "",
+          r.directory ? "Export saved: " + r.directory : "",
+          r.operation_id ? "Operation: " + r.operation_id : "",
+          r.candidates ? "Generated candidates: " + r.candidates.length : "",
+          r.record_file ? "Authoring saved; prepare to apply" : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+      const completed = !actionSubmitting && actionWasRunning && !a.running;
+      if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;
+      const appliedExposure = a.result?.local_exposure?.settings;
+      if (reload || (completed && !a.error && exposureControlsSubmitted &&
+          a.name === "effects" && a.result?.parent === exposureControlsSubmitted.base_revision &&
+          appliedExposure?.enabled === exposureControlsSubmitted.enabled &&
+          appliedExposure?.ev === exposureControlsSubmitted.ev)) exposureControlsIdentity = null;
+      if (completed) {
+        exposureAreaPublished = false;
+        exposureControlsSubmitted = null;
+      }
+      if (reload || (completed && !a.error && fadeAreaPublished)) fadeDirty = false;
+      const appliedFade = a.result?.shadow_fade?.settings;
+      if (reload || (completed && !a.error && fadeControlsSubmitted &&
+          a.name === "effects" && a.result?.parent === fadeControlsSubmitted.base_revision &&
+          appliedFade?.enabled === fadeControlsSubmitted.enabled &&
+          appliedFade?.amount === fadeControlsSubmitted.amount &&
+          appliedFade?.preserve_highlights === fadeControlsSubmitted.preserve_highlights)) fadeControlsIdentity = null;
+      if (completed) {
+        fadeAreaPublished = false;
+        fadeControlsSubmitted = null;
+      }
+      const preserveSubjectDrafts = completed && backgroundPublished && !a.error;
+      if (reload || preserveSubjectDrafts) backgroundDirty = false;
+      if (completed) backgroundPublished = false;
+      const savedBackground = current?.background?.settings || {color_srgb: "#000000", variation: 0};
+      $("backgroundStatus").textContent = "Saved background · " + (current?.revision || "no complete result") + " · " + savedBackground.color_srgb + " · variation " + Math.round(savedBackground.variation * 100) + "%" + (current && !current.final_acceptable ? " · prepared only" : "");
+      backgroundDraftStatus();
+      const savedFade = current?.shadow_fade;
+      $("fadeStatus").textContent = savedFade?.enabled
+        ? savedFade.stale ? "Saved Shadow fade STALE · BASE comparison; rebuild area or reset; every other stale effect still needs recovery"
+          : "Saved Shadow fade ON · amount " + Math.round(savedFade.settings.amount * 100) + "% · preserve highlights " + Math.round(savedFade.settings.preserve_highlights * 100) + "%" + (current.final_acceptable ? " · complete" : " · prepared; complete matte before appearance review")
+        : "Saved Shadow fade OFF";
+      renderFadeArea();
+      const savedExposure = current?.local_exposure;
+      $("exposureStatus").textContent = savedExposure?.enabled
+        ? savedExposure.stale ? "Saved local exposure STALE · BASE comparison; rebuild area or reset before export/acceptance"
+          : "Saved local exposure ON · " + savedExposure.settings.ev + " EV · " + (savedExposure.clipping
+            ? "clipped " + savedExposure.clipping.clipped_pixels + " / " + savedExposure.clipping.eligible_pixels + " eligible pixels"
+            : "clipping unavailable · complete matte review pending")
+        : "Saved local exposure OFF · 0 applied EV";
+      renderExposureArea();
+      if (!actionSubmitting) actionWasRunning = a.running;
+      const authoringPublished = ["save", "prepare", "restore"].includes(
+        a.name,
+      );
+      if (
+        reload ||
+        !identity ||
+        (completed && !a.error && (!dirty || authoringPublished))
+      ) {
+        loadAuthoring(preserveSubjectDrafts);
+        if (completed) imageKey = "";
+      }
+      if (
+        identity &&
+        (identity.base_revision !== state.working_revision ||
+          identity.inputs_digest !== state.inputs_digest ||
+          identity.authoring_digest !== state.authoring_digest)
+      )
+        $("draftStatus").textContent =
+          "Stale authoring identity · reload before saving";
+      const revisions = state.revisions.map((r) => [
+        r.revision,
+        r.revision + " · " + r.kind,
+      ]);
+      select(
+        "viewRevision",
+        revisions,
+        state.working_revision && !$("viewRevision").value
+          ? state.working_revision
+          : undefined,
+      );
+      select("restoreRevision", revisions);
+      select(
+        "lockRevision",
+        state.revisions
+          .filter((r) => r.final_acceptable)
+          .map((r) => [r.revision, r.revision + " · saved partial values"]),
+      );
+      select(
+        "operation",
+        state.operations.map((o) => [
+          o.operation_id,
+          o.operation_id + " · " + o.status + (o.error ? " · " + o.error : ""),
+        ]),
+      );
+      select("candidate", [
+        ["", "None"],
+        ...(current?.candidates || []).map((c) => [
+          c.id,
+          c.id + " · score " + c.score.toFixed(3),
+        ]),
+      ]);
+      if (!crop) {
+        crop = [0, 0, ...state.dimensions_wh];
+        $("crop").value = crop.join(",");
+        $("scope").value = crop.join(",");
+        $("context").value = crop.join(",");
+        $("cleanupScope").value = crop.join(",");
+        $("shadingScope").value = crop.join(",");
+      }
+      updateBusyControls();
+      await loadImage();
+    }
+    function updateBusyControls() {
+      for (const id of [
+        "save",
+        "prepare",
+        "development",
+        "trimap",
+        "matte",
+        "repair",
+        "restore",
+        "resume",
+        "accept",
+        "exportAccepted",
+        "exportDraft",
+        "shadingApply",
+        "shadingOpacityApply",
+        "shadingDisable",
+        "cleanupApply",
+        "cleanupDisable",
+        "exposureApply", "exposureAmount", "exposureReset",
+        "backgroundApply",
+        "fadeApply", "fadeAmountApply", "fadeReset",
+      ]) {
+        $(id).disabled = authoringBusy();
+      }
+      for (const element of $("groups").querySelectorAll("input,select"))
+        element.disabled = authoringBusy();
+      for (const id of [
+        "backgroundColor", "backgroundHex", "backgroundRange", "backgroundVariation", "backgroundBlack", "backgroundWarm", "backgroundCandidate",
+        "fadeRole", "fadeShape", "fadeRadius", "fadeFeather", "fadeRectangle", "fadeAddRectangle", "fadeRemove", "fadeClear",
+        "fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate",
+        "authorMode", "exposureRole", "exposureShape", "exposureRadius", "exposureFeather", "exposureRectangle", "exposureAddRectangle", "exposureRemove", "exposureClear",
+        "exposureEV", "exposureRange", "exposureCandidate",
+        "addGroup",
+        "addGeometry",
+        "removeRegion",
+        "role",
+        "shape",
+        "geometry",
+        "guideGroup",
+        "lockRevision",
+        "radius",
+        "feather",
+      ])
+        $(id).disabled = authoringBusy();
+    }
+    async function bitmap(path) {
+      const blob = await (await api(path)).blob();
+      return createImageBitmap(blob);
+    }
+    function previewLabel(panel, revision, base, comparison) {
+      if (panel === "source") return "Source RGB8 preview · local exposure unaffected · cleanup OFF · shading OFF";
+      if (panel === "alpha") return "Alpha8 preview · local exposure unaffected · cleanup OFF · shading OFF";
+      const viewed = state.revisions.find(r => r.revision === revision),
+        working = state.revisions.find(r => r.revision === state.working_revision);
+      const stale = record => ["color_cleanup", "shading", "local_exposure", "shadow_fade"].some(name => record?.[name]?.enabled && record[name].stale);
+      const isStale = stale(viewed) || stale(working);
+      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · local exposure OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
+      const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
+      const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
+      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · local exposure " + exposure + " · Shadow fade " + fade + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
+      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF";
+      const shading = viewed.shading,
+        opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
+      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup;
+    }
+    async function loadImage() {
+      if (!state || !crop) return;
+      const panel = $("panel").value,
+        revision = $("viewRevision").value;
+      const requestedCrop = [...crop],
+        workingRevision = state.working_revision,
+        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value);
+      const mask =
+        $("candidate").value ||
+        (!["guides", "none"].includes($("overlay").value)
+          ? $("overlay").value
+          : "");
+      const key = [
+        $("exposureCompare").checked,
+        $("fadeCompare").checked,
+        panel,
+        revision,
+        requestedCrop.join(","),
+        $("overlay").value,
+        mask,
+        workingRevision,
+        $("cleanupBase").checked,
+        $("shadingPreview").value,
+        label,
+      ].join("|");
+      if (key === imageKey) return;
+      imageKey = key;
+      imageLoading = true;
+      gesture = null;
+      $("coordinate").textContent = "Loading native view…";
+      $("shadingStatus").textContent = "Loading selected native view…";
+      draw();
+      let next = null,
+        nextOverlay = null;
+      try {
+        const path =
+          panel === "source"
+            ? `/image/source/${state.master_id}/${requestedCrop.join(",")}`
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+        next = await bitmap(path);
+        if (imageKey !== key) return;
+        if (mask && workingRevision)
+          nextOverlay = await bitmap(`/mask/${workingRevision}/${mask}`);
+        if (imageKey !== key) return;
+        // Publish a matching image/overlay/crop together; never author against a transitional frame.
+        image?.close();
+        overlayImage?.close();
+        image = next;
+        overlayImage = nextOverlay;
+        next = null;
+        nextOverlay = null;
+        imageLoading = false;
+        $("shadingStatus").textContent = label;
+        $("coordinate").textContent = "";
+        draw();
+      } catch (error) {
+        if (imageKey === key) {
+          message(error.message);
+          image?.close();
+          overlayImage?.close();
+          image = null;
+          overlayImage = null;
+          imageLoading = false;
+          imageKey = "";
+          $("shadingStatus").textContent = "No matching native image loaded; appearance review unavailable.";
+          draw();
+        }
+      } finally {
+        next?.close();
+        nextOverlay?.close();
+      }
+    }
+    function draw() {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width));
+      canvas.height = Math.max(1, Math.round(rect.height));
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      transform = null;
+      if (imageLoading || !image || !crop) return;
+      transform = viewTransform([canvas.width, canvas.height], crop, zoom, pan);
+      const { scale, x, y } = transform;
+      ctx.imageSmoothingEnabled = false;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+      ctx.drawImage(image, 0, 0);
+      if (overlayImage) {
+        ctx.globalAlpha = 0.45;
+        ctx.drawImage(
+          overlayImage,
+          crop[0],
+          crop[1],
+          image.width,
+          image.height,
+          0,
+          0,
+          image.width,
+          image.height,
+        );
+        ctx.globalAlpha = 1;
+      }
+      if ($("overlay").value === "guides" || ["exposure", "fade"].includes($("authorMode").value)) {
+        const area = $("authorMode").value === "fade" ? fadeArea : exposureArea;
+        const drawnRegions = ["exposure", "fade"].includes($("authorMode").value)
+          ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions;
+        for (const region of drawnRegions) {
+          ctx.strokeStyle = {
+            keep: "#6f6",
+            remove: "#f66",
+            foreground: "#6ff",
+            background: "#f66",
+            unknown: "#ff6",
+            support: "#6af",
+            lock: "#f6f",
+          }[region.role];
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.lineWidth = 2 / scale;
+          ctx.beginPath();
+          if (region.xy) {
+            ctx.arc(
+              region.xy[0] - crop[0] + 0.5,
+              region.xy[1] - crop[1] + 0.5,
+              3 / scale,
+              0,
+              2 * Math.PI,
+            );
+            ctx.fill();
+          } else if (region.xyxy) {
+            const [x0, y0, x1, y1] = region.xyxy;
+            ctx.strokeRect(x0 - crop[0], y0 - crop[1], x1 - x0, y1 - y0);
+          } else {
+            ctx.lineWidth = region.radius_px * 2;
+            ctx.globalAlpha = 0.5;
+            region.points.forEach((p, i) =>
+              i
+                ? ctx.lineTo(p[0] - crop[0] + 0.5, p[1] - crop[1] + 0.5)
+                : ctx.moveTo(p[0] - crop[0] + 0.5, p[1] - crop[1] + 0.5),
+            );
+            if (region.points.length === 1) {
+              ctx.arc(
+                region.points[0][0] - crop[0] + 0.5,
+                region.points[0][1] - crop[1] + 0.5,
+                region.radius_px,
+                0,
+                2 * Math.PI,
+              );
+              ctx.fill();
+            }
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+      ctx.restore();
+    }
+    function nativePosition(event, edge = false) {
+      if (imageLoading || !image || !transform) return null;
+      return screenToNative(
+        [event.clientX, event.clientY],
+        canvas.getBoundingClientRect(),
+        [canvas.width, canvas.height],
+        transform,
+        crop,
+        edge,
+      );
+    }
+
+    function authoringBusy() {
+      return !!(
+        actionSubmitting ||
+        actionWasRunning ||
+        state?.action?.running ||
+        state?.writer_busy
+      );
+    }
+    function addRegion(geometry) {
+      if (authoringBusy())
+        throw Error("Wait for the active writer before authoring guides");
+      const role = $("role").value,
+        shape = $("shape").value;
+      let region = {
+        id: "guide-" + crypto.randomUUID().slice(0, 8),
+        role,
+        shape,
+      };
+      if (shape === "pan") return;
+      if ((role === "keep" || role === "remove") && shape === "stroke")
+        throw Error(
+          "SAM hints use points or a keep box; categorical roles support strokes",
+        );
+      if (shape === "rectangle") {
+        if (role === "remove") throw Error("SAM remove uses points");
+        region.shape = role === "keep" ? "box" : "rectangle";
+        region.xyxy = geometry;
+      } else if (shape === "point") region.xy = geometry;
+      else {
+        region.points = geometry;
+        region.radius_px = Number($("radius").value);
+      }
+      if (["keep", "remove"].includes(role)) {
+        if (!$("guideGroup").value) throw Error("Add a named group first");
+        region.group_id = $("guideGroup").value;
+      }
+      if (role === "support") region.feather_px = Number($("feather").value);
+      if (role === "lock") {
+        if (!$("lockRevision").value)
+          throw Error("Lock needs a saved matte/repair revision");
+        region.revision = $("lockRevision").value;
+      }
+      regions.push(region);
+      markDirty();
+      renderRegions();
+    }
+    function exposureControlsStale() {
+      return exposureControlsIdentity && state && (
+        exposureControlsIdentity.master_id !== state.master_id ||
+        exposureControlsIdentity.base_revision !== state.working_revision ||
+        exposureControlsIdentity.inputs_digest !== state.inputs_digest ||
+        exposureControlsIdentity.authoring_digest !== state.authoring_digest
+      );
+    }
+    function markExposureControlsDirty() {
+      exposureControlsIdentity ??= {...identity};
+      renderExposureArea();
+    }
+    function fadeControlsStale() {
+      return fadeControlsIdentity && state && (
+        fadeControlsIdentity.master_id !== state.master_id ||
+        fadeControlsIdentity.base_revision !== state.working_revision ||
+        fadeControlsIdentity.inputs_digest !== state.inputs_digest ||
+        fadeControlsIdentity.authoring_digest !== state.authoring_digest
+      );
+    }
+    function markFadeControlsDirty() {
+      fadeControlsIdentity ??= {...identity};
+      renderFadeArea();
+    }
+    function renderEffectArea(prefix, area, unsaved, title) {
+      select(prefix + "Regions", ["regions", "protection"].flatMap(kind => area[kind].map(r => [kind + ":" + r.id, (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
+      $(prefix + "DraftStatus").textContent = (unsaved ? "Unsaved " : "Saved ") + title + " area" + " · apply shapes " + area.regions.length + ", protection shapes " + area.protection.length + ". Matting guides and other effects are independent.";
+    }
+    function renderExposureArea() {
+      renderEffectArea("exposure", exposureArea, exposureDirty, "exposure");
+      if (exposureControlsIdentity) $("exposureDraftStatus").textContent += exposureControlsStale()
+        ? " Stale exposure settings; reload before applying." : " Unsaved exposure settings.";
+    }
+    function renderFadeArea() {
+      renderEffectArea("fade", fadeArea, fadeDirty, "Shadow fade");
+      if (fadeControlsIdentity) $("fadeDraftStatus").textContent += fadeControlsStale()
+        ? " Stale Shadow fade settings; reload before applying." : " Unsaved Shadow fade settings.";
+    }
+    function addEffectRegion(prefix, geometry, shape) {
+      if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before area authoring");
+      const kind = $(prefix + "Role").value, [w, h] = state.dimensions_wh;
+      const feather = kind === "protection" ? 0 : Number($(prefix + "Feather").value);
+      const radius = Number($(prefix + "Radius").value);
+      if (!Number.isInteger(feather) || feather < 0 || feather > Math.max(w,h)) throw Error("Use a valid native inward feather");
+      if (shape === "stroke" && (!Number.isInteger(radius) || radius < 1 || radius > Math.max(w,h))) throw Error("Use a valid native brush radius");
+      const region = {id: prefix + "-" + crypto.randomUUID().slice(0,8), role: "support", shape, feather_px: feather};
+      if (shape === "rectangle") region.xyxy = geometry;
+      else { region.points = geometry; region.radius_px = radius; }
+      const area = prefix === "fade" ? fadeArea : exposureArea;
+      area[kind].push(region);
+      if (prefix === "fade") { fadeDirty = true; renderFadeArea(); }
+      else { exposureDirty = true; renderExposureArea(); }
+      draw();
+    }
+    function addExposureRegion(geometry, shape = $("exposureShape").value) { addEffectRegion("exposure", geometry, shape); }
+    function addFadeRegion(geometry, shape = $("fadeShape").value) { addEffectRegion("fade", geometry, shape); }
+    async function exposure(enabled, replaceArea) {
+      requireSaved();
+      if (enabled && exposureControlsStale()) throw Error("Exposure settings belong to older project inputs; reload before applying");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing exposure");
+      const ev = enabled ? Number($("exposureEV").value) : 0;
+      if (!Number.isFinite(ev) || ev < -3 || ev > 3) throw Error("Exposure EV must be in [-3,3]");
+      const fields = {scope_xyxy: [0,0,...state.dimensions_wh], local_exposure: {enabled, ev}, candidate_comparison: $("exposureCandidate").checked};
+      if (replaceArea) fields.exposure_area = structuredClone(exposureArea);
+      else if (enabled) fields.exposure_amount_only = true;
+      exposureAreaPublished = replaceArea;
+      exposureControlsSubmitted = {base_revision: identity.base_revision, enabled, ev};
+      try { return await action("effects", fields); }
+      catch(error) { exposureAreaPublished = false; exposureControlsSubmitted = null; throw error; }
+    }
+    async function shadowFade(enabled, replaceArea) {
+      requireSaved();
+      if (enabled && fadeControlsStale()) throw Error("Shadow fade settings belong to older project inputs; reload before applying");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing Shadow fade");
+      const amount = enabled ? Number($("fadeAmount").value) / 100 : 0;
+      const preserve = Number($("fadePreserve").value) / 100;
+      if ((enabled && String($("fadeAmount").value).trim() === "") || String($("fadePreserve").value).trim() === "" || !Number.isFinite(amount) || !Number.isFinite(preserve) || amount < 0 || amount > 1 || preserve < 0 || preserve > 1) throw Error("Use finite Amount and Preserve highlights percentages in [0,100]");
+      const fields = {scope_xyxy: [0,0,...state.dimensions_wh], shadow_fade: {enabled, amount, preserve_highlights: preserve}, candidate_comparison: $("fadeCandidate").checked};
+      if (replaceArea) fields.shadow_fade_area = structuredClone(fadeArea);
+      else if (enabled) fields.shadow_fade_amount_only = true;
+      fadeAreaPublished = replaceArea;
+      fadeControlsSubmitted = {base_revision: identity.base_revision, enabled, amount, preserve_highlights: preserve};
+      try { return await action("effects", fields); }
+      catch(error) { fadeAreaPublished = false; fadeControlsSubmitted = null; throw error; }
+    }
+    function backgroundDraftStatus() {
+      $("backgroundDraftStatus").textContent = (backgroundDirty ? "Unsaved background · preview still shows saved result" : "Controls match saved background") + ($("backgroundHex").value.toUpperCase() === "#000000" ? " · pure black at every variation" : "");
+    }
+    function editBackground() { backgroundDirty = true; backgroundDraftStatus(); }
+    $("backgroundColor").oninput = () => { $("backgroundHex").value = $("backgroundColor").value.toUpperCase(); editBackground(); };
+    $("backgroundHex").oninput = () => {
+      if (/^#[0-9a-fA-F]{6}$/.test($("backgroundHex").value)) $("backgroundColor").value = $("backgroundHex").value;
+      editBackground();
+    };
+    $("backgroundRange").oninput = () => { $("backgroundVariation").value = $("backgroundRange").value; editBackground(); };
+    $("backgroundVariation").oninput = () => { $("backgroundRange").value = $("backgroundVariation").value; editBackground(); };
+    for (const [id, color] of [["backgroundBlack", "#000000"], ["backgroundWarm", "#120708"]]) $(id).onclick = () => {
+      $("backgroundHex").value = color; $("backgroundColor").value = color; editBackground();
+    };
+    $("backgroundApply").onclick = guarded(async () => {
+      if (authoringBusy()) return;
+      if (dirty) throw Error("Save or reload pending matting guides before Apply background; unrelated drafts are preserved");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before Apply background");
+      const color_srgb = $("backgroundHex").value.toUpperCase(), percent = Number($("backgroundVariation").value);
+      if (!/^#[0-9A-F]{6}$/.test(color_srgb) || $("backgroundVariation").value.trim() === "" || !Number.isInteger(percent) || percent < 0 || percent > 100) throw Error("Use #RRGGBB and a whole variation percentage in [0,100]");
+      backgroundPublished = true;
+      try { return await action("effects", {scope_xyxy: [0,0,...state.dimensions_wh], background: {color_srgb, variation: percent / 100}, candidate_comparison: $("backgroundCandidate").checked}); }
+      catch (error) { backgroundPublished = false; throw error; }
+    });
+    $("fadeAddRectangle").onclick = guarded(() => addFadeRegion(bounds("fadeRectangle"), "rectangle"));
+    $("fadeRemove").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const [kind, id] = $("fadeRegions").value.split(":");
+      if (!id) return;
+      fadeArea[kind] = fadeArea[kind].filter(r => r.id !== id);
+      fadeDirty = true; renderFadeArea(); draw();
+    });
+    $("fadeClear").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      fadeArea = {regions: [], protection: []}; fadeDirty = true; renderFadeArea(); draw();
+    });
+    $("fadeApply").onclick = guarded(() => shadowFade(true, true));
+    $("fadeAmountApply").onclick = guarded(() => shadowFade(true, false));
+    $("fadeReset").onclick = guarded(() => shadowFade(false, false));
+    $("fadeRange").oninput = () => { $("fadeAmount").value = $("fadeRange").value; markFadeControlsDirty(); };
+    $("fadeAmount").oninput = () => { $("fadeRange").value = $("fadeAmount").value; markFadeControlsDirty(); };
+    $("fadePreserveRange").oninput = () => { $("fadePreserve").value = $("fadePreserveRange").value; markFadeControlsDirty(); };
+    $("fadePreserve").oninput = () => { $("fadePreserveRange").value = $("fadePreserve").value; markFadeControlsDirty(); };
+    $("fadeCandidate").onchange = markFadeControlsDirty;
+    function compareChanged(id) {
+      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare"]) if (other !== id) $(other).checked = false;
+      if (id !== "shadingPreview") $("shadingPreview").value = "";
+      imageKey = ""; return loadImage();
+    }
+    $("fadeCompare").onchange = guarded(() => compareChanged("fadeCompare"));
+    $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
+    $("exposureRemove").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const [kind, id] = $("exposureRegions").value.split(":");
+      if (!id) return;
+      exposureArea[kind] = exposureArea[kind].filter(r => r.id !== id);
+      exposureDirty = true; renderExposureArea(); draw();
+    });
+    $("exposureClear").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      exposureArea = {regions: [], protection: []}; exposureDirty = true; renderExposureArea(); draw();
+    });
+    $("exposureApply").onclick = guarded(() => exposure(true, true));
+    $("exposureAmount").onclick = guarded(() => exposure(true, false));
+    $("exposureReset").onclick = guarded(() => exposure(false, false));
+    $("exposureRange").oninput = () => { $("exposureEV").value = $("exposureRange").value; markExposureControlsDirty(); };
+    $("exposureEV").oninput = () => { $("exposureRange").value = $("exposureEV").value; markExposureControlsDirty(); };
+    $("exposureCandidate").onchange = markExposureControlsDirty;
+    $("exposureCompare").onchange = guarded(() => compareChanged("exposureCompare"));
+    $("authorMode").onchange = () => { gesture = null; draw(); };
+    function guarded(fn) {
+      return async () => {
+        try {
+          await fn();
+        } catch (error) {
+          message(error.message);
+        }
+      };
+    }
+    async function action(name, extra = {}) {
+      if (!identity) throw Error("Project inputs unavailable");
+      if (authoringBusy())
+        throw Error("Wait for the active writer before submitting");
+      message("");
+      actionSubmitting = true;
+      gesture = null;
+      updateBusyControls();
+      try {
+        await api("/api/action", { ...identity, action: name, ...extra });
+        actionWasRunning = true;
+        if (refreshInFlight) await refreshInFlight;
+      } finally {
+        actionSubmitting = false;
+        updateBusyControls();
+      }
+      await refresh();
+    }
+    function requireSaved() {
+      if (dirty) throw Error("Save authoring edits before preparing/running");
+    }
+    $("addGroup").onclick = guarded(() => {
+      if (authoringBusy())
+        throw Error("Wait for the active writer before authoring groups");
+      const id = $("newGroup").value.trim();
+      if (
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id) ||
+        groups.some((g) => g.id === id)
+      )
+        throw Error(
+          "Use a unique group name: letters, digits, underscore or hyphen",
+        );
+      groups.push({ id, keep: true, material_policy: "unknown_interior" });
+      markDirty();
+      renderGroups();
+    });
+    $("addGeometry").onclick = guarded(() => {
+      const shape = $("shape").value;
+      let geometry =
+        shape === "stroke"
+          ? $("geometry")
+              .value.split(";")
+              .map((s) => s.split(",").map(Number))
+          : $("geometry").value.split(",").map(Number);
+      let flat = geometry.flat();
+      if (flat.some((v) => !Number.isInteger(v)))
+        throw Error("Use native integer coordinates");
+      if (shape === "rectangle") {
+        if (flat.length !== 4) throw Error("Rectangle needs x0,y0,x1,y1");
+      } else if (shape === "point" && flat.length !== 2)
+        throw Error("Point needs x,y");
+      addRegion(geometry);
+    });
+    $("removeRegion").onclick = guarded(() => {
+      if (authoringBusy())
+        throw Error("Wait for the active writer before removing guides");
+      if (!$("regions").value) throw Error("Select a guide to remove");
+      regions = regions.filter((r) => r.id !== $("regions").value);
+      markDirty();
+      renderRegions();
+    });
+    $("save").onclick = guarded(() =>
+      action("save", { groups, actions: actions() }),
+    );
+    $("prepare").onclick = guarded(() => {
+      requireSaved();
+      return action("prepare", { scope_xyxy: bounds("scope") });
+    });
+    $("development").onclick = guarded(() => {
+      if (!$("developmentReviewed").checked)
+        throw Error("Explicit master development review is required");
+      return action("development");
+    });
+    $("trimap").onclick = guarded(() => {
+      requireSaved();
+      if (!$("trimapReviewed").checked)
+        throw Error("Review the actual prepared trimap first");
+      return action("trimap", { revision: state.working_revision });
+    });
+    $("matte").onclick = guarded(() => {
+      requireSaved();
+      return action("matte");
+    });
+    $("repair").onclick = guarded(() => {
+      requireSaved();
+      return action("repair", {
+        context_xyxy: bounds("context"),
+        scope_xyxy: bounds("scope"),
+        reason: $("reason").value,
+        merge_policy: $("policy").value,
+      });
+    });
+    async function cleanup(enabled) {
+      requireSaved();
+      if (imageLoading || !image || !transform) throw Error("Wait for the matching native view before changing cleanup");
+      let strength = 0;
+      if (enabled) {
+        const raw = $("cleanupStrength").value.trim();
+        strength = Number(raw);
+        if (raw === "" || !Number.isFinite(strength) || strength < 0 || strength > 1)
+          throw Error("Cleanup strength must be a finite number from 0 to 1");
+        if (strength === 0)
+          throw Error("Strength 0 means cleanup is OFF; use Explicitly disable cleanup");
+      }
+      return action("effects", {
+        scope_xyxy: bounds("cleanupScope"),
+        support_file: $("cleanupSupport").value,
+        color_cleanup: {enabled, strength},
+        candidate_comparison: $("cleanupCandidate").checked,
+      });
+    }
+    async function shading(enabled, opacityOnly) {
+      requireSaved();
+      if (imageLoading || !image || !transform) throw Error("Wait for the matching native view before changing shading");
+      const settings = {enabled, opacity: Number($("shadingOpacity").value)};
+      if ($("shadingWidth").value !== "" || $("shadingDirection").value !== "") {
+        if ($("shadingWidth").value === "" || $("shadingDirection").value === "") throw Error("Choose both per-photo width and direction");
+        settings.width_px = Number($("shadingWidth").value);
+        settings.direction_degrees = Number($("shadingDirection").value);
+      }
+      const fields = {scope_xyxy: bounds("shadingScope"), support_file: $("shadingSupport").value,
+        shading: settings, candidate_comparison: $("shadingCandidate").checked};
+      if (opacityOnly) fields.opacity_only = true;
+      else if (enabled) fields.shading_protection_file = $("shadingProtection").value;
+      return action("effects", fields);
+    }
+    $("shadingApply").onclick = guarded(() => shading(true, false));
+    $("shadingOpacityApply").onclick = guarded(() => shading(true, true));
+    $("shadingDisable").onclick = guarded(() => shading(false, false));
+    $("shadingPreview").onchange = guarded(() => compareChanged("shadingPreview"));
+    $("cleanupApply").onclick = guarded(() => cleanup(true));
+    $("cleanupDisable").onclick = guarded(() => cleanup(false));
+    $("cleanupBase").onchange = guarded(() => compareChanged("cleanupBase"));
+    $("restore").onclick = guarded(() => {
+      if (dirty)
+        throw Error("Save current authoring first so recovery can preserve it");
+      return action("restore", {
+        revision: $("restoreRevision").value,
+        replace_drafts: $("replaceDrafts").checked,
+      });
+    });
+    $("resume").onclick = guarded(() => {
+      requireSaved();
+      return action("resume", { operation_id: $("operation").value });
+    });
+    $("accept").onclick = guarded(() => {
+      requireSaved();
+      if (!$("photoReviewed").checked)
+        throw Error("Explicit photographic review is required");
+      return action("accept", { revision: state.working_revision });
+    });
+    $("exportAccepted").onclick = guarded(() => {
+      if (!state.accepted_revision) throw Error("No accepted photograph");
+      return action("export", {
+        revision: state.accepted_revision,
+        draft: false,
+      });
+    });
+    $("exportDraft").onclick = guarded(() =>
+      action("export", { revision: state.working_revision, draft: true }),
+    );
+    $("recoverPending").onclick = guarded(() => {
+      if (authoringBusy())
+        throw Error("Wait for the active writer before recovering guides");
+      const p = state.pending;
+      if (!p || p.consumed) throw Error("No unconsumed retained guidance");
+      if (dirty)
+        throw Error("Save current authoring before loading retained guidance");
+      groups = structuredClone(p.groups);
+      regions = structuredClone(originalRegions);
+      for (const a of p.actions) {
+        regions = regions.filter((r) => r.id !== (a.id || a.region.id));
+        if (a.action === "upsert") regions.push(structuredClone(a.region));
+      }
+      markDirty();
+      renderGroups();
+      renderRegions();
+      message(
+        "Retained pending guides loaded against current source. Recheck every region, group and lock before saving/preparing.",
+      );
+    });
+    $("reload").onclick = guarded(() => {
+      if (
+        dirty &&
+        !confirm("Discard unsaved browser authoring and reload saved inputs?")
+      )
+        return;
+      return refresh(true);
+    });
+    for (const id of ["panel", "viewRevision"])
+      $(id).onchange = guarded(loadImage);
+    $("overlay").onchange = guarded(() => {
+      $("candidate").value = "";
+      return loadImage();
+    });
+    $("candidate").onchange = guarded(() => {
+      $("overlay").value = "none";
+      return loadImage();
+    });
+    $("toggle").onclick = guarded(() => {
+      $("panel").value = $("panel").value === "source" ? "result" : "source";
+      return loadImage();
+    });
+    $("fit").onclick = () => {
+      zoom = 1;
+      pan = [0, 0];
+      $("zoom").value = zoom;
+      draw();
+    };
+    $("native").onclick = () => {
+      if (!image) return;
+      zoom =
+        1 / Math.min(canvas.width / image.width, canvas.height / image.height);
+      pan = [0, 0];
+      $("zoom").value = zoom;
+      draw();
+    };
+    $("zoom").oninput = () => {
+      zoom = Math.max(0.05, Math.min(32, Number($("zoom").value) || 1));
+      draw();
+    };
+    $("cropApply").onclick = guarded(() => {
+      crop = bounds("crop");
+      pan = [0, 0];
+      zoom = 1;
+      return loadImage();
+    });
+    $("full").onclick = guarded(() => {
+      crop = [0, 0, ...state.dimensions_wh];
+      $("crop").value = crop.join(",");
+      pan = [0, 0];
+      zoom = 1;
+      return loadImage();
+    });
+    canvas.onpointerdown = (event) => {
+      const effectMode = ["exposure", "fade"].includes($("authorMode").value) ? $("authorMode").value : null;
+      const panMode = event.shiftKey || (!effectMode && $("shape").value === "pan");
+      const point = nativePosition(event);
+      if (!panMode && (authoringBusy() || imageLoading)) {
+        message(
+          "Guide not started while a writer is active or the native view is loading",
+        );
+        return;
+      }
+      if (!panMode && !point) return;
+      gesture = {
+        panMode, effectMode, shape: effectMode ? $(effectMode + "Shape").value : $("shape").value,
+        start: [event.clientX, event.clientY],
+        pan: [...pan],
+        points: point ? [point] : [],
+      };
+      canvas.setPointerCapture(event.pointerId);
+    };
+    canvas.onpointermove = (event) => {
+      const point = nativePosition(event);
+      $("coordinate").textContent = point
+        ? "Native " + point.map(Math.floor).join(", ")
+        : "Outside image";
+      if (!gesture) return;
+      if (gesture.panMode) {
+        pan = [
+          gesture.pan[0] + event.clientX - gesture.start[0],
+          gesture.pan[1] + event.clientY - gesture.start[1],
+        ];
+        draw();
+      } else if (point && gesture.shape === "stroke")
+        gesture.points.push(point);
+    };
+    canvas.onpointerup = (event) => {
+      if (!gesture) return;
+      const g = gesture;
+      gesture = null;
+      if (g.panMode) return;
+      if (authoringBusy() || imageLoading) {
+        message(
+          "Guide cancelled because a writer or native view changed; nothing saved",
+        );
+        return;
+      }
+      const end = nativePosition(event, true);
+      if (!end) {
+        message("Guide ended outside displayed native crop; nothing saved");
+        return;
+      }
+      try {
+        const shape = g.shape,
+          start = g.points[0];
+        const add = geometry => g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
+        if (shape === "rectangle") {
+          const rectangle = nativeBox(start, end);
+          if (rectangle[0] === rectangle[2] || rectangle[1] === rectangle[3])
+            throw Error("Empty box; drag a region");
+          add(rectangle);
+        } else if (shape === "point") add(start.map(Math.floor));
+        else add(g.points.map((p) => p.map(Math.floor)));
+      } catch (error) {
+        message(error.message);
+      }
+    };
+    canvas.onpointercancel = () => (gesture = null);
+    canvas.onkeydown = (event) => {
+      if (
+        [
+          "+",
+          "=",
+          "-",
+          "ArrowLeft",
+          "ArrowRight",
+          "ArrowUp",
+          "ArrowDown",
+        ].includes(event.key)
+      ) {
+        event.preventDefault();
+        if (event.key === "-") zoom = Math.max(0.05, zoom / 1.25);
+        else if (["+", "="].includes(event.key))
+          zoom = Math.min(32, zoom * 1.25);
+        else {
+          pan[0] +=
+            event.key === "ArrowLeft"
+              ? 20
+              : event.key === "ArrowRight"
+                ? -20
+                : 0;
+          pan[1] +=
+            event.key === "ArrowUp" ? 20 : event.key === "ArrowDown" ? -20 : 0;
+        }
+        $("zoom").value = zoom;
+        draw();
+      }
+    };
+    new ResizeObserver(draw).observe($("viewport"));
+    refresh(true).catch((error) => message(error.message));
+    setInterval(() => {
+      if (!refreshInFlight)
+        return refresh().catch((error) => message(error.message));
+    }, 1000);
+  </script>
+</html>

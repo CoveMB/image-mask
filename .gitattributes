@@ -1,0 +1,18 @@
+# Normalize authored text while leaving binary data untouched.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.tif binary
+*.tiff binary
+*.dng binary
+*.docx binary
+*.pdf binary
+*.safetensors binary
+
+# Frozen provenance: preserve exact bytes and checksum identities.
+Photo-workflow-reference/** -text
+*-implementation-plan-*.txt -text
