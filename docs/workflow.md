@@ -342,7 +342,13 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 3. For an unaccepted complete candidate, explicitly check candidate comparison.
    **Apply / replace fade area** saves the one area and removes the old one.
    **Apply fade amount to saved area** changes settings using saved operands only;
-   pending area edits remain unsaved. Settings apply afresh without compounding.
+   pending area edits remain unsaved. Unsaved Amount, Preserve highlights and
+   candidate-comparison settings survive unrelated actions such as export and
+   failed submissions. If project inputs change, those settings stay visibly stale;
+   reload saved inputs before applying them to the new revision. Only a matching
+   successful application/reset or explicit reload clears the settings draft.
+   These controls are frozen during writers; area/protection drafts remain separate.
+   Settings apply afresh without compounding.
 4. **Compare Shadow fade OFF** retains cleanup, exposure and shading. **Compare
    exposure OFF** retains fade, recalculated from exposure-OFF RGB. BASE disables
    every optional effect; selecting a comparison clears the others. Inspect the

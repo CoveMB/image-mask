@@ -874,7 +874,9 @@ def run_effects(
             and parent != state["accepted_revision"]
             and not operation["candidate_comparison"]
         ):
-            raise ProjectError("Local fade requires accepted base or explicit candidate comparison")
+            raise ProjectError(
+                "Shadow fade requires accepted base or explicit candidate comparison"
+            )
         if operation.get("shadow_fade_amount_only") and fade_settings["enabled"] and saved is None:
             raise ProjectError("Shadow fade amount-only requires a saved area")
         if fade_reuse:
