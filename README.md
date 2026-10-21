@@ -12,34 +12,42 @@ internet access.
 
 ## Current status
 
-The tool creates/reopens trusted RGB16 projects with explicit human development approval.
-Preparation saves named SAM candidates, selected membership groups and categorical
-trimap/support/protection assets through typed native-coordinate guides, plus
-opt-in native-margin morphology proposals for separate source review. Native
-ViTMatte processing provides separate trimap/final acceptance controls, native
-same-crop review assets and accepted RGB16 black/alpha16 plus labelled PNG8 exports.
-Scoped native repair now saves quantized operands for model-free replay; restore
-selects saved working inputs without changing final acceptance. Interrupted matte/repair now resumes verified tiles or completed stages through
-`status` and `resume`. An offline loopback review window provides typed guide
-authoring, native comparisons and the same processing/recovery controls. Optional
-recorded, bounded source-based assisted review uses the same operations. Optional
-default-off source-guided color cleanup saves RGB16 layers with scoped stale/rebuild
-controls. Default-off protected inward shading saves independent W16/opacity and
-supports exact editable exports. Default-off Local exposure adds independent offline
-brush/rectangle areas, protections, reversible EV and exposure-only comparison.
-Default-off Shadow fade independently darkens soft subject areas in linear light,
-with Amount, Preserve highlights, explicit protection and fade-only comparison.
-Background appearance adds a saved tone and broad variation behind the matte.
-New projects start warm near-black (`#120708`, variation 55%); older projects stay
-black until explicitly changed. [Background instructions](docs/workflow.md#background-appearance)
-explain Result, diagnostic views and separate editable exports.
-Presentation framing adds saved margins, a separate bounded RGB8 layout preview,
-and compact RGB16 exports. Native masks and editing coordinates stay unchanged.
-See [presentation margins](docs/workflow.md#add-presentation-margins).
-Prepared revisions require explicit human trimap review before matting.
-Combined computational checks and saved-only reconstruction are documented in
-[validation](docs/validation.md#combined-workflow-validation). The representative
-human pilot remains pending; implementation delivery does not establish regular-use acceptance.
+The application creates and reopens trusted RGB16 projects, with explicit human
+approval of source development. Typed native-coordinate guides produce named SAM
+candidates, selected membership groups and categorical trimap/support/protection
+assets. Optional morphology proposals use native-pixel margins and require separate
+review against the source. ViTMatte runs at native resolution, with separate trimap
+and final-photo approval controls, matching native-crop review assets, accepted
+RGB16 black/alpha16 exports and labelled PNG8 viewing copies. Prepared revisions
+require explicit human trimap review before matting.
+
+Scoped repairs save quantized operands for replay without models. Restore selects
+saved working inputs without changing final acceptance. `status` and `resume`
+recover verified tiles or completed stages from interrupted matte/repair operations.
+The offline loopback review window provides typed guide authoring, native
+comparisons and the same processing and recovery controls. Optional assisted
+review records bounded, source-based judgements through those same operations.
+
+The optional appearance effects start disabled. Source-guided color cleanup saves
+RGB16 layers with scoped stale/rebuild controls. Protected inward shading keeps
+W16 and opacity independent and supports exact editable exports. Local exposure
+has its own offline brush/rectangle areas, protections, reversible EV adjustment
+and exposure-only comparison. Shadow fade independently darkens soft subject areas
+in linear light, with Amount, Preserve highlights, explicit protection and a
+fade-only comparison.
+
+Background appearance saves a tone and broad variation behind the matte. New
+projects start warm near-black (`#120708`, variation 55%); older projects stay
+black until explicitly changed. The [background instructions](docs/workflow.md#background-appearance)
+explain Result, diagnostic views and separate editable exports. Presentation framing
+adds saved margins, a separate bounded RGB8 layout preview and compact RGB16
+exports. Native masks and editing coordinates stay unchanged; see
+[presentation margins](docs/workflow.md#add-presentation-margins).
+
+[Validation](docs/validation.md#combined-workflow-validation) records combined
+computational checks and reconstruction from saved assets alone. The representative
+human pilot remains pending. Implementation delivery does not establish acceptance
+for regular use.
 
 A public Kodak RAW passed bounded native ingest/master round-trip checks. Pinned
 SAM passed real CPU and separate MPS synthetic geometry checks; auto stays CPU.
@@ -156,11 +164,24 @@ backups. Common photo formats are ignored; only deliberately owned synthetic tes
 fixtures may be included beneath `tests/fixtures/`. Review actual staged content
 before publishing: ignore rules do not remove existing history or prevent force-add.
 
-The public implementation history contains no photographs, private planning or
-reference archives. Local planning and frozen reference material, when supplied
-separately, stay ignored and are not required to install or operate the tool.
-The maintained public docs describe the behavior currently implemented. Cleanup
-and shading require per-photo human comparison; synthetic checks do not supply
+The application history contains no photographs or frozen reference archives.
+Reviewed development plans are retained in Git under `docs/incremental-plans/` and
+`docs/superpowers/`, alongside the original
+[v4 product specification](single-photo-black-background-implementation-plan-v4-2026-10-11.txt).
+These records preserve requirements, decisions and evidence from their stated
+baselines. Historical checkout paths, test counts and approvals describe those
+baselines; they do not establish the state or authority for new work. Private
+reference material and local evaluation evidence stay ignored. Development plans
+are excluded from installable distributions and are not needed to operate the tool.
+
+The [fixed-size series design](docs/superpowers/specs/2026-10-20-series-framing-design.md)
+and its [independent review](docs/superpowers/plans/2026-10-20-series-framing-review.md)
+remain proposals: preset storage, backdrop behavior, written-design approval and
+a detailed implementation plan still need decisions. The current framing feature
+adds pixel margins; it does not resize subjects to match a series.
+
+The maintained user docs describe implemented behavior. Cleanup and shading
+require human comparison for each photograph; synthetic checks do not supply
 photographic acceptance.
 
 ## Licensing

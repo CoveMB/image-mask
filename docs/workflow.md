@@ -11,12 +11,13 @@ from the actual source.
 .venv/bin/blackmask open --project /path/to/new-project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache
 ```
 
-The command keeps one local server running until Ctrl-C. It opens a packaged page;
-no account, assistant, network connection, external editor, support mask or script
-is required for manual mask correction. Model downloads are a separate explicit
-setup action. Preserve the original capture independently. Do not share the launch
-URL or forward the local port. `open --headless --project /path/to/project` retains
-JSON-only command use; other documented CLI commands can run in another terminal.
+The command opens the packaged page and keeps one local server running until
+Ctrl-C. Manual mask correction requires no account, assistant, network connection,
+external editor, support mask or script. Downloading models is a separate, explicit
+setup action. Preserve the original capture independently, keep the launch URL
+private and do not forward the local port. Use
+`open --headless --project /path/to/project` for JSON-only operation; other
+documented CLI commands can run in another terminal.
 
 ## Develop and review the source
 
@@ -469,5 +470,9 @@ Margins extend the saved backdrop's edge and corner colours. Wide margins may
 show bands; inspect the resulting composition in a suitable colour-managed viewer.
 The photograph is neither resized nor stretched. Original editing coordinates
 stay native: the presentation merely places their origin at `(left, top)`.
-Framing an accepted revision does not separately approve the framing composition.
-See [limits and recovery](troubleshooting.md#framed-export-recovery).
+Framing an accepted revision does not separately approve the composition.
+The accepted export button uses the current accepted revision; the draft button
+uses the current working revision. The preview uses the revision selected in the
+viewer, which can differ from either export target. Check the returned revision
+and draft label when comparing deliveries. See
+[limits and recovery](troubleshooting.md#framed-export-recovery).

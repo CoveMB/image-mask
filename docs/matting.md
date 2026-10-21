@@ -1,12 +1,13 @@
 # Native mask, review and base export
 
-After development approval and [typed preparation](guidance.md), inspect the
-source and authoritative prepared `trimap.png`. Values mean confirmed empty
-background (0), unknown (128), confirmed opaque foreground (255). Candidate
-membership and `trimap_proposal.png` are separate suggestions. Review the proposal
-against source; express verified cores/corridors through typed guide edits and
-prepare again. There is no automatic proposal promotion. An all-unknown trimap is
-allowed when no defensible cores exist, without a quality guarantee.
+After approving development and completing [typed preparation](guidance.md),
+inspect the source alongside the authoritative prepared `trimap.png`. Its values
+are confirmed empty background (0), unknown (128) and confirmed opaque foreground
+(255). Candidate membership and `trimap_proposal.png` remain separate suggestions.
+Review the proposal against the source, express verified cores/corridors through
+typed guide edits, then prepare again. Proposals are never promoted automatically.
+When no defensible cores exist, an all-unknown trimap is allowed; it carries no
+quality guarantee.
 
 Copy actual revision/master/digest from the returned preparation, then explicitly
 confirm that exact authoritative trimap:
@@ -90,10 +91,10 @@ black/gray/white. After human photographic review of the current result:
 .venv/bin/blackmask export /path/to/project
 ```
 
-Final acceptance requires current complete matte assets and unchanged master,
-development and draft identities; a preparation alone is never acceptable.
-Default export selects the retained accepted revision even when a newer candidate
-is working. Explicit unaccepted exports require both flags:
+Final acceptance requires complete current matte assets and unchanged master,
+development and draft identities. Preparation alone never qualifies. The default
+export uses the retained accepted revision even when a newer candidate is working.
+An explicit unaccepted export requires both flags:
 
 ```sh
 .venv/bin/blackmask export /path/to/project --revision ACTUAL_MATTE_REVISION --draft

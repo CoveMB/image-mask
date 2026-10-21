@@ -119,7 +119,11 @@ A publication collision means another tool/editor created a project asset while 
   visible after exclusive rename when the parent-directory sync fails. Preserve
   it and retry the identical export to validate and sync it. An error before
   publication leaves the prior delivery intact and retains a `.export-*` stage.
-  Stages are diagnostic evidence, not accepted results; no automatic cleanup occurs.
+  Failed stages are diagnostic evidence, not accepted results, and remain preserved.
+  An identical successful retry removes only its own verified duplicate stage, after
+  the existing delivery validates and its parent-directory sync succeeds. Earlier
+  stages are retained. If duplicate cleanup fails, the error identifies the durable
+  delivery and the remaining stage; partially removed stage files may be incomplete.
 
 ## Repair and restore recovery
 
@@ -154,13 +158,14 @@ A publication collision means another tool/editor created a project asset while 
 .venv/bin/blackmask resume /path/to/project --operation ACTUAL_RETURNED_OPERATION_ID --model-cache /path/to/installed-vitmatte
 ```
 
-`status` returns saved working/accepted pointers, `writer_busy`, and retained
-operation IDs with progress/errors. It does not wait for the writer. A saved
-`running` operation without a writer is reported `failed` with interruption
-recovery guidance. `stale` means saved inputs/dependencies no longer match;
-finish current edits, prepare/review them and start a new request. Resume never
-replaces edited drafts or infers acceptance. Older completed operations become
-stale after their working parent changes; this is retained history, not damage.
+`status` reports the saved working/accepted pointers, `writer_busy`, and retained
+operation IDs with their progress and errors. It returns without waiting for the
+writer. A saved `running` operation with no active writer is reported as `failed`,
+with interruption-recovery guidance. `stale` means the saved inputs/dependencies
+no longer match: finish current edits, prepare and review them, then start a new
+request. Resume never replaces edited drafts or infers acceptance. Older completed
+operations become stale when their working parent changes; those records preserve
+history rather than indicate damage.
 
 Resume verifies original request, source/master records, draft snapshots,
 trimap approval and all consumed immutable support/lock/parent dependencies.

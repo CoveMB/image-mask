@@ -8,8 +8,9 @@ Maintain a local, single-photo workflow for black-background photography with ed
 
 ## Repository context
 
-- Use [README.md](README.md) for supported behavior and the canonical source map; [file-contract.md](docs/file-contract.md) owns published file/identity contracts. Product specifications and delivery/approval records may be supplied separately for authorized work. Keep such local planning ignored; it does not ship or become a runtime dependency. Do not infer action authority from historical records.
-- Treat commands in any supplied planning documents as proposals until implemented and verified.
+- Use [README.md](README.md) for supported behavior and the canonical source map; [file-contract.md](docs/file-contract.md) owns current saved-file and identity contracts. The tracked v4 specification records the original product requirements. For new work, use the applicable feature design, approved plan and current handoff; resolve conflicts with current code/contracts before changing behavior. Historical plans and approvals do not authorize a different feature.
+- Development plans under `docs/incremental-plans/` and `docs/superpowers/` are tracked for review and continuity, but are excluded from installable distributions and are never runtime dependencies. Keep private reference archives, photo projects and local evaluation evidence ignored.
+- Treat commands in planning documents as proposals until implemented and verified.
 - Do not run or import experimental scripts unchanged. Preserve frozen source/reference bytes; any authorized execution requires an isolated workspace, reviewed paths and output-collision safeguards.
 
 ## Engineering and scope
@@ -35,6 +36,7 @@ Maintain a local, single-photo workflow for black-background photography with ed
 
 ## Image integrity and recovery
 
+- Whenever the user requests an image modification, perform it only through this project's controls. Never use AI image-generation or image-editing tools to modify the image directly. If the project's controls cannot perform the requested change, explain the limitation instead of bypassing them.
 - Preserve original captures, accepted results and their dependencies. Never invent or reconstruct photographed detail absent from the source.
 - Preserve image precision, color interpretation, orientation, coordinate registration and transparency. Label previews, approximations and lossy exports honestly; a larger output container does not create captured precision.
 - Keep source data, masks and optional appearance changes independently recoverable. Do not substitute a flattened preview for editable source layers.

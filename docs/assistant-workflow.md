@@ -1,12 +1,12 @@
 # Bounded assisted review
 
-Assistance is optional. The [manual workflow](workflow.md) uses the same local
-engine and saved project without an assistant, account, credits or network after
-setup. This procedure adds recorded source-based judgement; it cannot provide
-photographic acceptance. No SDK, API-key service, background agent or upload is
-involved. Do not transfer private pixels to an assistant without the user's
-applicable direct authorization. Missing permission or missing source evidence
-stops the live assisted route; manual controls remain available.
+Assistance is optional. After setup, the [manual workflow](workflow.md) uses the
+same local engine and saved project without an assistant, account, credits or
+network. Assisted review records source-based judgement; it cannot provide
+photographic acceptance. The procedure uses no SDK, API-key service, background
+agent or upload. Private pixels may be shared with an assistant only under the
+user's applicable direct authorization. Without that permission or the required
+source evidence, live assistance stops and the manual controls remain available.
 
 Run CLI examples from the repository root after [environment setup](../README.md#setup-and-quick-start),
 using `.venv/bin/blackmask`; shell activation is unnecessary. Replace `PROJECT`
@@ -31,12 +31,18 @@ structural `qa` is separate from source comparison. Native transforms use intege
 points and half-open boxes in the oriented master, with recorded origin and scale.
 An overview/proxy is not a native-coordinate authority.
 
-Describe one concrete source-visible defect: location, evidence, likely cause,
-proposed correction and uncertainty. Classify it as alpha/guidance, color cleanup,
-shading, Shadow fade, or a user decision. The bounded automatic cycle supports alpha/guidance execution. Color cleanup is now available through an explicit separate effects operation and manual controls; it requires a same-alpha appearance decision. Protected inward shading is available through explicit manual effects requests, with per-photo width, direction and protection. Independent Shadow fade is available through explicit manual effects requests with soft areas and highlight weighting. Appearance classifications require a
-user decision or future implementation. Blur, missing source detail, ambiguity
-and artistic preference are reasons to stop, never to invent detail. A
-`source_resolved: true` assertion records judgement; it does not prove its truth.
+Describe one concrete defect visible in the source, including its location,
+evidence, likely cause, proposed correction and uncertainty. Classify it as
+alpha/guidance, color cleanup, shading, Shadow fade, or a user decision. The bounded
+automatic cycle executes alpha/guidance corrections. Color cleanup uses a separate,
+explicit effects operation or manual controls and requires an appearance decision
+with alpha held constant. Protected inward shading uses explicit manual effects
+requests with width, direction and protection chosen for the photograph. Independent
+Shadow fade uses explicit manual effects requests with soft areas and highlight
+weighting. These appearance changes require a user decision and a separate effects
+operation; the automatic alpha cycle does not perform them. Blur, missing source
+detail, ambiguity and artistic preference are reasons to stop, never to invent
+detail. `source_resolved: true` records a judgement; it does not prove it correct.
 
 ## Explicit cycle and finite operations
 

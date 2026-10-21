@@ -38,10 +38,8 @@ htmlcov/
 # Local isolated checkouts
 /.worktrees/
 
-# Private source/reference/planning retained locally; never publish this history.
+# Private reference archives stay local; development plans are tracked separately.
 /Photo-workflow-reference/
-/docs/incremental-plans/
-/*-implementation-plan-*.txt
 /photo-workflow-guide-older-materials.docx
 
 # Captures and viewing/working images, including common camera RAW formats.

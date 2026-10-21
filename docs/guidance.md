@@ -1,9 +1,10 @@
 # Selection and typed guides
 
-Preparation produces reviewable guidance. It does not compute alpha or accept a final
-photograph. Run commands from the repository root after [environment setup](../README.md#setup-and-quick-start);
-shell activation is unnecessary. Inspect the developed RGB16 master first, then
-explicitly approve its actual identity with
+Preparation produces guidance for review. It neither computes alpha nor accepts
+a final photograph. After [environment setup](../README.md#setup-and-quick-start),
+run commands from the repository root; shell activation is unnecessary. First
+inspect the developed RGB16 master, then explicitly approve that master's actual
+identity with
 `.venv/bin/blackmask accept /path/to/project --development --master-id ACTUAL_INSPECTED_MASTER_ID`.
 
 ## Model setup and devices
@@ -45,10 +46,11 @@ material_policy = "unknown_interior"
 # Add selected_candidate = 0, 1 or 2 only after inspecting returned candidates.
 ```
 
-Policies are `unknown_interior` or `opaque_core`. Membership and material policy
-alone never force opaque pixels. Preparation starts entirely unknown and uses explicitly confirmed native cores.
-Optional morphology produces a separate unreviewed suggestion, described below;
-no hole filling or automatic background certification is performed.
+The policies are `unknown_interior` and `opaque_core`. Neither membership nor
+material policy alone forces pixels to be opaque. Preparation starts entirely
+unknown and uses explicitly confirmed native cores. Optional morphology produces
+a separate, unreviewed suggestion, described below. It does not fill holes or
+automatically certify background.
 
 Guides schema 1 contains `master_id`, native integer `width`/`height`, and `regions`.
 Each region needs a stable `id`, `role`, `shape` and its shape-specific fields.

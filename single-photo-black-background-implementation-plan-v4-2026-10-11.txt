@@ -1,0 +1,639 @@
+# Single Photo Black Background Workflow Implementation Plan
+
+Version 4 | 11 October 2026 | Plan only
+
+> For agentic workers: use the writing-plans execution handoff with superpowers:executing-plans or superpowers:subagent-driven-development if those skills are available. Implement the tasks below in order and verify each deliverable. Do not run the experimental reference scripts unchanged.
+
+**Goal:** Produce beautiful black-background photographs from the real photographed detail, with editable masks, targeted corrections and optional reversible appearance effects, while minimizing recurring effort.
+
+**Architecture:** One local Python processing tool, one saved recipe per photo and a small localhost review window. Codex may inspect source previews and results in the cloud, turn plain-language requests into validated local operations, identify defects and run bounded repairs. The same local tool and saved state work without Codex or credits.
+
+**Tech stack:** Native ARM64 Python 3.12; PyTorch and matching torchvision; Transformers; SAM2.1 hiera-small; ViTMatte-small-composition-1k; NumPy, SciPy, Pillow, tifffile, rawpy, safetensors and tomli-w. Use Python's standard library for TOML reading, the CLI, JSON, hashing, project locking and localhost server, with one plain HTML/JavaScript review page.
+
+**Spec:** Sections 1–8 of this document are the current consolidated specification. The original brief is preserved in Photo-workflow-reference/Planning-prompt.txt inside the reference ZIP. The user's approved conversation changes are incorporated here; no previous conversation is required to implement this plan.
+
+**Status:** Implementation-ready plan following the additional user-requested independent review. One new guide-authoring gap was corrected within the existing interface and confirmed closed in a focused recheck; the previous seven material findings remain resolved. Hardware/model validation and product tests described below have not been run. Creating this plan does not start installation, model downloads, product implementation or photo processing.
+
+## Global constraints
+
+- Target: MacBook Pro MacBookPro18,2; M1 Max, 10 CPU cores, 24 GPU cores; 64 GB unified memory; macOS 26.5.2 build 25F84; ARM64; zsh; approximately 40 GB free disk.
+- Process one photograph at a time. No batch queue, scheduler or batch-management interface.
+- Priority order: photographic quality and real detail first; minimal recurring time and manual effort second; implementation simplicity throughout.
+- Preserve original capture bytes. Never overwrite an accepted version or its dependencies.
+- Mask-only mode preserves the approved developed RGB samples; applying alpha changes the displayed composite at partially covered pixels.
+- No generated texture, inpainting, invented anatomy, synthesized web, redraws, sharpening or reconstruction of detail absent from the source.
+- Local RAW development, segmentation, matting, repair, compositing and exports. Cloud inspection of photos and derived previews through Codex/ChatGPT or another chosen assistant is authorized.
+- No local language/vision model or new paid API integration is required. Cloud assistance is optional.
+- The primary control is a saved plain-text recipe plus saved guides. Free-form prose is a request to an assistant, not executable processing configuration.
+- Alpha, corrected foreground color and shading are separate assets. Color correction and shading default to disabled.
+- Human visual acceptance is required before a new result is labelled accepted. An AI review is advisory, even when it drives local repairs.
+
+## Review focus
+
+The following material failure cases have explicit tests in Tasks 1–6:
+
+1. A file extension, EXIF orientation or color profile disagrees with the decoded content; the tool must avoid a rotated, recolored or misregistered mask.
+2. A crop or AI request refers to an older revision; the tool must reject it rather than repair the wrong image or overwrite newer guidance.
+3. A local repair touches accepted partial alpha, conflicting background/foreground cores, or a protected region; all unauthorized changes must be prevented.
+4. Model padding, boundary tiles, inference precision or an 8-bit convenience export is mistaken for native/full-precision processing; manifests and tests must expose the distinction.
+5. A crash, low disk space, missing model or unavailable Codex session occurs; accepted work must remain usable and local recovery must be possible.
+
+## 1. Changes from the original brief and the interim design
+
+| Topic | Original planning brief | Interim local-only design | Current requirement |
+| --- | --- | --- | --- |
+| Computer | Hardware to discover | M1 Max and 64 GB identified | Native macOS/ARM64 implementation; CPU baseline and tested Apple GPU acceleration |
+| Work unit | Included batch resume and batch review | Single-photo focus | One photo, with restart/recovery inside that photo; batch features removed |
+| Cloud image access | Approval required before upload | Cloud assistant could not see photos | Authorized for this workflow; local processing remains the default execution path |
+| Main interface | Folders, CLI or small interface undecided | Recipe plus local viewer proposed | Approved: one TOML recipe, guides and a small local review window |
+| Codex role | Proposed language-to-guides and QA loop | Optional text assistance only | Can inspect images, identify defects, propose guides and run targeted repairs |
+| No-credit fallback | Not concrete | Same files and local viewer | Required; all processing and manual guide controls remain available without an assistant |
+| Local language/vision model | Not specified | Possible later addition | Not needed for this version; no separate model or agent platform |
+| Review stopping rule | Iterative review, without a limit | Bounded review proposed | Two automatic repair attempts per requested review cycle; stop earlier on ambiguity, no progress or regression |
+| Region protection | Accepted-region locks requested generally | Shared saved state | Exact copying of all protected alpha values and affected RGB, including translucent material; not only fully opaque pixels |
+| Reproducibility | Versioned outputs and configuration | Shared recipe | Save ordered operations, parent revision and canonical repair support; final trimap alone is insufficient |
+| Precision formats | Higher-precision masters; prototypes used RGB8 | Precision path being specified | RGB16 TIFF for authoritative color; grayscale PNG16 for masks; explicitly labelled PNG8 viewing copies |
+| Documentation and tests | Required broad acceptance checks | Interaction example | Concrete file contract, operating guide, Codex instructions, full example and end-to-end acceptance procedure |
+
+The AI defect-and-repair flow was already an intended feature of the original brief and guide. This revision makes it implementable and restores visual access after the interim privacy restriction. It does not claim that the supplied scripts already provide that flow.
+
+## 2. What the references demonstrate
+
+The reference ZIP contains 88 entries and excludes model weights, original DNGs and most full-size baseline outputs. Its scripts are experimental records with fixed paths, coordinates and output names.
+
+### Directly checked during this planning review
+
+- Inspected the guide, technical reference, input/output contract, model metadata, relevant runners and repair logic, validation reports and comparison previews.
+- Independently checked selected archive checksums and image headers. The separate DOCX guide matches the archived DOCX.
+- Reconstructed the supplied spider black composite exactly from its saved corrected RGB and 16-bit alpha.
+- Confirmed 175,533 changed alpha pixels and 152,580 changed RGB pixels in that spider example, with alpha and RGB unchanged outside the saved repair support.
+- Confirmed its 115,766 previously fully opaque core pixels retain their alpha and source RGB.
+- Confirmed spider source/corrected foreground are RGB8, its alpha is 16-bit grayscale, and its saved support is only 8-bit. These are reference fixture checks, not a new inference run.
+
+### Historical recorded results and their limits
+
+| Reference | Recorded behavior | Consequence for the new tool |
+| --- | --- | --- |
+| Ten-photo BiRefNet baseline | Content 1157 × 1536 for nine photos and 1156 × 1536 for caterpillar; padded input 1184 × 1536; resized alpha to 3072 × 4080 or 2974 × 3950 | Preserve as evidence/optional benchmark. Native-sized output does not establish native-resolution inference. The script's 1024 default is not the final run. |
+| Guided dragonfly/spider | SAM overview 1024 × 1024; native 1024-pixel ViTMatte tiles, nominal 256 overlap; human-selected candidates and edited trimaps | Reuse these primitives, not the photo-specific guidance as a universal automatic method. |
+| Dragonfly final | Two full passes and an opacity-increase-only local merge; 38,199 alpha pixels increased | Save merge policy and operation order. A final trimap cannot reproduce the whole sequence. |
+| Spider repair | Five confirmed background cores plus a 1024-pixel local matte; fully opaque anatomy and exterior web protected | Generalize protection to arbitrary accepted alpha and detect contradictory guidance before applying it. |
+| Shading | Grasshopper/dahlia widths 48/88 native pixels; maximum strengths 12%/24%; typical affected-edge opacity about 3%/6% | These are reference examples, not global defaults. No spider shading was tested. |
+
+The old reports record unchanged originals and passing baseline tests in their original environment. The missing originals prevent independently repeating those claims here. Fresh installation, this Mac, Apple GPU execution, generalized AI guidance, recovery/version management and high-precision foreground processing remain new work.
+
+## 3. Minimal architecture and dependencies
+
+### 3.1 One processing path
+
+The CLI, viewer and Codex must call the same Python operations. The application itself does not call a cloud language-model API. Existing Codex supplies language understanding and image inspection using its normal tools, then invokes the local commands.
+
+Use a small loopback-only server and one HTML/JavaScript page for viewing, points, boxes, coarse strokes, status and controls. Serve assets locally. No database, React application, Electron shell, plugin framework, hosted frontend, accounts, Docker or dedicated MCP server.
+
+One project-level OS lock, shared by CLI and viewer processes, serializes processing, draft writes, publication, acceptance and restoration. Use a standard nonblocking file lock on this Mac; a second writer receives a clear busy response. The viewer remains responsive for reading. No task queue or separate worker service is needed.
+
+### 3.2 Model and package policy
+
+Use the reference's explicit Transformers classes:
+- Sam2Model / Sam2Processor for subject candidates.
+- VitMatteForImageMatting / VitMatteImageProcessor for alpha.
+- Preserve the pinned processor files and verify actual tensor sizes and normalization. The SAM reference uses a fast image processor, so use a matching torchvision build; do not silently substitute video/automatic processor behavior.
+
+| Model | Pinned reference revision | Weight bytes | Weight SHA-256 | Licence label |
+| --- | --- | --- | --- | --- |
+| facebook/sam2.1-hiera-small | ee5bba1d82bb8749febdf90f45e84b687142ba03 | 184305280 | 0a4067b11ce1e23d5229203f11c718a823060d15a4b23fa2372a7d4b77cbbc60 | Apache-2.0 |
+| hustvl/vitmatte-small-composition-1k | 6a58ad7646403c1df626fbd746900aec7361ea1d | 103294572 | bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb | Apache-2.0 |
+
+Those two weights total 287,599,852 bytes, approximately 274 MiB, excluding packages and working memory. Do not install the standalone SAM2/ViTMatte research frameworks or their training dependencies for this route.
+
+Start compatibility testing with Python 3.12, Transformers 4.57.6 and rawpy 0.27.1 from the reference. Resolve a matching native ARM64 Torch/torchvision pair using official package metadata; historical Torch 2.5.1 / torchvision 0.20.1 are reference candidates, not a proven Mac lock. Remove the Linux-specific +cpu suffix. Pin the coherent environment that actually passes the pilot, including transitive packages and installed LibRaw version. Do not merge the two observed environment snapshots or prescribe an upgrade simply because it is newer.
+
+Keep a single model cache, safetensors weights and pinned configs. Verify hashes before first use in a session. Model loading is local-only after the explicit setup/download step. No hidden fallback downloads.
+
+BiRefNet_dynamic-matting remains optional. Its pinned revision is 074df545be87034e74a96bf71566ecbbc4c15f0a and weight SHA-256 is ae177d331c79dcb849ef5b8aea39cea6effd6ca0df36b5a41431658f990e9ee7. It needs separately reviewed custom code and additional dependencies. Use existing reference results for comparison first; install it only if the primary pilot exposes a material need.
+
+### 3.3 Device policy
+
+CPU float32 is the correctness baseline. Test MPS float32 separately for SAM and ViTMatte before enabling either by default. Record model device and attention implementation; avoid compilation, mixed precision and relaxed math in the first version.
+
+Unsupported operations, non-finite output or out-of-memory errors must fail the candidate cleanly. In auto mode, retry the failed stage once on CPU with the same geometry. Do not quietly reduce image resolution or tile size. An explicit MPS request should report failure and offer CPU rather than hide a device change.
+
+Do not combine cached tile predictions from different devices in one fresh matte. A device change invalidates that matte's tile cache. Completed accepted files remain valid.
+
+## 4. Image and layer contract
+
+### 4.1 Source, development and color
+
+Detect real file content, not just the extension. Record source path/hash, decoded format, visible dimensions, EXIF orientation, crop decisions and color profile. Apply orientation exactly once.
+
+The authoritative working master is an aligned, lossless, 16-bit RGB TIFF with a declared sRGB encoding/profile. It is separate from the untouched capture. For an 8-bit source, recording it in this container adds no captured precision; record the original sample precision honestly.
+
+Initial support:
+- RAW/DNG that LibRaw can decode.
+- 8-bit JPEG/PNG with explicit color handling.
+- 16-bit RGB TIFF already in supported sRGB encoding. Write uncompressed TIFF with tifffile; guarantee uncompressed import and report unsupported compression explicitly.
+- Detect and reject multichannel RGB16 PNG before Pillow converts it; request a trusted uncompressed sRGB TIFF export. Pillow's RGB/RGBA modes are 8-bit per channel. Grayscale PNG16 remains suitable for masks.
+- For unsupported high-bit-depth profiles, stop for a trusted sRGB TIFF export rather than silently converting through an 8-bit path. Do not add a general color-management application to version one.
+
+Use rawpy/LibRaw for a documented baseline RAW development, with AHD, full size, explicit white balance/brightness/gamma and no added sharpening/noise reduction. The reference's gamma=(2.4,12.92) must be explicit; rawpy's default gamma differs despite the sRGB output primaries. Validate white balance and clipping before judging a mask.
+
+For the recorded ten-photo baseline, preserve daylight WB, camera/auto WB disabled, auto_bright_thr=0.01, orientation applied by LibRaw, no additional DNG DefaultCropSize application. These describe that baseline, not all new RAW files.
+
+For a new RAW, use camera WB only if its coefficients and rendered result are credible. Invalid coefficients trigger a daylight preview or an already-developed TIFF route and a visible development review. Do not recreate a generic AsShotWhiteXY conversion from the spider's numerical multipliers: its complete conversion implementation is missing. Retain the spider's separate recorded approximate recipe and 0.0001 threshold as provenance.
+
+Missing RGB profiles require an explicit recorded assumption or a corrected input. Changing development, crop, orientation or profile creates a new master identity and invalidates dependent masks/guides until registration is re-established. Dimension equality alone is not enough.
+
+### 4.2 Model views and coordinates
+
+Make an explicitly separate RGB8 sRGB model/review view from the accepted master. High-precision output compositing must use the master, not this proxy. SAM is overview selection; ViTMatte is native-pixel matting even when the model view has lower color precision.
+
+All stored guides use the canonical oriented master coordinates:
+- origin at top left;
+- integer pixel indices for points;
+- half-open integer boxes [x0,y0,x1,y1);
+- explicit width, height and master identity.
+
+The viewer must invert its pan/zoom/letterbox transform before saving guides. Review exports include their native crop rectangle and displayed dimensions. AI coordinates from a preview are mapped through that exact saved transform and validated. Neither CSS coordinates nor a model's 1024-grid coordinates may be treated as native pixels.
+
+### 4.3 Selections, trimap and native matting
+
+Keep/remove object membership and pixel opacity are distinct. A kept wing can remain translucent.
+
+Use SAM candidate masks with positive/negative points and boxes. Save the chosen candidate and groups. Codex may select a source-supported candidate; the local user can do the same in the viewer.
+
+The existing guide controls must have explicit roles: SAM keep/remove hints, confirmed foreground, confirmed background, unknown, repair support, and region lock/protection. Save native-coordinate rectangles or coarse strokes with their role, width/radius and stable ID in guides.json. A shared rasterizer in guidance.py converts those regions into categorical trimap edits, support16 and protection masks. Confirmed/unknown labels and hard locks rasterize categorically, without anti-aliased intermediate labels. Repair support has a full-strength interior and optional recorded inward feather; zero feather is valid. It is clipped to the declared write scope and checked against known-core/lock rules.
+
+The viewer provides the role selector, previews the trimap and support/lock overlays, and generates the required PNG assets automatically. A lock explicitly binds its values to the selected saved revision; removing it is a recorded guide action. Codex supplies the same typed regions through guide_edits_file and prepare uses this same rasterizer. Neither route requires an external mask editor or custom scripting. Preparing repair guidance carries forward existing alpha unchanged; it cannot be accepted as a final result until matte/repair and the applicable QA complete.
+
+Build a categorical trimap: 0 confirmed background, 128 unknown, 255 confirmed opaque foreground. Morphology proposes conservative cores and an unknown boundary; its margins are native-pixel settings saved per photo. Review that proposal before forcing known values. Never automatically fill every hole or make every kept object's interior opaque. Default unclassified fragile/translucent groups to unknown except for separately verified solid cores.
+
+Whole-image unknown is a safe review fallback when no defensible background boundary exists; it is slower and less constrained, not automatically high quality. Expand unknown corridors to cover source-visible hairs, antennae and web that the overview missed. A web corridor marks where matting may search; it must not draw alpha foreground or RGB strands.
+
+Before inference, reject overlapping foreground/background assertions and conflicts with explicit protected regions. Negative SAM points are selection hints, not automatically certified empty-background cores.
+
+Explicit region locks bind to a saved same-master revision and persist until deliberately changed. Every operation, including a full matte rerun, copies their saved alpha and applicable foreground RGB exactly, even where the trimap remains unknown. Acceptance alone does not lock the whole photograph. Creating/removing a lock is an explicit recorded guide action; an assistant may not silently shrink locks to make a repair pass.
+
+Initial ViTMatte settings: 1024 × 1024 native tiles, 256 nominal overlap, stride 768, with a final boundary origin when necessary. Crop/pad only as the recorded processor requires, then remove padding. Never downsample the fine stage silently. Use the reference sine-squared overlap weights; require positive accumulated weight everywhere. Tiles containing no unknown pixels can bypass inference.
+
+Clamp finite predicted alpha to [0,1], enforce valid known trimap regions, then quantize once to the saved 16-bit alpha. Overlap disagreement can flag areas to inspect; it is not calibrated confidence or proof of seam quality.
+
+### 4.4 Local repair and protection
+
+A repair carries: parent revision, source/master identity, requested change, read/context crop, allowed write support, guide edits, protected regions and merge policy.
+
+The model may inspect a larger context than the changed area. The actual write support must lie within the requested repair scope. Outside it, copy the parent's alpha and applicable foreground RGB exactly, including every partial-alpha value. Additional explicit protected regions remain exact inside that scope.
+
+Save and reload both the local candidate alpha16 and support16 as immutable repair operands. In saved 16-bit sample units, let P be parent alpha, C local candidate and w=support16/65535. First choose D=C for replace, max(P,C) for increase-only, or min(P,C) for decrease-only. Then compute round(P*(1-w)+D*w) in float64 with ties-to-even and copy protected values exactly. Store crop mapping and operation order. Replay must use these saved operands without a model or inference cache. Replace is the default; directional policies require an explicit rationale.
+
+Validate contradictory guides before merging; do not resolve them merely by applying one layer last. A repair can revise an erroneous opaque assertion only as an explicit guide change, never as an accidental consequence of background cleanup.
+
+Every known-core assertion that requires changing the parent must lie where support16 is exactly 65535 and must be compatible with the merge policy. Reject a core in the feathered fringe or an increase-only request that requires erasure. The caller may revise support within the authorized scope; never expand that scope automatically. Recheck all applicable known cores after the merge.
+
+An alpha change marks dependent color correction/shading as needing rebuild. While stale, show base-to-base comparisons with effects disabled on both sides and label that view; retain the complete accepted result separately. Final appearance acceptance/export is blocked until stale enabled effects are rebuilt or explicitly disabled. An effect rebuild has its own declared write support: preserve prior foreground RGB/shadow weights outside it and respect explicit locks/protection inside it. Broader changes require an explicit broader operation and review. A global shading-opacity change is a global appearance operation, not a scoped alpha repair.
+
+### 4.5 Optional color correction
+
+Default: off. Mask-only output uses unchanged developed RGB.
+
+A photographed mixed pixel contains both foreground and old-background color. Alpha alone cannot guarantee a perfectly clean black composite while retaining that mixed RGB. If spill remains, distinguish it from an alpha error and show the user the tradeoff.
+
+For a requested source-guided correction, adapt the bounded spider heuristic in high precision: estimate nearby background from known empty pixels; use amount=0.35*(1-alpha)*support and corrected=(source-amount*estimated_background)/(1-amount), clipped to range. Treat 0.35 as the historical experiment's starting strength, not a universal optimum. Apply only to permitted partial-alpha pixels and retain source RGB elsewhere.
+
+Always derive the estimate from the authoritative source, not an already-corrected result. Save corrected RGB, canonical support and settings separately. Repeated rendering must not apply the correction again. This is approximate decontamination, not recovery of true missing color or detail.
+
+### 4.6 Optional inward shading and compositing
+
+Default: off. Enable after the base mask is accepted, or after an explicit request to compare candidates. Preserve base alpha.
+
+Use a separate 16-bit relative shadow-weight mask W plus scalar opacity p. W includes inward falloff, direction and protection; it is not an alpha replacement and must not contain p already.
+
+Adapt the reference distance/falloff and thin-feature/highlight heuristics. Explicit protection masks force W=0 for selected antennae, hairs, web, petal tips, genuine highlights or the central bee. Heuristic attenuation alone does not guarantee semantic protection.
+
+For reference comparisons, use widths 48/88 native pixels for the grasshopper/dahlia and p=0, 0.12, 0.24. New photos require a saved width chosen against their own scale; do not install 24% or either width as a global effect default.
+
+Version one composites in encoded sRGB, matching the reference:
+- A = saved alpha16 / 65535
+- W = saved shadow_weight16 / 65535
+- black RGB = round(F * A * (1 - p*W))
+
+F is the saved master RGB or explicitly selected saved corrected RGB. Perform the final arithmetic from saved assets in float64 with round-to-nearest/ties-to-even, then save losslessly. Apply A exactly once. Linear-light compositing produces a different appearance; document this, but omit a second compositing mode from version one.
+
+A black composite is already flattened and is never reused as foreground RGB. Authoritative black output is RGB16 TIFF. Black and transparent viewing PNGs are RGB8/RGBA8; for the transparent appearance preview, straight RGB includes the selected shading factor but has not been multiplied by alpha, and its reduced color/alpha precision and baked shading are labelled. Preserve RGB16, alpha16 and unbaked W separately. If exporting a baked black overlay, label its baked strength and use layer opacity 100%; the preferred editable handoff is W plus p.
+
+## 5. Codex defect identification and repair loop
+
+### 5.1 Normal assisted flow
+
+1. Read the current recipe, source/master identity, revision, user keep/remove request and previous review notes.
+2. Inspect the source overview and current result. Request native crops of sensitive anatomy, transparent material, gaps and suspect tile seams.
+3. Identify a concrete defect against the original source: location, visible evidence, likely cause, proposed correction and any uncertainty.
+4. Classify the action: guidance/alpha repair; optional color cleanup; optional shading change; or user decision. A blurry source is not a defect the tool may invent detail to repair.
+5. Generate a small validated operation using the same local command surface as the viewer. Show the affected region and preserve accepted material outside it.
+6. Run that local operation, structural QA and identical-crop comparisons on black plus gray/white as relevant.
+7. Retain the candidate only if preservation checks pass and the source-based comparison supports an improvement.
+8. Perform at most one further automatic repair attempt in the same review cycle; otherwise stop with the best preserved candidate and a clear review-needed reason.
+9. Present remaining uncertainties and a before/after view for human acceptance.
+
+The automatic budget is two repair attempts total per requested review cycle, not two attempts per defect multiplied across an unbounded list. A user-requested new correction starts a new explicit cycle. Stop earlier if progress is unclear, a new regression appears, or the source does not resolve an artistic choice.
+
+Numerical checks cannot establish biological or artistic correctness. Do not optimize solely for a lower disagreement score, less foreground area or more opaque pixels. Do not describe model scores or an assistant's confidence as calibrated probabilities.
+
+### 5.2 Minimal integration
+
+Provide AGENTS.md with supported commands, data meanings, coordinate rules, effect defaults, preservation rules and the bounded review procedure. Codex inspects generated review assets using its existing image tools and runs the CLI. Do not add an API-key service, assistant SDK or background autonomous agent.
+
+The planned command surface is small and shared with viewer controls:
+
+| Command | Behavior |
+| --- | --- |
+| blackmask open SOURCE --project PROJECT | Create one photo project and open the local viewer; omit SOURCE to reopen it |
+| blackmask doctor | Report native environment, models, backend availability and disk; no hidden downloads |
+| blackmask run PROJECT --request FILE | Validate a structured processing request and produce a candidate |
+| blackmask review PROJECT --revision REV --crops FILE | Export source/result/alpha crops, a single-photo contact sheet and their exact mappings; omitted options use the current working revision and saved crops |
+| blackmask resume PROJECT | Resume the saved interrupted operation only if its input snapshot is still valid |
+| blackmask accept PROJECT --development | Record human approval of the current master before masking; does not accept a final photo |
+| blackmask accept PROJECT --revision REV | Record human acceptance of a complete reviewed result |
+| blackmask restore PROJECT --revision REV | Select an existing working revision and restore its draft inputs; leave final acceptance unchanged |
+| blackmask export PROJECT | Export the accepted result; a different unaccepted revision requires --revision REV --draft and visibly labelled output |
+
+Finite processing kinds are prepare (apply guide edits, obtain/select SAM candidates and build a reviewable trimap), matte (run the prepared native matte), repair (local matte and merge), and effects (color cleanup/shading from saved base assets). Guides/settings are edited in the viewer or plain-text files; prepare/matte consume their snapshots. Common request fields are schema_version, kind, base_revision, master_id and inputs_digest. Copy the identity/revision/digest values from the current review manifest; base_revision is null before the first working revision. Optional guide_edits_file applies typed changes, never executable code. Repair additionally requires context_xyxy, scope_xyxy, support_file and merge_policy. Effects uses recipe settings and declared per-effect support files; a full-image scope must be explicit. Initial selection, matting and appearance changes remain distinguishable operations.
+
+A structured repair request includes these fields:
+
+```json
+{
+  "schema_version": 1,
+  "base_revision": "rev-002",
+  "master_id": "<actual master hash>",
+  "inputs_digest": "<current reviewed recipe/guides digest>",
+  "kind": "repair",
+  "reason": "Source-visible empty gap still contains background residue",
+  "context_xyxy": [480, 420, 1504, 1444],
+  "scope_xyxy": [480, 420, 1504, 1444],
+  "support_file": "requests/gap-support16.png",
+  "merge_policy": "replace"
+}
+```
+
+Invoke it with blackmask run "/path/to/spider-project" --request "/path/to/spider-project/requests/gap-repair.json". Before this invocation, create the typed regions and run prepare, using guide_edits_file for assistant-authored edits. Prepare returns the generated support path, current revision/master and updated draft digest; copy those actual values into the repair request. This repair consumes the prepared guides, so it omits guide_edits_file instead of applying the same edits again. The filenames/IDs above illustrate returned values. The rectangle illustrates the recorded spider context, not coordinates to apply elsewhere. The support file is full-master-sized grayscale16, zero outside the allowed scope; existing protection locks are inherited automatically. Confirmed cores or unknown corridors guide the repair; the request does not mean erase the rectangle. The context may be larger than the write scope.
+
+Store the original request and operation result. Reject unknown operations, invalid coordinates, mismatched master/revision, and contradictions. Instructions are data, never arbitrary shell/Python expressions.
+
+### 5.3 Without Codex
+
+Open the same photo project in the local viewer. Add keep/remove points, boxes or coarse strokes; change typed settings; run the same operation; inspect and accept the result. No language model, account, credits or internet is required after setup.
+
+The fallback retains the full processing quality path but requires the user to identify defects and express corrections through guides/controls. It does not promise unrestricted natural-language understanding. Restarting Codex later resumes from saved project state, not from memory of the conversation.
+
+## 6. Files, versions, cache and recovery
+
+### 6.1 Source of truth
+
+The editable root recipe.toml and guides.json express the next requested settings/guidance. state.json alone owns working_revision and accepted_revision. The operation's expected base must match working_revision; base_revision is not duplicated in editable TOML. A revision records its parent and immutable input snapshots. The project also records master-development approval separately from final-photo acceptance.
+
+The review manifest includes a digest of the current draft recipe/guides. At invocation, acquire the project lock, check revision/master/digest, and snapshot all inputs, including referenced guide-edit/support files. Process only that snapshot. Before publication, recheck external input hashes; an intervening text edit causes a stale-input result, retaining verified cache without overwriting newer guidance or advancing state. Restore/accept use the same lock. Restore loads a saved revision's draft and working head; only explicit human acceptance changes accepted_revision.
+
+Use application-level immutable revision directories with parent links, not Git for large photo assets and not a database. Different development masters are stored once by identity and shared by revisions that use them.
+
+| Path within one photo project | Role |
+| --- | --- |
+| source.json | Original path, format and SHA-256; no original mutation |
+| masters/<master-id>.tif | Lossless RGB16 master, embedded profile, referenced by revisions |
+| recipe.toml | Editable typed settings and declared keep groups |
+| guides.json | Native-coordinate points/boxes/coarse regions and group identities |
+| requests/ | Plain-language requests and validated structured operations |
+| state.json | Working and accepted revision IDs, master approval and operating status |
+| revisions/rev-NNN/manifest.json | Parent, identities, settings, models, device, transforms and output hashes |
+| revisions/rev-NNN/recipe.toml and guides.json | Exact inputs used by that revision |
+| revisions/rev-NNN/trimap.png | Categorical 0/128/255 guidance |
+| revisions/rev-NNN/base_alpha16.png | Authoritative scalar coverage |
+| revisions/rev-NNN/supports/ | 16-bit repair and explicit protection masks |
+| revisions/rev-NNN/repair/ | Saved local candidate alpha16, canonical support16, crop mapping and merge metadata needed for exact replay |
+| revisions/rev-NNN/corrected_rgb16.tif | Optional corrected foreground, with its own recorded support/settings |
+| revisions/rev-NNN/shadow_weight16.png | Optional unbaked effect weight |
+| revisions/rev-NNN/review/ | Source/result overviews, same-crop comparisons, contact sheet and crop mapping metadata |
+| revisions/rev-NNN/qa.json | Structural checks and visual review status; neither substitutes for the other |
+| exports/rev-NNN/ | Revision-labelled RGB16 black TIFF and RGB8/RGBA8 viewing PNGs; reuse identical existing files, never overwrite an earlier export |
+| cache/ | Rebuildable inference data; never the only copy of an accepted dependency |
+| README.md | Short project-specific file roles, accepted result and unresolved review notes |
+
+A typed TOML recipe includes schema version, master_id, groups/material policy, guide reference, tile/overlap settings, device, effect settings and optional intended print dimensions. Unknown keys or malformed values fail visibly. This illustrative recipe uses placeholder identity; a created project fills it automatically:
+
+```toml
+schema_version = 1
+master_id = "<actual master hash>"
+guides_file = "guides.json"
+notes = "Keep spider, prey and source-visible web."
+
+[matting]
+tile_size_px = 1024
+overlap_px = 256
+device = "auto"
+
+[[groups]]
+id = "spider_prey"
+keep = true
+material_policy = "opaque_core"
+
+[[groups]]
+id = "web"
+keep = true
+material_policy = "unknown_interior"
+
+[color_cleanup]
+enabled = false
+strength = 0.35
+
+[shading]
+enabled = false
+opacity = 0.0
+```
+
+opaque_core allows a conservative reviewed core; unknown_interior never automatically forces the whole group opaque. Enabling shading requires saved width/direction/protection settings. Store durable prose in notes; it is never executed, and automatic TOML rewriting need not preserve comments.
+
+The manifest also records package/model/config hashes, actual model input dimensions, padding/crops, source precision, output precision, compositing encoding, selected foreground asset, operation order and canonical support hashes.
+
+### 6.2 Caching and invalidation
+
+Cache only what avoids material repeat work:
+- accepted development master and RGB8 proxy;
+- SAM image embedding during an open session;
+- completed ViTMatte tiles with their source/trimap crop hashes and settings;
+- previous accepted masks and review crops.
+
+A shading opacity change never reruns either model. A guide change reruns affected model work. A local matte repair uses local native context rather than repeating the whole image.
+
+Cache keys include source/master, actual input crop, relevant guide/trimap bytes, model/config revision, package/backend/dtype, tile geometry and preprocessing version. Unknown key dependencies mean a cache miss, not reuse. Geometry/development changes invalidate all aligned downstream work.
+
+Restoring a saved revision and reconstructing a composite from its saved layers must be exact at decoded pixel level. Fresh neural inference across different devices or package versions is not promised bit-identical; report and review differences.
+
+### 6.3 Recovery and storage
+
+Write to a temporary revision directory, validate outputs, then atomically publish the completed revision and update state. Never point accepted state at incomplete output. Accepted-pointer updates are explicit and atomic.
+
+On interruption, resume from completed verified stages/tiles. Remove or ignore incomplete temporary outputs. A malformed recipe, conflicting edit or stale request leaves the last accepted result intact. If a source path changes, locate it by the recorded hash before recomputing source-dependent stages.
+
+Use clear statuses: needs_input, ready, running, review_needed, accepted, failed. A completed calculation normally becomes review_needed. Default export selects an accepted revision; explicit draft exports are visibly labelled.
+
+Budget one environment and model cache. Use a proposed 10 GiB free-space safety floor plus a conservative estimate of pending writes; this is a product policy, not a measured macOS requirement. Fail before starting a write that would cross the reserve. Do not delete originals, accepted versions or their masters automatically. Cache cleanup is permitted because those files are rebuildable.
+
+## 7. Implementation tasks and required checks
+
+Every task ends with a usable, checkable result. Write the material invariant tests before the corresponding implementation. Documentation is updated alongside behavior, not postponed until the end. All commands below are planned commands, not software currently installed.
+
+### Task 1 — Establish the environment and trusted image contract
+
+**Files:** pyproject.toml, requirements-macos-arm64.lock, src/blackmask/ingest.py, src/blackmask/project.py, tests/test_ingest.py, tests/test_project.py.
+
+**Interfaces:** create_project(source: Path, project_dir: Path, development: dict) -> project path; load_master(project: Path, master_id: str) -> RGB16 array plus identity/profile metadata.
+
+- [ ] Add tests for source-byte integrity, signature/extension mismatch, EXIF orientation, missing profile, invalid WB coefficients, lossless RGB16 TIFF round trip and a midtone ramp containing values not divisible by 257. Reject RGB16 PNG before conversion; test every declared precision input route.
+- [ ] Implement ingestion/development and shared-master storage; prohibit writing to the input path.
+- [ ] Run native ARM64 package preflight and one CPU inference smoke test per model after setup is authorized; record the installed versions and hashes.
+- [ ] Test MPS separately on the same inputs; record differences, time and fallback behavior before enabling it.
+- [ ] Write the installation/doctor section of README.md, including disk allowance and supported input/profile limits.
+- [ ] Verify with pytest tests/test_ingest.py tests/test_project.py; all contract assertions must pass.
+
+**Deliverable:** A trusted, identity-bound master and environment report. Invalid development stops before masking.
+
+### Task 2 — Implement guided selection and native matting
+
+**Files:** src/blackmask/models.py, src/blackmask/guidance.py, src/blackmask/matte.py, tests/test_guidance.py, tests/test_matte.py.
+
+**Interfaces:** select_candidates(master_view, groups, model_settings) -> named candidates; rasterize_regions(size, typed_regions) -> categorical edits, support16 and protection masks; build_trimap(size, selections, guide_edits) -> uint8 trimap; infer_matte(master_view, trimap, settings, cache) -> alpha16 plus diagnostics.
+
+- [ ] Test distinct object-membership/opacity semantics, conflicting cores, thin unknown corridors and nonempty opaque/background fixtures.
+- [ ] Test role-specific rasterization from rectangles/strokes, categorical labels, full-master support dimensions, scope clipping and the absence of changes to alpha when guidance is only prepared.
+- [ ] Test tile origins and complete coverage for dimensions smaller than a tile, exact multiples, odd dimensions and appended boundary origins; verify the model tensor is padded, not rescaled.
+- [ ] Implement explicit processor classes, candidate selection, reviewed trimap construction and native tiled inference.
+- [ ] Test no-unknown-tile bypass, finite outputs, exact known-core values and rejection of malformed trimaps.
+- [ ] Run the included dragonfly and spider sources through the new path locally; compare sensitive native crops to the source and historical examples without asserting that one pass equals their multi-pass final masks.
+- [ ] Verify with pytest tests/test_guidance.py tests/test_matte.py and a recorded real-model smoke run.
+
+**Deliverable:** Editable guided masks with labelled resolution and precision.
+
+### Task 3 — Implement revisions, local repair and the small viewer
+
+**Files:** src/blackmask/repair.py, src/blackmask/cli.py, src/blackmask/viewer.py, src/blackmask/ui/review.html, tests/test_repair.py, tests/test_recovery.py, tests/test_coordinates.py.
+
+**Interfaces:** apply_operation(project: Path, operation: dict) -> candidate revision or structured error; build_review(project: Path, revision: str, crops: list) -> review manifest; accept_revision(project: Path, revision: str) -> updated state.
+
+- [ ] Test exact partial-alpha and RGB preservation outside support and inside explicit locks, including a full matte rerun with locked soft wings/web rather than only alpha==65535.
+- [ ] Test saved candidate/support operands and exact repair replay after cache deletion, all three merge policies, feather/core conflicts and incompatible directional assertions.
+- [ ] Test stale parent/master/draft-input rejection, edits made during a run, and two CLI/viewer writers competing with accept/restore for the same project lock.
+- [ ] Test viewer-coordinate mapping under zoom, pan, resized windows and non-square images.
+- [ ] Implement single-photo operations, temporary writes, atomic revision publication, checkpoint reuse and one active worker.
+- [ ] Implement local viewer controls: open, zoom/pan, source/result toggle, black/gray/white background, group points/boxes/coarse strokes with explicit guide roles, trimap/support/lock previews, create/remove revision-bound locks, repair scope, effects controls, run, resume, accept and restore. Generate support/protection assets through the shared rasterizer.
+- [ ] Keep the server bound to loopback; validate paths and request origin so the simple viewer only exposes its current project.
+- [ ] Simulate an interruption between output writes and confirm accepted work remains available after restart.
+- [ ] Verify with pytest tests/test_repair.py tests/test_recovery.py tests/test_coordinates.py and a manual viewer walkthrough.
+
+**Deliverable:** A complete no-credit local workflow, including meaningful correction and recovery.
+
+### Task 4 — Add the Codex operating contract and defect loop
+
+**Files:** AGENTS.md, docs/assistant-workflow.md, src/blackmask/review.py, tests/test_operations.py, examples/requests/.
+
+**Interfaces:** review export contains revision/master IDs, draft-input digest, source/result paths, crop transforms and QA diagnostics; apply_operation is the shared processing contract, while acceptance/restoration use the same project transaction helpers.
+
+- [ ] Add validation tests for well-formed recorded AI proposals, off-image boxes, unknown operations, old revisions, prose with no resolved operation and attempted lock conflicts.
+- [ ] Implement reusable review exports with source/black/alpha views, native crops and one-photo contact sheets. Display revision, stale-effect state and actual settings consistently.
+- [ ] Write Codex instructions for source-based defect identification, guide generation, local execution, comparison, the two-attempt limit and human acceptance.
+- [ ] Run one live assisted pilot in which Codex identifies a visible defect and applies a source-supported repair through the public command contract.
+- [ ] Close Codex and continue the same project locally; no assistant-dependent operation may block the fallback.
+- [ ] Verify with pytest tests/test_operations.py plus the recorded assisted/fallback walkthrough.
+
+**Deliverable:** AI-assisted inspection and repairs using the already-working local engine.
+
+### Task 5 — Add separate color cleanup, shading and exact exports
+
+**Files:** src/blackmask/effects.py, src/blackmask/export.py, tests/test_effects.py, tests/test_export.py.
+
+**Interfaces:** make_corrected_rgb(source16, alpha16, support16, settings) -> corrected RGB16; make_shadow_weight(alpha16, source16, protection16, settings) -> W16; render_saved_revision(project: Path, revision: str, output_spec: dict) -> export paths.
+
+- [ ] Test mask-only RGB equality, identity at disabled/zero-strength effects, partial-pixel correction bounds and preservation of protected/opaque RGB.
+- [ ] Test unchanged alpha after all effect changes, zero shading outside its band/protected regions and the single-alpha/unbaked-opacity equation.
+- [ ] Start with both effects enabled, repair alpha locally, require labelled base-to-base review while effects are stale, block final appearance acceptance, then rebuild within declared support and verify prior assets/locks elsewhere remain exact.
+- [ ] Implement separate optional assets and exports reconstructed from saved layers; never feed a flattened black result back as foreground.
+- [ ] Compare 0%, 12%, 24% on exactly the same reference crop with actual width/encoding/color-cleanup labels.
+- [ ] Provide an in-view toggle first; make a labelled toggle GIF only on request, since GIF color limits make it unsuitable as a precision proof.
+- [ ] Verify with pytest tests/test_effects.py tests/test_export.py and native visual review.
+
+**Deliverable:** Reversible appearance choices with a trustworthy precision/export contract.
+
+### Task 6 — Complete the representative pilot, documentation and end-to-end tests
+
+**Files:** tests/test_end_to_end.py, tests/fixtures/, docs/workflow.md, docs/file-contract.md, docs/validation.md, docs/troubleshooting.md, docs/model-provenance.md, THIRD_PARTY_NOTICES.md.
+
+- [ ] Add small synthetic known-alpha fixtures for exact preservation, precision and arithmetic checks; keep them separate from photographic deliverables.
+- [ ] Add a deterministic end-to-end test using recorded guide/repair operations and real file reloads. Use stub model predictions only in the fast orchestration test, clearly labelled.
+- [ ] Run real-model end-to-end tests and the manual assisted/fallback scenario below; record backend and hashes.
+- [ ] Validate one actual local RAW/DNG before declaring RAW support complete. The archive cannot supply that missing capture.
+- [ ] Measure cold/warm inference, repair, peak memory and disk use on this Mac and update estimates.
+- [ ] Follow the documented steps from a newly opened project with Codex unavailable, then resume with Codex; fix any missing instructions.
+- [ ] Run pytest -m "not integration" for fast tests, pytest -m integration for downloaded-model tests, and the documented visual acceptance checklist. Register the marker and report those outcomes separately.
+- [ ] Complete one final material review of the implemented workflow and stop once the release conditions pass; do not add unrelated optimization work.
+
+**Deliverable:** A documented, tested single-photo workflow whose limitations and operating cost are measured.
+
+## 8. Detailed end-to-end example
+
+The primary example uses the supplied spider source, with its previous mask as a defect reference. This scenario is a future acceptance run, not a claim it has already been performed by the new tool. If a fresh candidate does not have that defect, do not force a repair; the integration fixture may load the archived before-mask with its correct master binding to exercise the demonstrated failure.
+
+1. **Open a project.** Run blackmask open "/path/to/SOURCE_ALIGNED.png" --project "/path/to/spider-project". The tool records source bytes/dimensions/profile and creates an aligned master. It labels this fixture as RGB8-derived, even though the master container is RGB16.
+2. **Accept development.** View the source at native scale and select Approve Development (CLI equivalent: blackmask accept "/path/to/spider-project" --development). For a RAW version, review WB/clipping first; do not proceed through an invalid render.
+3. **State intent.** With Codex: "Keep the spider, prey and visible web. Replace the background with black, preserving photographed detail. Keep color correction and shading off."
+4. **Establish guides.** Codex inspects the overview/native crops and creates source-supported selection points, groups and unknown web corridors. Without Codex, the user creates them in the viewer. No web pixels are painted into existence.
+5. **Review the trimap.** Run a prepare request, then confirm solid body cores, empty background and uncertain fine/translucent regions. Resolve any foreground/background conflict before inference.
+6. **Generate the candidate.** Run a matte request through blackmask run. SAM's selection is an overview; ViTMatte uses native tiles. Save alpha16, settings, QA and the new candidate revision.
+7. **Inspect a defect.** View a same-scale source/result crop around a gap between legs. Codex records why the source shows empty space and why the candidate contains residue. If the source is ambiguous, ask a focused question rather than erase it.
+8. **Create the repair guidance, then submit it.** In the viewer, choose Confirmed Background and mark only a source-visible empty core in the leg gap. Choose Repair Support and draw a surrounding region inside the permitted write scope, keeping that core in its full-strength interior. Choose Region Lock, select the current saved revision, and mark accepted partial-alpha web or anatomy to preserve. Inspect the trimap/support/lock overlays, then run Prepare; the tool writes the required masks and returns their paths and current revision/digest. Submit the section 5.2 repair using those returned values. Codex can perform the same sequence by submitting typed regions. Do not reuse the example's coordinates for another image.
+9. **Apply and check.** Rematte the local context, save the candidate operand and merge from reloaded assets. Publish only after exact outside-support/protected-pixel checks, post-merge known cores, finite values and file round trips pass. Compare identical source/before/after/alpha crops with matching effects state.
+10. **Stop appropriately.** If the identified residue remains, allow one further automatic attempt. On no clear improvement, leave review_needed and retain the best valid candidate. Do not loop until the photo merely looks darker.
+11. **Accept the base mask.** The user checks fragile details, gaps, transparency and seams on black/gray/white at native scale, then selects Accept. Optional intended-print-size viewing is additional evidence; a calibrated print proof remains the reliable physical-size check.
+12. **Consider color cleanup separately.** If the user requests it, show untouched-RGB and corrected-RGB versions with the same alpha. Accept it only if the changed appearance is preferable. The supplied historical repaired RGB can also verify the export equation without rerunning its heuristic.
+13. **Consider shading separately.** Leave it off for this spider unless requested. Use the dahlia/grasshopper reference scenario to demonstrate 0/12/24% on identical crops, with explicit bee/antenna protection.
+14. **Export.** Save the accepted full-resolution black result, alpha16, retained master, optional effect assets and machine-readable record. Label an optional transparent PNG as a viewing/editor convenience with 8-bit alpha.
+15. **Reopen without Codex.** Close the assistant and disconnect the processing tool from the internet. Using only the viewer, create a new confirmed-background core, repair-support region and partial-alpha lock; prepare, run, inspect and accept the repair. Start this check without prebuilt support files or external mask editing. Restore and explicitly accept the earlier revision if preferred, then rerender saved assets. This proves useful manual continuation, not merely that old files can be viewed.
+16. **Test recovery.** Start a new candidate, interrupt it during a stage, reopen and resume. Confirm the accepted revision/export remains unchanged and only unfinished or invalidated work repeats.
+17. **Reproduce the export and repair.** Clear rebuildable cache in the test project. In a fresh process, reproduce the local merge from saved parent/candidate/support operands, then reconstruct the export from saved RGB, alpha, shadow weight and settings. Decoded output pixels must match; neither step invokes a model.
+
+For a bee-and-flower photo, the same flow uses separate named groups, a protection region for the bee and optional shading after mask acceptance. For a dragonfly, keep wing material unknown and explicitly inspect body opacity and delicate/defocused wings. The interface and file contract do not change between subjects.
+
+## 9. End-to-end acceptance matrix
+
+| Test | Required assertion/evidence |
+| --- | --- |
+| Source integrity | Source hash unchanged before/after; original path never appears among writable outputs |
+| RGB precision | RGB16 TIFF gradient retains values between 8-bit steps; unsupported RGB16 PNG is rejected before conversion; mask-only foreground equals the accepted master |
+| Input/orientation | Misnamed RAW and rotated non-square fixtures decode correctly; guides and outputs align after a single recorded transform |
+| WB/profile failure | Invalid coefficients or unsupported/missing encoding produce a visible development decision, not a silent final image |
+| Real model geometry | SAM input resolution and ViTMatte native tile/padding geometry are recorded and independently checked |
+| Opaque/background cores | Nonempty verified cores remain exactly 65535/0; tests cannot pass vacuously on an empty alpha==1 set |
+| Transparency/web | Expected mixed-alpha fixture remains mixed; source-visible photographic paths and wings pass recorded native visual inspection |
+| Conflicting guidance | Overlapping FG/BG, lock conflicts, change-required cores in feathered support and incompatible directional policies are rejected; known values are checked after merge |
+| Tile boundaries | Full nonzero coverage, correct final origins and padding removal; seam crops reviewed beyond a disagreement statistic |
+| Local repair and full rerun | Exact unchanged alpha/RGB outside repair support; explicit locks preserve partial alpha in every operation, including full matting |
+| Repair replay | Saved parent/local candidate/support and ordered policy reproduce the merge after cache deletion with no model calls |
+| Stale/concurrent input | Incorrect parent/master/draft digest or crop mapping is rejected; mid-run edits and competing CLI/viewer writers cannot overwrite guidance or accepted state |
+| Bounded AI loop | No more than two automatic repair attempts per cycle; no-progress/uncertain cases remain review_needed |
+| AI defect pilot | At least one live source-supported defect is identified, repaired through supported operations and confirmed by human comparison |
+| Optional effects | Disabling gives identity; alpha unchanged; stale effects block final acceptance; a scoped rebuild preserves earlier assets outside its support and all locks/protection |
+| Alpha/opacity arithmetic | Saved layers reproduce black output exactly; tests catch alpha or opacity being applied twice |
+| Export precision | Authoritative alpha remains 16-bit; convenience RGBA's 8-bit alpha is explicit; masks receive no ICC/gamma transform |
+| Cache use | Shading-only changes cause zero model calls; local repair reuses unrelated stages; master/backend changes invalidate affected cache |
+| Interrupted/low-disk run | Accepted state remains valid; incomplete output is not published; resume reuses only verified completed work |
+| No-credit/offline flow | Create new certified background, support16 and a partial-alpha lock through the viewer; complete local guide/matte/repair/render/accept without Codex, network, prebuilt support files or external editing |
+| Documentation walkthrough | A fresh session completes the example from the documented instructions without hidden coordinates, paths or conversation memory |
+
+### Representative pilot set
+
+Use three photographic cases plus tiny synthetic fixtures:
+1. Spider/prey/web, including the supplied before/after repair layers.
+2. Dragonfly, including its chosen JPEG, guides and final reference mask.
+3. Bee/flower or grasshopper from the user's local originals, for RGB16 RAW validation, thin structures and shading.
+
+The archive has dahlia alpha/shadow masks and previews, not its complete full-resolution source. Do not claim a fresh dahlia/RAW end-to-end run until that source is available locally. The three photos are processed separately; this is test coverage, not a batch feature.
+
+## 10. Documentation to ship
+
+Keep documentation short, actionable and synchronized with actual commands:
+
+- **README.md:** Mac setup, dependency/model download step, doctor checks, launch instructions, disk needs and one-photo quick start.
+- **docs/workflow.md:** The complete example above with verified commands/screenshots from the implemented tool; assisted and no-credit routes; how to select guide roles, generate support masks, create/remove locks, accept, restore and resume.
+- **AGENTS.md / docs/assistant-workflow.md:** Supported operations, source-evidence requirements, coordinate mapping, no invented detail, separate effects and the two-attempt stop rule.
+- **docs/file-contract.md:** File roles, TOML/JSON fields, master identity, coordinate conventions, alpha precision, straight versus flattened RGB, compositing equation and editor handoff.
+- **docs/validation.md:** Which tests are automated, which need visual review, fixture sources, results by backend and known limitations. Distinguish planned, run, passed and untested.
+- **docs/troubleshooting.md:** Invalid WB/profile, bad guidance, MPS failure, missing/corrupt model, stale revision, low disk, interrupted run and Codex unavailable; each has a concrete recovery action.
+- **docs/model-provenance.md / THIRD_PARTY_NOTICES.md:** Exact model/package versions, hashes, processor settings and upstream licences. Preserve weight licence labels separately from research-code licences.
+- **Per-photo README:** Current accepted result, retained/requested subjects, mode/effects, unresolved details and how to reopen the project.
+
+Do not create a general documentation platform or test docs by asserting their wording. The fresh-session walkthrough is the meaningful documentation check.
+
+## 11. Effort, performance, risks and stopping conditions
+
+### Estimates
+
+Planning allowance, not measured installation size: reserve roughly 5–10 GB for the environment, required model cache and working room, then measure actual use. Revisions add masks and optional foreground/effect assets; do not duplicate unchanged masters. The approximately 40 GB available makes a small pilot plausible but does not justify unbounded caches.
+
+Engineering estimate: approximately 4–8 focused developer days for the core local workflow, review integration and tests/docs, plus 1–3 days for optional appearance stages if implemented after the core. Significant RAW/profile or backend problems can extend this. These are planning estimates, not a commitment about Codex throughput.
+
+Do not publish seconds-per-photo before a Mac measurement. With the reference tiling, a 3072 × 4080 image has up to 20 tile positions, the 2047 × 2048 dragonfly has 9, and the 1536 × 2040 spider has 6; known-only tiles can skip inference. A suitably bounded 1024-pixel repair can use one tile. Estimate subsequent runs from measured stage time and actual inferred-tile count.
+
+Measure cold model load, warm SAM updates, one full matte, one repair, export time, peak memory pressure and disk growth. GPU acceleration is retained only if output and responsiveness pass the pilot; CPU remains a usable correctness route.
+
+### Main practical limits
+
+- Transparent or blurred pixels may not contain enough information to separate foreground and background exactly.
+- SAM omissions can become permanent if bad trimap background is locked; source inspection and unknown corridors matter.
+- AI can misidentify photographic anatomy or chase a cosmetic improvement that removes real detail; native comparisons and hard region limits are required.
+- A good arithmetic test does not prove a good photograph, and an attractive preview does not prove RGB/alpha integrity.
+- MPS and packages require verification on this Mac; no reference result proves those paths.
+- Tight disk space and long CPU work require checkpoints and selective caching rather than repeated whole-image reruns.
+
+### Release conditions and out of scope
+
+The material design review is complete, as recorded in section 13. The tool is ready for regular use only after Tasks 1–6 and the photographic/RAW acceptance gates pass with recorded results.
+
+No further artistic specification is needed now. During setup choose the local source/project folders and available real RAW pilot photo. Per-photo subject boundaries, development appearance and optional effect strength remain intentional user choices.
+
+Out of scope: batch processing, video, model training, a local general-purpose assistant, generative editing, a general RAW editor, arbitrary high-bit-depth color-space conversion, PSD/plugin export, cloud hosting, mobile apps, calibrated print production and guaranteeing recovery of unseen detail.
+
+Each requested review round is bounded: one independent pass and, if changes are needed, a focused check of those corrections. The user explicitly requested the additional round recorded below. Stop after resolving material findings; do not continue open-ended polishing. If a material blocker remains, name it precisely rather than marking it resolved by consensus.
+
+## 12. Evidence and official sources
+
+Reference evidence paths are relative to Photo-workflow-reference:
+- TECHNICAL_REFERENCE.txt, INPUT_OUTPUT_CONTRACT.txt, PORTING_CHECKLIST.txt and Photo-workflow-guide.txt.
+- MODEL_REFERENCE.json, MODELS_AND_LICENSES.txt, PACKAGE_AUDIT.json and SHA256SUMS.txt.
+- mask_test/deliverables/manifest.json and VALIDATION.txt.
+- guided_mask_test/run_guided.py; dragonfly_final/metadata.json; merge_dragonfly_core_correction.py.
+- guided_mask_test/spider_raw_preparation/final_development.json; spider_repair_v3/finalize_repair.py and repair_validation.json.
+- examples/spider-repair-v3/, examples/dragonfly/, edge_shadow_evaluation/ and previews/.
+
+Official sources checked on 11 October 2026:
+- SAM2.1 checkpoint and direct Transformers use: https://huggingface.co/facebook/sam2.1-hiera-small
+- Versioned SAM2 API documentation: https://huggingface.co/docs/transformers/v4.57.3/en/model_doc/sam2
+- ViTMatte checkpoint: https://huggingface.co/hustvl/vitmatte-small-composition-1k
+- Versioned ViTMatte processor/model documentation: https://huggingface.co/docs/transformers/v4.57.2/en/model_doc/vitmatte
+- Transformers 4.57.6 package metadata: https://pypi.org/project/transformers/4.57.6/
+- MPS availability and fallback documentation: https://docs.pytorch.org/docs/2.14/notes/mps.html and https://docs.pytorch.org/docs/2.14/mps_environment_variables.html
+- rawpy 0.27.1 native wheels: https://pypi.org/project/rawpy/0.27.1/
+- RAW parameters and defaults: https://letmaik.github.io/rawpy/api/rawpy.Params.html
+- Pillow precision modes and limits: https://pillow.readthedocs.io/en/stable/handbook/concepts.html
+- TIFF array I/O and codec scope: https://github.com/cgohlke/tifffile
+- TOML writer and platform metadata: https://pypi.org/project/tomli-w/
+- Python's Unix project-lock primitive: https://docs.python.org/3.12/library/fcntl.html
+- LibRaw scope and licences: https://www.libraw.org/about
+- ViTMatte research-code licence, separate from checkpoint licence: https://github.com/hustvl/ViTMatte/blob/main/LICENSE
+- BiRefNet optional baseline: https://huggingface.co/ZhengPeng7/BiRefNet_dynamic-matting
+- Codex CLI operating reference: https://learn.chatgpt.com/docs/developer-commands?surface=cli
+
+The PyTorch 2.14 and Transformers 4.57.2/4.57.3 pages document capabilities; they are not a claim that those versions were used in the historical runs or a mandate to upgrade the new environment. The reference's exact installed versions remain recorded separately.
+
+## 13. Independent review disposition
+
+The initial review was deliberately bounded: reference/platform/requirements audits informed the draft, then a fresh independent reviewer assessed the consolidated plan. Seven material findings were corrected together. One focused recheck confirmed each correction and found no material regression or remaining design blocker. That round ended after those corrections were confirmed.
+
+| Material finding | Correction adopted | Verification required during implementation |
+| --- | --- | --- |
+| RGB16 PNG had no lossless decoder in the selected stack | TIFF-only precision RGB route; reject unsupported PNG16; label viewing precision | Exercise declared input/output formats with non-8-bit-step RGB values |
+| Revision IDs alone missed draft edits and competing writers | Working/accepted state authority, draft digest, input snapshots and one project OS lock | Stale-draft, mid-run edit and CLI/viewer writer-conflict tests |
+| Shared operation surface was incomplete | Four processing kinds, compact command table, typed recipe and full repair request | Complete example using only supported commands/controls |
+| Locks protected local repairs but not every full rerun | Persistent saved-value protection for all same-master operations | Full matte rerun preserves locked partial alpha/RGB exactly |
+| Stale effects could invalidate scoped comparisons/preservation | Labelled base-to-base review, explicit scoped rebuild and final-acceptance gate | Repair a result with both effects enabled and check untouched assets |
+| Feather/directional merges could violate known cores | Exact-one support for change-needed cores, compatible policy and post-merge assertions | Reject feather/core and directional-policy conflicts |
+| Exact repair replay lacked the local candidate alpha | Retain quantized candidate/support operands and explicit arithmetic/order | Cache-free, model-free replay reproduces saved pixels |
+
+### Additional review requested by the user — version 4
+
+Two fresh reviewers independently assessed the saved version 3 plan. The core-contract review found no additional material defect in precision, reconstruction, repair/lock rules, effect rebuilding, revisions or recovery. The workflow review found one material gap: required trimap cores, support16 and protection masks had no explicit shared authoring path in the specified interface.
+
+Version 4 adds explicit guide roles and a shared rectangle/stroke rasterizer to the existing guidance module and viewer. It previews and generates the required assets, returns current identities/paths from prepare, and allows a subsequent repair to consume those guides without applying edits twice. Preparation preserves existing alpha and cannot be accepted as a final result. The offline walkthrough now creates a new background core, support and partial-alpha lock without prebuilt masks, external editing or custom scripting.
+
+One focused check by the workflow reviewer confirmed closure and found no directly caused material regression. All changes address that authoring gap and its documentation/tests; the architecture and dependency choices remain unchanged. This requested round is complete.
+
+Planning checks also confirmed valid JSON/TOML example syntax and that the archived original brief is byte-identical to the supplied initial brief. The saved spider-reference arithmetic/preservation checks in section 2 were performed; no new model inference or product test execution is claimed.
+
+Remaining known uncertainties concern the stated implementation gates: ARM64 environment resolution, CPU/MPS behavior, real RAW handling, photographic quality, actual resource use, and live assisted/manual/recovery scenarios. Address these through the implementation pilot and recorded tests. Independent review can still miss issues; no additional material design blocker was identified in this round.
+
