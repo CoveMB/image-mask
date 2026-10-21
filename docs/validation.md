@@ -1097,3 +1097,32 @@ image transitions were observed. No new code defect or model call was needed.
 These direct observations complement the automated HTTP/transaction checks.
 Accessibility certification, real photographic appearance/banding, the representative
 offline-use pilot and human acceptance remain separate and pending.
+
+## Optional source-development review
+
+Source-development approval is no longer a prerequisite for preparation, trimap
+review, matting/repair, explicit effects or final-photo acceptance. The saved
+Boolean and optional legacy CLI/API remain compatible. New projects start ready;
+older empty projects marked review-needed reopen without a state rewrite. The
+[source-appearance workflow](workflow.md#source-appearance) preserves saved lighting
+and colours and permits appearance changes only when explicitly requested.
+
+The complete deterministic suite passed **752 tests**, with **3 optional real-model
+checks skipped** because model caches were not selected for those checks. Ruff lint
+and formatting passed (42 Python files); mypy passed (20 source files). Regression
+checks exercise both new and legacy initial state through preparation, explicit
+trimap review, actual known-core matting, requested background effects and explicit
+final acceptance while development approval remains false. They verify exact
+source/master preservation, unchanged foreground RGB and alpha under the requested
+background effect, refusal before trimap confirmation, and no automatic final
+acceptance. Invalid initial statuses fail without rewriting state. Shipped-page
+JavaScript checks exercise preparation without the removed development control
+and preserve unrelated appearance values without submitting an effects operation.
+All 73 local documentation links in the changed maintained guidance resolved.
+
+One independent read-only review covered the connected processing gates, saved
+state, CLI/API, UI and regression protection; no material improvements were
+recommended. This is deterministic and source-review evidence, not new model
+inference, direct browser observation or photographic acceptance. An already
+running local server must be reopened to load the changed Python workflow; retain
+pending edits before closing its page.

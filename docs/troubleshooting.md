@@ -10,7 +10,8 @@
   export a single-image SDR JPEG/PNG8 or trusted uncompressed sRGB RGB16 TIFF.
   Gain maps are not decoded; the importer refuses to silently use only the base image.
 - **Invalid camera WB:** explicitly request a daylight preview or supply developed
-  TIFF; inspect WB/clipping before development acceptance. No generic
+  TIFF. Source-development approval is optional, but invalid RAW metadata still
+  needs an explicit rendering choice; no silent white-balance substitution occurs. No generic
   AsShotWhiteXY conversion is available. Actual camera coverage is unverified.
 - **Busy:** let the existing writer finish or inspect its status. A dead process
   releases flock automatically. Never delete/recreate the lock while writers run.

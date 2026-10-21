@@ -69,7 +69,7 @@ def main() -> int:
     opened.add_argument("--assume-srgb", action="store_true")
     opened.add_argument("--white-balance", choices=("camera", "daylight"), default="camera")
     accepted = commands.add_parser(
-        "accept", help="Record explicit human development, trimap or final-photo approval"
+        "accept", help="Record trimap/final-photo approval or optional legacy development review"
     )
     accepted.add_argument("project", type=Path)
     choice = accepted.add_mutually_exclusive_group(required=True)

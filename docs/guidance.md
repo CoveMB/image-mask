@@ -2,10 +2,9 @@
 
 Preparation produces guidance for review. It neither computes alpha nor accepts
 a final photograph. After [environment setup](../README.md#setup-and-quick-start),
-run commands from the repository root; shell activation is unnecessary. First
-inspect the developed RGB16 master, then explicitly approve that master's actual
-identity with
-`.venv/bin/blackmask accept /path/to/project --development --master-id ACTUAL_INSPECTED_MASTER_ID`.
+run commands from the repository root; shell activation is unnecessary. Source-development
+approval is optional: proceed directly to guide authoring and preparation. Masking
+preserves the saved master appearance; see [source appearance](workflow.md#source-appearance).
 
 ## Model setup and devices
 

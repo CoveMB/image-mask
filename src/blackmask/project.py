@@ -226,9 +226,9 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
             )
         )
         (stage / "README.md").write_text(
-            "# Photo project\n\nDevelopment review required. No final result exists.\n"
+            "# Photo project\n\nReady for mask preparation. No final result exists.\n"
             "Open masters/<master-id>.tif in a trusted RGB16 sRGB viewer; inspect orientation, "
-            "white balance and clipping. Only explicit human development acceptance approves it.\n"
+            "white balance and clipping if desired; source-development approval is optional.\n"
             "source.json locates the untouched original; masters/ retains developed RGB16; "
             "recipe.toml/guides.json are drafts; state.json alone owns acceptance.\n"
         )
@@ -255,7 +255,7 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
             "development_approved": False,
             "working_revision": None,
             "accepted_revision": None,
-            "status": "review_needed",
+            "status": "ready",
         }
         # Validate the final saved assets before the state pointer becomes visible.
         _validate_assets(project, state)
@@ -369,14 +369,15 @@ def read_project(project: Path, *, validate_drafts: bool = True) -> dict[str, An
         or type(state["schema_version"]) is not int
         or state["schema_version"] != 1
         or type(state["development_approved"]) is not bool
+        or type(state["status"]) is not str
         or state["status"]
-        != (
-            "accepted"
+        not in (
+            {"accepted"}
             if state["accepted_revision"] is not None
             and state["working_revision"] == state["accepted_revision"]
-            else "review_needed"
-            if state["working_revision"] is not None or not state["development_approved"]
-            else "ready"
+            else {"review_needed"}
+            if state["working_revision"] is not None
+            else {"ready", "review_needed"}
         )
     ):
         raise ProjectError("Invalid project state")
@@ -388,7 +389,6 @@ def read_project(project: Path, *, validate_drafts: bool = True) -> dict[str, An
         if (
             accepted.get("kind") not in {"matte", "repair", "effects"}
             or accepted.get("final_acceptable") is not True
-            or not state["development_approved"]
         ):
             raise ProjectError("Invalid accepted complete matte revision")
     return state
@@ -403,7 +403,7 @@ def load_master(project: Path, master_id: str) -> tuple[RGB16, dict[str, Any]]:
 
 
 def accept_development(project: Path, master_id: str) -> dict[str, Any]:
-    """Record a human's explicit approval of this identity, never final-photo acceptance."""
+    """Optional legacy development review; never required for masking or photo acceptance."""
     project = _root(project)
     with project_lock(project):
         state = read_project(project)

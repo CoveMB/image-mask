@@ -19,16 +19,25 @@ private and do not forward the local port. Use
 `open --headless --project /path/to/project` for JSON-only operation; other
 documented CLI commands can run in another terminal.
 
-## Develop and review the source
+## Source appearance
 
-Choose **View → Source** before reviewing development. A new project has no result
-yet; if the initial Result view reports an image error, switch to Source. This
-shows an RGB8 viewing approximation of the oriented saved master. Check
-orientation, white balance and clipping, inspecting the saved master TIFF in a
-trusted RGB16 viewer when precision matters. Only then check **I reviewed this
-master’s development** and choose **Approve development**. This approves source
-development; trimap review and photographic acceptance remain separate actions.
-A different development requires a separate project, preserving the previous one.
+Source-development approval is not required. Open a project and start authoring
+mask guides. Choose **View → Source** to inspect its RGB8 viewing approximation;
+a new project has no Result yet. The saved RGB16 master remains authoritative.
+
+Mask work preserves that master's lighting and colours. Assistance must not
+change exposure, white balance, contrast, saturation, colour, sharpening or enable
+cleanup, shading or other appearance effects unless you explicitly request them.
+Use only the adjustments you request; retain unrelated saved settings and pending
+controls. Trimap review and final photographic acceptance remain separate actions.
+
+To retain the look you developed elsewhere, import a supported developed image,
+preferably uncompressed RGB16 sRGB TIFF. RAW cannot be used without decoding to
+RGB; its conversion settings remain recorded in `source.json`. The tool does not
+silently substitute a different white balance when metadata is invalid: explicitly
+choose a supported rendering or supply a developed TIFF. A different development
+requires a separate project, preserving the previous one. The legacy CLI development
+review remains optional and does not gate masking; old projects open without migration.
 
 ## Author guides and select subjects
 
@@ -184,8 +193,8 @@ correction is warranted, record that limitation rather than changing good detail
    external browser before closing the assistant; keep the URL private and local.
    Disconnect the network after the page loads. No further download should be needed.
 2. Inspect **Source / result** on matching native crops. Use **Native 1:1**; with
-   the canvas focused, arrows pan and +/- zoom, or Shift-drag pans. Confirm source
-   development before its separate approval if it is not already approved. Review
+   the canvas focused, arrows pan and +/- zoom, or Shift-drag pans. Source-development
+   review is optional; preserve its lighting and colours unless a change is requested. Review
    black, gray, white and alpha views; previews have reduced precision.
 3. Choose **Confirmed background core** and draw a NEW small core only over
    source-visible empty background needing correction. Exclude uncertain wings,

@@ -594,8 +594,7 @@ def run_effects(
     state = read_project(project)
     _reject_pending_guidance(project)
     if (
-        not state["development_approved"]
-        or operation["master_id"] != state["master_id"]
+        operation["master_id"] != state["master_id"]
         or operation["base_revision"] != state["working_revision"]
         or operation["inputs_digest"] != draft_digest(project)
     ):

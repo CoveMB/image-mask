@@ -79,6 +79,22 @@ async function ready(){
     assert result.returncode == 0, result.stderr
 
 
+def test_prepare_does_not_require_development_review_or_change_appearance_controls():
+    run_page(r"""
+ servedState.development_approved=false;
+ await ready();
+ $('backgroundHex').value='#151515';$('backgroundHex').oninput();
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ $('scope').value='0,0,100,100';
+ await $('prepare').onclick();
+ assert.equal(posts.at(-1).action,'prepare');
+ assert(!posts.some(post=>post.action==='development'||post.action==='effects'));
+ assert.equal($('backgroundHex').value,'#151515');
+ assert.equal($('exposureEV').value,'1.2');
+ assert(!$('status').textContent.includes('development review required'));
+ """)
+
+
 def test_series_mode_and_portable_controls_preserve_independent_forms():
     run_page(r"""
  servedState.series_settings={name:'Portrait series',output_width_px:40,output_height_px:50,side_margin_tenths_percent:150,minimum_vertical_margin_tenths_percent:50};

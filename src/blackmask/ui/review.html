@@ -234,16 +234,12 @@
         Load retained pending guides for review
       </button>
       <fieldset>
-        <legend>1 · Source development review</legend>
+        <legend>1 · Source appearance</legend>
         <p class="small">
-          Inspect orientation, white balance and clipping. For precision,
-          inspect the saved master TIFF in an RGB16 viewer before approval. No
-          automatic photo approval.
+          Mask preparation can start without source-development approval. Masking
+          preserves the saved source lighting and colours. Adjust appearance only
+          when you choose an explicit control; no automatic colour or exposure correction.
         </p>
-        <label
-          ><input type="checkbox" id="developmentReviewed" /> I reviewed this
-          master’s development</label
-        ><button id="development">Approve development</button>
       </fieldset>
       <fieldset>
         <legend>2 · Named SAM groups</legend>
@@ -869,8 +865,6 @@
         (state.working_revision || "none") +
         " · accepted " +
         (state.accepted_revision || "none") +
-        " · development " +
-        (state.development_approved ? "approved" : "review required") +
         "\n" +
         (current && current.draft_digest !== state.inputs_digest
           ? "Draft changed · prepared inputs stale"
@@ -1032,7 +1026,6 @@
       for (const id of [
         "save",
         "prepare",
-        "development",
         "trimap",
         "matte",
         "repair",
@@ -1834,11 +1827,6 @@
     $("prepare").onclick = guarded(() => {
       requireSaved();
       return action("prepare", { scope_xyxy: bounds("scope") });
-    });
-    $("development").onclick = guarded(() => {
-      if (!$("developmentReviewed").checked)
-        throw Error("Explicit master development review is required");
-      return action("development");
     });
     $("trimap").onclick = guarded(() => {
       requireSaved();

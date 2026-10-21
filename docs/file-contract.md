@@ -22,10 +22,14 @@ processing features. Prose is never code.
 `guides.json` contains schema, identity, dimensions and typed regions; see [guidance](guidance.md).
 
 `state.json` alone owns `working_revision`/`accepted_revision` (initially null),
-`development_approved`, master ID and status. A new project is `review_needed`;
-explicit approval becomes `ready`. This never accepts a final photograph. Approval
-requires the identity the human actually inspected. Source/master/drafts are
-validated on reopen and before approval. There is no assistant auto-acceptance.
+`development_approved`, master ID and status. A new project is `ready` for mask
+preparation without development approval. The Boolean remains compatibility
+metadata for optional legacy review; it is not automatically set to true and no
+processing, trimap-review or final-acceptance operation requires it. Older empty
+projects with `review_needed` remain valid without rewriting state. Working
+revisions still require `review_needed`, or `accepted` when the working and accepted
+pointers match. Source/master/drafts remain validated on reopen and before writes.
+Trimap and final-photo acceptance are still explicit; neither is inferred.
 
 All writers use `project.project_lock`: stable `.writer.lock`, exclusive
 nonblocking OS flock; a competing process gets busy, and readers remain unlocked.
@@ -75,7 +79,7 @@ prepare has no `base_alpha16.png`; when a parent supplies alpha/applicable corre
 RGB, preparation copies those bytes unchanged. No prepare is final-acceptable.
 
 Every prepare holds the original shared nonblocking writer lock. It validates
-human development approval, current base/master/draft digest, typed guides and
+current base/master/draft digest, typed guides and
 conflicts before inference. Referenced edit files must be project-relative and
 free of traversal/symlinks. Original request/draft/external files, parent/lock
 manifests and saved assets are checked again before publication. Complete staged

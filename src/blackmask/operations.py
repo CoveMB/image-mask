@@ -144,10 +144,8 @@ def accept_trimap(
             or inputs_digest != manifest.get("draft_digest")
         ):
             raise ProjectError("Stale trimap review identity, revision or draft digest")
-        if manifest.get("kind") != "prepare" or not state["development_approved"]:
-            raise ProjectError(
-                "Trimap review requires current prepared revision and development approval"
-            )
+        if manifest.get("kind") != "prepare":
+            raise ProjectError("Trimap review requires current prepared revision")
         record = {
             "schema_version": 1,
             "revision": revision,
@@ -208,11 +206,7 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
                 "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before acceptance"
             )
         captured = draft_digest(project)
-        if (
-            revision != state["working_revision"]
-            or captured != manifest["draft_digest"]
-            or not state["development_approved"]
-        ):
+        if revision != state["working_revision"] or captured != manifest["draft_digest"]:
             raise ProjectError("Stale final acceptance; current complete reviewed matte required")
         before = _asset(project, "state.json").read_bytes()
         manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
@@ -292,8 +286,6 @@ def _prepare(
                 for name, checksum in json.loads(review_bytes)["view_files"].items()
             }
         )
-    if not state["development_approved"]:
-        raise ProjectError("Explicit human development approval required before preparation")
     if (
         operation["master_id"] != state["master_id"]
         or operation["base_revision"] != state["working_revision"]
@@ -931,8 +923,8 @@ def _matte(
     state = read_project(project)
     _reject_pending_guidance(project)
     parent = state["working_revision"]
-    if not state["development_approved"] or not parent:
-        raise ProjectError("Matte requires approved development and human-reviewed prepared trimap")
+    if not parent:
+        raise ProjectError("Matte requires a human-reviewed prepared trimap")
     if (
         operation["master_id"] != state["master_id"]
         or operation["base_revision"] != parent

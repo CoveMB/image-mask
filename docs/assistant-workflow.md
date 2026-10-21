@@ -12,6 +12,13 @@ Run CLI examples from the repository root after [environment setup](../README.md
 using `.venv/bin/blackmask`; shell activation is unnecessary. Replace `PROJECT`
 and request-file placeholders with your actual paths.
 
+Source-development approval is not a prerequisite. For masking, use the saved
+master as it is: do not adjust lighting, white balance, exposure, colours or other
+appearance controls unless the user explicitly requests that adjustment. Preserve
+unrelated existing effects and drafts. RAW still needs its recorded RGB conversion;
+never silently choose a different rendering or claim an optional review happened.
+See [source appearance](workflow.md#source-appearance).
+
 ## Inspect and classify
 
 Read the project's current recipe, guides, state, user keep/remove request and
@@ -103,7 +110,8 @@ remove or alter inherited locks.
    exact revision/master/draft/support paths. Selection membership is not opacity.
 2. The user inspects and explicitly confirms the authoritative trimap with
    `.venv/bin/blackmask accept PROJECT --revision REV --trimap --master-id ID --inputs-digest DIGEST`.
-   Assistance cannot infer this confirmation or development approval.
+   Assistance cannot infer this trimap confirmation. Source-development approval
+   is optional and does not block this workflow.
 3. Build a finite repair request using those **returned** identities/support,
    `kind: "repair"`, `reason`, `context_xyxy`, `scope_xyxy` and `merge_policy`.
    Omit `guide_edits_file`; repair consumes prepared guides rather than reapplying

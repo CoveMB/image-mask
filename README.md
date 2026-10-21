@@ -12,8 +12,10 @@ internet access.
 
 ## Current status
 
-The application creates and reopens trusted RGB16 projects, with explicit human
-approval of source development. Typed native-coordinate guides produce named SAM
+The application creates and reopens trusted RGB16 projects without requiring
+source-development approval. Masking preserves the saved source lighting and colours;
+appearance changes require an explicit user request or manual control action.
+Typed native-coordinate guides produce named SAM
 candidates, selected membership groups and categorical trimap/support/protection
 assets. Optional morphology proposals use native-pixel margins and require separate
 review against the source. ViTMatte runs at native resolution, with separate trimap
@@ -105,15 +107,14 @@ in its first page never becomes the working master. Recognized RAW failures stop
 rather than falling back to that preview.
 Invalid camera WB requires an explicit `--white-balance daylight` preview or an
 already-developed trusted TIFF. There is no general RAW editor or crop control.
-The local page shows a labelled RGB8 source preview. Inspect the saved master TIFF in a trusted full-precision external viewer for
-orientation, WB and clipping. For CLI approval, obtain JSON identities in a second
-terminal with `.venv/bin/blackmask open --headless --project /path/to/new-photo-project`.
-Copy that `master_id` only after your human review; this records development
-approval, leaving final-photo acceptance empty:
-
-```sh
-.venv/bin/blackmask accept /path/to/new-photo-project --development --master-id ACTUAL_INSPECTED_MASTER_ID
-```
+The local page shows a labelled RGB8 source preview. Mask preparation can start
+immediately; there is no source-development approval gate. To retain lighting and
+colour edits made in another application, import a supported developed image,
+preferably trusted uncompressed RGB16 sRGB TIFF. RAW decoding still applies the
+recorded conversion above; it is not a replacement for that application's rendering.
+Masking adds no exposure, white-balance or colour correction to the saved master.
+The existing CLI `accept --development --master-id ID` remains an optional legacy
+review record for compatible scripts; it is never a prerequisite or final-photo acceptance.
 
 Changing development currently requires a separate project/master identity; dimensions
 alone cannot preserve later guides. Reopen uses saved validated assets and works

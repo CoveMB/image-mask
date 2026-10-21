@@ -158,3 +158,59 @@ Inspected source ownership and connected tests for import/publication, exact sav
 Candidate identities at this pass: plan `695a353643b71c05479f5a5a0a4163e18ea6770c875fdd28de90aa1fb3f725f4`; QA `91f695905fb6c34df74d889d21c18e2792ebcb22b25669e921faf6bdec60c889`; handoff `4f3cd4c0ad0ff65c45adc56e7873f93cee014ac648328324fd089279eb8406e9`. Both raw-source hashes still match the preceding record. All 52 recorded source-baseline files match at `/private/tmp/image-mask-background-appearance`, HEAD `037e8fb4f62774fc85e4fe63e5029bcca832d877`. Also inspected relevant locally available source/doc drift to `origin/background-appearance` at `0443b15bee5fec4a0b2080f57163a34f9ad17c70`, including the review-settings projection change; it does not invalidate the planned canonical recipe reconciliation. No fetch or live stack claim.
 
 **Not checked:** implementation of the proposed storage behavior, running tests, actual disk savings, photo quality, live provider/CI status or human acceptance. Existing dirty files are preserved. This administrative report is the only file change; plan/QA/handoff and application code remain unchanged. No orchestrator message, Git write, photo operation or cleanup was performed. Earlier statements that Ponytail was not run describe earlier reviews; this explicit invocation applies only to this plan pass and grants no automatic future invocation.
+
+## 2026-10-21 — Framing integration review
+
+The user requested review of the plan and implementation in thread `01a15ca2-bf0a-7cf2-946e-447f6bf0db84` (**Implement fixed-size series framing**) for impacts on the existing library plan. Scope is the I13–I19 amendment, connected QA and current handoff. Application implementation, series-owner files and earlier I01–I12 history are outside this writer's scope. The prior no-further-controller-message instruction remains; no message, Git write, provider request, application run, photo operation or cleanup occurred.
+
+**Disposition: amend, with no new increment or subsystem.** The original storage sources remain byte-identical at the hashes recorded above. The plan now covers both source-bound presets and presentation consumers in I13's identity/shared-asset transition; keeps portable preset schema1 independent of project schema2; separates native recipes, small presentation snapshots and actual delivery settings; preserves the native latest-result gallery; extends pre-render reuse to native/padding/series exports; excludes presentation coordinates from native assisted evidence; and protects presets/deliveries during cache clearing. The current application checkout and unsettled series predecessor replace the obsolete planning-only root/old stack routing. Ten reading parts and 19 cards, including seven library cards, are unchanged.
+
+### Inspected candidate and sources
+
+Comparison: only the selected planning files against local HEAD `14e8c83fa3b5a7603c5c240eb96a0081702da0f5`, branch `series-framing`. The series owner's dirty code/tests/docs were inspected read-only and preserved. No remote refresh or MR/CI completion claim. The written design inspected was SHA-256 `1f95925aac14caf552821a87c8d968c58c82fef46e2c62ec0fb8b57b29957cf5`. Its implementation plan initially had hash `584408037d38f79f57465bf7cd9a18e18603e6a5184148ebeeca733a99e578e0`; progress/evidence updates continued during this review. The later read at `884633eab30a98af0ca8fd2a6790db073e91e60af46ed3d6f50f4e5051c9660d` and subsequent tail record resource/full-suite/static evidence and an assertion-format correction, not a changed presentation/storage contract. These remain the owner's reports, not runtime proof supplied by this planner. Before I13, the controller must reconcile the actual settled candidate and writer release.
+
+Relevant application hashes remained unchanged across the impact inspection and final review checks:
+
+| Source | SHA-256 |
+|---|---|
+| `src/blackmask/export.py` | `3cbf5c55e6227861ba2a05bd1752f0b3411d4cea3b3565ffa8e7e15449dd7792` |
+| `src/blackmask/series_framing.py` | `371e04768f35f3ec0f3fbe619733be6b27091da1f95fadddf954f4e2449a2bba` |
+| `src/blackmask/framing.py` | `d7937a2cc1e488114d246ae5de6eb0a5834757ddabd83a7f7dfe0f5d61e27b6d` |
+| `src/blackmask/viewer.py` | `befdaa89bdda8071075b25146be0d6af81dafbfb3b55f22fd177915cb9df8834` |
+| `src/blackmask/ui/review.html` | `033c0029d5f9b81efad50ed6dc38d3815e0ca22242c23ce3d869dc552a54c603` |
+| `src/blackmask/cli.py` | `d59d5728fd19e7832a226a92d3bd52dbf3d22940f5141455dc88685d3518fa89` |
+| `docs/file-contract.md` | `3e2601c023abf40106072341f609ddc00ad82520e3fc19e129666238b7fd0393` |
+
+Material evidence: `read_series_settings`/`save_series_settings` and padding counterparts use source-bound schema1 envelopes; portable series parsing has its own settings-only schema1. `_export_framed` contains revision-local native asset references and, on an existing destination, still stages/renders before reuse validation. Viewer actions bind selected revision/source/raw-manifest/visible settings. Tests in `test_framing.py`, `test_series_framing.py`, `test_cli.py` and viewer/page sources were read, not executed. An initial lookup included nonexistent `tests/test_export.py` (exit 2); subsequent inspection used the actual framing/series/CLI tests. Current official Pillow resize and Git ignore references were checked as recorded in the plan; no new numerical threshold, API, model or dependency was proposed.
+
+### Three independent assignments
+
+Each reviewer received the same frozen substantive candidate, raw storage sources, series design/implementation plan, relevant current code and its own bounded scope, without author conversation or other current review verdicts. All remained read-only; no recursive delegation. The reports are native agent returns to this task, summarized below.
+
+| Reviewer / scope | Report and disposition |
+|---|---|
+| `/root/library_series_source_review` — requirements/source fidelity | **No material improvements recommended.** Verified preserved storage/gallery requirements, separate preset/project schemas, actual-settings reproduction, pre-render reuse scope and unsettled predecessor/authority boundaries. |
+| `/root/library_series_architecture_review` — architecture/reviewability/simplicity | **Substitute simplicity review; Ponytail not run. No material improvements recommended.** Verified I13's atomic consumer boundary, existing parser/renderer/publication reuse, independent preset/recipe/gallery responsibilities, native coordinate boundary and current routing. No catalog, registry, graph or new increment warranted. |
+| `/root/library_series_verification_review` — verification quality | One material P2 finding: saved-only replay could pass through the proposed intact-export fast path without reconstructing pixels. Confirmed against actual CLI tests; corrected in Q41/J9/J10 with plan/handoff counterparts. Focused recheck: **Finding closed. No material improvements recommended.** |
+
+Initial candidate verified by all three reviewers:
+
+| Artifact | SHA-256 |
+|---|---|
+| `plan.md` | `0425568c5d7673d7b50061c0f35de59f2112dca3473946ae740549c14e955d58` |
+| `qa-plan.md` | `7054155e03c2e5b84ef5df64d0c4b13a5967305aab894d8123c1e058ea3d7455` |
+| `handoff.md` | `041469e15c085c70583c58c9273ae657c9f1a409250ea2c82182c7feb4ff1c88` |
+
+### Correction, focused recheck and readiness
+
+The author verified the finding in `tests/test_cli.py`: both saved-only replay cases leave the first export available. Today the compact exporter rerenders; I17's intended fast path would remove that accidental proof. Q41 now specifies two distinct observable cases: intact delivery must return with rendering/staging forbidden; reconstruction must make that delivery unavailable to lookup in disposable synthetic isolation, retain reference files, require actual fresh rendering, and compare decoded pixels/precision/profile/metadata with reference and independent sentinels. Original/model/cache/portable-file unavailability and deliberately changed project presets remain required. I17 owns the feature evidence; I19 reconciles it on the combined candidate. No user data deletion or new test framework is needed.
+
+The verification reviewer independently closed the correction on these substantive hashes; source/architecture coverage is retained because their requirements and design boundaries did not change:
+
+| Artifact | Corrected substantive SHA-256 |
+|---|---|
+| `plan.md` | `430874dc85bad55a2cd91ccd26e1b2c6573cc853e2b03e520a8bb7a8f3a5ac3d` |
+| `qa-plan.md` | `097fe0da4105779904466d479b01d306d4562680d38976703ee5caa02cb920a8` |
+| `handoff.md` | `8374f40013a71c642ed53d47adc1662b204cb7efdef7365902c6d6ad774536b0` |
+
+Subsequent edits only record reviewed readiness and this report. No material planning finding remains. Plan preparation is conditional on the actual settled series predecessor, applicable evidence, current authority and writer release; no implementation/runtime/photographic acceptance is claimed. Existing three-scope implementation reviews, Gate 2/Gate 3 evidence, provider settlement and human photographic ownership remain. The earlier Ponytail pass remains valid only for its earlier candidate; this amendment used ordinary independent simplicity review under the explicit-only policy.

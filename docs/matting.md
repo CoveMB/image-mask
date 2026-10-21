@@ -1,6 +1,6 @@
 # Native mask, review and base export
 
-After approving development and completing [typed preparation](guidance.md),
+After completing [typed preparation](guidance.md), without a development-approval gate,
 inspect the source alongside the authoritative prepared `trimap.png`. Its values
 are confirmed empty background (0), unknown (128) and confirmed opaque foreground
 (255). Candidate membership and `trimap_proposal.png` remain separate suggestions.
@@ -92,7 +92,7 @@ black/gray/white. After human photographic review of the current result:
 ```
 
 Final acceptance requires complete current matte assets and unchanged master,
-development and draft identities. Preparation alone never qualifies. The default
+saved source-rendering and draft identities. Preparation alone never qualifies. The default
 export uses the retained accepted revision even when a newer candidate is working.
 An explicit unaccepted export requires both flags:
 
