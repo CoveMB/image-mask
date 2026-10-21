@@ -1,5 +1,193 @@
 # Verification
 
+## Fixed-size series framing
+
+Current local implementation evidence is synthetic and bound to frozen application
+inputs recorded with candidate `5ffcc99254b3d6b884844bfbb472f303478dd77ba8be755d3557e927c3b8de41`.
+The independent review, representative resource measurement, package inspection and
+observed synthetic browser journey are complete. Root's full suite passed 746 tests
+with three optional cache skips. Final lint/type/format checks passed after one
+AST-equivalent test-formatting correction and a passing affected application test.
+No human photographic or full accessibility acceptance is claimed.
+
+- Checkpoint 1: 170 series/framing/CLI/background tests passed, exit 0, with
+  unchanged captured inputs (`local/series-framing/1792596003246821000-checkpoint1`).
+- Checkpoint 2: three persistence/reuse tests passed, exit 0, with 33 deselected;
+  two real processes contend over one raw digest, and pre/post-replace failures
+  preserve settings or expose the actual visible digest/reload requirement
+  (`1792596226316476000-checkpoint2`).
+- Sampling oracles compare independent float64 ideal coordinates separately from
+  effective Pillow float32 boxes. Six reduction/enlargement/singleton/strip-order
+  fixtures measured contribution error <=0.001166732 RGB16 units against the
+  declared 0.125 target, alpha error <=2.918983e-8 against 2e-6, and centre phase
+  <=1.760276e-6 output pixels against 1/64. The independent coefficient-difference
+  bound also passed. These are observed fixtures, not universal error guarantees
+  (`1792595713935647000-task2-oracles-green`).
+- Full-grid sampled backdrop comparisons, genuine negative filter lobes, hidden
+  zero-alpha colours, bounded alpha quantization scratch, TIFF/PNG readbacks,
+  selected/working/accepted separation, immutable reuse/failure preservation and
+  fresh-process saved-only CLI replay are exercised by the retained application tests.
+- Shipped-handler tests passed all four new series scenarios. Subsequent combined
+  viewer/series/page regression passed 144 tests, exit 0, with unchanged inputs
+  (`1792596908826041000-viewer-series-handler-regression`). Node DOM tests exercise
+  shipped functions and controlled browser boundaries; they do not establish
+  actual browser rendering, keyboard usability or file-picker behavior.
+- A subsequent source-record identity regression failed before adding the exact
+  source byte hash, then all ten selected series export/CLI tests passed
+  (`1792597060481583000-series-source-record-green`). Add margins identities are
+  unchanged by this series-only field.
+
+All stems above refer to ignored local raw `.log`/`.json` pairs with exact commands,
+exit status, timing and input hashes. They are local evaluation evidence, excluded
+from distributions and Git. Inherited framing evidence below remains separately
+labelled; its historical 699 passes/three optional cache skips are not new series proof.
+
+### Independent review and actual browser observations
+
+The fresh, read-only independent reviewer reported **No material improvements
+recommended** on the unchanged 20-file candidate and 46 runtime/test/config inputs.
+Their 48 additional numerical cases exited 0; maximum alpha error was
+1.2200124044348115e-7 and contribution error 0.005682509865437169 RGB16 units.
+This native review report adds source/numerical evidence; it supplies neither
+photographic acceptance nor a universal numerical bound.
+
+Root exercised the real Brave UI under production CSP with synthetic saved data:
+selected `rev-004`, working `rev-005` and accepted `rev-003` remained distinct.
+The selected unaccepted revision disabled the accepted-export button. Preview
+showed 400×500 dimensions, bounds, 60-pixel side margins, approximately
+216.02-pixel top/bottom clearance and 2.72× enlargement. Keyboard numeric/slider
+linkage and literal Unicode/HTML-like names worked. Saving/reopening in a second
+tab preserved the exact name and settings; a real file picker loaded a portable
+preset into the unsaved form while retaining the saved photo snapshot.
+
+The draft export used selected `rev-004` and 15% margins, including transparency.
+The accepted export used selected `rev-003` and visible unsaved 15.1% margins.
+Root read back both 400×500 deliveries: uint16 TIFF with non-257 samples, profiles,
+PNG modes/partial alpha/zero RGB at zero alpha, member hashes and privacy checks
+passed (exit 0). Their saved backgrounds were respectively `#16304B` and
+`#203040`, rather than the working revision's `#291A35`. Acceptance did not change.
+A competing tab save made the first tab's save visibly stale while retaining its
+fields; explicit Reload recovered the actual second-tab snapshot. Dirty native
+Add margins Left=7 survived mode/file/series actions and reload.
+
+An apparent accessibility-tree slider value after file load was an inspection
+cache artifact: actual keyboard movement proved the correct underlying value;
+no behavior change was made. Changing settings during a large preview kept the
+old response invalidated, but no artificially delayed real-network response was
+forced. The original server process ended during interruption; restarting
+preserved all 638 existing synthetic project/export file hashes. A browser
+blocked-page warning was respected, and the user later opened the local round
+fixture manually. Root then completed the remaining synthetic journey in Brave Private: a real
+round-project file picker reused the shared preset (400×500, 15%) into an unsaved
+form, preview/bounds showed 60/60/110/110-pixel margins and 4.75× enlargement, and
+Save was explicit. Direct state inspection confirmed different masters and
+independent saved snapshots: the long project retained `Second tab saved` at
+16.3%, while round saved `Synthetic shared series` at 15%. Tall preview reported
+135.34/135.34/25/25-pixel clearances, 5.17× enlargement and the height-limited
+exception. Source-edge preview reported 60/60/66.25/66.25, 5.83× enlargement and
+the captured-edge warning. Screenshots were visually inspected; the actual file
+picker Cancel preserved the edge form and preview. The private browser console
+showed only a pre-existing favicon HTTP 403, with no application JavaScript or CSP
+errors visible. No security settings were changed.
+
+This completes the observed synthetic browser journey with bounded claims:
+there was no complete network trace, forced live out-of-order response injection,
+actual download-to-disk assertion, full accessibility audit or human photographic
+acceptance. Controlled handler tests cover forced response ordering, malformed
+file cases and download bytes separately.
+
+### Representative resource measurement
+
+One synthetic 3000×2000 source was prepared through normal project, recorded-guide,
+stub-matte, saved-background and series-save controls. No model download or real
+inference ran. Separate fresh Python processes measured exactly one default
+4000×5000 export (with RGBA8 variant) and its 1280×1600 reduced preview.
+
+| Measurement | Export | Reduced preview |
+| --- | ---: | ---: |
+| Operation latency | 4.6506 seconds | 1.1047 seconds |
+| Process peak RSS, macOS bytes | 750,387,200 | 638,976,000 |
+| Canonical sampling estimate, bytes | 302,949,184 | 108,559,856 |
+| Retained native foreground/alpha, bytes | 48,000,000 | 48,000,000 |
+| RGB16 output buffer, bytes | 120,000,000 | 12,288,000 |
+| Filtered alpha, bytes | 20,037,888 | 2,078,208 |
+| Scalar intermediate, bytes | 16,960,320 | 5,448,080 |
+| Strip transfer/native scratch, bytes | 13,750,016 | 12,300,032 |
+| Coefficients, bytes | 183,808 | 133,984 |
+| Row/allocator allowance, bytes | 84,017,152 | 28,311,552 |
+
+The later RGBA8 variant is 80,000,000 bytes and is processed sequentially after
+RGB16 release/readback; it is not added to the simultaneous RGB16 estimate.
+Preview server initialization took another 0.1643 seconds. The estimate accounts
+for sampling buffers and retained inputs; **it does not bound whole-process RAM**.
+Measured process peaks include the surrounding validation/encoding/readback and
+allocator lifetime. These one-run measurements do not cover supported extreme
+sizes, guarantee available RAM or establish photographic quality.
+
+Actual export admission observed 34,672,177,152 free bytes against the unchanged
+10,737,418,240-byte reserve plus 1,114,097,152 pending bytes. The complete stage
+immediately before publication and published five-member delivery each contained
+120,674,213 logical bytes (120,692,736 allocated). No stage remained afterward;
+all native project input hashes were unchanged. TIFF was 5000×4000×3 uint16 with
+a 588-byte ICC profile. The reduced preview PNG was 125,455 bytes.
+
+Raw export/preview log+input-hash JSON stems:
+`1792603481515345000-representative-export-measurement-corrected-invocation` and
+`1792603509379832000-representative-preview-measurement`; both exited 0 with
+unchanged inputs. Detailed records are beneath ignored
+`local/series-framing/1792603392951081000-resource-fixture/`.
+The initial measurement harness invocation exited 1 before calling export because
+it used an incorrect keyword; correcting it to the implemented
+`framed_transparent` argument produced the sole completed export above.
+
+### Settled application verification
+
+Root's complete deterministic suite exited 0: **746 passed, 3 skipped**, with
+unchanged captured inputs (195.55 seconds including command overhead; pytest
+reported 194.85 seconds). All three skips require explicitly installed pinned
+SAM/ViTMatte model caches; no assets were downloaded or real inference implied.
+Raw stem: `1792603569077075000-final-full-suite`.
+
+Full Ruff check exited 0 (`1792603764677463000-final-ruff`). Mypy exited 0 with
+no issues in 20 source files, 17.20 seconds
+(`1792603765088686000-final-mypy`). The first formatting check exited 1 for
+one long raw-source-hash assertion in `tests/test_series_framing.py`; the other
+41 files were formatted (`1792603764949617000-final-format`). Ruff changed only
+that assertion's line wrapping; exact AST equivalence and the bounded diff are
+recorded in `1792603842905889000-targeted-format-ast-proof` (exit 0; this intentional
+format operation correctly records changed test bytes). Production source is
+unchanged from the independently reviewed and fully tested candidate.
+
+After formatting, the affected real export round-trip test passed (1 test,
+exit 0), that file's Ruff check passed, and the complete format check passed
+(42 files already formatted). Raw stems are
+`1792603851042334000-formatted-source-record-roundtrip`,
+`1792603851041054000-formatted-series-test-ruff` and
+`1792603851041732000-final-format-after-bounded-fix`. Their input hashes remained
+unchanged. The full suite/mypy were not repeated for an AST-equivalent test-only
+format change; the record distinguishes their tested bytes from this final
+formatting proof.
+
+### Portable bytes and delivered-package privacy
+
+The shipped download handler generated exactly 224 canonical UTF-8 bytes for a
+Unicode/HTML-like preset name; the canonical Python parser accepted those bytes.
+The Blob type, filename, URL release and absence of project-save posts passed.
+This controlled DOM/transport check initiated no actual browser download and does
+not claim a file landed on disk. Raw stem:
+`1792603573783174000-shipped-download-bytes-canonical-parser` (exit 0).
+
+An offline, dependency-free wheel build used the already installed build backend.
+Its 27 actual members include the new renderer and UI, exclude plans/tests/local
+evidence/VCS, contain no personal-path/local-evidence markers and retain exactly
+the ten declared pinned dependencies. Wheel SHA-256:
+`2f724cff0d49ca4985bfa4dc6917cc763fce0d113e11b370f496760913076814`.
+Build/inspection exited 0; pip disclosed an unwritable user cache and disabled it.
+Raw stem: `1792603610067323000-offline-wheel-inspection`. No installation or
+download occurred. The actual representative delivery also passed five-member,
+metadata/profile, path/privacy and file-hash inspection (exit 0), raw stem
+`1792603639586263000-representative-delivery-privacy-inspection`.
+
 ## Framed export reuse cleanup — 2026-10-20
 
 Identical framed exports now remove only the current attempt's byte-verified
@@ -909,3 +1097,68 @@ image transitions were observed. No new code defect or model call was needed.
 These direct observations complement the automated HTTP/transaction checks.
 Accessibility certification, real photographic appearance/banding, the representative
 offline-use pilot and human acceptance remain separate and pending.
+
+## Optional source-development review
+
+Source-development approval is no longer a prerequisite for preparation, trimap
+review, matting/repair, explicit effects or final-photo acceptance. The saved
+Boolean and optional legacy CLI/API remain compatible. New projects start ready;
+older empty projects marked review-needed reopen without a state rewrite. The
+[source-appearance workflow](workflow.md#source-appearance) preserves saved lighting
+and colours and permits appearance changes only when explicitly requested.
+
+The complete deterministic suite passed **752 tests**, with **3 optional real-model
+checks skipped** because model caches were not selected for those checks. Ruff lint
+and formatting passed (42 Python files); mypy passed (20 source files). Regression
+checks exercise both new and legacy initial state through preparation, explicit
+trimap review, actual known-core matting, requested background effects and explicit
+final acceptance while development approval remains false. They verify exact
+source/master preservation, unchanged foreground RGB and alpha under the requested
+background effect, refusal before trimap confirmation, and no automatic final
+acceptance. Invalid initial statuses fail without rewriting state. Shipped-page
+JavaScript checks exercise preparation without the removed development control
+and preserve unrelated appearance values without submitting an effects operation.
+All 73 local documentation links in the changed maintained guidance resolved.
+
+One independent read-only review covered the connected processing gates, saved
+state, CLI/API, UI and regression protection; no material improvements were
+recommended. This is deterministic and source-review evidence, not new model
+inference, direct browser observation or photographic acceptance. An already
+running local server must be reopened to load the changed Python workflow; retain
+pending edits before closing its page.
+
+## Optional trimap confirmation
+
+Trimap confirmation is now optional for both full matting and scoped repair.
+Preparation, current source/draft identities, asset hashes, known cores, support
+and saved-value locks remain enforced. Final photographic acceptance remains an
+explicit separate action. The manual and assisted workflows, CLI help and packaged
+page now explain how to continue directly to the masked photograph for review.
+This supersedes the mandatory-trimap-review behavior recorded in earlier results.
+
+Regression checks first failed at the former mandatory confirmation gate. The
+updated workflows exercise known-core matting and requested background effects
+without either development or trimap approval, preserving original/master RGB,
+alpha and the separate accepted pointer. An actual HTTP journey exercises
+unconfirmed matte, partial-value locks, scoped repair, acceptance, export, restore
+and resume. Four interruption boundaries are covered with trimap confirmation
+absent and present. Existing optional confirmations remain validated, copied and
+hashed; an unconfirmed matte creates no approval receipt, including on effects
+revisions. Stale prepared drafts are rejected with or without confirmation.
+
+One independent read-only review traced connected saved-project consumers and
+found no material improvements. Ruff lint/format and mypy passed; all 61 local
+links in the changed maintained operating guidance resolved. The full suite passed
+**758 tests**, with **3 optional model checks skipped**, exit 0. A focused run passed
+157 tests and hit one busy-lock failure in
+`test_background_action_failure_is_visible_and_next_action_succeeds` unrelated to
+the removed gate; its three cases passed on isolated rerun. Status polling briefly
+probes the project writer lock, so the observed contention is retained as a
+limitation rather than attributed to trimap processing. No locking behavior was
+changed in this increment.
+
+These checks do not establish photographic quality or human acceptance, and no
+real-model inference or direct browser session was run for this workflow change.
+Reopen an existing review server to load the updated Python behavior, preserving
+pending edits first. New mattes without an approval receipt require this updated
+application; existing saved projects remain readable without migration.

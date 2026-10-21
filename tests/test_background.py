@@ -10,6 +10,32 @@ import tomli_w
 
 
 @pytest.mark.parametrize(
+    "shape,display,settings",
+    [
+        ((11, 17), (7, 5), {"color_srgb": "#315579", "variation": 0.55}),
+        ((1, 17), (7, 1), {"color_srgb": "#315579", "variation": 0}),
+        ((17, 1), (1, 7), {"color_srgb": "#000000", "variation": 0.55}),
+    ],
+)
+def test_sampled_background_matches_full_grid_without_full_output_allocation(
+    monkeypatch, shape, display, settings
+):
+    from blackmask.background import make_background, sample_background
+
+    full = make_background(shape, settings)
+    x = (2 * np.arange(display[0]) + 1) * shape[1] // (2 * display[0])
+    y = (2 * np.arange(display[1]) + 1) * shape[0] // (2 * display[1])
+    original = np.empty
+
+    def bounded_empty(size, *args, **kwargs):
+        assert size != (*shape, 3)
+        return original(size, *args, **kwargs)
+
+    monkeypatch.setattr(np, "empty", bounded_empty)
+    np.testing.assert_array_equal(sample_background(shape, settings, display), full[np.ix_(y, x)])
+
+
+@pytest.mark.parametrize(
     "settings",
     [
         None,

@@ -2,10 +2,9 @@
 
 Preparation produces guidance for review. It neither computes alpha nor accepts
 a final photograph. After [environment setup](../README.md#setup-and-quick-start),
-run commands from the repository root; shell activation is unnecessary. First
-inspect the developed RGB16 master, then explicitly approve that master's actual
-identity with
-`.venv/bin/blackmask accept /path/to/project --development --master-id ACTUAL_INSPECTED_MASTER_ID`.
+run commands from the repository root; shell activation is unnecessary. Source-development
+approval is optional: proceed directly to guide authoring and preparation. Masking
+preserves the saved master appearance; see [source appearance](workflow.md#source-appearance).
 
 ## Model setup and devices
 
@@ -181,6 +180,6 @@ the unchanged authoritative `trimap_file`. The categorical proposal is explicitl
 morphological search band is `proposal_boundary.png`. Inspect it against the source
 before supplying source-verified foreground/background cores through typed guide
 edits. The proposal itself is never used as authoritative known values, alpha or
-human trimap approval. Later matting must consume the confirmed trimap and retain
-its human review control. A requested empty/over-eroded candidate can honestly
+human trimap approval. Later matting consumes the authoritative prepared trimap;
+human confirmation is optional. A requested empty/over-eroded candidate can honestly
 produce no suggested core; absent defensible source confirmation, unknown remains.

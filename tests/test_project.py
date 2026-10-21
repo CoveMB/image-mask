@@ -34,6 +34,7 @@ def test_create_reopen_and_explicit_identity_approval(tmp_path):
     original = hashlib.sha256(source.read_bytes()).hexdigest()
     state = read_project(project)
     assert state["development_approved"] is False
+    assert state["status"] == "ready"
     assert state["working_revision"] is None and state["accepted_revision"] is None
     pixels, metadata = load_master(project, state["master_id"])
     np.testing.assert_array_equal(pixels, ramp())
@@ -51,6 +52,19 @@ def test_identity_binds_development_not_just_dimensions(tmp_path):
     other = tmp_path / "other"
     create_project(source, other, {"assume_srgb": True})
     assert read_project(project)["master_id"] != read_project(other)["master_id"]
+
+
+@pytest.mark.parametrize("status", [[], {}, "accepted"])
+def test_invalid_initial_status_is_rejected_without_rewriting_state(tmp_path, status):
+    _, project = create(tmp_path)
+    state_path = project / "state.json"
+    state = json.loads(state_path.read_text())
+    state["status"] = status
+    state_path.write_text(json.dumps(state))
+    before = state_path.read_bytes()
+    with pytest.raises(ProjectError, match="Invalid project state"):
+        read_project(project)
+    assert state_path.read_bytes() == before
 
 
 def test_source_output_alias_and_symlink_refused(tmp_path):

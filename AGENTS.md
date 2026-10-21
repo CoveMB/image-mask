@@ -38,6 +38,7 @@ Maintain a local, single-photo workflow for black-background photography with ed
 
 - Whenever the user requests an image modification, perform it only through this project's controls. Never use AI image-generation or image-editing tools to modify the image directly. If the project's controls cannot perform the requested change, explain the limitation instead of bypassing them.
 - Preserve original captures, accepted results and their dependencies. Never invent or reconstruct photographed detail absent from the source.
+- Perform only requested adjustments. Masking preserves saved source lighting and colours; do not change white balance, exposure, colour or enable other appearance effects unless explicitly requested. Source-development approval is optional; follow the [source-appearance workflow](docs/workflow.md#source-appearance) without inventing an approval.
 - Preserve image precision, color interpretation, orientation, coordinate registration and transparency. Label previews, approximations and lossy exports honestly; a larger output container does not create captured precision.
 - Keep source data, masks and optional appearance changes independently recoverable. Do not substitute a flattened preview for editable source layers.
 - Respect requested edit scope and protected regions, including partially transparent pixels. Reject stale or contradictory inputs; never expand scope or remove protection silently.
@@ -81,4 +82,4 @@ Maintain a local, single-photo workflow for black-background photography with ed
 
 ## Optional assisted review
 
-Use [the bounded assisted workflow](docs/assistant-workflow.md) for supported commands, data/coordinate meanings, effect availability, preservation and the two-attempt source-based procedure. Keep engineering safeguards above in force. Assistance never supplies human development, trimap or photographic acceptance.
+Use [the bounded assisted workflow](docs/assistant-workflow.md) for supported commands, data/coordinate meanings, effect availability, preservation and the two-attempt source-based procedure. Keep engineering safeguards above in force. Assistance never supplies human trimap or photographic acceptance.

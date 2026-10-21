@@ -11,6 +11,173 @@ from blackmask import operations
 from blackmask.project import ProjectError, load_master, project_lock, read_project
 
 
+def test_series_http_validation_preview_and_independent_errors(tmp_path):
+    import base64
+    import io
+
+    from PIL import Image
+    from test_effects import fixture_project
+    from test_series_framing import series_settings
+
+    from blackmask.series_framing import portable_series_preset
+
+    project, _, parent = fixture_project(tmp_path)
+    before = (project / "state.json").read_bytes()
+    settings = series_settings(name="Été <series>", output_width_px=40, output_height_px=50)
+    with running(project) as server:
+        state = json.loads(http(server)[1])
+        assert state["series_digest"] is None and state["series_error"] is None
+        raw = portable_series_preset(settings).decode("utf-8")
+        status, body, _ = http(server, "/api/series-preset-validate", "POST", {"preset_json": raw})
+        assert status == 200 and json.loads(body)["settings"] == settings.to_dict()
+        for invalid in (
+            {"preset_json": raw, "path": "/tmp"},
+            {"preset_json": " " * 16385},
+            {"preset_json": raw.replace('"name":', '"name":"duplicate","name":')},
+        ):
+            assert http(server, "/api/series-preset-validate", "POST", invalid)[0] == 400
+        revision = next(r for r in state["revisions"] if r["revision"] == parent["revision"])
+        data = {
+            "master_id": state["master_id"],
+            "revision": parent["revision"],
+            "revision_manifest_sha256": revision["revision_manifest_sha256"],
+            "settings": settings.to_dict(),
+        }
+        status, body, headers = http(server, "/api/series-preview", "POST", data)
+        assert status == 200, body
+        result = json.loads(body)
+        assert all(result[key] == value for key, value in data.items())
+        assert result["output_dimensions_wh"] == [40, 50]
+        with Image.open(io.BytesIO(base64.b64decode(result["png_base64"]))) as image:
+            assert image.mode == "RGB" and image.size == (40, 50)
+        assert "img-src 'self' blob:" in headers["Content-Security-Policy"]
+        assert http(server, "/api/series-preview", "POST", data, Origin="null")[0] == 403
+        assert (
+            http(server, "/api/series-preview", "POST", data, **{"X-Blackmask-Token": "wrong"})[0]
+            == 403
+        )
+        assert http(server, "/api/series-preview", "POST", {**data, "path": "/tmp"})[0] == 400
+        assert (
+            http(
+                server,
+                "/api/series-preview",
+                "POST",
+                {**data, "revision_manifest_sha256": "0" * 64},
+            )[0]
+            == 409
+        )
+        (project / "series-framing.json").write_text("{broken")
+        state = json.loads(http(server)[1])
+        assert state["series_settings"] is None and "series-framing.json" in state["series_error"]
+        assert state["framing_error"] is None
+        assert http(server, "/api/series-preview", "POST", data)[0] == 200
+        assert (project / "state.json").read_bytes() == before
+
+
+def test_series_preview_busy_disconnect_and_identity_races(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from test_effects import fixture_project
+    from test_framing import margins
+    from test_series_framing import series_settings
+
+    from blackmask import viewer
+
+    project, _, parent = fixture_project(tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    original = viewer.render_series
+
+    def paused(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+
+    with running(project) as server:
+        state = server.snapshot()
+        revision = next(r for r in state["revisions"] if r["revision"] == parent["revision"])
+        data = {
+            "master_id": state["master_id"],
+            "revision": parent["revision"],
+            "revision_manifest_sha256": revision["revision_manifest_sha256"],
+            "settings": series_settings(output_width_px=40, output_height_px=50).to_dict(),
+        }
+        monkeypatch.setattr(viewer, "render_series", paused)
+        with ThreadPoolExecutor() as executor:
+            first = executor.submit(http, server, "/api/series-preview", "POST", data)
+            assert entered.wait(5)
+            framing = {
+                key: data[key] for key in ("master_id", "revision", "revision_manifest_sha256")
+            }
+            assert (
+                http(server, "/api/framing-preview", "POST", {**framing, "margins": margins()})[0]
+                == 409
+            )
+            assert http(server, "/api/series-preview", "POST", data)[0] == 409
+            release.set()
+            assert first.result(timeout=5)[0] == 200
+        path = project / "revisions" / parent["revision"] / "manifest.json"
+        raw = path.read_bytes()
+
+        def changed(*args, **kwargs):
+            result = original(*args, **kwargs)
+            path.write_bytes(raw + b"\n")
+            return result
+
+        monkeypatch.setattr(viewer, "render_series", changed)
+        assert http(server, "/api/series-preview", "POST", data)[0] == 409
+        path.write_bytes(raw)
+        monkeypatch.setattr(viewer, "render_series", original)
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        connection.request(
+            "POST",
+            "/api/series-preview",
+            json.dumps(data),
+            {
+                "Origin": server.origin,
+                "Content-Type": "application/json",
+                "X-Blackmask-Token": server.token,
+            },
+        )
+        connection.close()
+        assert http(server, "/api/series-preview", "POST", data)[0] in {200, 409}
+
+
+def test_series_actions_bind_selected_revision_and_preserve_other_drafts(tmp_path):
+    from test_effects import fixture_project, shading_request
+    from test_series_framing import series_settings
+
+    project, _, accepted = fixture_project(tmp_path)
+    selected = operations.apply_operation(project, shading_request(project, opacity=0.12))[
+        "revision"
+    ]
+    working = operations.apply_operation(project, shading_request(project, opacity=0.22))[
+        "revision"
+    ]
+    assert len({accepted["revision"], selected, working}) == 3
+    before = {
+        name: (project / name).read_bytes() for name in ("state.json", "recipe.toml", "guides.json")
+    }
+    settings = series_settings(output_width_px=40, output_height_px=50).to_dict()
+    with running(project) as server:
+        saved = perform(server, "series-save", settings=settings, expected_digest=None)
+        assert saved["series_settings"] == settings
+        revision = next(r for r in server.snapshot()["revisions"] if r["revision"] == selected)
+        output = perform(
+            server,
+            "series-export",
+            revision=selected,
+            draft=True,
+            revision_manifest_sha256=revision["revision_manifest_sha256"],
+            settings=settings,
+            transparent=True,
+        )
+        assert output["revision"] == selected and output["draft"] is True
+        record = json.loads(Path(output["manifest_file"]).read_bytes())
+        assert record["settings"] == settings
+        assert record["revision_manifest_sha256"] == revision["revision_manifest_sha256"]
+        assert all((project / name).read_bytes() == value for name, value in before.items())
+
+
 def test_framing_snapshot_preview_and_preset_error_are_independent(tmp_path):
     import base64
     import hashlib
@@ -437,8 +604,8 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
     with running(project) as server:
         server.model_cache = Path("explicit-synthetic-test-cache")
         perform(server, "prepare", scope_xyxy=[0, 0, 3, 2])
-        perform(server, "trimap", revision="rev-001")
         perform(server, "matte")
+        assert not (project / "revisions/rev-002/trimap_approval.json").exists()
         alpha = np.array(Image.open(project / "revisions/rev-002/base_alpha16.png"))
         assert np.any((alpha > 0) & (alpha < 65535))
         perform(server, "accept", revision="rev-002")
@@ -467,7 +634,6 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
         ]
         perform(server, "save", groups=[], actions=actions)
         perform(server, "prepare", scope_xyxy=[0, 0, 2, 2])
-        perform(server, "trimap", revision="rev-003")
         perform(
             server,
             "repair",
@@ -477,6 +643,7 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
             merge_policy="replace",
         )
         repaired = np.array(Image.open(project / "revisions/rev-004/base_alpha16.png"))
+        assert not (project / "revisions/rev-004/trimap_approval.json").exists()
         assert repaired[0, 0] == 0 and repaired[1, 1] == alpha[1, 1]
         assert np.array_equal(repaired[:, 2], alpha[:, 2])
         perform(server, "accept", revision="rev-004")

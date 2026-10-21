@@ -12,14 +12,16 @@ internet access.
 
 ## Current status
 
-The application creates and reopens trusted RGB16 projects, with explicit human
-approval of source development. Typed native-coordinate guides produce named SAM
+The application creates and reopens trusted RGB16 projects without requiring
+source-development approval. Masking preserves the saved source lighting and colours;
+appearance changes require an explicit user request or manual control action.
+Typed native-coordinate guides produce named SAM
 candidates, selected membership groups and categorical trimap/support/protection
 assets. Optional morphology proposals use native-pixel margins and require separate
-review against the source. ViTMatte runs at native resolution, with separate trimap
-and final-photo approval controls, matching native-crop review assets, accepted
-RGB16 black/alpha16 exports and labelled PNG8 viewing copies. Prepared revisions
-require explicit human trimap review before matting.
+review against the source. ViTMatte runs at native resolution, with optional trimap
+confirmation and separate final-photo acceptance, matching native-crop review assets,
+accepted RGB16 black/alpha16 exports and labelled PNG8 viewing copies. Run matting
+directly after preparation to review the actual masked photograph.
 
 Scoped repairs save quantized operands for replay without models. Restore selects
 saved working inputs without changing final acceptance. `status` and `resume`
@@ -42,7 +44,12 @@ black until explicitly changed. The [background instructions](docs/workflow.md#b
 explain Result, diagnostic views and separate editable exports. Presentation framing
 adds saved margins, a separate bounded RGB8 layout preview and compact RGB16
 exports. Native masks and editing coordinates stay unchanged; see
-[presentation margins](docs/workflow.md#add-presentation-margins).
+[presentation margins](docs/workflow.md#add-presentation-margins). **Match series**
+fits the saved masked subject into fixed output dimensions, with portable JSON
+presets for manual reuse across photographs. It resamples a separate presentation;
+**Add margins** retains its exact native-copy behavior. See the
+[series workflow](docs/workflow.md#match-a-fixed-size-series) and
+[verification limits](docs/validation.md#fixed-size-series-framing).
 
 [Validation](docs/validation.md#combined-workflow-validation) records combined
 computational checks and reconstruction from saved assets alone. The representative
@@ -100,15 +107,14 @@ in its first page never becomes the working master. Recognized RAW failures stop
 rather than falling back to that preview.
 Invalid camera WB requires an explicit `--white-balance daylight` preview or an
 already-developed trusted TIFF. There is no general RAW editor or crop control.
-The local page shows a labelled RGB8 source preview. Inspect the saved master TIFF in a trusted full-precision external viewer for
-orientation, WB and clipping. For CLI approval, obtain JSON identities in a second
-terminal with `.venv/bin/blackmask open --headless --project /path/to/new-photo-project`.
-Copy that `master_id` only after your human review; this records development
-approval, leaving final-photo acceptance empty:
-
-```sh
-.venv/bin/blackmask accept /path/to/new-photo-project --development --master-id ACTUAL_INSPECTED_MASTER_ID
-```
+The local page shows a labelled RGB8 source preview. Mask preparation can start
+immediately; there is no source-development approval gate. To retain lighting and
+colour edits made in another application, import a supported developed image,
+preferably trusted uncompressed RGB16 sRGB TIFF. RAW decoding still applies the
+recorded conversion above; it is not a replacement for that application's rendering.
+Masking adds no exposure, white-balance or colour correction to the saved master.
+The existing CLI `accept --development --master-id ID` remains an optional legacy
+review record for compatible scripts; it is never a prerequisite or final-photo acceptance.
 
 Changing development currently requires a separate project/master identity; dimensions
 alone cannot preserve later guides. Reopen uses saved validated assets and works
@@ -146,6 +152,7 @@ for explicit model setup, typed preparation and human review.
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | Presentation geometry, bounded sampling and source-bound preset | `src/blackmask/framing.py` |
+| Fixed-size subject layout, premultiplied resampling and portable series settings | `src/blackmask/series_framing.py` |
 | One-project loopback server and packaged manual page | `src/blackmask/viewer.py`, `src/blackmask/ui/review.html` |
 | Shared inverse native coordinate mapping | `src/blackmask/ui/coordinates.js` |
 | Supported commands and local doctor/setup | `src/blackmask/cli.py` |
@@ -174,11 +181,11 @@ baselines; they do not establish the state or authority for new work. Private
 reference material and local evaluation evidence stay ignored. Development plans
 are excluded from installable distributions and are not needed to operate the tool.
 
-The [fixed-size series design](docs/superpowers/specs/2026-10-20-series-framing-design.md)
-and its [independent review](docs/superpowers/plans/2026-10-20-series-framing-review.md)
-remain proposals: preset storage, backdrop behavior, written-design approval and
-a detailed implementation plan still need decisions. The current framing feature
-adds pixel margins; it does not resize subjects to match a series.
+The [fixed-size series design](docs/superpowers/specs/2026-10-20-series-framing-design.md),
+[design review](docs/superpowers/plans/2026-10-20-series-framing-review.md) and
+[implementation plan](docs/superpowers/plans/2026-10-21-series-framing.md) retain
+development decisions and evidence. The maintained workflow and file contract own
+the supported interface; development records do not supply photographic acceptance.
 
 The maintained user docs describe implemented behavior. Cleanup and shading
 require human comparison for each photograph; synthetic checks do not supply

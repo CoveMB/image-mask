@@ -21,6 +21,30 @@ def run(*arguments):
     )
 
 
+def test_series_cli_saved_only_replay_and_exclusive_modes(tmp_path):
+    from test_effects import fixture_project
+
+    from blackmask.series_framing import SeriesSettings, portable_series_preset
+
+    project, _, _ = fixture_project(tmp_path)
+    preset = tmp_path / "series.json"
+    preset.write_bytes(
+        portable_series_preset(SeriesSettings(output_width_px=40, output_height_px=50))
+    )
+    first = run("export", project, "--series-preset", preset, "--framed-transparent")
+    assert first.returncode == 0, first.stderr
+    output = json.loads(first.stdout)
+    assert output["output_dimensions_wh"] == [40, 50]
+    (tmp_path / "source.tif").rename(tmp_path / "retained-original.tif")
+    preset.write_bytes(preset.read_bytes() + b"\n")
+    replay = run("export", project, "--series-preset", preset, "--framed-transparent")
+    assert replay.returncode == 0, replay.stderr
+    assert json.loads(replay.stdout) == output
+    conflict = run("export", project, "--series-preset", preset, "--margins", 0, 0, 0, 0)
+    assert conflict.returncode == 2
+    assert not (project / "series-framing.json").exists()
+
+
 def test_framed_cli_saved_only_replay_variants_draft_and_busy_lock(tmp_path, monkeypatch):
     import hashlib
 

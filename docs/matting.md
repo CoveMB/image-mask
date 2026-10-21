@@ -1,6 +1,6 @@
 # Native mask, review and base export
 
-After approving development and completing [typed preparation](guidance.md),
+After completing [typed preparation](guidance.md), without a development-approval gate,
 inspect the source alongside the authoritative prepared `trimap.png`. Its values
 are confirmed empty background (0), unknown (128) and confirmed opaque foreground
 (255). Candidate membership and `trimap_proposal.png` remain separate suggestions.
@@ -9,17 +9,21 @@ typed guide edits, then prepare again. Proposals are never promoted automaticall
 When no defensible cores exist, an all-unknown trimap is allowed; it carries no
 quality guarantee.
 
-Copy actual revision/master/digest from the returned preparation, then explicitly
-confirm that exact authoritative trimap:
+Copy actual revision/master/digest from the returned preparation into the matte
+request below. Trimap confirmation is optional: you can run matting immediately
+and review the masked photograph instead. To record an optional human review of
+that exact authoritative trimap:
 
 ```sh
 .venv/bin/blackmask accept /path/to/project --trimap --revision ACTUAL_PREPARED_REVISION --master-id ACTUAL_MASTER_ID --inputs-digest ACTUAL_DRAFT_DIGEST
 ```
 
-Development, trimap confirmation and final-photo acceptance are distinct controls.
-Only the human can supply photographic acceptance. Editing drafts or replacing
-saved assets invalidates the confirmation. Confirming a proposal's filename does
-not force its values into the authoritative trimap.
+Source-development review and trimap confirmation are optional; final-photo
+acceptance is separate and remains explicit. Assistance never invents a review
+record. Existing trimap confirmations remain validated and are preserved with the
+matte. Editing drafts requires preparation again; stale/corrupt inputs are rejected
+even without a confirmation. Confirming a proposal's filename does not force its
+values into the authoritative trimap.
 
 ## Explicit model setup
 
@@ -55,15 +59,15 @@ Create a JSON request with the actual returned current values:
 .venv/bin/blackmask run /path/to/project --request /path/to/project/matte-request.json --model-cache local/models/vitmatte
 ```
 
-No guide edits repeat in the matte request. Prepare changed guides first and
-confirm their new trimap. The separate model view is RGB8; native matting uses
+No guide edits repeat in the matte request. Prepare changed guides first; human
+trimap confirmation is optional for reruns and repairs too. The separate model view is RGB8; native matting uses
 1024-pixel tiles, stride 768/nominal overlap 256 and appended final origins. The
 pinned processor pads only bottom/right to a multiple of 32; output padding is
 removed. It never resizes this stage. Known-only tiles bypass inference. Finite
 predictions are clamped, blended with positive sine-squared weights, valid known
 cores enforced and alpha quantized once to scalar16. Saved partial-alpha and
 applicable RGB locks survive every full rerun exactly. Unlocked foreground starts
-from the approved RGB16 master. Acceptance itself is not a blanket region lock.
+from the saved RGB16 master. Acceptance itself is not a blanket region lock.
 
 ## Review and final-photo acceptance
 
@@ -92,7 +96,7 @@ black/gray/white. After human photographic review of the current result:
 ```
 
 Final acceptance requires complete current matte assets and unchanged master,
-development and draft identities. Preparation alone never qualifies. The default
+saved source-rendering and draft identities. Preparation alone never qualifies. The default
 export uses the retained accepted revision even when a newer candidate is working.
 An explicit unaccepted export requires both flags:
 
@@ -133,8 +137,9 @@ final acceptance and regular-use evaluation remain human obligations.
 First identify a source-visible defect and explicitly choose its native context
 and allowed write scope. Context can exceed the support; the tool cannot decide
 photographic improvement for you. Create typed support/core/lock guide edits with
-the existing preparation route, run `prepare`, inspect the returned assets and
-explicitly approve that prepared trimap. Preparation preserves parental alpha and
+the existing preparation route and run `prepare`. Inspecting and confirming the
+prepared trimap is optional; inspect the actual repaired photograph afterward.
+Preparation preserves parental alpha and
 foreground RGB and remains ineligible for final acceptance.
 
 Copy the actual returned revision, master, digest and `support_file` into a repair

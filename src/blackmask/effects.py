@@ -594,8 +594,7 @@ def run_effects(
     state = read_project(project)
     _reject_pending_guidance(project)
     if (
-        not state["development_approved"]
-        or operation["master_id"] != state["master_id"]
+        operation["master_id"] != state["master_id"]
         or operation["base_revision"] != state["working_revision"]
         or operation["inputs_digest"] != draft_digest(project)
     ):
@@ -942,11 +941,14 @@ def run_effects(
         "base_alpha16.png",
         "foreground_rgb16.tif",
         "qa.json",
-        "trimap_approval.json",
     ):
         target = stage / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(_asset(project, f"revisions/{parent}/{name}").read_bytes())
+    if "trimap_approval.json" in manifest["files"]:
+        (stage / "trimap_approval.json").write_bytes(
+            _asset(project, f"revisions/{parent}/trimap_approval.json").read_bytes()
+        )
     for name in ("recipe.toml", "guides.json"):
         (stage / name).write_bytes(snapshots[name])
     (stage / "effects").mkdir(exist_ok=True)

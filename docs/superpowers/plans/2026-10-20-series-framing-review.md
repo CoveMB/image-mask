@@ -59,7 +59,7 @@ A separate formal incremental-plan/QA/handoff program would presently repeat the
 
 No new thread or execution was started by this recommendation. No ledger, controller or scheduler is needed; use plan checkboxes and retained ordinary evidence. Preserve configured models, sequential writes, material-decision gates, and separate Git/publication authority.
 
-## Decisions and readiness
+## Decisions and readiness at the original review
 
 Still awaiting the user:
 
@@ -85,3 +85,34 @@ Retain this review record, the design and native reviewer reports for the future
 Final document verification exited 0: both local cross-links resolve, code fences are balanced, no placeholder markers remain, all ten S1–S10 coverage rows are unique, and replacing only the final review-status checkbox reproduces the exact independently reviewed candidate hash. The final design SHA-256 is `7cea0e2bcfb8c862a16744a248dc019a400b5a9965ee8b0ce68b1ae09a3ddf13`. These are document checks, not application tests.
 
 At final observation, the other framing repair had changes in `src/blackmask/export.py`, `tests/test_framing.py`, `docs/file-contract.md` and `docs/validation.md`. This task did not write those files or review that repair. The future series executor must reconcile that actual predecessor rather than implementing from the earlier clean snapshot.
+
+## Current orchestration checkpoint — 2026-10-21
+
+This section records the resumed orchestration; the preceding review report and candidate hashes describe their original historical scopes. Current task authority requires the preset/backdrop decisions, written-design approval and then approval of a detailed implementation plan before product implementation. Earlier framing approvals and completed reconciliation publication do not approve this feature.
+
+- [x] Read current repository instructions, written design and both original design-review scopes.
+- [x] Verify the actual application checkout: local `main` and locally stored `origin/main` at `14e8c83fa3b5a7603c5c240eb96a0081702da0f5`; clean before branch creation. No remote refresh performed.
+- [x] Create the explicitly authorized `series-framing` branch from reconciled main. No staging, commit, push, merge, PR, download or other external action performed.
+- [x] Reconcile repair `2a6029dfeda8f2aa4fe03f2bb3b9e730cab86404` through predecessor `ee9a3d1`. The persistent owner's read-only pass found no repair blocker; root checked the current canonical cleanup path and independently confirmed all four repair-body hashes and 44/44 full-suite input hashes match the preserved evidence.
+- [x] Establish one persistent implementation owner, `/root/series_implementation_owner`, initially read-only. Root owns this bounded planning-document reconciliation; subsequent implementation uses that same owner with sequential writes and configured model defaults. No recursive delegation, controller, ledger or scheduler.
+- [x] Resolve cross-photo preset storage: the user selected portable preset files. The project stores an independent snapshot; an app-wide catalog is excluded.
+- [x] Resolve output-size backdrop regeneration: the user selected regeneration of the saved recipe at final dimensions, including the disclosed effect beneath partial-alpha edges; the native saved backdrop stays unchanged.
+- [x] Obtain approval of the updated written design: the user approved the presented stage on 2026-10-21 and explicitly requested final documentation of controls, portable JSON contents/operation, Match series mechanisms and relevant implementation behavior.
+- [x] Use Superpowers writing-plans to prepare the [detailed three-checkpoint plan](2026-10-21-series-framing.md), including exact fractional mapping/support, separate geometry/arithmetic oracle targets, source/QA coverage and evidence obligations.
+- [x] Obtain user approval of the detailed plan: on 2026-10-21 the user approved, preapproved intermediate gates and requested finishing and creating the MR for their review. The existing persistent-owner method remains selected; necessary feature commit/push/MR authority is now explicit, with no merge authority.
+- [x] Checkpoint 1: precise subject layout, resampling and reproducible safe exports, with relevant tests.
+- [x] Checkpoint 2: portable preset reuse, project persistence and recovery, with relevant tests.
+- [x] Checkpoint 3: viewer controls, selected-revision consistency, actual browser verification and maintained documentation.
+- [x] Independent code review, owner-applied material fixes, relevant final verification and source/QA/evidence reconciliation. Photographic acceptance remains with the user.
+
+Repair evidence remains in the preserved ignored predecessor archive, under `local/plans/framing-and-margins/pr16-feedback/` relative to that archive's checkout; its host-specific location is retained only in local evidence/native reports. The persistent owner verified all seven result/log pairs against the candidate manifest. `deterministic-full-result.json` records exit 0, unchanged inputs and 44 input hashes; `deterministic-full.log` records **699 passed, 3 skipped**, with no deselections. The skips require explicitly installed SAM/ViTMatte caches. Focused RED recorded 3 failures/2 passes (exit 1), GREEN 5 passes (exit 0), and lint, formatting check and mypy each exited 0. The earlier formatting operation records changed inputs honestly; later records bind the final inputs. No baseline suite was rerun on unchanged test inputs. These are inherited results, not current series-framing test, browser, resource or photographic evidence.
+
+The current repair at `export._export_framed` preserves validation and synchronization failures for recovery, and removes only a verified duplicate after durable reuse. Existing `export._foreground_contribution` already owns the required contribution arithmetic; the design now explicitly reuses it. At that prerequisite review, the new caller-supplied expected source/revision identities remained unimplemented series work; they are now implemented and covered by the current plan's checkpoint evidence. Native/Add margins contracts and the three independently reviewed geometry, alpha and revision-binding corrections remain required.
+
+Public documentation was refreshed on 2026-10-21 against the existing pinned stack: [Pillow 13.0.0 modes](https://pillow.readthedocs.io/en/stable/handbook/concepts.html), [resize and fractional in-bounds boxes](https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Image.resize), [the pinned resampler's support/normalization](https://github.com/python-pillow/Pillow/blob/13.0.0/src/libImaging/Resample.c), [W3C compositing](https://www.w3.org/TR/compositing-1/#simplealphacompositing) and [dragging alternatives](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html). The reviewed direction remains applicable; explicit zero support outside captured pixels and actual precision/latency/resource/browser tests still belong in the detailed plan. No dependency change, new rendering experiment or accessibility certification is implied.
+
+The same persistent owner supplied read-only numerical/resource planning support. Current pinned Pillow source confirms float32 resize boxes/subtraction and scalar pass storage, so the detailed plan separates ideal geometry from effective-box arithmetic and defines pre-integration targets and stop conditions. This is source inspection, not a resampling experiment or precision result. Root owns plan authoring/self-review. The retained interpreter was inspected without installation: Python 3.12.14 ARM64, matching pinned Pillow/NumPy/tifffile, with Ruff/mypy present; this checkout has no `.venv`.
+
+Preserve ignored local data and historical branches without merging photographic/reference ancestry. The unrelated dirty `AGENTS.md` in the separate stack worktree was not touched. The two product decisions, written design and detailed plan are now approved for execution. Photographic acceptance remains with the user; no private-photo evaluation or MR merge is authorized. Product implementation begins after this approval record.
+
+Execution checkpoints and independent review are complete. The [current implementation plan](2026-10-21-series-framing.md) and [maintained validation record](../../validation.md#fixed-size-series-framing) own the final source/test identities, actual browser observations, numerical/resource evidence, full/static results and bounded formatting correction. Their explicit inference, browser, extreme-size, accessibility and photographic limitations remain in force. Git/publication handoff belongs to root; photographic acceptance remains with the user.

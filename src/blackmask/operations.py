@@ -144,10 +144,8 @@ def accept_trimap(
             or inputs_digest != manifest.get("draft_digest")
         ):
             raise ProjectError("Stale trimap review identity, revision or draft digest")
-        if manifest.get("kind") != "prepare" or not state["development_approved"]:
-            raise ProjectError(
-                "Trimap review requires current prepared revision and development approval"
-            )
+        if manifest.get("kind") != "prepare":
+            raise ProjectError("Trimap review requires current prepared revision")
         record = {
             "schema_version": 1,
             "revision": revision,
@@ -208,11 +206,7 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
                 "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before acceptance"
             )
         captured = draft_digest(project)
-        if (
-            revision != state["working_revision"]
-            or captured != manifest["draft_digest"]
-            or not state["development_approved"]
-        ):
+        if revision != state["working_revision"] or captured != manifest["draft_digest"]:
             raise ProjectError("Stale final acceptance; current complete reviewed matte required")
         before = _asset(project, "state.json").read_bytes()
         manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
@@ -292,8 +286,6 @@ def _prepare(
                 for name, checksum in json.loads(review_bytes)["view_files"].items()
             }
         )
-    if not state["development_approved"]:
-        raise ProjectError("Explicit human development approval required before preparation")
     if (
         operation["master_id"] != state["master_id"]
         or operation["base_revision"] != state["working_revision"]
@@ -509,7 +501,7 @@ def _prepare(
         else None,
         "source_precision_bits": metadata["source_precision_bits"],
         "proxy_precision_bits": 8,
-        "trimap_review": "human review required; selection membership does not prove opacity",
+        "trimap_review": "optional human review; selection membership does not prove opacity",
         **({"color_cleanup": cleanup} if cleanup is not None else {}),
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
@@ -931,8 +923,8 @@ def _matte(
     state = read_project(project)
     _reject_pending_guidance(project)
     parent = state["working_revision"]
-    if not state["development_approved"] or not parent:
-        raise ProjectError("Matte requires approved development and human-reviewed prepared trimap")
+    if not parent:
+        raise ProjectError("Matte requires a prepared trimap")
     if (
         operation["master_id"] != state["master_id"]
         or operation["base_revision"] != parent
@@ -941,25 +933,24 @@ def _matte(
         raise ProjectError("Stale matte master, revision or inputs_digest")
     manifest = read_revision(project, parent, state["master_id"])
     if manifest.get("kind") != "prepare":
-        raise ProjectError("Prepare and explicitly review the trimap before each matte rerun")
+        raise ProjectError("Prepare the trimap before each matte rerun")
     if manifest["draft_digest"] != operation["inputs_digest"]:
-        raise ProjectError("Stale prepared draft; prepare and review changed guides/settings")
+        raise ProjectError("Stale prepared draft; prepare changed guides/settings")
     approval_path = _asset(project, f"approvals/{parent}-trimap.json")
-    if not approval_path.is_file():
-        raise ProjectError("Explicit human trimap review required before native matte")
-    approval_bytes = approval_path.read_bytes()
-    approval = json.loads(approval_bytes)
-    if not isinstance(approval, dict):
-        raise ProjectError("Invalid trimap approval record")
+    approval_bytes = approval_path.read_bytes() if approval_path.is_file() else None
     parent_bytes = _asset(project, f"revisions/{parent}/manifest.json").read_bytes()
-    if (
-        approval.get("revision") != parent
-        or approval.get("master_id") != state["master_id"]
-        or approval.get("inputs_digest") != operation["inputs_digest"]
-        or approval.get("manifest_sha256") != digest(parent_bytes)
-        or approval.get("trimap_sha256") != manifest["files"]["trimap.png"]
-    ):
-        raise ProjectError("Stale trimap approval assets")
+    if approval_bytes is not None:
+        approval = json.loads(approval_bytes)
+        if not isinstance(approval, dict):
+            raise ProjectError("Invalid trimap approval record")
+        if (
+            approval.get("revision") != parent
+            or approval.get("master_id") != state["master_id"]
+            or approval.get("inputs_digest") != operation["inputs_digest"]
+            or approval.get("manifest_sha256") != digest(parent_bytes)
+            or approval.get("trimap_sha256") != manifest["files"]["trimap.png"]
+        ):
+            raise ProjectError("Stale trimap approval assets")
     snapshots = {
         name: _asset(project, name).read_bytes()
         for name in ("state.json", "source.json", "recipe.toml", "guides.json")
@@ -990,7 +981,7 @@ def _matte(
     with Image.open(_asset(project, f"revisions/{parent}/trimap.png")) as image:
         trimap = np.array(image)
     if not np.array_equal(trimap, raster.trimap):
-        raise ProjectError("Prepared trimap differs from confirmed typed guides")
+        raise ProjectError("Prepared trimap differs from saved typed guides")
     context = [0, 0, width, height]
     scope = context
     policy = operation.get("merge_policy", "replace")
@@ -1099,7 +1090,11 @@ def _matte(
 
     reserve_assisted(project, operation, resuming=bool(recovery))
     if not recovery:
-        dependencies = {f"approvals/{parent}-trimap.json": digest(approval_bytes)}
+        dependencies = (
+            {f"approvals/{parent}-trimap.json": digest(approval_bytes)}
+            if approval_bytes is not None
+            else {}
+        )
         if "assisted_review" in operation:
             review_name = operation["assisted_review"]["review_manifest_file"]
             review_path = _input_file(project, review_name)
@@ -1173,7 +1168,8 @@ def _matte(
     (stage / "request.json").write_bytes(
         request_bytes if request_bytes is not None else _json_bytes(operation)
     )
-    (stage / "trimap_approval.json").write_bytes(approval_bytes)
+    if approval_bytes is not None:
+        (stage / "trimap_approval.json").write_bytes(approval_bytes)
     (stage / "inputs").mkdir()
     for name, data in snapshots.items():
         (stage / "inputs" / name).write_bytes(data)
@@ -1448,10 +1444,9 @@ def _matte(
                 raise ProjectError(f"Stale input changed during matte: {name}")
         if request_file is not None and request_file.read_bytes() != request_bytes:
             raise ProjectError("Stale matte request file")
-        if (
-            approval_path.read_bytes() != approval_bytes
-            or _asset(project, f"revisions/{parent}/manifest.json").read_bytes() != parent_bytes
-        ):
+        if (approval_bytes is not None and approval_path.read_bytes() != approval_bytes) or _asset(
+            project, f"revisions/{parent}/manifest.json"
+        ).read_bytes() != parent_bytes:
             raise ProjectError("Stale prepared assets/approval")
         read_revision(project, parent, state["master_id"])
         load_master(project, state["master_id"])
@@ -1778,4 +1773,4 @@ def guidance_draft_digest(project: Path) -> str:
 def _reject_pending_guidance(project: Path) -> None:
     pending = pending_guidance(project)
     if pending and pending["current"] and pending["actions"]:
-        raise ProjectError("Saved pending guidance requires prepare and trimap review first")
+        raise ProjectError("Saved pending guidance requires preparation first")

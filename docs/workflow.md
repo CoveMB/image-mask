@@ -19,16 +19,26 @@ private and do not forward the local port. Use
 `open --headless --project /path/to/project` for JSON-only operation; other
 documented CLI commands can run in another terminal.
 
-## Develop and review the source
+## Source appearance
 
-Choose **View → Source** before reviewing development. A new project has no result
-yet; if the initial Result view reports an image error, switch to Source. This
-shows an RGB8 viewing approximation of the oriented saved master. Check
-orientation, white balance and clipping, inspecting the saved master TIFF in a
-trusted RGB16 viewer when precision matters. Only then check **I reviewed this
-master’s development** and choose **Approve development**. This approves source
-development; trimap review and photographic acceptance remain separate actions.
-A different development requires a separate project, preserving the previous one.
+Source-development approval is not required. Open a project and start authoring
+mask guides. Choose **View → Source** to inspect its RGB8 viewing approximation;
+a new project has no Result yet. The saved RGB16 master remains authoritative.
+
+Mask work preserves that master's lighting and colours. Assistance must not
+change exposure, white balance, contrast, saturation, colour, sharpening or enable
+cleanup, shading or other appearance effects unless you explicitly request them.
+Use only the adjustments you request; retain unrelated saved settings and pending
+controls. Trimap confirmation is optional; final photographic acceptance remains
+a separate explicit action after reviewing the actual masked result.
+
+To retain the look you developed elsewhere, import a supported developed image,
+preferably uncompressed RGB16 sRGB TIFF. RAW cannot be used without decoding to
+RGB; its conversion settings remain recorded in `source.json`. The tool does not
+silently substitute a different white balance when metadata is invalid: explicitly
+choose a supported rendering or supply a developed TIFF. A different development
+requires a separate project, preserving the previous one. The legacy CLI development
+review remains optional and does not gate masking; old projects open without migration.
 
 ## Author guides and select subjects
 
@@ -82,9 +92,10 @@ Author actual core/unknown guides against source before the next preparation.
 
 Use **View → Source** to inspect the authoritative **Prepared trimap**, support
 and lock overlays; prepared-only revisions have no Result view. Resolve
-contradictions and leave fragile areas unknown. Check the trimap
-review box and **Approve prepared trimap**. Then **Run full matte**. A changed draft
-needs preparation and trimap review again; saved pending guides cannot be approved
+contradictions and leave fragile areas unknown. Choose **Run full matte** to review
+the actual masked photograph. The trimap review checkbox and **Approve prepared
+trimap (optional)** let you record a review if useful; neither is needed to run.
+A changed draft needs preparation again; saved pending guides cannot be consumed
 as if they were already rasterized. All writers share the same nonblocking project
 lock; busy/error/review-needed status is visible while comparisons remain readable.
 
@@ -94,8 +105,8 @@ Inspect matching source/result crops. Mark a NEW confirmed-background core only
 where the source supports it. Draw surrounding support with the changed core fully
 inside its full-strength interior; feathering must not weaken that core. Add a lock
 bound to a saved revision over accepted partial-alpha detail or anatomy to preserve.
-Choose a narrow write scope and a larger context rectangle surrounding it. Save,
-prepare, inspect overlays and explicitly approve the prepared trimap.
+Choose a narrow write scope and a larger context rectangle surrounding it. Save
+and prepare. Trimap confirmation is optional; review the repaired photograph afterward.
 
 Write a source-supported reason, choose replace/increase-only/decrease-only, then
 **Run scoped repair**. Repair consumes the generated immutable support and prepared
@@ -127,7 +138,7 @@ the shared renderer and retain editable source/alpha assets; viewing RGBA PNG ha
 Optional color cleanup is now available in the same review window. It starts OFF.
 Use the cleanup strength, declared native write scope and project-relative grayscale16
 support file. The default support is the current saved guide support. To change it,
-author support guides, prepare and approve the trimap, then run a complete matte/repair.
+author support guides, prepare, then run a complete matte/repair. Trimap confirmation is optional.
 Enable on an accepted base, or explicitly check candidate comparison. Compare with
 cleanup OFF using the same alpha before human appearance acceptance. Strength .35 is
 a starting point, never a recommendation for every photo. Optional protected shading
@@ -184,8 +195,8 @@ correction is warranted, record that limitation rather than changing good detail
    external browser before closing the assistant; keep the URL private and local.
    Disconnect the network after the page loads. No further download should be needed.
 2. Inspect **Source / result** on matching native crops. Use **Native 1:1**; with
-   the canvas focused, arrows pan and +/- zoom, or Shift-drag pans. Confirm source
-   development before its separate approval if it is not already approved. Review
+   the canvas focused, arrows pan and +/- zoom, or Shift-drag pans. Source-development
+   review is optional; preserve its lighting and colours unless a change is requested. Review
    black, gray, white and alpha views; previews have reduced precision.
 3. Choose **Confirmed background core** and draw a NEW small core only over
    source-visible empty background needing correction. Exclude uncertain wings,
@@ -201,8 +212,8 @@ correction is warranted, record that limitation rather than changing good detail
    larger **Repair context x0,y0,x1,y1** containing nearby source context. Choose
    **Save groups and pending guides**, then **Prepare saved guidance**. Inspect
    **Prepared trimap**, support and lock overlays against source. Correct conflicts
-   explicitly. Only when reviewed, check **I reviewed the current prepared trimap
-   against source** and choose **Approve prepared trimap**.
+   explicitly. Trimap confirmation is optional; you can continue directly to repair
+   and review the masked result.
 6. Enter the actual defect in **Source-supported repair reason**, choose **Replace
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
@@ -255,7 +266,7 @@ your photograph's native width, direction (0 right, 90 down), opacity, declared
 support and explicit protection. The default uses the current saved guide
 protection mask (categorical8); it may be empty. Author saved alpha/RGB lock
 guides for the selected details in the existing guide controls, then prepare,
-review the trimap and complete matte/repair. No external mask script is needed.
+complete matte/repair. Trimap confirmation is optional. No external mask script is needed.
 Explicit categorical16 files are also supported. Select hairs, antennae, web,
 tips, genuine highlights and bee yourself; automatic attenuation cannot guarantee
 their protection. Use the enable/rebuild button only on an accepted mask or with
@@ -370,7 +381,7 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
    Scalar-input areas remain usable for amount changes even without authored shapes.
 6. If alpha changed, rebuild fade or reset it. Each other stale effect needs its
    own rebuild/disable before accepting or exporting appearance. Prepared revisions
-   still need explicit trimap review and completed matte; acceptance is separate.
+   still need completed matte; trimap confirmation is optional and acceptance is separate.
 7. Export a labelled draft and preserve selected, unfaded, unexposed, base and source
    RGB16 plus alpha, independent settings/support/protection and any shading W16.
    The selected foreground already contains fade and exposure once. Follow the
@@ -382,7 +393,7 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 
 1. Open a project with a complete matte and choose **Result · saved background**
    in **View**. The revision selector must show the current working revision
-   before applying. Prepared-only state still needs trimap review and matting.
+   before applying. Prepared-only state still needs matting; trimap confirmation is optional.
 2. Under **Background appearance**, choose **Background tone** or enter a six-digit
    `#RRGGBB` colour. **Pure black** selects `#000000`; **Warm dark** selects
    `#120708`. Shortcuts keep the variation slider unchanged.
@@ -423,7 +434,8 @@ A processed sRGB RGB16 TIFF is not sensor RAW. See the [saved contract](file-con
 
 ## Add presentation margins
 
-In the local review window, open **Framing and margins**. Enter nonnegative whole
+In the local review window, open **Framing and margins** and choose **Add margins**.
+Enter nonnegative whole
 pixels in **Left**, **Right**, **Top** and **Bottom**. **Set all sides** copies the
 Equal margins value to all four fields. **Centre image** redistributes the existing
 horizontal and vertical totals; an odd extra pixel goes Right or Bottom. It centres
@@ -476,3 +488,94 @@ uses the current working revision. The preview uses the revision selected in the
 viewer, which can differ from either export target. Check the returned revision
 and draft label when comparing deliveries. See
 [limits and recovery](troubleshooting.md#framed-export-recovery).
+
+## Match a fixed-size series
+
+Open **Framing and margins → Framing mode → Match series**. First select the
+complete saved result in **Compare revision**. This mode uses that selected revision's saved
+foreground, alpha and appearance. Unsaved native appearance controls are not rendered.
+Switching modes retains both forms' unsaved values and clears their preview; it
+does not save, calculate a new preview or export anything.
+
+The first-use settings are editable examples:
+
+| Control | Units and initial value |
+| --- | --- |
+| Preset name | 1–80 Unicode characters; initially `Portrait series` |
+| Output width / Output height | Whole pixels; initially 4000 × 5000 |
+| Side margins | Percent on **each** side; initially 15.0%; numeric field and linked slider |
+| Minimum top/bottom | Percent of output height on **each** side; initially 5.0% |
+
+Margins range from 0.0% to 45.0%, in 0.1% steps. Output axes are at most 32768
+pixels and the canvas at most 100,000,000 pixels. The subject is centred with one
+uniform scale. Side margins set the width target; a tall subject is limited by the
+vertical clearance and therefore has wider side margins. The image is not stretched,
+rotated or cropped to force a match. Equal size does not guarantee equal visual weight.
+
+Choose **Preview framing** and optionally **Show subject bounds**. Status reports
+the actual four geometric margins, whether height limits the fit, enlargement and
+source-edge contact. Every alpha value greater than zero participates, including
+faint disconnected hairs or stray pixels. The outline describes those original mask
+bounds; filtered support can extend beyond it. Correct unwanted alpha explicitly in
+the native mask workflow. Framing cannot restore already clipped anatomy or invent
+detail. Enlargement adds no captured detail, and reduction can make fine features
+subpixel or invisible.
+
+The separate preview has a long edge of at most 1600 pixels. It is a reduced RGB8
+approximation, not the final TIFF or a native editing surface. Changing settings,
+revision or mode clears stale preview pixels. Inspect fine detail in the native
+view and inspect the final TIFF in a suitable colour-managed viewer.
+
+Match series regenerates the selected revision's saved **Background** recipe at
+the final output dimensions. This produces a continuous fixed canvas and changes
+the backdrop beneath partial-alpha edges too. It differs from Add margins, which
+extends saved edge pixels. Legacy revisions without a background recipe use black.
+Series presets do not override background colour; use the existing Background
+workflow to save that appearance in each photo first.
+
+**Save for this photo** saves a complete source-bound settings snapshot;
+**Reload saved series settings** replaces only this form with its saved snapshot.
+Typing, previewing and exporting never save settings automatically. If a save
+reports uncertain durability, retain your edits and explicitly reload before the
+next save. Other native guidance/effect forms remain independent.
+
+For manual reuse across photographs:
+
+1. Choose **Download preset file**. This initiates a browser download of
+   `series-framing-preset.json`; confirm the file in your browser. It contains only
+   the name, output dimensions and margin settings, as described in the
+   [portable JSON contract](file-contract.md#fixed-size-series-settings-and-deliveries).
+   It contains no photograph, source identity, image path, mask or appearance data.
+2. Open another saved photo project and choose **Load preset file**. Select that
+   JSON file. A valid file changes only the local series form; cancellation or an
+   invalid/oversized file leaves the form unchanged. The metadata limit is 16 KiB.
+3. Select that photo's complete revision, preview its fit and save for that photo
+   only when desired. A later change to the portable file does not alter either
+   photo's saved snapshot or prior exports. There is no global preset catalog.
+
+**Export selected accepted result** requires that the visible selection is still
+the current accepted revision. **Export selected revision as draft** always produces
+a DRAFT delivery, including when its selected source is accepted. Both use the visible
+validated settings, including unsaved edits, and identify the actual selected revision;
+neither substitutes the working/accepted pointer silently or accepts the composition.
+The transparent checkbox adds a straight RGBA8 viewing copy.
+
+The equivalent explicit CLI operations are:
+
+```sh
+.venv/bin/blackmask export PROJECT --series-preset SERIES.json
+.venv/bin/blackmask export PROJECT --series-preset SERIES.json --framed-transparent
+.venv/bin/blackmask export PROJECT --series-preset SERIES.json --revision rev-NNN --draft
+```
+
+The flag is mutually exclusive with `--margins`. Without either flag, the existing
+native export behavior applies; project series settings are never loaded implicitly.
+The CLI accepts a bounded regular JSON file and rejects symlink aliases.
+
+Each compact delivery contains `result_rgb16.tif`, `result_RGB8_VIEW.png`, optional
+`transparent_RGBA8_VIEW.png`, `README.txt` and `manifest.json` beneath a distinct
+`exports/rev-NNN[-DRAFT]-series-framed-<identity>/` directory. TIFF is processed
+sRGB RGB16 with resampled samples; PNGs are reduced-precision views. Transparent
+RGB is straight, with zero RGB wherever quantized alpha is zero. Retain the native
+editable project, masks, original capture and accepted dependencies independently.
+See [preservation and recovery](troubleshooting.md#series-framing-recovery).

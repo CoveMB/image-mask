@@ -95,11 +95,8 @@ def test_invalid_requests_preserve_state(tmp_path, field, value):
     assert (project / "state.json").read_bytes() == before
 
 
-def test_development_approval_and_saved_lock_requirements(tmp_path):
+def test_saved_lock_requires_existing_alpha(tmp_path):
     _, project = create(tmp_path)
-    with pytest.raises(ProjectError, match="development"):
-        operations.apply_operation(project, request(project))
-    accept_development(project, read_project(project)["master_id"])
     filename = edits(
         project,
         [
@@ -116,6 +113,69 @@ def test_development_approval_and_saved_lock_requirements(tmp_path):
     with pytest.raises(ProjectError, match="saved|revision|alpha"):
         operations.apply_operation(project, request(project, guide_edits_file=filename))
     assert (project / "state.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("legacy_status", [None, "review_needed"])
+def test_masking_without_development_approval_preserves_source_appearance(tmp_path, legacy_status):
+    import hashlib
+
+    import tifffile
+
+    from blackmask.project import load_master
+
+    source, project = create(tmp_path)
+    state = read_project(project)
+    if legacy_status is not None:
+        state["status"] = legacy_status
+        (project / "state.json").write_text(json.dumps(state))
+        original_state = (project / "state.json").read_bytes()
+        assert read_project(project)["development_approved"] is False
+        assert (project / "state.json").read_bytes() == original_state
+    master_path = project / "masters" / f"{state['master_id']}.tif"
+    original_source = hashlib.sha256(source.read_bytes()).hexdigest()
+    original_master = hashlib.sha256(master_path.read_bytes()).hexdigest()
+    master, _ = load_master(project, state["master_id"])
+    filename = edits(
+        project,
+        [
+            {"id": "flower", "role": "foreground", "shape": "rectangle", "xyxy": [0, 0, 1, 2]},
+            {"id": "empty", "role": "background", "shape": "rectangle", "xyxy": [1, 0, 3, 2]},
+        ],
+    )
+    operations.apply_operation(project, request(project, guide_edits_file=filename))
+    matte = operations.apply_operation(project, request(project, kind="matte"))
+    revision = project / "revisions" / matte["revision"]
+    np.testing.assert_array_equal(tifffile.imread(revision / "foreground_rgb16.tif"), master)
+    np.testing.assert_array_equal(
+        np.array(Image.open(revision / "base_alpha16.png")),
+        np.array([[65535, 0, 0], [65535, 0, 0]], dtype=np.uint16),
+    )
+    assert read_project(project)["accepted_revision"] is None
+    assert not (revision / "trimap_approval.json").exists()
+    assert not (project / "approvals").exists()
+    effect = operations.apply_operation(
+        project,
+        request(
+            project,
+            kind="effects",
+            scope_xyxy=[0, 0, 3, 2],
+            background={"color_srgb": "#151515", "variation": 0.55},
+            candidate_comparison=True,
+        ),
+    )
+    effect_revision = project / "revisions" / effect["revision"]
+    assert not (effect_revision / "trimap_approval.json").exists()
+    np.testing.assert_array_equal(tifffile.imread(effect_revision / "foreground_rgb16.tif"), master)
+    np.testing.assert_array_equal(
+        np.array(Image.open(effect_revision / "base_alpha16.png")),
+        np.array(Image.open(revision / "base_alpha16.png")),
+    )
+    operations.accept_revision(project, effect["revision"])
+    final = read_project(project)
+    assert final["accepted_revision"] == effect["revision"]
+    assert final["development_approved"] is False
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == original_source
+    assert hashlib.sha256(master_path.read_bytes()).hexdigest() == original_master
 
 
 def test_low_space_and_publish_failure_preserve_pointer(tmp_path):

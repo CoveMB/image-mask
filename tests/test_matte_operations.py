@@ -95,20 +95,38 @@ def test_recorded_guides_matte_acceptance_and_saved_exports(tmp_path):
         export.export_project(project)
 
 
-def test_trimap_gate_and_stale_approval_preserve_state(tmp_path):
+@pytest.mark.parametrize("trimap_confirmed", [False, True])
+def test_stale_prepared_inputs_and_optional_approval_preserve_state(tmp_path, trimap_confirmed):
     _, project, result = prepared(tmp_path)
     before = (project / "state.json").read_bytes()
-    with pytest.raises(ProjectError, match="trimap|review"):
-        run_matte(project)
-    assert (project / "state.json").read_bytes() == before
     with pytest.raises(ProjectError, match="Stale|stale"):
         operations.accept_trimap(project, result["revision"], "0" * 64, result["inputs_digest"])
-    approve(project, result)
+    if trimap_confirmed:
+        approve(project, result)
     with (project / "recipe.toml").open("a") as stream:
         stream.write("\n# changed draft\n")
     with pytest.raises(ProjectError, match="Stale|stale"):
         run_matte(project)
     assert (project / "state.json").read_bytes() == before
+
+
+def test_optional_trimap_approval_is_preserved_and_validated_when_present(tmp_path):
+    _, project, result = prepared(tmp_path)
+    approve(project, result)
+    approval = project / "approvals" / f"{result['revision']}-trimap.json"
+    original = approval.read_bytes()
+    before = (project / "state.json").read_bytes()
+    record = json.loads(original)
+    record["trimap_sha256"] = "0" * 64
+    approval.write_text(json.dumps(record))
+    with pytest.raises(ProjectError, match="Stale trimap approval"):
+        run_matte(project)
+    assert (project / "state.json").read_bytes() == before
+    approval.write_bytes(original)
+    matted = run_matte(project)
+    assert (
+        project / "revisions" / matted["revision"] / "trimap_approval.json"
+    ).read_bytes() == original
 
 
 @pytest.mark.parametrize("failure", ["low-disk", "nonfinite", "state-edit", "pointer"])
