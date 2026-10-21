@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -685,6 +686,15 @@ def _export_framed(
                 f"is unconfirmed; preserve it and retry identical export: {error}"
             ) from error
         raise
+    if reused:
+        # Only this verified duplicate is disposable, after publication is durable.
+        try:
+            shutil.rmtree(stage)
+        except OSError as error:
+            raise ProjectError(
+                f"Framed delivery is durably published at {destination}, but duplicate stage "
+                f"cleanup failed at {stage}; inspect remaining stage files: {error}"
+            ) from error
     return {
         "revision": revision,
         "draft": draft,

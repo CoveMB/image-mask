@@ -655,7 +655,12 @@ Identical complete deliveries are reused; differing, missing, extra, symlinked o
 directory members are rejected without overwrite. Files and directories are synced
 before exclusive publication. A failed parent sync can leave a complete visible
 delivery with unconfirmed durability; identical retry validates and syncs it.
-Failed stages and prior deliveries remain available.
+After successful identical reuse and parent sync, only that attempt's verified
+duplicate stage is removed. Failed exports retain any unpublished stages;
+failed reuse validation or parent sync retains its duplicate stage. A cleanup
+failure reports that publication succeeded and identifies the stage for inspection;
+some stage files may already be removed. Earlier stages and prior deliveries are
+never swept by an export retry.
 
 Resource admission retains the 10 GiB disk reserve and adds the existing native
 allowance plus 16 bytes per framed pixel and 2 MiB. Expanded variants/readbacks are

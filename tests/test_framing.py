@@ -566,6 +566,92 @@ def test_legacy_omission_zero_margins_variants_and_manifest_raw_identity(tmp_pat
     assert changed["directory"] != framed["directory"]
 
 
+@pytest.mark.parametrize("transparent", [False, True])
+def test_identical_framed_reuse_removes_only_its_verified_duplicate(tmp_path, transparent):
+    project, _, _ = fixture_project(tmp_path)
+    output = export_project(project, framing=margins(), framed_transparent=transparent)
+    exports = project / "exports"
+    retained_stage = exports / ".export-prior-failure"
+    retained_stage.mkdir()
+    (retained_stage / "evidence.txt").write_text("Preserve earlier failed work")
+    before = hashes(project)
+    for _ in range(2):
+        assert export_project(project, framing=margins(), framed_transparent=transparent) == output
+        assert list(exports.glob(".export-*")) == [retained_stage]
+        assert hashes(project) == before
+
+
+@pytest.mark.parametrize("failure", ["mismatch", "parent-sync"])
+def test_framed_reuse_failure_preserves_duplicate_and_prior_work(tmp_path, monkeypatch, failure):
+    project, _, _ = fixture_project(tmp_path)
+    export = importlib.import_module("blackmask.export")
+    output = Path(export_project(project, framing=margins())["directory"])
+    expected_stage = hashes(output)
+    exports = project / "exports"
+    retained_stage = exports / ".export-prior-failure"
+    retained_stage.mkdir()
+    (retained_stage / "evidence.txt").write_text("Preserve earlier failed work")
+    if failure == "mismatch":
+        readme = output / "README.txt"
+        original = readme.read_bytes()
+        readme.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+        message = "differing existing files"
+    else:
+        original_sync = export._sync_directory
+
+        def fail_parent(path):
+            if path == exports:
+                raise OSError("injected reused parent sync")
+            original_sync(path)
+
+        monkeypatch.setattr(export, "_sync_directory", fail_parent)
+        message = "visible.*durability"
+    before = hashes(project)
+    with pytest.raises(ProjectError, match=message):
+        export_project(project, framing=margins())
+    stages = set(exports.glob(".export-*"))
+    assert retained_stage in stages and len(stages) == 2
+    new_stage = (stages - {retained_stage}).pop()
+    assert hashes(new_stage) == expected_stage
+    after = hashes(project)
+    assert all(after[name] == value for name, value in before.items())
+
+
+def test_framed_reuse_partial_cleanup_failure_reports_published_delivery(tmp_path, monkeypatch):
+    project, _, _ = fixture_project(tmp_path)
+    export = importlib.import_module("blackmask.export")
+    output = Path(export_project(project, framing=margins())["directory"])
+    before = hashes(project)
+    synced = []
+    cleaned = []
+    original_sync = export._sync_directory
+
+    def record_sync(path):
+        original_sync(path)
+        synced.append(path)
+
+    def fail_partial_cleanup(path):
+        assert synced[-1] == project / "exports"
+        assert path.parent == project / "exports" and path.name.startswith(".export-")
+        assert hashes(path) == hashes(output)
+        cleaned.append(path)
+        (path / "README.txt").unlink()
+        raise OSError("injected partial cleanup")
+
+    monkeypatch.setattr(export, "_sync_directory", record_sync)
+    monkeypatch.setattr("shutil.rmtree", fail_partial_cleanup)
+    with pytest.raises(ProjectError, match="published.*duplicate stage cleanup failed") as failure:
+        export_project(project, framing=margins())
+    assert len(cleaned) == 1
+    assert str(output) in str(failure.value) and str(cleaned[0]) in str(failure.value)
+    assert "durability is unconfirmed" not in str(failure.value)
+    assert isinstance(failure.value.__cause__, OSError)
+    assert not (cleaned[0] / "README.txt").exists()
+    assert (cleaned[0] / "result_rgb16.tif").is_file()
+    after = hashes(project)
+    assert all(after[name] == value for name, value in before.items())
+
+
 def test_invalid_export_request_before_staging_or_expanded_allocation(tmp_path):
     project, _, _ = fixture_project(tmp_path)
     export = importlib.import_module("blackmask.export")

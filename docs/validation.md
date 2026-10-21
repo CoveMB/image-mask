@@ -1,5 +1,29 @@
 # Verification
 
+## Framed export reuse cleanup — 2026-10-20
+
+Identical framed exports now remove only the current attempt's byte-verified
+duplicate stage after publication validation and successful parent-directory sync.
+Published delivery bytes and identity remain unchanged. Failed validation or reuse
+sync retains the duplicate; a cleanup failure separately reports successful
+publication and the stage path, without implying that partially removed staging
+files are intact. Earlier failed stages are preserved.
+
+Five focused synthetic regressions cover repeat export with and without RGBA,
+unchanged project/delivery bytes, preservation of earlier stages, a same-size
+delivery mismatch, reuse parent-sync failure and partial cleanup failure. Against
+the original writer they produced three expected failures and two passes;
+after the repair all five passed. The complete default pytest suite then passed
+699 tests with three optional real-model tests skipped because their explicitly
+installed cache variables were unset. No tests were deselected from that full run.
+Ruff lint, formatting and mypy checks passed. Captured source/test/configuration
+hashes were unchanged during each verification command.
+
+These checks used the selected source tree, synthetic saved projects and offline
+settings. They establish the bounded filesystem lifecycle behavior; the historical
+browser and image-readback evidence below remains applicable to unchanged UI and
+raster behavior. No new real-model or human photographic acceptance is claimed.
+
 ## Actual browser journey and export readback — 2026-10-20
 
 The orchestrator completed the synthetic journey in the user's already-loaded
