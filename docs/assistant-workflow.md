@@ -8,10 +8,14 @@ involved. Do not transfer private pixels to an assistant without the user's
 applicable direct authorization. Missing permission or missing source evidence
 stops the live assisted route; manual controls remain available.
 
+Run CLI examples from the repository root after [environment setup](../README.md#setup-and-quick-start),
+using `.venv/bin/blackmask`; shell activation is unnecessary. Replace `PROJECT`
+and request-file placeholders with your actual paths.
+
 ## Inspect and classify
 
 Read the project's current recipe, guides, state, user keep/remove request and
-saved cycle history. Obtain a current manifest with `blackmask review PROJECT`
+saved cycle history. Obtain a current manifest with `.venv/bin/blackmask review PROJECT`
 (or `--crops FILE`, a JSON list of native half-open rectangles). Inspect the
 source overview and matching native source/result/alpha crops, including fragile
 detail, gaps and suspect seams. The panel order is source, black, gray, white,
@@ -41,7 +45,7 @@ a new cycle automatically to reset the budget. Save a schema-1 JSON cycle reques
 and invoke:
 
 ```sh
-blackmask review PROJECT --cycle-request CYCLE_REQUEST.json
+.venv/bin/blackmask review PROJECT --cycle-request CYCLE_REQUEST.json
 ```
 
 A start request contains exactly `schema_version: 1`, `action: "start"`,
@@ -87,12 +91,12 @@ guides fail through the shared validators. Unresolved source evidence and
 color, shading and fade appearance decisions stop the automatic alpha cycle. Automatic preparation cannot
 remove or alter inherited locks.
 
-1. Save typed guide changes and run `blackmask run PROJECT --request PREPARE.json`.
+1. Save typed guide changes and run `.venv/bin/blackmask run PROJECT --request PREPARE.json`.
    Use the same `assisted_review` envelope throughout this attempt. Preparation
    applies those changes once, saves the original request/result and returns
    exact revision/master/draft/support paths. Selection membership is not opacity.
 2. The user inspects and explicitly confirms the authoritative trimap with
-   `blackmask accept PROJECT --revision REV --trimap --master-id ID --inputs-digest DIGEST`.
+   `.venv/bin/blackmask accept PROJECT --revision REV --trimap --master-id ID --inputs-digest DIGEST`.
    Assistance cannot infer this confirmation or development approval.
 3. Build a finite repair request using those **returned** identities/support,
    `kind: "repair"`, `reason`, `context_xyxy`, `scope_xyxy` and `merge_policy`.
@@ -100,7 +104,7 @@ remove or alter inherited locks.
    them. Context may exceed scope. Support is full-master grayscale16, zero outside
    permitted scope. A rectangle does not mean erase it; cores/unknown corridors
    determine the correction. Locks, including partial alpha, remain inherited.
-4. Run the repair through `blackmask run PROJECT --request REPAIR.json`. One
+4. Run the repair through `.venv/bin/blackmask run PROJECT --request REPAIR.json`. One
    attempt is reserved durably before model execution. At most **two repair
    attempts total across all defects** are allowed in this explicit cycle.
    Invalid proposals rejected before reservation do not spend an attempt.

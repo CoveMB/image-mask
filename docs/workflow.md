@@ -20,7 +20,9 @@ JSON-only command use; other documented CLI commands can run in another terminal
 
 ## Develop and review the source
 
-The page shows an RGB8 viewing approximation of the oriented saved master. Check
+Choose **View → Source** before reviewing development. A new project has no result
+yet; if the initial Result view reports an image error, switch to Source. This
+shows an RGB8 viewing approximation of the oriented saved master. Check
 orientation, white balance and clipping, inspecting the saved master TIFF in a
 trusted RGB16 viewer when precision matters. Only then check **I reviewed this
 master’s development** and choose **Approve development**. This approves source
@@ -77,8 +79,9 @@ erosion/dilation margins. Inspect **Unreviewed trimap proposal** and **Proposal
 unknown boundary**; these suggestions do not replace confirmed categorical cores.
 Author actual core/unknown guides against source before the next preparation.
 
-Inspect the authoritative **Prepared trimap**, support and lock overlays against
-source. Resolve contradictions and leave fragile areas unknown. Check the trimap
+Use **View → Source** to inspect the authoritative **Prepared trimap**, support
+and lock overlays; prepared-only revisions have no Result view. Resolve
+contradictions and leave fragile areas unknown. Check the trimap
 review box and **Approve prepared trimap**. Then **Run full matte**. A changed draft
 needs preparation and trimap review again; saved pending guides cannot be approved
 as if they were already rasterized. All writers share the same nonblocking project
@@ -102,8 +105,14 @@ accepted state and diagnostic artifacts. Fix the displayed cause before retrying
 
 ## Compare, accept and export
 
+After a successful matte or repair, choose **View → Result · saved background**
+before comparing the result; the page keeps the previously selected view.
 Use **Source / result**, the revision selector, Result and black/gray/white diagnostics and
-alpha view on identical native crops. Turn overlays off for photographic comparison.
+alpha view on identical native crops. For photographic comparison, set **Candidate
+preview → None**, **Canvas authoring mode → Matting guides** and **Overlay → None**.
+Exposure and fade shapes remain visible in their authoring modes even with Overlay
+set to None. Switching to Matting guides hides those marks without clearing saved
+or draft areas; switch back to the effect's authoring mode when drawing again.
 Inspect fragile detail, gaps, transparency and seams at native scale. Cached tile
 counts describe verified computation reuse, never visual quality. Previews are
 RGB8/alpha8 approximations; authoritative saved assets retain RGB16/alpha16 precision.
@@ -306,7 +315,8 @@ or restore captured sharpness. Final photographic acceptance remains your decisi
    stacks exposure on previous exposure.
 5. **Compare exposure OFF** previews the same alpha with saved cleanup/shading
    retained, with Shadow fade recalculated from the exposure-OFF input. Source/alpha views are unaffected; the BASE checkbox turns all
-   optional effects off. Comparison is read-only. Check native black/gray/white
+   optional effects off. Comparison is read-only. [Hide authoring marks](#compare-accept-and-export)
+   before judging native black/gray/white
    views, feather edges, noise and highlights. The clipping count is affected
    pixels with at least one channel above linear white before clamping, over
    eligible selected pixels; it is not a photographic quality score.
@@ -351,7 +361,8 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
    Settings apply afresh without compounding.
 4. **Compare Shadow fade OFF** retains cleanup, exposure and shading. **Compare
    exposure OFF** retains fade, recalculated from exposure-OFF RGB. BASE disables
-   every optional effect; selecting a comparison clears the others. Inspect the
+   every optional effect; selecting a comparison clears the others. [Hide authoring
+   marks](#compare-accept-and-export), then inspect the
    same native crop on black/gray/white and alpha. Source and alpha stay unchanged.
 5. **Reset Shadow fade** saves OFF / 0% and retains the saved area, other effects
    and pending area edits. Reload discards unsaved area edits and loads saved geometry.

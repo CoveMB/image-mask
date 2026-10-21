@@ -1,8 +1,10 @@
 # Selection and typed guides
 
 Preparation produces reviewable guidance. It does not compute alpha or accept a final
-photograph. Inspect the developed RGB16 master first, then explicitly approve its
-actual identity with `blackmask accept --development --master-id ...`.
+photograph. Run commands from the repository root after [environment setup](../README.md#setup-and-quick-start);
+shell activation is unnecessary. Inspect the developed RGB16 master first, then
+explicitly approve its actual identity with
+`.venv/bin/blackmask accept /path/to/project --development --master-id ACTUAL_INSPECTED_MASTER_ID`.
 
 ## Model setup and devices
 
@@ -27,8 +29,9 @@ non-finite output. Disable `PYTORCH_ENABLE_MPS_FALLBACK` to keep device failures
 visible. Automatic MPS remains disabled pending representative photographic and
 responsiveness checks. Its implemented failed-stage policy retries once on CPU
 with unchanged geometry, without mixing embeddings/devices or reducing resolution.
-ViTMatte runtime remains unimplemented. Scores are model rankings, not calibrated
-quality probabilities.
+Native ViTMatte matting has [separate explicit setup](matting.md#explicit-model-setup)
+and [photographic review obligations](matting.md#recovery-and-limits).
+Scores are model rankings, not calibrated quality probabilities.
 
 ## Recipe groups and native regions
 
@@ -86,7 +89,7 @@ create blanket locks. Preparation carries parent alpha/corrected RGB unchanged.
 
 ## Prepare and review
 
-`blackmask open --headless --project /path/to/project` returns current master, working revision
+`.venv/bin/blackmask open --headless --project /path/to/project` returns current master, working revision
 and draft `inputs_digest`. Copy those actual identities into a request, with null
 base before the first revision:
 

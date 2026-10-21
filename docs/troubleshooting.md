@@ -43,7 +43,7 @@ A publication collision means another tool/editor created a project asset while 
 - **Missing/corrupt SAM:** inference never downloads. Inspect the explicit cache;
   retain mismatched files for diagnosis and select a new empty cache for a separately
   authorized setup. Do not replace weights/configs with same-name alternatives.
-- **Stale request:** run `blackmask open --headless --project /path/to/project`
+- **Stale request:** from the repository root, run `.venv/bin/blackmask open --headless --project /path/to/project`
   to obtain actual master/base/draft digest. Finish external
   edits, inspect source/trimap intent, and submit a fresh request. Newer text remains
   untouched. Typed edits already published need not be submitted again.
@@ -171,7 +171,8 @@ is shown as a draft error while the review page remains available. Approvals and
 processing reject these unresolved edits. Choose a valid **Restore saved revision**,
 check **Preserve current draft bytes in recovery, then replace drafts**, and choose
 **Restore working inputs (acceptance unchanged)**. The CLI equivalent is
-`blackmask restore /path/to/project --revision rev-NNN --replace-drafts`.
+`.venv/bin/blackmask restore /path/to/project --revision rev-NNN --replace-drafts`
+from the repository root.
 Recovery retains the exact old pointer bytes under `recovery/restore-*/`; the active
 pointer is marked unreadable and retired. Existing request records are preserved.
 This recovers saved inputs, not missing accepted dependencies; use an independent
