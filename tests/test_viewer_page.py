@@ -14,7 +14,8 @@ const assert = require('node:assert/strict');
 const nodes = new Map();
 const context = new Proxy({}, {get: () => () => {}});
 function makeNode(id = '') {
-  return {id, value:'', checked:false, disabled:false, textContent:'', options:[],
+  return {id, value:'', checked:false, disabled:false, textContent:'', options:[], files:[],
+    click(){if(this.onclick)return this.onclick();},
     replaceChildren(){this.options=[];}, append(option){this.options.push(option);},
     querySelectorAll(){return [];},
     getBoundingClientRect(){return {left:0,top:0,width:300,height:200};},
@@ -76,6 +77,113 @@ async function ready(){
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_series_mode_and_portable_controls_preserve_independent_forms():
+    run_page(r"""
+ servedState.series_settings={name:'Portrait series',output_width_px:40,output_height_px:50,side_margin_tenths_percent:150,minimum_vertical_margin_tenths_percent:50};
+ await ready();
+ $('framingLeft').value='7';$('framingLeft').oninput();$('cleanupSupport').value='keep';
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ $('framingMode').value='match-series';await $('framingMode').onchange();
+ $('seriesName').value='Été 🦋 <series>';$('seriesName').oninput();
+ assert.equal(seriesSettings().name,'Été 🦋 <series>');
+ const native=JSON.stringify({identity,exposureControlsIdentity});
+ $('framingMode').value='add-margins';await $('framingMode').onchange();
+ $('framingMode').value='match-series';await $('framingMode').onchange();
+ assert.equal($('framingLeft').value,'7');assert.equal($('seriesName').value,'Été 🦋 <series>');
+ const originalFetch=globalThis.fetch;
+ globalThis.fetch=async(path,options)=>{
+  if(path!='/api/series-preset-validate')return originalFetch(path,options);
+  const raw=JSON.parse(options.body).preset_json, preset=JSON.parse(raw);
+  const {schema_version,kind,...settings}=preset;
+  return {ok:true,json:async()=>({settings,preset_json:JSON.stringify(preset)})};
+ };
+ const bytes=new TextEncoder().encode(JSON.stringify({schema_version:1,kind:'series-framing-preset',...seriesSettings(),name:'Loaded series'}));
+ $('seriesFile').files=[{size:bytes.length,arrayBuffer:async()=>bytes.buffer}];
+ await $('seriesFile').onchange();assert.equal(seriesSettings().name,'Loaded series');
+ assert.equal(seriesDirty,true);assert.equal(posts.length,0);
+ let read=false;const before=JSON.stringify(seriesSettings());
+ $('seriesFile').files=[{size:16385,arrayBuffer:async()=>{read=true;}}];
+ await $('seriesFile').onchange();assert.equal(read,false);assert.equal(JSON.stringify(seriesSettings()),before);
+ $('seriesFile').files=[];await $('seriesFile').onchange();assert.equal(JSON.stringify(seriesSettings()),before);
+ const invalid=new Uint8Array([255]);$('seriesFile').files=[{size:1,arrayBuffer:async()=>invalid.buffer}];
+ await $('seriesFile').onchange();assert.equal(JSON.stringify(seriesSettings()),before);
+ let release;const pendingBytes=new Promise(resolve=>release=resolve);
+ $('seriesFile').files=[{size:bytes.length,arrayBuffer:()=>pendingBytes}];
+ const pending=$('seriesFile').onchange();$('seriesWidth').value='43';$('seriesWidth').oninput();
+ release(bytes.buffer);await pending;assert.equal(seriesSettings().output_width_px,43);
+ let downloaded=null,revoked=false;const oldCreate=document.createElement;
+ document.createElement=tag=>{const node=oldCreate(tag);if(tag==='a')node.click=()=>{downloaded=node.download;};return node;};
+ URL.createObjectURL=blob=>{assert(blob.size<=16384);return 'blob:synthetic';};
+ URL.revokeObjectURL=url=>{assert.equal(url,'blob:synthetic');revoked=true;};
+ await $('seriesDownload').onclick();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(downloaded,'series-framing-preset.json');assert.equal(revoked,true);
+ assert.equal(posts.length,0);assert.equal(JSON.stringify({identity,exposureControlsIdentity}),native);
+ assert.equal($('cleanupSupport').value,'keep');assert.equal($('framingLeft').value,'7');
+ """)
+
+
+def test_series_preview_sequence_selection_and_bitmap_lifecycle():
+    run_page(r"""
+ servedState.series_settings={name:'Portrait series',output_width_px:40,output_height_px:50,side_margin_tenths_percent:150,minimum_vertical_margin_tenths_percent:50};
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);await ready();
+ $('framingMode').value='match-series';await $('framingMode').onchange();
+ const originalFetch=globalThis.fetch;let decode,closed=false;
+ globalThis.fetch=async(path,options)=>{
+  if(path!='/api/series-preview')return originalFetch(path,options);
+  const request=JSON.parse(options.body);
+  return {ok:true,json:async()=>({...request,algorithm:'series-lanczos-premultiplied-v1',output_dimensions_wh:[40,50],display_dimensions_wh:[40,50],layout:{scale:1.3,geometric_margins_lrtb_px:[6,6,11,11],transformed_subject_bounds_xyxy:[6,11,34,39],fit_reason:'side-margins-matched',source_edge_contact:true},png_base64:'AA=='})};
+ };
+ globalThis.createImageBitmap=()=>new Promise(resolve=>decode=()=>resolve({width:40,height:50,close(){closed=true;}}));
+ const pending=previewSeries();for(let i=0;i<20&&!decode;i++)await Promise.resolve();assert(decode);
+ $('seriesName').value='new fields';$('seriesName').oninput();decode();await pending;
+ assert.equal(closed,true);assert.equal(seriesBitmap,null);
+ globalThis.createImageBitmap=async()=>({width:40,height:50,close(){closed=true;}});
+ await previewSeries();assert(seriesBitmap);assert.match($('seriesPreviewStatus').textContent,/Enlarged/);
+ assert.match($('seriesPreviewStatus').textContent,/source edge/i);
+ $('framingMode').value='add-margins';await $('framingMode').onchange();assert.equal(seriesBitmap,null);
+ """)
+
+
+def test_series_buttons_export_the_named_selection_and_visible_settings():
+    run_page(r"""
+ servedState.series_settings={name:'Portrait series',output_width_px:40,output_height_px:50,side_margin_tenths_percent:150,minimum_vertical_margin_tenths_percent:50};
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',revision_manifest_sha256:'b'.repeat(64)}, {...servedState.revisions[0],revision:'rev-003',revision_manifest_sha256:'c'.repeat(64)});
+ servedState.working_revision='rev-003';await ready();
+ $('framingMode').value='match-series';await $('framingMode').onchange();
+ $('viewRevision').value='rev-002';await $('viewRevision').onchange();
+ $('seriesWidth').value='43';$('seriesWidth').oninput();$('seriesTransparent').checked=true;
+ $('geometry').value='17,23';await $('addGeometry').onclick();$('cleanupSupport').value='keep';
+ const before=JSON.stringify({regions,identity,exposureControlsIdentity,fadeControlsIdentity});
+ servedState.action={running:true,name:'series-export',error:null,result:null};
+ await $('seriesExportDraft').onclick();assert.equal(posts.at(-1).revision,'rev-002');
+ assert.equal(posts.at(-1).revision_manifest_sha256,'b'.repeat(64));assert.equal(posts.at(-1).draft,true);
+ assert.deepEqual(posts.at(-1).settings,seriesSettings());assert.equal(posts.at(-1).transparent,true);
+ servedState.action={running:false,name:'series-export',error:null,result:{settings:seriesSettings(),directory:'synthetic'}};await refresh();
+ assert.equal(JSON.stringify({regions,identity,exposureControlsIdentity,fadeControlsIdentity}),before);
+ assert.equal($('seriesExportAccepted').disabled,true);const count=posts.length;await $('seriesExportAccepted').onclick();assert.equal(posts.length,count);
+ $('viewRevision').value='rev-001';await $('viewRevision').onchange();
+ servedState.action={running:true,name:'series-export',error:null,result:null};
+ await $('seriesExportAccepted').onclick();assert.equal(posts.at(-1).revision,'rev-001');assert.equal(posts.at(-1).draft,false);
+ assert.equal($('cleanupSupport').value,'keep');
+ """)
+
+
+def test_series_uncertain_save_requires_explicit_reload():
+    run_page(r"""
+ servedState.series_settings={name:'Portrait series',output_width_px:40,output_height_px:50,side_margin_tenths_percent:150,minimum_vertical_margin_tenths_percent:50};
+ servedState.series_digest='old';await ready();
+ $('seriesName').value='unsaved';$('seriesName').oninput();$('cleanupSupport').value='keep';
+ servedState.action={running:true,name:'series-save',error:null,result:null};await $('seriesSave').onclick();
+ servedState.series_settings={...seriesSettings(),name:'visible settings'};servedState.series_digest='visible';
+ servedState.action={running:false,name:'series-save',error:'durability unconfirmed',result:{series_settings:servedState.series_settings,series_digest:'visible',series_reload_required:true}};
+ await refresh();assert.equal($('seriesName').value,'unsaved');assert.equal(seriesNeedsReload,true);
+ assert.equal($('seriesSave').disabled,true);const count=posts.length;await $('seriesSave').onclick();assert.equal(posts.length,count);
+ await $('seriesReload').onclick();assert.equal(seriesNeedsReload,false);assert.equal(seriesDigest,'visible');
+ assert.equal($('seriesName').value,'visible settings');assert.equal($('cleanupSupport').value,'keep');
+ """)
 
 
 def test_export_keeps_complete_unsaved_guides_and_groups():

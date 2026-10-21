@@ -37,6 +37,20 @@ class Margins:
         }
 
 
+def validate_presentation_size(size: tuple[int, int]) -> tuple[int, int]:
+    """Bound presentation geometry before allocating a delivery canvas."""
+    if (
+        type(size) is not tuple
+        or len(size) != 2
+        or any(type(item) is not int or item <= 0 for item in size)
+    ):
+        raise ValueError("Presentation dimensions must be positive integer width and height")
+    width, height = size
+    if width > 32768 or height > 32768 or width * height > 100_000_000:
+        raise ValueError("Framed output exceeds 32768 pixels per axis or 100000000 pixels")
+    return size
+
+
 def validate_margins(value: object, source_size: tuple[int, int]) -> Margins:
     """Validate strict JSON integers and bound the canvas before allocating it."""
     names = {"left_px", "right_px", "top_px", "bottom_px"}
@@ -54,8 +68,7 @@ def validate_margins(value: object, source_size: tuple[int, int]) -> Margins:
         raise ValueError("Source dimensions must be positive integer width and height")
     width = source_size[0] + value["left_px"] + value["right_px"]
     height = source_size[1] + value["top_px"] + value["bottom_px"]
-    if width > 32768 or height > 32768 or width * height > 100_000_000:
-        raise ValueError("Framed output exceeds 32768 pixels per axis or 100000000 pixels")
+    validate_presentation_size((width, height))
     return Margins(**value)
 
 

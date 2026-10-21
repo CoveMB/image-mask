@@ -42,7 +42,12 @@ black until explicitly changed. The [background instructions](docs/workflow.md#b
 explain Result, diagnostic views and separate editable exports. Presentation framing
 adds saved margins, a separate bounded RGB8 layout preview and compact RGB16
 exports. Native masks and editing coordinates stay unchanged; see
-[presentation margins](docs/workflow.md#add-presentation-margins).
+[presentation margins](docs/workflow.md#add-presentation-margins). **Match series**
+fits the saved masked subject into fixed output dimensions, with portable JSON
+presets for manual reuse across photographs. It resamples a separate presentation;
+**Add margins** retains its exact native-copy behavior. See the
+[series workflow](docs/workflow.md#match-a-fixed-size-series) and
+[verification limits](docs/validation.md#fixed-size-series-framing).
 
 [Validation](docs/validation.md#combined-workflow-validation) records combined
 computational checks and reconstruction from saved assets alone. The representative
@@ -146,6 +151,7 @@ for explicit model setup, typed preparation and human review.
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | Presentation geometry, bounded sampling and source-bound preset | `src/blackmask/framing.py` |
+| Fixed-size subject layout, premultiplied resampling and portable series settings | `src/blackmask/series_framing.py` |
 | One-project loopback server and packaged manual page | `src/blackmask/viewer.py`, `src/blackmask/ui/review.html` |
 | Shared inverse native coordinate mapping | `src/blackmask/ui/coordinates.js` |
 | Supported commands and local doctor/setup | `src/blackmask/cli.py` |
@@ -174,11 +180,11 @@ baselines; they do not establish the state or authority for new work. Private
 reference material and local evaluation evidence stay ignored. Development plans
 are excluded from installable distributions and are not needed to operate the tool.
 
-The [fixed-size series design](docs/superpowers/specs/2026-10-20-series-framing-design.md)
-and its [independent review](docs/superpowers/plans/2026-10-20-series-framing-review.md)
-remain proposals: preset storage, backdrop behavior, written-design approval and
-a detailed implementation plan still need decisions. The current framing feature
-adds pixel margins; it does not resize subjects to match a series.
+The [fixed-size series design](docs/superpowers/specs/2026-10-20-series-framing-design.md),
+[design review](docs/superpowers/plans/2026-10-20-series-framing-review.md) and
+[implementation plan](docs/superpowers/plans/2026-10-21-series-framing.md) retain
+development decisions and evidence. The maintained workflow and file contract own
+the supported interface; development records do not supply photographic acceptance.
 
 The maintained user docs describe implemented behavior. Cleanup and shading
 require human comparison for each photograph; synthetic checks do not supply

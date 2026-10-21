@@ -710,3 +710,121 @@ The page decodes PNG bytes through a local Blob and `createImageBitmap`, display
 only a matching source/revision/raw digest/all-margin/request-sequence result, and
 closes rejected or replaced bitmaps. The existing CSP remains unchanged. This canvas
 has no native guide-authoring handlers and its pixels cannot define native edits.
+
+## Fixed-size series settings and deliveries
+
+Match series is a separate resized presentation mode. Existing native exports,
+exact Add margins samples/identities, `framing.json`, project-state schema, masks,
+guidance/recipe digests, coordinates and working/accepted pointers retain their
+contracts. Opening an older project creates no series metadata and performs no migration.
+
+A portable preset is bounded UTF-8 JSON, at most **16384 bytes**, with exactly:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "series-framing-preset",
+  "name": "Portrait series",
+  "output_width_px": 4000,
+  "output_height_px": 5000,
+  "side_margin_tenths_percent": 150,
+  "minimum_vertical_margin_tenths_percent": 50
+}
+```
+
+Schema/version/kind are exact. Dimensions are positive strict JSON integers, at
+most 32768 per axis and 100000000 pixels total. Both margin fields are strict
+integers in `[0,450]`: 150 means 15.0% on **each** horizontal side; 50 means 5.0%
+on **each** vertical side. Booleans, fractional integer fields, duplicate/unknown/
+missing keys, nonfinite numbers and malformed UTF-8 are rejected. The name is
+nonblank valid Unicode text, 1–80 code points, preserved as text. It is never a
+filesystem name or HTML. No source identity/path, image, mask, photograph metadata
+or background override is included. Readers consume at most 16385 bytes; CLI and
+managed preset paths reject symlink aliases and nonregular files.
+
+The browser file picker sends bounded raw text to authenticated same-origin
+`POST /api/series-preset-validate` as exactly `{preset_json: str}`. The server
+returns validated `settings` and canonical `preset_json`; it accepts no filesystem
+path. Download uses a local Blob and fixed filename `series-framing-preset.json`,
+releasing its object URL afterward. Initiating download does not establish that
+the browser saved a disk file and never saves a project. Valid Load changes only
+the form; cancellation, invalid data or a superseded response changes no settings.
+
+Optional project `series-framing.json` contains exactly `schema_version: 1`,
+`master_id`, `source_dimensions_wh: [width,height]` and `settings`, where settings
+is the five-field settings object above without portable schema/kind. It has the
+same 16 KiB bound. Absence returns in-memory defaults/null digest without a write.
+Invalid metadata remains preserved; only the affected series persistence flow is
+disabled. Explicit save takes the shared project lock, validates source identity
+and uses raw-byte SHA-256 CAS with rechecks before atomic replacement. Semantically
+equal external byte rewrites invalidate CAS. An unchanged valid save preserves its
+exact bytes. Failures before replace preserve old bytes; post-replace uncertainty
+reports actual visible settings/digest when readable, retains form edits and requires
+explicit reload. No rollback is claimed. Portable changes do not change saved
+snapshots or deliveries. Restore retains source-bound series settings.
+
+Bounds include every saved `base_alpha16` sample greater than zero. The empty mask
+blocks the mode. Layout uses one continuous pixel-edge transform with uniform
+scale `min(W*(1-2*m)/bounds_width, H*(1-2*v)/bounds_height)` and centred translation.
+Integer support envelopes do not define a second scale; reported margins describe
+the continuous transformed original bounds, not the first nonzero filtered pixel.
+Height-limited fits report wider sides. Source-edge contact warns about clipped
+detail; no outlier removal, subject detection, rotation or new photographed detail occurs.
+
+Canonical saved-layer selection supplies cleanup, exposure and Shadow fade;
+saved shading and alpha apply once. Stale enabled effects block. The renderer uses
+encoded-sRGB float64 contribution arithmetic, then separable Pillow scalar `F`
+(float32 storage) Lanczos passes over explicit transparent support. All colour/
+alpha planes share the same fractional mapping and scale-dependent support.
+Exact unit-scale integer placement bypasses filtering. Nonfinite results fail;
+alpha is clamped to `[0,1]` first, then each premultiplied channel to `[0,65535*A]`.
+Composition is `P+B*(1-A)` with one ties-to-even RGB16 quantization. Transparent
+output unpremultiplies only where A is positive, quantizes straight RGBA8 and zeros
+RGB wherever its **quantized** alpha is zero. Native protected values stay unchanged
+on disk; resized output samples are not promised native bit identity.
+
+The selected saved background recipe/algorithm/hash bindings are validated before
+regeneration at final output dimensions. Unsupported algorithms fail. Legacy absence
+means black. Regeneration changes backdrop placement beneath partial-alpha edges too,
+without rewriting the native saved backdrop. Reduced previews sample the canonical
+full-output background grid using its full-width, 64-row, ordered float64 sums and
+`math.fsum` statistics; they do not normalize on a different preview grid. Preview
+sampling is approximate and bounded to 1600 pixels on the long edge, while the
+normalization pass still has output-size-dependent computation.
+
+Snapshots expose independent `series_settings`, `series_digest`, `series_error`.
+`POST /api/series-preview` takes exactly `master_id`, `revision`,
+`revision_manifest_sha256` and visible validated `settings`. It echoes those fields,
+full layout, full/display dimensions, algorithm, reduced-preview label and `png_base64`.
+The source/state/raw revision and validated saved assets are checked before/after
+rendering. Both preview modes share one nonblocking guard; no queue or simultaneous
+expensive preview is added. Existing token/origin/body guards and CSP remain intact.
+The canvas cannot author native guides. Delayed/replaced bitmaps are closed; changes
+to source, revision, settings or mode invalidate the preview.
+
+`series-export` binds the explicit selected revision and expected master/raw manifest
+identities, plus settings, `draft` and `transparent`. Accepted delivery requires that
+selection still be accepted under the writer lock and before publication; explicit
+draft remains DRAFT. CLI `--series-preset PATH` may capture its target under lock,
+with existing default-accepted/explicit-draft rules, and is exclusive with `--margins`.
+No mode silently saves visible settings or substitutes a different revision.
+
+The flat directory `exports/<revision[-DRAFT]>-series-framed-<full-sha256>/` contains
+RGB16 TIFF, RGB8 PNG, optional straight RGBA8 PNG, notes and manifest, using the
+same filenames as compact Add margins deliveries. The schema-1 manifest kind is
+`series-framed-presentation`; algorithm is `series-lanczos-premultiplied-v1`.
+Its identity binds full settings/layout/sampling, exact validated source-record and
+revision-manifest byte hashes, master/native-asset/effect/background identities,
+Pillow version/filter/float-box/rounding policy, encoding/profile and variants.
+Delivered members have exact hashes/dimensions/precision records; no personal paths,
+capture metadata or editable native rasters ship. Notes label resampling,
+enlargement, final-size backdrop regeneration and absent separate composition acceptance.
+
+Shared compact export publication retains validation, exclusive no-overwrite
+publication, exact identical reuse, durability diagnostics and the repaired
+duplicate-stage cleanup contract above. Only the current byte-verified duplicate
+after successful reuse/parent sync is disposable; earlier/failed stages are preserved.
+Resource geometry/coefficient/allocation checks precede staging or expanded allocation,
+with the existing 10 GiB reserve plus pending-write allowance. Estimates include
+retained inputs, output, alpha, scalar intermediate, strip/coefficient and encoding
+scratch. They are not RAM reservations or guarantees that every valid size fits.

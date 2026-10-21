@@ -423,7 +423,8 @@ A processed sRGB RGB16 TIFF is not sensor RAW. See the [saved contract](file-con
 
 ## Add presentation margins
 
-In the local review window, open **Framing and margins**. Enter nonnegative whole
+In the local review window, open **Framing and margins** and choose **Add margins**.
+Enter nonnegative whole
 pixels in **Left**, **Right**, **Top** and **Bottom**. **Set all sides** copies the
 Equal margins value to all four fields. **Centre image** redistributes the existing
 horizontal and vertical totals; an odd extra pixel goes Right or Bottom. It centres
@@ -476,3 +477,94 @@ uses the current working revision. The preview uses the revision selected in the
 viewer, which can differ from either export target. Check the returned revision
 and draft label when comparing deliveries. See
 [limits and recovery](troubleshooting.md#framed-export-recovery).
+
+## Match a fixed-size series
+
+Open **Framing and margins → Framing mode → Match series**. First select the
+complete saved result in **Compare revision**. This mode uses that selected revision's saved
+foreground, alpha and appearance. Unsaved native appearance controls are not rendered.
+Switching modes retains both forms' unsaved values and clears their preview; it
+does not save, calculate a new preview or export anything.
+
+The first-use settings are editable examples:
+
+| Control | Units and initial value |
+| --- | --- |
+| Preset name | 1–80 Unicode characters; initially `Portrait series` |
+| Output width / Output height | Whole pixels; initially 4000 × 5000 |
+| Side margins | Percent on **each** side; initially 15.0%; numeric field and linked slider |
+| Minimum top/bottom | Percent of output height on **each** side; initially 5.0% |
+
+Margins range from 0.0% to 45.0%, in 0.1% steps. Output axes are at most 32768
+pixels and the canvas at most 100,000,000 pixels. The subject is centred with one
+uniform scale. Side margins set the width target; a tall subject is limited by the
+vertical clearance and therefore has wider side margins. The image is not stretched,
+rotated or cropped to force a match. Equal size does not guarantee equal visual weight.
+
+Choose **Preview framing** and optionally **Show subject bounds**. Status reports
+the actual four geometric margins, whether height limits the fit, enlargement and
+source-edge contact. Every alpha value greater than zero participates, including
+faint disconnected hairs or stray pixels. The outline describes those original mask
+bounds; filtered support can extend beyond it. Correct unwanted alpha explicitly in
+the native mask workflow. Framing cannot restore already clipped anatomy or invent
+detail. Enlargement adds no captured detail, and reduction can make fine features
+subpixel or invisible.
+
+The separate preview has a long edge of at most 1600 pixels. It is a reduced RGB8
+approximation, not the final TIFF or a native editing surface. Changing settings,
+revision or mode clears stale preview pixels. Inspect fine detail in the native
+view and inspect the final TIFF in a suitable colour-managed viewer.
+
+Match series regenerates the selected revision's saved **Background** recipe at
+the final output dimensions. This produces a continuous fixed canvas and changes
+the backdrop beneath partial-alpha edges too. It differs from Add margins, which
+extends saved edge pixels. Legacy revisions without a background recipe use black.
+Series presets do not override background colour; use the existing Background
+workflow to save that appearance in each photo first.
+
+**Save for this photo** saves a complete source-bound settings snapshot;
+**Reload saved series settings** replaces only this form with its saved snapshot.
+Typing, previewing and exporting never save settings automatically. If a save
+reports uncertain durability, retain your edits and explicitly reload before the
+next save. Other native guidance/effect forms remain independent.
+
+For manual reuse across photographs:
+
+1. Choose **Download preset file**. This initiates a browser download of
+   `series-framing-preset.json`; confirm the file in your browser. It contains only
+   the name, output dimensions and margin settings, as described in the
+   [portable JSON contract](file-contract.md#fixed-size-series-settings-and-deliveries).
+   It contains no photograph, source identity, image path, mask or appearance data.
+2. Open another saved photo project and choose **Load preset file**. Select that
+   JSON file. A valid file changes only the local series form; cancellation or an
+   invalid/oversized file leaves the form unchanged. The metadata limit is 16 KiB.
+3. Select that photo's complete revision, preview its fit and save for that photo
+   only when desired. A later change to the portable file does not alter either
+   photo's saved snapshot or prior exports. There is no global preset catalog.
+
+**Export selected accepted result** requires that the visible selection is still
+the current accepted revision. **Export selected revision as draft** always produces
+a DRAFT delivery, including when its selected source is accepted. Both use the visible
+validated settings, including unsaved edits, and identify the actual selected revision;
+neither substitutes the working/accepted pointer silently or accepts the composition.
+The transparent checkbox adds a straight RGBA8 viewing copy.
+
+The equivalent explicit CLI operations are:
+
+```sh
+.venv/bin/blackmask export PROJECT --series-preset SERIES.json
+.venv/bin/blackmask export PROJECT --series-preset SERIES.json --framed-transparent
+.venv/bin/blackmask export PROJECT --series-preset SERIES.json --revision rev-NNN --draft
+```
+
+The flag is mutually exclusive with `--margins`. Without either flag, the existing
+native export behavior applies; project series settings are never loaded implicitly.
+The CLI accepts a bounded regular JSON file and rejects symlink aliases.
+
+Each compact delivery contains `result_rgb16.tif`, `result_RGB8_VIEW.png`, optional
+`transparent_RGBA8_VIEW.png`, `README.txt` and `manifest.json` beneath a distinct
+`exports/rev-NNN[-DRAFT]-series-framed-<identity>/` directory. TIFF is processed
+sRGB RGB16 with resampled samples; PNGs are reduced-precision views. Transparent
+RGB is straight, with zero RGB wherever quantized alpha is zero. Retain the native
+editable project, masks, original capture and accepted dependencies independently.
+See [preservation and recovery](troubleshooting.md#series-framing-recovery).

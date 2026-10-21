@@ -36,44 +36,84 @@ def normalized_background(settings: Any) -> dict[str, Any]:
     return {"color_srgb": settings["color_srgb"].upper(), "variation": settings["variation"]}
 
 
+def _background_shape(shape: tuple[int, int]) -> tuple[int, int]:
+    if len(shape) != 2 or any(type(n) is not int or n < 1 for n in shape):
+        raise ProjectError("Background requires positive native height and width")
+    return shape
+
+
+def _background_field_rows(shape: tuple[int, int], start: int) -> np.ndarray:
+    height, width = shape
+    x = np.arange(width, dtype=np.float64)[None, :] / max(width - 1, 1)
+    y = np.arange(start, min(start + 64, height), dtype=np.float64)[:, None] / max(height - 1, 1)
+    return (
+        0.48 * np.cos(2 * np.pi * (0.58 * x - 0.72 * y) + 1.2)
+        + 0.30 * np.sin(2 * np.pi * (1.12 * x + 0.33 * y) - 0.7)
+        + 0.22 * np.cos(2 * np.pi * (0.24 * x + 1.23 * y) + 0.5)
+    )
+
+
+def _background_statistics(shape: tuple[int, int]) -> tuple[float, float]:
+    height, width = shape
+    sums: list[float] = []
+    minimum, maximum = math.inf, -math.inf
+    for start in range(0, height, 64):
+        q = _background_field_rows(shape, start)
+        sums.extend(float(np.sum(row, dtype=np.float64)) for row in q)
+        minimum, maximum = min(minimum, float(q.min())), max(maximum, float(q.max()))
+    mean = math.fsum(sums) / (height * width)
+    amplitude = max(abs(minimum - mean), abs(maximum - mean))
+    return mean, amplitude
+
+
+def _background_encode(
+    q: np.ndarray, color: np.ndarray, variation: float, mean: float, amplitude: float
+) -> np.ndarray:
+    linear = srgb_to_linear(color.astype(np.float64) / 255)
+    q = q - mean
+    field = q / amplitude if amplitude else np.zeros_like(q)
+    return linear_to_rgb16(linear * np.exp2(variation * field)[..., None])
+
+
 def make_background(shape: tuple[int, int], settings: dict[str, Any]) -> np.ndarray:
     """Two passes in bounded row chunks; statistics reduce rows in native order."""
     validate_background(settings)
-    if len(shape) != 2 or any(type(n) is not int or n < 1 for n in shape):
-        raise ProjectError("Background requires positive native height and width")
-    height, width = shape
+    height, width = _background_shape(shape)
     color = np.array([int(settings["color_srgb"][i : i + 2], 16) for i in (1, 3, 5)])
     result = np.empty((height, width, 3), dtype=np.uint16)
     if settings["variation"] == 0 or not color.any():
         result[:] = color * 257
         return result
-    x = np.arange(width, dtype=np.float64)[None, :] / max(width - 1, 1)
-
-    def field_rows(start: int) -> np.ndarray:
-        y = np.arange(start, min(start + 64, height), dtype=np.float64)[:, None] / max(
-            height - 1, 1
-        )
-        return (
-            0.48 * np.cos(2 * np.pi * (0.58 * x - 0.72 * y) + 1.2)
-            + 0.30 * np.sin(2 * np.pi * (1.12 * x + 0.33 * y) - 0.7)
-            + 0.22 * np.cos(2 * np.pi * (0.24 * x + 1.23 * y) + 0.5)
-        )
-
-    sums: list[float] = []
-    minimum, maximum = math.inf, -math.inf
+    mean, amplitude = _background_statistics(shape)
     for start in range(0, height, 64):
-        q = field_rows(start)
-        sums.extend(float(np.sum(row, dtype=np.float64)) for row in q)
-        minimum, maximum = min(minimum, float(q.min())), max(maximum, float(q.max()))
-    mean = math.fsum(sums) / (height * width)
-    amplitude = max(abs(minimum - mean), abs(maximum - mean))
-    linear = srgb_to_linear(color.astype(np.float64) / 255)
-    for start in range(0, height, 64):
-        q = field_rows(start) - mean
-        field = q / amplitude if amplitude else np.zeros_like(q)
-        result[start : start + 64] = linear_to_rgb16(
-            linear * np.exp2(settings["variation"] * field)[..., None]
+        result[start : start + 64] = _background_encode(
+            _background_field_rows(shape, start), color, settings["variation"], mean, amplitude
         )
+    return result
+
+
+def sample_background(
+    shape: tuple[int, int], settings: dict[str, Any], display_dimensions_wh: tuple[int, int]
+) -> np.ndarray:
+    """Sample canonical full-grid pixels, retaining full-grid row-order statistics."""
+    validate_background(settings)
+    height, width = _background_shape(shape)
+    display_width, display_height = display_dimensions_wh
+    if any(type(n) is not int or n < 1 or n > 1600 for n in display_dimensions_wh):
+        raise ProjectError("Background display dimensions must be integers from 1 to 1600")
+    color = np.array([int(settings["color_srgb"][i : i + 2], 16) for i in (1, 3, 5)])
+    result = np.empty((display_height, display_width, 3), np.uint16)
+    if settings["variation"] == 0 or not color.any():
+        result[:] = color * 257
+        return result
+    mean, amplitude = _background_statistics(shape)
+    sample_x = (2 * np.arange(display_width) + 1) * width // (2 * display_width)
+    sample_y = (2 * np.arange(display_height) + 1) * height // (2 * display_height)
+    for start in range(0, height, 64):
+        selected = np.flatnonzero((sample_y >= start) & (sample_y < start + 64))
+        if len(selected):
+            q = _background_field_rows(shape, start)[np.ix_(sample_y[selected] - start, sample_x)]
+            result[selected] = _background_encode(q, color, settings["variation"], mean, amplitude)
     return result
 
 

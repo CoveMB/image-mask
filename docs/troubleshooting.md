@@ -103,7 +103,8 @@ A publication collision means another tool/editor created a project asset while 
 - **Invalid or excessive margins:** use four nonnegative integer pixel counts in
   left/right/top/bottom order. Each output axis is limited to 32768 pixels and the
   total to 100,000,000 pixels. Reduce margins; the application does not resize the
-  native photograph to fit. `--framed-transparent` requires explicit `--margins`.
+  native photograph to fit. `--framed-transparent` requires explicit `--margins`
+  or `--series-preset`.
 - **Visible edge bands:** margins repeat the saved backdrop's nearest edge and
   corner colours. Reduce margins or review a different saved backdrop; foreground
   detail is never stretched into the added area.
@@ -248,6 +249,8 @@ or strip new effect records for use in an older binary.
 
 ## Background appearance recovery
 
+For fixed-size delivery problems, see [series recovery](#series-framing-recovery).
+
 If controls differ from the image, they are unsaved: **Apply background** and wait
 for the new saved revision, or **Reload saved inputs** to discard the control draft.
 Load the current working revision first. Background requires an accepted base or
@@ -264,3 +267,51 @@ non-authoritative. Explicit restore with draft replacement preserves current dra
 in recovery storage and selects that revision's background; acceptance is unchanged.
 Export collisions preserve the existing delivery. Do not delete original projects,
 accepted dependencies, failed stages or recovery material automatically.
+
+## Series framing recovery
+
+- **Malformed or oversized portable file:** retain the original file. Use UTF-8 JSON
+  matching the [exact portable contract](file-contract.md#fixed-size-series-settings-and-deliveries),
+  including strict integers, unique fields and at most 16384 bytes. Load changes no
+  form values until validation succeeds. CLI preset paths must be regular files
+  without symlink aliases; the viewer accepts file contents, never server paths.
+- **Foreign, malformed or symlinked `series-framing.json`:** preserve it for explicit
+  recovery. It belongs to one source identity/dimensions; do not transplant that
+  project envelope to another photograph. Reuse a portable preset instead. The
+  invalid file disables affected save/reload behavior while explicit valid series
+  preview/export and native operations remain independent.
+- **Empty mask, stray alpha or source-edge warning:** an empty mask cannot be framed.
+  Every positive alpha value participates, so faint outliers can change the fit.
+  Inspect Show subject bounds and repair the native mask explicitly. A subject
+  touching the source edge may already be clipped; framing restores no anatomy.
+- **Wider side margins than requested:** height limits the uniform fit. Change the
+  output aspect ratio or margin settings if appropriate; the application will not
+  stretch or crop the subject. Enlargement adds no captured detail; very small
+  features can disappear on reduction. Inspect final TIFF pixels, not only preview.
+- **Changed appearance under partial edges:** Match series regenerates the saved
+  background recipe at the output size. Review that choice beneath transparency;
+  Add margins has different exact-copy/edge-extension semantics. Unsupported or
+  damaged saved backdrop records require an intact backup, not silent regeneration
+  of native accepted assets.
+- **Stale selection, manifest, source, effect or acceptance:** reload current state,
+  select the intended complete saved revision and preview again. Accepted export
+  requires that exact selection still be accepted. Draft remains DRAFT. Rebuild or
+  explicitly disable each stale enabled effect; no BASE fallback is exported.
+- **Busy preview or writer:** wait for the current operation. Preview modes share a
+  nonblocking render guard and writers share the project lock. Do not remove lock
+  files or start a second queue. A stale delayed response cannot replace newer fields.
+- **Stale save or durability uncertainty:** retain unsaved values, choose Reload saved
+  series settings to inspect actual visible settings/digest, reapply desired changes
+  and save explicitly. Another tab's raw-byte change invalidates CAS even if settings
+  look equal. No rollback or automatic overwrite is promised.
+- **Low resources, coefficient/phase error or failed allocation:** keep the project
+  and existing deliveries. Inspect the reported estimate/free space and choose an
+  appropriate smaller requested delivery if desired. The 10 GiB reserve remains;
+  a disk check does not guarantee RAM. No automatic cleanup, downsizing or precision
+  reduction occurs. Report a sampling-phase error with the requested geometry.
+- **Collision, unconfirmed publication or partial duplicate cleanup:** retain the
+  destination and stages. An identical retry validates complete bytes and confirms
+  publication sync. A successful-publication/cleanup error can leave a partially
+  removed duplicate stage; it does not imply the delivered result failed. Earlier
+  failed stages and accepted work are not swept. See
+  [shared framed export recovery](#framed-export-recovery).

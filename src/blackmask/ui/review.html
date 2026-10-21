@@ -473,6 +473,8 @@
       </fieldset>
       <fieldset>
         <legend>Framing and margins</legend>
+        <label>Framing mode <select id="framingMode"><option value="add-margins">Add margins</option><option value="match-series">Match series</option></select></label>
+        <div id="framingAddMode">
         <p class="small">Add saved background around the complete image. This cannot restore a cut-off leg or petal. Large margins may show constant edge bands. Native guides stay in original coordinates.</p>
         <label>Left (whole pixels) <input id="framingLeft" type="number" min="0" step="1" value="0" /></label>
         <label>Right (whole pixels) <input id="framingRight" type="number" min="0" step="1" value="0" /></label>
@@ -492,6 +494,30 @@
         <button id="framingExportAccepted">Export framed accepted result</button>
         <button id="framingExportDraft">Export framed draft</button>
         <p class="small">Framed exports use these visible margins, including unsaved changes. Saving or exporting margins does not accept a photograph or composition. Centre image balances existing padding; it does not locate the subject.</p>
+        </div>
+        <div id="seriesMode" hidden>
+          <p class="small">Fit every positive-alpha pixel inside identical output dimensions. Side margins are the target; tall subjects may need wider sides. Native editing stays unchanged.</p>
+          <label>Preset name <input id="seriesName" type="text" value="Portrait series" /></label>
+          <label>Output width (pixels) <input id="seriesWidth" type="number" min="1" max="32768" step="1" value="4000" /></label>
+          <label>Output height (pixels) <input id="seriesHeight" type="number" min="1" max="32768" step="1" value="5000" /></label>
+          <label>Side margins (percent on each side) <input id="seriesSide" type="number" min="0" max="45" step="0.1" value="15.0" /></label>
+          <label>Side margin slider (percent on each side) <input id="seriesSideRange" type="range" min="0" max="45" step="0.1" value="15.0" /></label>
+          <label>Minimum top/bottom (percent on each side) <input id="seriesVertical" type="number" min="0" max="45" step="0.1" value="5.0" /></label>
+          <button id="seriesPreview">Preview framing</button>
+          <label><input id="seriesBounds" type="checkbox" /> Show subject bounds</label>
+          <p id="seriesStatus" role="status" class="small"></p>
+          <p id="seriesPreviewStatus" role="status" class="small"></p>
+          <canvas id="seriesCanvas" width="1" height="1" style="max-width:100%;height:auto" aria-label="Approximate RGB8 series layout preview; display only, no guide authoring"></canvas>
+          <button id="seriesSave">Save for this photo</button>
+          <button id="seriesReload">Reload saved series settings</button>
+          <button id="seriesLoad">Load preset file</button>
+          <input id="seriesFile" type="file" accept="application/json,.json" hidden aria-label="Portable series preset JSON file" />
+          <button id="seriesDownload">Download preset file</button>
+          <label><input id="seriesTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
+          <button id="seriesExportAccepted">Export selected accepted result</button>
+          <button id="seriesExportDraft">Export selected revision as draft</button>
+          <p class="small">These actions use the named selection and visible settings, including unsaved edits. Preset files contain settings only. Loading a file does not save this photo. The saved backdrop recipe is regenerated at output size, including beneath partial-alpha edges. Enlargement adds no captured detail; reduction can hide fine detail. Inspect the exported TIFF and retain the native project. No composition acceptance is recorded.</p>
+        </div>
       </fieldset>
     </aside>
   </main>
@@ -516,6 +542,9 @@
     let framingDirty = false, framingSource = null, framingDigest = null;
     let framingNeedsReload = false, framingSubmitted = null;
     let framingSequence = 0, framingBitmap = null, framingDisplayedKey = "", framingSelectionKey = "";
+    const seriesDefaults = {name:"Portrait series",output_width_px:4000,output_height_px:5000,side_margin_tenths_percent:150,minimum_vertical_margin_tenths_percent:50};
+    let seriesDirty = false, seriesSource = null, seriesDigest = null, seriesNeedsReload = false, seriesSubmitted = null;
+    let seriesSequence = 0, seriesImportSequence = 0, seriesBitmap = null, seriesDisplayedKey = "", seriesSelectionKey = "", seriesLayout = null;
     let image = null,
       overlayImage = null,
       crop = null,
@@ -925,7 +954,7 @@
       if (
         reload ||
         !identity ||
-        (completed && !a.error && a.name !== "framing-save" && !a.result?.framing && (!dirty || authoringPublished))
+        (completed && !a.error && !["framing-save","series-save","series-export"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
       ) {
         loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";
@@ -959,6 +988,15 @@
         framingSubmitted = null;
       }
       syncFraming();
+      if (completed && a.name === "series-save" && seriesSubmitted) {
+        if (a.result?.series_reload_required) seriesNeedsReload = true;
+        else if (!a.error && sameSeriesSettings(a.result?.series_settings, seriesSubmitted)) {
+          seriesDigest = a.result.series_digest;
+          try { seriesDirty = !sameSeriesSettings(seriesSettings(), seriesSubmitted); } catch { seriesDirty = true; }
+        }
+        seriesSubmitted = null;
+      }
+      syncSeries();
       select(
         "lockRevision",
         state.revisions
@@ -1038,6 +1076,12 @@
       ])
         $(id).disabled = authoringBusy();
       $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
+      for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
+        $(id).disabled = authoringBusy();
+      $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.master_id || !!state?.series_error;
+      const selected = state?.revisions.find(record=>record.revision === $("viewRevision").value);
+      $("seriesExportAccepted").disabled = authoringBusy() || !selected?.final_acceptable || selected.revision !== state?.accepted_revision;
+      $("seriesExportDraft").disabled = authoringBusy() || !selected?.final_acceptable;
     }
     async function bitmap(path) {
       const blob = await (await api(path)).blob();
@@ -1062,6 +1106,7 @@
     async function loadImage() {
       if (!state || !crop) return;
       framingStatus();
+      syncSeries();
       const panel = $("panel").value,
         revision = $("viewRevision").value;
       const requestedCrop = [...crop],
@@ -1606,6 +1651,140 @@
     }
     $("framingExportAccepted").onclick = guarded(()=>exportFraming(false));
     $("framingExportDraft").onclick = guarded(()=>exportFraming(true));
+    function validateSeriesValue(value) {
+      if (!value || Object.keys(value).sort().join() !== Object.keys(seriesDefaults).sort().join()) throw Error("Invalid series settings fields");
+      if (typeof value.name !== "string" || !value.name.trim() || Array.from(value.name).length > 80 || Array.from(value.name).some(character=>{const code=character.codePointAt(0);return code>=0xd800 && code<=0xdfff;})) throw Error("Preset name must contain 1–80 Unicode characters");
+      const width=value.output_width_px,height=value.output_height_px;
+      if (![width,height].every(n=>Number.isSafeInteger(n) && n>0 && n<=32768) || width*height>100000000) throw Error("Series output requires positive whole pixels, at most 32768 per axis and 100000000 total");
+      if (![value.side_margin_tenths_percent,value.minimum_vertical_margin_tenths_percent].every(n=>Number.isInteger(n) && n>=0 && n<=450)) throw Error("Use margins from 0.0 to 45.0%, in 0.1% steps");
+      return Object.fromEntries(Object.keys(seriesDefaults).map(key=>[key,value[key]]));
+    }
+    function seriesPercent(id) {
+      const text=String($(id).value).trim(), scaled=Number(text)*10;
+      if (!text || !Number.isFinite(scaled) || Math.abs(scaled-Math.round(scaled))>1e-8) throw Error("Use margins from 0.0 to 45.0%, in 0.1% steps");
+      return Math.round(scaled);
+    }
+    function seriesSettings() {
+      return validateSeriesValue({name:$("seriesName").value,output_width_px:wholePixels("seriesWidth"),output_height_px:wholePixels("seriesHeight"),side_margin_tenths_percent:seriesPercent("seriesSide"),minimum_vertical_margin_tenths_percent:seriesPercent("seriesVertical")});
+    }
+    function sameSeriesSettings(first,second) {
+      return !!first && !!second && Object.keys(seriesDefaults).every(key=>first[key]===second[key]);
+    }
+    function setSeriesFields(value) {
+      const settings=validateSeriesValue(value);
+      $("seriesName").value=settings.name;$("seriesWidth").value=String(settings.output_width_px);$("seriesHeight").value=String(settings.output_height_px);
+      $("seriesSide").value=(settings.side_margin_tenths_percent/10).toFixed(1);$("seriesSideRange").value=$("seriesSide").value;
+      $("seriesVertical").value=(settings.minimum_vertical_margin_tenths_percent/10).toFixed(1);
+    }
+    function seriesRequest() {
+      const revision=$("viewRevision").value, record=state?.revisions.find(item=>item.revision===revision);
+      if (!record?.final_acceptable || !record.revision_manifest_sha256) throw Error("Select a complete saved revision for Match series");
+      return {master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,settings:seriesSettings()};
+    }
+    function seriesKey(request) {
+      return JSON.stringify([request.master_id,request.revision,request.revision_manifest_sha256,...Object.keys(seriesDefaults).map(key=>request.settings[key])]);
+    }
+    function invalidateSeriesPreview() {
+      seriesSequence++;seriesBitmap?.close();seriesBitmap=null;seriesLayout=null;seriesDisplayedKey="";
+      const canvas=$("seriesCanvas");canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+      $("seriesPreviewStatus").textContent="Series preview is stale; Preview framing to refresh";
+    }
+    function seriesStatus() {
+      if (!state) return;
+      try {
+        const value=seriesSettings(), revision=$("viewRevision").value;
+        $("seriesStatus").textContent=`${value.name} · output ${value.output_width_px} × ${value.output_height_px} pixels · selected ${revision || "none"} · `+(seriesDirty?"Unsaved settings":seriesDigest?"Saved for this photo":"Defaults; no saved series settings")+(seriesNeedsReload?" · Reload saved series settings required":"")+(state.series_error?" · "+state.series_error:"");
+      } catch(error) { $("seriesStatus").textContent=error.message; }
+      updateBusyControls();
+    }
+    function markSeriesDirty() { seriesDirty=true;invalidateSeriesPreview();seriesStatus(); }
+    function loadSeriesState() {
+      setSeriesFields(state.series_settings || seriesDefaults);seriesSource=state.master_id;seriesDigest=state.series_digest ?? null;
+      seriesDirty=false;seriesNeedsReload=false;invalidateSeriesPreview();seriesStatus();
+    }
+    function syncSeries() {
+      if (!state) return;
+      if (seriesSource===null) loadSeriesState();
+      else if (seriesSource!==state.master_id) {seriesNeedsReload=true;invalidateSeriesPreview();}
+      else if (!seriesDirty && !seriesNeedsReload) {setSeriesFields(state.series_settings || seriesDefaults);seriesDigest=state.series_digest ?? null;}
+      const selected=state.revisions.find(item=>item.revision===$("viewRevision").value);
+      const key=JSON.stringify([state.master_id,$("viewRevision").value,selected?.revision_manifest_sha256]);
+      if (key!==seriesSelectionKey) {seriesSelectionKey=key;invalidateSeriesPreview();}
+      if (seriesBitmap) {try {if(seriesDisplayedKey!==seriesKey(seriesRequest()))invalidateSeriesPreview();}catch{invalidateSeriesPreview();}}
+      seriesStatus();
+    }
+    function drawSeries() {
+      if (!seriesBitmap) return;
+      const canvas=$("seriesCanvas"),context=canvas.getContext("2d");context.clearRect(0,0,canvas.width,canvas.height);context.drawImage(seriesBitmap,0,0);
+      if ($("seriesBounds").checked && seriesLayout) {
+        const [x0,y0,x1,y1]=seriesLayout.transformed_subject_bounds_xyxy, value=seriesSettings();
+        context.strokeStyle="#00ffff";context.lineWidth=1;
+        context.strokeRect(x0*canvas.width/value.output_width_px,y0*canvas.height/value.output_height_px,(x1-x0)*canvas.width/value.output_width_px,(y1-y0)*canvas.height/value.output_height_px);
+      }
+    }
+    async function previewSeries() {
+      const request=seriesRequest(),key=seriesKey(request),sequence=++seriesSequence;
+      const matches=()=>{try{return sequence===seriesSequence && seriesKey(seriesRequest())===key && $("framingMode").value==="match-series";}catch{return false;}};
+      $("seriesPreviewStatus").textContent="Rendering approximate RGB8 series preview…";
+      let next=null;
+      try {
+        const result=await (await api("/api/series-preview",request)).json();if(!matches())return;
+        const output=[request.settings.output_width_px,request.settings.output_height_px],longest=Math.max(...output);
+        const display=output.map(value=>Math.max(1,Math.floor(value*Math.min(1600,longest)/longest)));
+        if(seriesKey(result)!==key || result.algorithm!=="series-lanczos-premultiplied-v1" || JSON.stringify(result.output_dimensions_wh)!==JSON.stringify(output) || JSON.stringify(result.display_dimensions_wh)!==JSON.stringify(display) || !result.layout || !Number.isFinite(result.layout.scale) || !Array.isArray(result.layout.geometric_margins_lrtb_px) || result.layout.geometric_margins_lrtb_px.length!==4 || !result.layout.geometric_margins_lrtb_px.every(Number.isFinite)) throw Error("Series preview identity or geometry mismatch; retry");
+        const bytes=Uint8Array.from(atob(result.png_base64),character=>character.charCodeAt(0));next=await createImageBitmap(new Blob([bytes],{type:"image/png"}));if(!matches())return;
+        if(next.width!==display[0] || next.height!==display[1])throw Error("Series preview bitmap dimensions mismatch");
+        seriesBitmap?.close();seriesBitmap=next;next=null;seriesDisplayedKey=key;seriesLayout=result.layout;
+        const canvas=$("seriesCanvas");canvas.width=display[0];canvas.height=display[1];drawSeries();
+        const margins=result.layout.geometric_margins_lrtb_px.map(value=>value.toFixed(2)).join(" / ");
+        $("seriesPreviewStatus").textContent=`Approximate RGB8 preview · ${request.revision} · actual left/right/top/bottom ${margins} px · `+(result.layout.fit_reason==="height-limited"?"Height limits the fit; side margins are wider":"Side margins matched")+(result.layout.scale>1?` · Enlarged ${result.layout.scale.toFixed(2)}×; no additional captured detail`:"")+(result.layout.source_edge_contact?" · Mask touches a source edge; framing cannot restore clipped detail":"")+" · Bounds describe the original positive-alpha mask; filtered support may extend beyond the outline. Inspect exported TIFF.";
+      } catch(error) {if(matches())$("seriesPreviewStatus").textContent=error.message+" · Preview is stale; retry";}
+      finally {next?.close();}
+    }
+    function seriesAction(name,extra) {return action(name,{master_id:state.master_id,base_revision:state.working_revision,inputs_digest:state.inputs_digest,authoring_digest:state.authoring_digest,...extra});}
+    for(const id of ["seriesName","seriesWidth","seriesHeight","seriesVertical"])$(id).oninput=markSeriesDirty;
+    $("seriesSide").oninput=()=>{$("seriesSideRange").value=$("seriesSide").value;markSeriesDirty();};
+    $("seriesSideRange").oninput=()=>{$("seriesSide").value=$("seriesSideRange").value;markSeriesDirty();};
+    $("seriesBounds").onchange=guarded(drawSeries);
+    $("seriesPreview").onclick=guarded(previewSeries);
+    $("seriesReload").onclick=guarded(async()=>{await refresh();loadSeriesState();});
+    $("seriesSave").onclick=guarded(async()=>{
+      if(seriesNeedsReload || seriesSource!==state.master_id || state.series_error)throw Error("Reload saved series settings or resolve series-framing.json before saving");
+      seriesSubmitted=seriesSettings();try{await seriesAction("series-save",{settings:seriesSubmitted,expected_digest:seriesDigest});}catch(error){seriesSubmitted=null;throw error;}
+    });
+    async function exportSeries(draft) {
+      const request=seriesRequest();if(!draft && request.revision!==state.accepted_revision)throw Error("Select the currently accepted revision for accepted series export");
+      await seriesAction("series-export",{revision:request.revision,draft,revision_manifest_sha256:request.revision_manifest_sha256,settings:request.settings,transparent:$("seriesTransparent").checked});
+    }
+    $("seriesExportAccepted").onclick=guarded(()=>exportSeries(false));$("seriesExportDraft").onclick=guarded(()=>exportSeries(true));
+    $("framingMode").onchange=guarded(()=>{
+      const series=$("framingMode").value==="match-series";$("framingAddMode").hidden=series;$("seriesMode").hidden=!series;
+      framingSequence++;framingBitmap?.close();framingBitmap=null;framingDisplayedKey="";$("framingCanvas").getContext("2d").clearRect(0,0,$("framingCanvas").width,$("framingCanvas").height);
+      invalidateSeriesPreview();seriesStatus();
+    });
+    $("seriesLoad").onclick=guarded(()=>$("seriesFile").click());
+    $("seriesFile").onchange=guarded(async()=>{
+      const file=$("seriesFile").files?.[0];if(!file)return;
+      const request=++seriesImportSequence,sequence=seriesSequence,source=state.master_id;
+      try {
+        if(file.size>16384)throw Error("Portable preset exceeds 16384 bytes");
+        const bytes=new Uint8Array(await file.arrayBuffer());if(bytes.byteLength>16384)throw Error("Portable preset exceeds 16384 bytes");
+        const raw=new TextDecoder("utf-8",{fatal:true}).decode(bytes);
+        const result=await (await api("/api/series-preset-validate",{preset_json:raw})).json();
+        if(request!==seriesImportSequence || sequence!==seriesSequence || source!==state.master_id)return;
+        const settings=validateSeriesValue(result.settings);setSeriesFields(settings);markSeriesDirty();
+        $("seriesPreviewStatus").textContent="Preset loaded into this form; not saved for this photo. Preview framing to inspect.";
+      } finally {$("seriesFile").value="";}
+    });
+    $("seriesDownload").onclick=guarded(async()=>{
+      const settings=seriesSettings(),sequence=seriesSequence;
+      const result=await (await api("/api/series-preset-validate",{preset_json:JSON.stringify({schema_version:1,kind:"series-framing-preset",...settings})})).json();
+      if(sequence!==seriesSequence || !sameSeriesSettings(result.settings,seriesSettings()))return;
+      if(typeof result.preset_json!=="string" || new TextEncoder().encode(result.preset_json).byteLength>16384)throw Error("Invalid portable preset response");
+      const url=URL.createObjectURL(new Blob([result.preset_json],{type:"application/json"}));
+      try {const link=document.createElement("a");link.href=url;link.download="series-framing-preset.json";link.click();$("seriesPreviewStatus").textContent="Preset download initiated; confirm the file in your browser. Photo settings were not saved.";}
+      finally {setTimeout(()=>URL.revokeObjectURL(url),0);}
+    });
     function requireSaved() {
       if (dirty) throw Error("Save authoring edits before preparing/running");
     }

@@ -40,6 +40,18 @@ from .project import (
     read_revision,
 )
 from .review import review_panels
+from .series_framing import (
+    SeriesSaveUncertain,
+    _unique_object,
+    compute_series_layout,
+    parse_series_preset,
+    portable_series_preset,
+    read_series_settings,
+    render_series,
+    save_series_settings,
+    series_sampling_plan,
+    validate_series_settings,
+)
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -86,6 +98,14 @@ class ReviewServer(ThreadingHTTPServer):
             state.update(framing=margins.to_dict(), framing_digest=preset_digest)
         except (OSError, ValueError, TypeError) as error:
             state["framing_error"] = str(error)
+        state.update(series_settings=None, series_digest=None, series_error=None)
+        try:
+            settings, preset_digest = read_series_settings(
+                self.project, state["master_id"], (width, height)
+            )
+            state.update(series_settings=settings.to_dict(), series_digest=preset_digest)
+        except (OSError, ValueError, TypeError) as error:
+            state["series_error"] = str(error)
         state["draft_error"] = None
         try:
             state["inputs_digest"] = operations.draft_digest(self.project)
@@ -172,11 +192,17 @@ class ReviewServer(ThreadingHTTPServer):
         return manifest, raw
 
     @_validation_scope()
-    def preview_framing(self, data: Any) -> dict[str, Any]:
+    def preview_framing(self, data: Any, *, series_mode: bool = False) -> dict[str, Any]:
         """Read-only final-result preview; never author or publish native assets."""
         if (
             not isinstance(data, dict)
-            or set(data) != {"master_id", "revision", "revision_manifest_sha256", "margins"}
+            or set(data)
+            != {
+                "master_id",
+                "revision",
+                "revision_manifest_sha256",
+                "settings" if series_mode else "margins",
+            }
             or not isinstance(data["revision_manifest_sha256"], str)
             or re.fullmatch("[a-f0-9]{64}", data["revision_manifest_sha256"]) is None
         ):
@@ -201,7 +227,14 @@ class ReviewServer(ThreadingHTTPServer):
             if effects_stale(manifest):
                 raise ProjectError("Stale enabled appearance; rebuild or disable before preview")
             source, _ = _validate_assets(self.project, state, validate_drafts=False)
-            settings = validate_margins(data["margins"], (source.shape[1], source.shape[0]))
+            settings_record: dict[str, object] = {}
+            if series_mode:
+                series_settings = validate_series_settings(data["settings"])
+                settings_record.update(series_settings.to_dict())
+            else:
+                margins = validate_margins(data["margins"], (source.shape[1], source.shape[0]))
+                settings_record.update(margins.to_dict())
+            del source
             foreground, alpha, loaded_manifest = saved_layers(
                 self.project, data["revision"], state["master_id"]
             )
@@ -211,12 +244,44 @@ class ReviewServer(ThreadingHTTPServer):
             background = read_background(
                 _asset(self.project, f"revisions/{data['revision']}"), loaded_manifest
             )
-            native = (
-                render_black(foreground, alpha, weight, opacity)
-                if background is None
-                else render_background(foreground, alpha, background, weight, opacity)
-            )
-            pixels, geometry = framing_preview(native, background, settings)
+            geometry: dict[str, object]
+            if series_mode:
+                layout = compute_series_layout(alpha, series_settings)
+                width, height = layout.output_dimensions_wh
+                longest = max(width, height)
+                display = (
+                    max(1, int(width * min(1600, longest) / longest)),
+                    max(1, int(height * min(1600, longest) / longest)),
+                )
+                sampling = series_sampling_plan(layout, display_dimensions_wh=display)
+                del background
+                rgb16 = render_series(
+                    foreground,
+                    alpha,
+                    sampling,
+                    weight16=weight,
+                    opacity=opacity,
+                    background_settings=loaded_manifest.get("background", {}).get("settings"),
+                )
+                pixels = np.empty((*rgb16.shape[:2], 3), np.uint8)
+                for start in range(0, pixels.shape[0], 64):
+                    pixels[start : start + 64] = np.rint(
+                        rgb16[start : start + 64].astype(np.float64) / 257
+                    ).astype(np.uint8)
+                del rgb16
+                geometry = {
+                    "layout": layout.to_dict(),
+                    "output_dimensions_wh": [width, height],
+                    "display_dimensions_wh": list(display),
+                    "source_dimensions_wh": [foreground.shape[1], foreground.shape[0]],
+                }
+            else:
+                native = (
+                    render_black(foreground, alpha, weight, opacity)
+                    if background is None
+                    else render_background(foreground, alpha, background, weight, opacity)
+                )
+                pixels, geometry = framing_preview(native, background, margins)
             with io.BytesIO() as buffer:
                 image = Image.fromarray(pixels)
                 try:
@@ -233,14 +298,31 @@ class ReviewServer(ThreadingHTTPServer):
                 "master_id": state["master_id"],
                 "revision": data["revision"],
                 "revision_manifest_sha256": digest(raw),
-                "margins": settings.to_dict(),
+                "settings" if series_mode else "margins": settings_record,
                 **geometry,
-                "algorithm": "saved-backdrop-edge-padding-v1",
-                "label": "RGB8 sampled layout preview; reduced detail, not a native editing view",
+                "algorithm": "series-lanczos-premultiplied-v1"
+                if series_mode
+                else "saved-backdrop-edge-padding-v1",
+                "label": "RGB8 approximate resized series preview; reduced detail, inspect exported TIFF"
+                if series_mode
+                else "RGB8 sampled layout preview; reduced detail, not a native editing view",
                 "png_base64": png_base64,
             }
         finally:
             self.framing_preview_lock.release()
+
+    def validate_series_preset(self, data: Any) -> dict[str, Any]:
+        if (
+            not isinstance(data, dict)
+            or set(data) != {"preset_json"}
+            or not isinstance(data["preset_json"], str)
+        ):
+            raise ValueError("Portable series validation requires only preset_json text")
+        settings = parse_series_preset(data["preset_json"].encode("utf-8"))
+        return {
+            "settings": settings.to_dict(),
+            "preset_json": portable_series_preset(settings).decode("utf-8"),
+        }
 
     def start_action(self, data: Any) -> None:
         if not isinstance(data, dict):
@@ -259,6 +341,14 @@ class ReviewServer(ThreadingHTTPServer):
             "resume": {"operation_id"},
             "export": {"revision", "draft"},
             "framing-save": {"margins", "expected_digest"},
+            "series-save": {"settings", "expected_digest"},
+            "series-export": {
+                "revision",
+                "draft",
+                "revision_manifest_sha256",
+                "settings",
+                "transparent",
+            },
         }
         if action == "export":
             fields["export"] |= set(data) & {"framing", "framed_transparent"}
@@ -297,7 +387,7 @@ class ReviewServer(ThreadingHTTPServer):
                 self.action["result"] = self.execute(data)
             except Exception as error:  # noqa: BLE001 - report all ordinary failures to the page.
                 self.action["error"] = str(error).strip() or type(error).__name__
-                if isinstance(error, FramingSaveUncertain):
+                if isinstance(error, (FramingSaveUncertain, SeriesSaveUncertain)):
                     self.action["result"] = error.visible
             finally:
                 self.action["running"] = False
@@ -368,6 +458,32 @@ class ReviewServer(ThreadingHTTPServer):
                 data["margins"],
                 expected_digest=data["expected_digest"],
                 expected_source_id=data["master_id"],
+            )
+        if action == "series-save":
+            return save_series_settings(
+                self.project,
+                data["settings"],
+                expected_digest=data["expected_digest"],
+                expected_source_id=data["master_id"],
+            )
+        if action == "series-export":
+            if (
+                not isinstance(data["revision"], str)
+                or not data["revision"]
+                or type(data["draft"]) is not bool
+                or type(data["transparent"]) is not bool
+            ):
+                raise ProjectError(
+                    "Series export requires an explicit selected revision and boolean variant/draft flags"
+                )
+            return export_project(
+                self.project,
+                revision=data["revision"],
+                draft=data["draft"],
+                series=data["settings"],
+                framed_transparent=data["transparent"],
+                expected_master_id=data["master_id"],
+                expected_revision_manifest_sha256=data["revision_manifest_sha256"],
             )
         request = {
             "schema_version": 1,
@@ -583,7 +699,12 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if not self.allowed(True) or self.headers.get_all("Origin") != [self.server.origin]:
             self.error(403, "Forbidden host, origin or capability")
             return
-        if self.path not in {"/api/action", "/api/framing-preview"}:
+        if self.path not in {
+            "/api/action",
+            "/api/framing-preview",
+            "/api/series-preview",
+            "/api/series-preset-validate",
+        }:
             self.error(404, "Unknown route")
             return
         if self.headers.get_all("Content-Type") != ["application/json"] or self.headers.get(
@@ -604,17 +725,38 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 raise ValueError("Incomplete body")
             data = json.loads(
                 body,
+                object_pairs_hook=_unique_object if self.path.startswith("/api/series-") else None,
                 parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Nonfinite JSON")),
             )
             if self.path == "/api/framing-preview":
                 result = self.server.preview_framing(data)
                 self.reply(200, json.dumps(result, allow_nan=False).encode())
+            elif self.path == "/api/series-preview":
+                result = self.server.preview_framing(data, series_mode=True)
+                self.reply(200, json.dumps(result, allow_nan=False).encode())
+            elif self.path == "/api/series-preset-validate":
+                self.reply(
+                    200,
+                    json.dumps(self.server.validate_series_preset(data), allow_nan=False).encode(),
+                )
             else:
+                if isinstance(data, dict) and data.get("action") in {
+                    "series-save",
+                    "series-export",
+                }:
+                    data = json.loads(
+                        body,
+                        object_pairs_hook=_unique_object,
+                        parse_constant=lambda value: (_ for _ in ()).throw(
+                            ValueError("Nonfinite JSON")
+                        ),
+                    )
                 self.server.start_action(data)
                 self.reply(202, b'{"started":true}')
         except (OSError, ValueError, TypeError) as error:
             conflict = "busy" in str(error).lower() or (
-                self.path == "/api/framing-preview" and isinstance(error, ProjectError)
+                self.path in {"/api/framing-preview", "/api/series-preview"}
+                and isinstance(error, ProjectError)
             )
             self.error(409 if conflict else 400, str(error))
 

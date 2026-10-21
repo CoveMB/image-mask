@@ -225,15 +225,50 @@ def export_project(
     draft: bool = False,
     framing: dict[str, int] | None = None,
     framed_transparent: bool = False,
+    series: dict[str, object] | None = None,
+    expected_master_id: str | None = None,
+    expected_revision_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     if type(framed_transparent) is not bool:
         raise ValueError("framed_transparent must be a boolean")
-    if framed_transparent and framing is None:
+    if series is not None and framing is not None:
+        raise ValueError("Series settings and pixel margins are mutually exclusive")
+    if series is None and (
+        expected_master_id is not None or expected_revision_manifest_sha256 is not None
+    ):
+        raise ValueError("Expected presentation identities require series settings")
+    if series is not None:
+        if type(draft) is not bool or (expected_master_id is None) != (
+            expected_revision_manifest_sha256 is None
+        ):
+            raise ValueError(
+                "Series export requires a boolean draft flag and paired expected identities"
+            )
+        if any(
+            value is not None
+            and (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(c not in "0123456789abcdef" for c in value)
+            )
+            for value in (expected_master_id, expected_revision_manifest_sha256)
+        ):
+            raise ValueError("Series expected identities must be SHA-256 hex strings")
+    if framed_transparent and framing is None and series is None:
         raise ValueError("Transparent framing requires explicit margins")
     project = _root(project)
     with project_lock(project):
-        if framing is not None:
-            return _export_framed(project, revision, draft, framing, framed_transparent)
+        if framing is not None or series is not None:
+            return _export_framed(
+                project,
+                revision,
+                draft,
+                framing,
+                framed_transparent,
+                series=series,
+                expected_master_id=expected_master_id,
+                expected_revision_manifest_sha256=expected_revision_manifest_sha256,
+            )
         state = read_project(project)
         if revision is None:
             if draft:
@@ -474,8 +509,12 @@ def _export_framed(
     project: Path,
     revision: str | None,
     draft: bool,
-    framing: dict[str, int],
+    framing: dict[str, int] | None,
     transparent: bool,
+    *,
+    series: dict[str, object] | None = None,
+    expected_master_id: str | None = None,
+    expected_revision_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Publish one compact presentation while holding the canonical project lock."""
     from .background import read_background
@@ -486,6 +525,8 @@ def _export_framed(
     # Cooperative writers use the project lock; this is not a hostile-writer snapshot.
     captured = {name: _asset(project, name).read_bytes() for name in ("state.json", "source.json")}
     state = read_project(project)
+    if expected_master_id is not None and state["master_id"] != expected_master_id:
+        raise ProjectError("Stale series source identity; reload the selected photo")
     if _json_bytes(json.loads(captured["state.json"])) != _json_bytes(state):
         raise ProjectError("Stale framed export state")
     if revision is None:
@@ -498,6 +539,11 @@ def _export_framed(
         raise ProjectError("Unaccepted revision requires explicit --draft")
     manifest_name = f"revisions/{revision}/manifest.json"
     captured[manifest_name] = _asset(project, manifest_name).read_bytes()
+    if (
+        expected_revision_manifest_sha256 is not None
+        and digest(captured[manifest_name]) != expected_revision_manifest_sha256
+    ):
+        raise ProjectError("Stale series revision manifest; reload the selected result")
     foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
     if _json_bytes(json.loads(captured[manifest_name])) != _json_bytes(manifest):
         raise ProjectError("Stale framed export revision manifest")
@@ -511,8 +557,26 @@ def _export_framed(
     if effects_stale(manifest):
         raise ProjectError("Stale enabled appearance: rebuild or explicitly disable before export")
     size = (foreground.shape[1], foreground.shape[0])
-    settings = validate_margins(framing, size)
-    width, height, source_rect = framed_geometry(size, settings)
+    sampling = None
+    series_settings = None
+    settings_record: dict[str, object] = {}
+    if series is not None:
+        from .series_framing import (
+            compute_series_layout,
+            estimate_series_resources,
+            series_sampling_plan,
+            validate_series_settings,
+        )
+
+        series_settings = validate_series_settings(series)
+        sampling = series_sampling_plan(compute_series_layout(alpha, series_settings))
+        width, height = sampling.layout.output_dimensions_wh
+        source_rect = sampling.layout.subject_bounds_xyxy
+        settings_record.update(series_settings.to_dict())
+    else:
+        settings = validate_margins(framing, size)
+        width, height, source_rect = framed_geometry(size, settings)
+        settings_record.update(settings.to_dict())
     # Disk admission retains the native allowance and adds framed TIFF/PNG payloads
     # with headroom. RAM use is separate; expanded variants are processed in sequence.
     check_space(
@@ -523,6 +587,14 @@ def _export_framed(
     )
     weight, opacity = saved_shading(project, revision, alpha, manifest)
     background = read_background(_asset(project, f"revisions/{revision}"), manifest)
+    if sampling is not None:
+        estimate_series_resources(
+            sampling,
+            retained_native_bytes=foreground.nbytes
+            + alpha.nbytes
+            + (0 if weight is None else weight.nbytes),
+            transparent=transparent,
+        )
     variants = ["result_rgb16.tif", "result_RGB8_VIEW.png"]
     if transparent:
         variants.append("transparent_RGBA8_VIEW.png")
@@ -560,7 +632,7 @@ def _export_framed(
         if draft
         else "Framed presentation of accepted revision; framing has not been separately accepted",
         "source_dimensions_wh": list(size),
-        "margins": settings.to_dict(),
+        "margins": settings_record,
         "output_dimensions_wh": [width, height],
         "source_rect_xyxy": list(source_rect),
         "algorithm": "saved-backdrop-edge-padding-v1",
@@ -592,9 +664,52 @@ def _export_framed(
             },
         },
     }
+    if sampling is not None and series_settings is not None:
+        from PIL import __version__ as pillow_version
+
+        record.pop("margins")
+        record.pop("source_rect_xyxy")
+        record.update(
+            {
+                "kind": "series-framed-presentation",
+                "source_record_sha256": digest(captured["source.json"]),
+                "label": "DRAFT - explicit resized series presentation"
+                if draft
+                else "Resized series presentation of accepted revision; composition has not been separately accepted",
+                "settings": settings_record,
+                "layout": sampling.layout.to_dict(),
+                "sampling": sampling.to_dict(),
+                "algorithm": "series-lanczos-premultiplied-v1",
+                "backend": {
+                    "name": "Pillow",
+                    "version": pillow_version,
+                    "mode": "F",
+                    "filter": "Lanczos",
+                    "source_box": "float32",
+                    "reducing_gap": None,
+                    "quantization": "NumPy ties-to-even",
+                },
+                "encoding": {
+                    "result": "uncompressed processed sRGB RGB16 TIFF; resampled existing detail",
+                    "views": "sRGB RGB8/RGBA8 reduced precision; straight RGB, zero RGB where quantized alpha is zero",
+                    "icc_profile_sha256": digest(srgb_profile()),
+                },
+                "background": {
+                    "algorithm": manifest.get("background", {}).get("algorithm", "legacy-black"),
+                    "settings": manifest.get("background", {}).get(
+                        "settings", {"color_srgb": "#000000", "variation": 0.0}
+                    ),
+                    "placement": "recipe-regenerated-at-final-output-size",
+                    "native_record_sha256": digest(_json_bytes(manifest["background"]))
+                    if "background" in manifest
+                    else None,
+                },
+            }
+        )
     identity = digest(_json_bytes(record))
     label = f"{revision}-DRAFT" if draft else revision
-    destination = _asset(project, f"exports/{label}-framed-{identity}")
+    delivery_mode = "series-framed" if sampling is not None else "framed"
+    destination = _asset(project, f"exports/{label}-{delivery_mode}-{identity}")
     names = {*variants, "README.txt", "manifest.json"}
     reused = destination.exists() or destination.is_symlink()
     if reused:
@@ -602,13 +717,26 @@ def _export_framed(
     exports = _asset(project, "exports")
     exports.mkdir(exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
-    native = (
-        render_black(foreground, alpha, weight, opacity)
-        if background is None
-        else render_background(foreground, alpha, background, weight, opacity)
-    )
-    result = frame_result(native, background, settings)
-    del native, background
+    if sampling is not None:
+        from .series_framing import render_series
+
+        del background
+        result = render_series(
+            foreground,
+            alpha,
+            sampling,
+            weight16=weight,
+            opacity=opacity,
+            background_settings=manifest.get("background", {}).get("settings"),
+        )
+    else:
+        native = (
+            render_black(foreground, alpha, weight, opacity)
+            if background is None
+            else render_background(foreground, alpha, background, weight, opacity)
+        )
+        result = frame_result(native, background, settings)
+        del native, background
     result_digest = _pixel_digest(result)
     write_master(stage / "result_rgb16.tif", result)
     view_digest = _write_framed_rgb8(stage / "result_RGB8_VIEW.png", result)
@@ -620,7 +748,19 @@ def _export_framed(
     del restored
     _verify_framed_png(stage / "result_RGB8_VIEW.png", "RGB", (width, height), view_digest)
     if transparent:
-        rgba = frame_transparent(view_rgba(foreground, alpha, weight, opacity), settings)
+        rgba = (
+            render_series(
+                foreground,
+                alpha,
+                sampling,
+                weight16=weight,
+                opacity=opacity,
+                background_settings=manifest.get("background", {}).get("settings"),
+                transparent=True,
+            )
+            if sampling is not None
+            else frame_transparent(view_rgba(foreground, alpha, weight, opacity), settings)
+        )
         rgba_digest = _pixel_digest(rgba)
         image = Image.fromarray(rgba)
         try:
@@ -632,15 +772,22 @@ def _export_framed(
         _verify_framed_png(
             stage / "transparent_RGBA8_VIEW.png", "RGBA", (width, height), rgba_digest
         )
-    (stage / "README.txt").write_text(
-        str(record["label"])
-        + "\nThe native image is copied without resampling at the manifest's source rectangle. "
+    notes = (
+        "\nThis is a resized presentation using existing photographed detail. "
+        "The saved backdrop recipe is regenerated at final output dimensions, including beneath partial-alpha edges. "
+        "Enlargement adds no captured detail; reduction can hide fine features. "
+        "RGB16 TIFF retains processed precision; PNGs are reduced-precision views. "
+        "The native editable project remains authoritative and unchanged; retain it for editing. "
+        "Series framing confers no photographic acceptance.\n"
+        if sampling is not None
+        else "\nThe native image is copied without resampling at the manifest's source rectangle. "
         "Margins extend saved backdrop edge pixels (black for legacy projects); visible bands "
         "are possible. RGB16 TIFF retains processed sRGB precision. PNGs are reduced-precision "
         "views; optional RGBA is straight and has zero RGBA margins. Framing does not alter "
         "native editing coordinates or confer photographic acceptance. Editable source layers "
         "remain in the local project at the manifest's relative native asset paths.\n"
     )
+    (stage / "README.txt").write_text(str(record["label"]) + notes)
     record["files"] = {
         name: {
             "sha256": _file_digest(stage / name),
@@ -695,12 +842,17 @@ def _export_framed(
                 f"Framed delivery is durably published at {destination}, but duplicate stage "
                 f"cleanup failed at {stage}; inspect remaining stage files: {error}"
             ) from error
-    return {
+    response = {
         "revision": revision,
         "draft": draft,
         "directory": str(destination),
         "manifest_file": str(destination / "manifest.json"),
-        "framing": settings.to_dict(),
+        "framing": settings_record,
         "output_dimensions_wh": [width, height],
         "source_rect_xyxy": list(source_rect),
     }
+    if sampling is not None:
+        response.pop("framing")
+        response.pop("source_rect_xyxy")
+        response.update({"settings": settings_record, "layout": sampling.layout.to_dict()})
+    return response

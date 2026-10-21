@@ -116,17 +116,23 @@ def main() -> int:
     exported.add_argument("project", type=Path)
     exported.add_argument("--revision")
     exported.add_argument("--draft", action="store_true")
-    exported.add_argument(
+    presentation = exported.add_mutually_exclusive_group()
+    presentation.add_argument(
         "--margins",
         nargs=4,
         type=int,
         metavar=("LEFT", "RIGHT", "TOP", "BOTTOM"),
         help="Create a separate framed presentation using nonnegative native pixel margins",
     )
+    presentation.add_argument(
+        "--series-preset",
+        type=Path,
+        help="Create a fixed-size resized presentation from a portable series JSON preset",
+    )
     exported.add_argument(
         "--framed-transparent",
         action="store_true",
-        help="Include a reduced-precision straight RGBA8 view; requires --margins",
+        help="Include a reduced-precision straight RGBA8 view; requires --margins or --series-preset",
     )
     restored = commands.add_parser(
         "restore", help="Restore saved working inputs; retain acceptance"
@@ -210,6 +216,8 @@ def main() -> int:
             else:
                 result = review_project(arguments.project, revision=arguments.revision, crops=crops)
         elif arguments.command == "export":
+            from .series_framing import read_series_preset_file
+
             result = export_project(
                 arguments.project,
                 revision=arguments.revision,
@@ -224,6 +232,9 @@ def main() -> int:
                 if arguments.margins is not None
                 else None,
                 framed_transparent=arguments.framed_transparent,
+                series=read_series_preset_file(arguments.series_preset).to_dict()
+                if arguments.series_preset is not None
+                else None,
             )
         elif arguments.command == "restore":
             from .operations import restore_revision

@@ -1,6 +1,6 @@
 # Fixed-size series framing design
 
-Date: 2026-10-20. Status: written design candidate revised after independent review; user decisions and approval remain pending. This is not a step-by-step implementation plan. The user requested Superpowers planning and then independent review. Application changes, Git writes, publication, dependency installation and photographic acceptance are outside this planning task. Review findings and dispositions are retained in [the independent review record](../plans/2026-10-20-series-framing-review.md).
+Date: 2026-10-20; checkout and prerequisite evidence reconciled on 2026-10-21. Status: written design and the [detailed implementation plan](../plans/2026-10-21-series-framing.md) approved by the user on 2026-10-21, with portable preset files, output-size backdrop regeneration and explicit final documentation coverage. The later execution approval preapproves intermediate gates and authorizes finishing the feature and creating its MR for user review; it does not authorize merging, unrelated external actions, downloads or private-photo evaluation. Review findings, dispositions and current progress are retained in [the independent review record](../plans/2026-10-20-series-framing-review.md).
 
 ## 1. Intended result and confirmed choices
 
@@ -12,11 +12,11 @@ Success: two saved photo projects can use the same settings and produce the same
 
 ## 2. Baseline and authority
 
-The application inspected for this design is commit `90829e007f8af677a8ef29694a3f81494b1f07f2` on `framing-and-margins`, with a clean working tree. It contains the published framing candidate from MR #16. Remote state was not refreshed for this planning task; no merge or hosted-review completion is inferred.
+The initial design and independent reviews inspected commit `90829e007f8af677a8ef29694a3f81494b1f07f2` on `framing-and-margins`. That historical comparison is retained for review provenance. The current application checkout was verified on 2026-10-21 at reconciled commit `14e8c83fa3b5a7603c5c240eb96a0081702da0f5`. Local `main` and the locally stored `origin/main` both resolve to that commit. The checkout was clean before the explicitly authorized creation of `series-framing` from main. Remote refs were not refreshed in this chat.
 
-The planning repository still has no application source and has pre-existing modified/untracked files. This design is a new file beside the earlier Superpowers designs. Do not implement against that source-free checkout or overwrite earlier plans. Recheck the actual application checkout, instructions, branch/diff, storage contracts and relevant predecessor evidence before execution. A later photo-library/storage migration must be consumed through its actual canonical interfaces, not a parallel resolver invented here.
+The former source-free planning-root description no longer applies: this checkout now contains the reconciled application source, tests, configuration and contracts. Preserve the historical `planning-main-preserved` and `untracked` branches and ignored local data; do not merge their photographic/reference ancestry into the application history. Recheck the actual checkout, instructions, branch/diff and storage contracts before execution. A later photo-library/storage migration must be consumed through its actual canonical interfaces, not a parallel resolver invented here.
 
-During independent review, the existing framing handoff recorded a separate owner repairing successful export reuse for MR #16; `tests/test_framing.py` became modified while HEAD remained `90829e0`. That work is outside this review. Before series implementation, reconcile the completed repair, its resulting comparison baseline and affected export tests. Do not take over its checkout while another writer is active or treat the historical clean snapshot as current authority.
+The separate successful-export-reuse repair completed as `2a6029dfeda8f2aa4fe03f2bb3b9e730cab86404`, included in predecessor main `ee9a3d1` and the reconciled baseline. Its current `_export_framed` path validates a complete identical delivery, confirms parent-directory durability, then removes only that attempt's verified duplicate stage; failed validation/synchronization retains the stage, and partial cleanup failure reports the durable delivery and remaining stage accurately. All four frozen repair-file hashes and all 44 recorded full-suite input hashes match this checkout. Preserved evidence records 699 passed, three optional model-cache skips and exit 0, plus focused RED/GREEN and passing lint/format/type checks. This unchanged-input evidence is inherited framing proof, not new series verification. The repair no longer blocks this work; no other writer is being overlapped. Current progress and the retained local evidence location are recorded in the linked review plan.
 
 Authority order: direct current user instructions; applicable repository instructions; current application `docs/file-contract.md`; the supplied v4 product specification; this proposed additive design. The prior padding-only contract remains authoritative for existing Add margins mode. Resizing and subject-relative layout are new behavior isolated to Match series mode, not a relaxation of the existing exact-copy promise.
 
@@ -45,7 +45,7 @@ Match series controls:
 | Preview framing | Explicit calculation/render from the selected complete saved revision |
 | Show subject bounds | Optional display outline; no mask editing or authoring coordinates on this canvas |
 | Save for this photo / Reload saved series settings | Explicit project-local persistence; no silent save while editing or importing |
-| Reuse preset controls | Determined by the storage decision in section 8 |
+| Reuse preset controls | Load preset file / Download preset file, using the selected portable-file contract in section 8 |
 | Export selected accepted result / Export selected revision as draft | Both target the complete saved revision selected in the viewer; accepted export is enabled only when that selection is the current accepted revision. Show the revision and accepted/DRAFT status before the action. Add margins keeps its existing buttons and behavior. |
 
 Show the actual output size, actual four margins, enlargement factor when greater than 1, and fit reason. Examples: “Side margins matched”; “Height limits the fit; actual side margins are 22%”; “Enlarged 1.3×; no additional captured detail.” Explain that bounds describe the existing mask and do not detect anatomy.
@@ -78,13 +78,13 @@ Height wins when necessary, so side margins may exceed their target. Do not stre
 
 Use validated saved RGB16 foreground, grayscale16 alpha and the canonical selected appearance layers. Resolve exposure, cleanup and Shadow fade through `saved_layers`/`selected_foreground`, and shading through `saved_shading`; reject stale enabled effects rather than silently exporting the base fallback. Every effect and alpha is applied once.
 
-The proposed series resampler operates on floating-point premultiplied foreground contribution and alpha with the **same geometry and filter**. Reuse the current encoded-sRGB shading/compositing convention; do not quietly change native rendering to a different colour space. Factor a small shared contribution helper only where it removes actual duplication between the existing renderer and the new consumer.
+The proposed series resampler operates on floating-point premultiplied foreground contribution and alpha with the **same geometry and filter**. Reuse the current encoded-sRGB shading/compositing convention and existing `export._foreground_contribution`; do not quietly change native rendering to a different colour space or create a parallel contribution implementation.
 
 Use the already pinned Pillow's scalar floating-point `F` images per channel with an explicit Lanczos filter; do not pass RGB16 through Pillow's 8-bit RGB/RGBA modes or the browser preview. Derive fractional source boxes from the same continuous transform for all channels. Preserve the full scale-dependent filter neighborhood with transparent zero contribution/alpha beyond the captured image; the tight subject box must not become a clamped/repeated image boundary. Use bounded explicit support/zero padding where the library requires finite input boxes. Do not substitute Pillow's affine transform API with a different filter while labelling the result Lanczos. The implementation plan must pin the mapping/support calculation and scalar float64-oracle tolerance before code; a new resampling engine is not presumed necessary.
 
 Define the overshoot policy in this order: reject nonfinite filtered values; bound filtered alpha to `A=clip(alpha,0,1)`; bound each filtered premultiplied RGB16-range channel to `P=clip(contribution,0,65535*A)`. Use this same bounded `(P,A)` pair for the composed and transparent variants. Compose against output backdrop `B` as `P+B*(1-A)` and quantize once to RGB16. This maintains `0 <= P <= 65535*A` rather than independently clipping colour and alpha to incompatible ranges. Test contrasting partial-alpha edges with real negative-filter-lobe overshoot as well as hidden saturated colours under zero source alpha. Output samples are resampled, not bit-identical native pixels; native protected pixels and masks remain byte-identical on disk.
 
-**Proposed background decision for written review:** generate the selected revision's saved background recipe at the final output dimensions using the existing background generator; use black for a legacy revision without background settings. Validate the saved settings and algorithm identity against their manifest first; an unsupported saved background algorithm blocks series rendering rather than being silently replaced. This gives the full fixed canvas a continuous backdrop and avoids stretching an already flattened subject or repeating image-edge strips. It changes the placement of a textured/varied backdrop compared with Add margins; disclose that distinction in the UI/docs and manifest. It never rewrites the saved native backdrop or changes its controls. Matching background colour across photos remains the user's existing Background control, not a new series-preset override.
+**Background decision selected by the user on 2026-10-21:** generate the selected revision's saved background recipe at the final output dimensions using the existing background generator; use black for a legacy revision without background settings. Validate the saved settings and algorithm identity against their manifest first; an unsupported saved background algorithm blocks series rendering rather than being silently replaced. This gives the full fixed canvas a continuous backdrop and avoids stretching an already flattened subject or repeating image-edge strips. It changes the placement of a textured/varied backdrop compared with Add margins, including beneath partially transparent subject edges; disclose that distinction in the UI/docs and manifest. It never rewrites the saved native backdrop or changes its controls. Matching background colour across photos remains the user's existing Background control, not a new series-preset override.
 
 For transparent viewing output, unpremultiply `P/A` only where bounded alpha is positive, then quantize straight RGB and alpha to RGBA8. After quantization, set RGB to zero wherever the **quantized** alpha is zero, including positive floating alpha that rounded down. No second alpha multiplication and no background baked into transparent RGB. At extreme reductions, fine details may become subpixel and visually disappear despite correct resampling; require visual inspection and do not promise their native appearance at every output size.
 
@@ -92,7 +92,7 @@ Preview uses the same layout/subject/render semantics at a display long edge of 
 
 ## 7. Reuse and file responsibility
 
-All application paths below are relative to the verified application checkout, not this planning repository.
+All application paths below are relative to the current verified application checkout.
 
 | Owner | Responsibility |
 | --- | --- |
@@ -104,19 +104,19 @@ All application paths below are relative to the verified application checkout, n
 | Existing `src/blackmask/ui/review.html` | Mode-specific controls, independent form state, safe preset loading, explicit actions and stale-preview rejection |
 | Existing `src/blackmask/cli.py` | Explicit series preset option, mutually exclusive with manual margins, with the existing draft/revision selection rules |
 | Proposed `tests/test_series_framing.py` and existing CLI/viewer/browser tests | Observable new behavior, precision, compatibility, persistence, failure and browser journeys |
-| Existing maintained workflow/file-contract/troubleshooting/validation docs | Supported interface and evidence; no runtime dependence on this local design |
+| Existing maintained README/workflow/file-contract/troubleshooting/validation docs | Document the control, portable JSON contents/units and load/download/save/reload operation, Match series mechanisms, exports, preservation, recovery and actual evidence; no runtime dependence on this design |
 
 Do not create a generic rendering framework, plugin registry, second project store or duplicate native export pipeline. The existing padding functions are not suitable for resizing unchanged; reuse their surrounding contracts and helpers, not their exact-copy claim.
 
-## 8. Preset persistence: user selection pending
+## 8. Preset persistence: portable files selected
 
-A focused question has been sent to the user. Do not resolve it by elapsed time or assume the earlier illustrative dropdown chooses a storage architecture.
+On 2026-10-21 the user explicitly selected portable preset files. This resolves the storage choice only; it does not approve the entire written design or its implementation.
 
-**Recommended candidate: portable local preset file.** A settings-only JSON file contains schema version 1, kind `series-framing-preset`, name, output width/height and side/vertical percentages represented as integer tenths of a percent. No image, mask, path, source identity, credential or photograph metadata is included. Load through an explicit browser file picker and validate bounded bytes on both client and server; no server-side arbitrary-path endpoint. Saving a portable file uses an explicit download; cancellation does not claim success or modify the photo project. Use Load preset file / Download preset file rather than pretending to offer an app-wide dropdown.
+**Selected: portable local preset file.** A settings-only JSON file contains schema version 1, kind `series-framing-preset`, name, output width/height and side/vertical percentages represented as integer tenths of a percent. No image, mask, path, source identity, credential or photograph metadata is included. Load through an explicit browser file picker and validate bounded bytes on both client and server; no server-side arbitrary-path endpoint. Saving a portable file uses an explicit download; cancellation does not claim success or modify the photo project. Use Load preset file / Download preset file rather than pretending to offer an app-wide dropdown.
 
 The project keeps its own optional `series-framing.json`, separate from existing `framing.json`, containing schema version, source identity/dimensions and a full snapshot of the selected series settings. Saving is explicit, uses the existing project lock and raw-byte compare-and-swap pattern, and revalidates source identity before publication. A later edit to a portable preset cannot silently alter an already saved photo configuration or export. Absence selects defaults without writing a file; invalid files remain preserved and only disable the affected series save/reload flow.
 
-**Alternative: app-wide named preset dropdown.** This requires a new explicitly scoped local catalog location, concurrent catalog locking, stable preset identities, missing/changed-preset handling and backup/recovery. The current viewer is intentionally restricted to one project. If the user selects this alternative, amend this section and review that concrete storage/security contract before the implementation plan; do not implement both options or choose an implicit global directory.
+An app-wide named catalog is outside the selected scope. Do not add a global catalog location, catalog locking or a second preset architecture.
 
 ## 9. Export identity, compatibility and failure behavior
 
@@ -171,12 +171,13 @@ Checklist for this planning stage:
 - [x] Inspect the actual framing/rendering/viewer/storage owners and relevant tests.
 - [x] Compare alternatives and verify applicable official documentation.
 - [x] Write this concrete design candidate; preserve all existing work.
-- [x] Self-review requirements, compatibility, source ownership and S1–S10 QA coverage; no placeholder markers or unbalanced code fences. Preset storage and the written design remain explicitly unapproved, so this candidate is not execution-ready.
+- [x] Self-review requirements, compatibility, source ownership and S1–S10 QA coverage; no placeholder markers or unbalanced code fences. The original candidate left storage and backdrop choices open; the explicit decisions below now resolve them.
 - [x] Obtain two distinct fresh-context read-only reviews; verify and correct three material design findings. Preserve the original candidate identity and report scope in the linked review record.
 - [x] Both original reviewers closed their affected findings against substantive candidate `9e91cf9486ba317271c402eab7360471a46a652f62a0ce5d5e560ee3e53fdec8`; no directly introduced material issue was found. This checklist update records static design-review closure only.
-- [ ] Resolve the preset-storage question in section 8.
-- [ ] User reviews the written design, including subject bounds, resized-background behavior and saved settings compatibility.
-- [ ] Apply the Superpowers writing-plans workflow to produce the detailed implementation plan and coverage reconciliation.
-- [ ] User reviews that plan and authorizes execution; Git/publication and other separate actions remain separately authorized.
+- [x] Resolve the preset-storage question in section 8: portable preset files explicitly selected on 2026-10-21.
+- [x] Resolve the resized-backdrop choice in section 6: output-size regeneration explicitly selected on 2026-10-21, including changes beneath partial-alpha edges.
+- [x] User approves the presented written design on 2026-10-21, including subject bounds, resized-background behavior and saved settings compatibility; requests final documentation of the control, portable JSON and operations, Match series mechanisms and relevant implementation behavior.
+- [x] Apply the Superpowers writing-plans workflow to produce the linked detailed implementation plan and coverage reconciliation; proposed numerical targets remain unverified until implementation.
+- [x] User approves the detailed plan and execution on 2026-10-21, preapproves intermediate gates and requests an MR for review. Necessary feature commits/push/MR are authorized; merge, downloads, private-photo evaluation and unrelated external actions are not.
 
 Resume from the earliest unchecked item using the same candidate, not a fresh speculative design. No skill instruction to commit overrides the repository's requirement for explicit Git authority. No existing application or earlier planning document was changed by preparing this candidate.
