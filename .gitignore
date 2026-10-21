@@ -1,0 +1,42 @@
+# Operating-system metadata and editor temporary files
+**/.DS_Store
+._*
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Python environments, bytecode and tooling caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging output
+/build/
+/dist/
+*.egg-info/
+
+# Private photos, photo projects, model downloads and evaluation output
+# Keep these outside the repository or beneath this root-only directory.
+/local/
+/.cache/
+*.safetensors
+
+# Local isolated checkouts
+/.worktrees/
+
+# Do not ignore image formats globally: reference assets and synthetic fixtures
+# belong in version control. Ignoring a path never untracks existing files.
