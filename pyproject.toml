@@ -7,7 +7,7 @@ name = "blackmask"
 version = "0.1.0"
 description = "Local single-photo trusted RGB16 project"
 requires-python = ">=3.12,<3.13"
-dependencies = ["numpy==2.3.5", "Pillow==12.3.0", "tifffile==2026.10.15", "rawpy==0.27.1", "tomli-w==1.2.0", "scipy==1.17.1", "torch==2.13.0", "torchvision==0.28.0", "transformers==4.57.6", "safetensors==0.8.0"]
+dependencies = ["numpy==2.3.5", "Pillow==13.0.0", "tifffile==2026.10.15", "rawpy==0.27.1", "tomli-w==1.2.0", "scipy==1.17.1", "torch==2.13.0", "torchvision==0.28.0", "transformers==4.57.6", "safetensors==0.8.0"]
 
 [project.scripts]
 blackmask = "blackmask.cli:main"

@@ -419,3 +419,55 @@ and saved; crops slice those same pixels and screen resizing happens afterward.
 No model, internet, noise generation or photographed-detail synthesis is involved.
 RGB8 previews may band; inspect native RGB16 in a suitable colour-managed viewer.
 A processed sRGB RGB16 TIFF is not sensor RAW. See the [saved contract](file-contract.md#saved-background-appearance).
+
+## Add presentation margins
+
+In the local review window, open **Framing and margins**. Enter nonnegative whole
+pixels in **Left**, **Right**, **Top** and **Bottom**. **Set all sides** copies the
+Equal margins value to all four fields. **Centre image** redistributes the existing
+horizontal and vertical totals; an odd extra pixel goes Right or Bottom. It centres
+the original image rectangle, not a detected subject. Adjust individual margins
+to place the photograph manually; margins cannot recover a cut-off leg or petal.
+
+**Preview framing** uses the selected complete saved revision. Its separate canvas
+is a sampled RGB8 layout view, at most 1600 pixels along the long edge, with no
+upscaling. It does not display unsaved appearance edits. Changed fields or revision
+make the previous preview stale; click Preview again. Keep native views for detail
+inspection and all guide/brush coordinates.
+
+**Save margins** explicitly writes this source's preset. Typing, previewing and
+**Reset margins** never save it. Reset sets local zeros; **Reload saved margins**
+replaces only the framing form. Polling and framing actions preserve unrelated
+unsaved guidance and appearance controls. An absent preset means zeros without
+creating a file. See recovery below for invalid, stale or uncertain saves.
+
+**Export framed accepted result** and **Export framed draft** use the visible
+validated margins, including unsaved edits. They do not silently use or save the
+preset. The transparent checkbox includes a separate RGBA8 viewing file. Existing
+native export buttons keep their editable export contract.
+
+The CLI also creates a separate framed delivery from explicit margins:
+
+```sh
+.venv/bin/blackmask export PROJECT --margins 120 180 80 80
+.venv/bin/blackmask export PROJECT --margins 120 180 80 80 --framed-transparent
+```
+
+The four numbers are **left, right, top, bottom**, in native pixels. They must be
+nonnegative integers. For a saved unaccepted revision, add
+`--revision rev-NNN --draft`. Omit `--margins` for the existing native export;
+`--margins 0 0 0 0` deliberately creates a separate compact presentation.
+
+The command reports the delivery directory, output dimensions and the native
+image's rectangle inside the canvas. `result_rgb16.tif` retains the native result's
+processed sRGB samples exactly. `result_RGB8_VIEW.png` is an 8-bit viewing copy;
+the optional `transparent_RGBA8_VIEW.png` has 8-bit alpha and transparent margins.
+The compact bundle includes a manifest and readable description. Keep the local
+project and native export for editable source layers.
+
+Margins extend the saved backdrop's edge and corner colours. Wide margins may
+show bands; inspect the resulting composition in a suitable colour-managed viewer.
+The photograph is neither resized nor stretched. Original editing coordinates
+stay native: the presentation merely places their origin at `(left, top)`.
+Framing an accepted revision does not separately approve the framing composition.
+See [limits and recovery](troubleshooting.md#framed-export-recovery).

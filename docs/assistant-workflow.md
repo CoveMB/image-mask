@@ -167,3 +167,22 @@ and pending foreground drafts. Review Result separately from pure-black and
 source/alpha diagnostics. Background changes do not repair stale foreground
 effects or imply photographic acceptance. See the [manual steps](workflow.md#background-appearance)
 and [saved contract](file-contract.md#saved-background-appearance).
+
+
+## Presentation framing
+
+Framing is a separate composition decision. Use the saved source and current
+revision identity, ask the user to choose placement when it is ambiguous, and keep
+all corrections in original native coordinates. The local page supports manual
+whole-pixel margins, Centre image, explicit Preview/Save and separate framed exports;
+see [the manual framing workflow](workflow.md#add-presentation-margins).
+Centre image centres the image rectangle, with no automatic subject detection.
+A margin cannot reconstruct photographed detail outside the capture.
+
+The bounded RGB8 framing preview shows only the selected saved result and saved
+backdrop. It is layout evidence, not a native editing surface or photographic
+acceptance. Read `revision_manifest_sha256` from the validated snapshot; the draft
+input digest is not a substitute. Preserve unrelated unsaved forms and source-bound
+preset bytes on stale or invalid input. After uncertain save durability, explicitly
+reload the visible preset before another save. Export uses the visible explicit
+margins; acceptance of its source revision does not accept the composition.

@@ -107,7 +107,7 @@
       min-height: 180px;
       position: relative;
     }
-    canvas {
+    #canvas {
       position: absolute;
       inset: 0;
       display: block;
@@ -471,6 +471,28 @@
         ><button id="exportDraft">Export labelled current draft</button>
         <p id="result" class="small" style="white-space: pre-wrap"></p>
       </fieldset>
+      <fieldset>
+        <legend>Framing and margins</legend>
+        <p class="small">Add saved background around the complete image. This cannot restore a cut-off leg or petal. Large margins may show constant edge bands. Native guides stay in original coordinates.</p>
+        <label>Left (whole pixels) <input id="framingLeft" type="number" min="0" step="1" value="0" /></label>
+        <label>Right (whole pixels) <input id="framingRight" type="number" min="0" step="1" value="0" /></label>
+        <label>Top (whole pixels) <input id="framingTop" type="number" min="0" step="1" value="0" /></label>
+        <label>Bottom (whole pixels) <input id="framingBottom" type="number" min="0" step="1" value="0" /></label>
+        <label>Equal margins (whole pixels) <input id="framingEqual" type="number" min="0" step="1" value="0" /></label>
+        <button id="framingSetAll">Set all sides</button>
+        <button id="framingCentre">Centre image</button>
+        <button id="framingReset">Reset margins</button>
+        <button id="framingReload">Reload saved margins</button>
+        <button id="framingPreview">Preview framing</button>
+        <button id="framingSave">Save margins</button>
+        <p id="framingStatus" role="status" class="small"></p>
+        <p id="framingPreviewStatus" role="status" class="small"></p>
+        <canvas id="framingCanvas" width="1" height="1" style="max-width:100%;height:auto" aria-label="RGB8 framing layout preview; display only, no guide authoring"></canvas>
+        <label><input id="framingTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
+        <button id="framingExportAccepted">Export framed accepted result</button>
+        <button id="framingExportDraft">Export framed draft</button>
+        <p class="small">Framed exports use these visible margins, including unsaved changes. Saving or exporting margins does not accept a photograph or composition. Centre image balances existing padding; it does not locate the subject.</p>
+      </fieldset>
     </aside>
   </main>
   <script src="/coordinates.js"></script>
@@ -490,6 +512,10 @@
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let exposureControlsIdentity = null, exposureControlsSubmitted = null;
     let fadeControlsIdentity = null, fadeControlsSubmitted = null;
+    const framingFields = {left_px:"framingLeft",right_px:"framingRight",top_px:"framingTop",bottom_px:"framingBottom"};
+    let framingDirty = false, framingSource = null, framingDigest = null;
+    let framingNeedsReload = false, framingSubmitted = null;
+    let framingSequence = 0, framingBitmap = null, framingDisplayedKey = "", framingSelectionKey = "";
     let image = null,
       overlayImage = null,
       crop = null,
@@ -899,7 +925,7 @@
       if (
         reload ||
         !identity ||
-        (completed && !a.error && (!dirty || authoringPublished))
+        (completed && !a.error && a.name !== "framing-save" && !a.result?.framing && (!dirty || authoringPublished))
       ) {
         loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";
@@ -924,6 +950,15 @@
           : undefined,
       );
       select("restoreRevision", revisions);
+      if (completed && a.name === "framing-save" && framingSubmitted) {
+        if (a.result?.framing_reload_required) framingNeedsReload = true;
+        else if (!a.error && sameMargins(a.result?.framing, framingSubmitted)) {
+          framingDigest = a.result.framing_digest;
+          try { framingDirty = !sameMargins(framingMargins(), framingSubmitted); } catch { framingDirty = true; }
+        }
+        framingSubmitted = null;
+      }
+      syncFraming();
       select(
         "lockRevision",
         state.revisions
@@ -976,6 +1011,7 @@
         "exposureApply", "exposureAmount", "exposureReset",
         "backgroundApply",
         "fadeApply", "fadeAmountApply", "fadeReset",
+        "framingSave", "framingExportAccepted", "framingExportDraft", "framingReload",
       ]) {
         $(id).disabled = authoringBusy();
       }
@@ -987,6 +1023,8 @@
         "fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate",
         "authorMode", "exposureRole", "exposureShape", "exposureRadius", "exposureFeather", "exposureRectangle", "exposureAddRectangle", "exposureRemove", "exposureClear",
         "exposureEV", "exposureRange", "exposureCandidate",
+        "framingLeft", "framingRight", "framingTop", "framingBottom", "framingEqual",
+        "framingSetAll", "framingCentre", "framingReset", "framingTransparent",
         "addGroup",
         "addGeometry",
         "removeRegion",
@@ -999,6 +1037,7 @@
         "feather",
       ])
         $(id).disabled = authoringBusy();
+      $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
     }
     async function bitmap(path) {
       const blob = await (await api(path)).blob();
@@ -1022,6 +1061,7 @@
     }
     async function loadImage() {
       if (!state || !crop) return;
+      framingStatus();
       const panel = $("panel").value,
         revision = $("viewRevision").value;
       const requestedCrop = [...crop],
@@ -1415,6 +1455,157 @@
       }
       await refresh();
     }
+    function wholePixels(id) {
+      const text = String($(id).value).trim(), value = Number(text);
+      if (text === "" || !Number.isSafeInteger(value) || value < 0)
+        throw Error("Use nonnegative whole pixels for every margin");
+      return value;
+    }
+    function framingMargins() {
+      const margins = Object.fromEntries(Object.entries(framingFields).map(([name,id])=>[name,wholePixels(id)]));
+      const [width,height] = state.dimensions_wh;
+      const outputWidth = width + margins.left_px + margins.right_px;
+      const outputHeight = height + margins.top_px + margins.bottom_px;
+      if (outputWidth > 32768 || outputHeight > 32768 || outputWidth * outputHeight > 100000000)
+        throw Error("Framed output exceeds 32768 pixels per axis or 100000000 pixels");
+      return margins;
+    }
+    function sameMargins(first, second) {
+      return !!first && !!second && Object.keys(framingFields).every(name=>first[name] === second[name]);
+    }
+    function setFramingFields(margins) {
+      for (const [name,id] of Object.entries(framingFields)) $(id).value = String(margins[name]);
+    }
+    function framingRequest() {
+      const revision = $("viewRevision").value || state.working_revision;
+      const record = state.revisions.find(item=>item.revision === revision);
+      if (!record?.final_acceptable || !record.revision_manifest_sha256)
+        throw Error("Select a complete saved revision for framing preview");
+      return {master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,margins:framingMargins()};
+    }
+    function framingKey(request) {
+      return JSON.stringify([request.master_id,request.revision,request.revision_manifest_sha256,
+        ...Object.keys(framingFields).map(name=>request.margins[name])]);
+    }
+    function framingStatus() {
+      if (!state) return;
+      try {
+        const margins = framingMargins(), [width,height] = state.dimensions_wh;
+        $("framingStatus").textContent = `Native ${width} × ${height} · output ${width+margins.left_px+margins.right_px} × ${height+margins.top_px+margins.bottom_px} pixels · ` +
+          (framingDirty ? "Unsaved margins" : framingDigest ? "Saved margins" : "Zero margins; no preset saved") +
+          (framingNeedsReload || framingSource !== state.master_id ? " · Reload saved margins required before saving" : "") +
+          (state.framing_error ? " · " + state.framing_error : "");
+      } catch(error) { $("framingStatus").textContent = error.message; }
+      let key = "";
+      try { key = framingKey(framingRequest()); } catch { /* No complete selected revision. */ }
+      if (framingBitmap && framingDisplayedKey !== key)
+        $("framingPreviewStatus").textContent = "Previous framing preview is stale; Preview framing to refresh";
+    }
+    function markFramingDirty() {
+      framingDirty = true;
+      framingSequence++;
+      framingStatus();
+      $("framingPreviewStatus").textContent = "Framing preview is stale; Preview framing to refresh";
+    }
+    function loadFramingState() {
+      setFramingFields(state.framing || {left_px:0,right_px:0,top_px:0,bottom_px:0});
+      framingSource = state.master_id;
+      framingDigest = state.framing_digest ?? null;
+      framingDirty = false;
+      framingNeedsReload = false;
+      framingSequence++;
+      framingStatus();
+      updateBusyControls();
+    }
+    function syncFraming() {
+      if (framingSource === null) loadFramingState();
+      else if (framingSource !== state.master_id) {
+        framingNeedsReload = true;
+        framingBitmap?.close();framingBitmap = null;framingDisplayedKey = "";
+        $("framingCanvas").getContext("2d").clearRect(0,0,$("framingCanvas").width,$("framingCanvas").height);
+      } else if (!framingDirty && !framingNeedsReload) {
+        setFramingFields(state.framing || {left_px:0,right_px:0,top_px:0,bottom_px:0});
+        framingDigest = state.framing_digest ?? null;
+      }
+      const revision = $("viewRevision").value || state.working_revision;
+      const selected = state.revisions.find(item=>item.revision === revision);
+      const key = JSON.stringify([state.master_id,revision,selected?.revision_manifest_sha256]);
+      if (key !== framingSelectionKey) { framingSelectionKey = key; framingSequence++; }
+      framingStatus();
+    }
+    async function previewFraming() {
+      const request = framingRequest(), key = framingKey(request), sequence = ++framingSequence;
+      $("framingPreviewStatus").textContent = "Rendering RGB8 framing preview…";
+      let next = null;
+      const matches = () => {
+        try { return sequence === framingSequence && framingKey(framingRequest()) === key; }
+        catch { return false; }
+      };
+      try {
+        const result = await (await api("/api/framing-preview", request)).json();
+        if (!matches()) return;
+        const [width,height] = state.dimensions_wh, margins = request.margins;
+        const output = [width+margins.left_px+margins.right_px,height+margins.top_px+margins.bottom_px];
+        const longest = Math.max(...output);
+        const display = output.map(value=>Math.max(1,Math.floor(value*Math.min(1600,longest)/longest)));
+        const rectangle = [margins.left_px,margins.top_px,margins.left_px+width,margins.top_px+height];
+        if (framingKey(result) !== key ||
+            JSON.stringify(result.source_dimensions_wh) !== JSON.stringify([width,height]) ||
+            JSON.stringify(result.output_dimensions_wh) !== JSON.stringify(output) ||
+            JSON.stringify(result.display_dimensions_wh) !== JSON.stringify(display) ||
+            JSON.stringify(result.source_rect_xyxy) !== JSON.stringify(rectangle))
+          throw Error("Framing preview identity or geometry mismatch; retry");
+        const bytes = Uint8Array.from(atob(result.png_base64), character=>character.charCodeAt(0));
+        next = await createImageBitmap(new Blob([bytes], {type:"image/png"}));
+        if (!matches()) return;
+        if (next.width !== display[0] || next.height !== display[1])
+          throw Error("Framing preview bitmap dimensions mismatch");
+        framingBitmap?.close();framingBitmap = next;next = null;framingDisplayedKey = key;
+        const target = $("framingCanvas");target.width = display[0];target.height = display[1];
+        target.getContext("2d").drawImage(framingBitmap,0,0);
+        $("framingPreviewStatus").textContent = `RGB8 sampled layout · ${request.revision} · display ${display[0]} × ${display[1]} · reduced detail; no guide authoring`;
+      } catch(error) {
+        if (matches()) $("framingPreviewStatus").textContent = error.message + " · Previous preview is stale; retry";
+      } finally {
+        next?.close();
+        if (!matches()) framingStatus();
+      }
+    }
+    for (const id of Object.values(framingFields)) $(id).oninput = markFramingDirty;
+    $("framingSetAll").onclick = guarded(()=>{
+      const value=wholePixels("framingEqual");
+      setFramingFields(Object.fromEntries(Object.keys(framingFields).map(name=>[name,value])));
+      markFramingDirty();
+    });
+    $("framingCentre").onclick = guarded(()=>{
+      const value=framingMargins(), horizontal=value.left_px+value.right_px, vertical=value.top_px+value.bottom_px;
+      setFramingFields({left_px:Math.floor(horizontal/2),right_px:Math.ceil(horizontal/2),top_px:Math.floor(vertical/2),bottom_px:Math.ceil(vertical/2)});
+      markFramingDirty();
+    });
+    $("framingReset").onclick = guarded(()=>{
+      setFramingFields({left_px:0,right_px:0,top_px:0,bottom_px:0});markFramingDirty();
+    });
+    $("framingReload").onclick = guarded(async()=>{await refresh();loadFramingState();});
+    $("framingPreview").onclick = guarded(previewFraming);
+    function framingAction(name, extra) {
+      return action(name,{master_id:state.master_id,base_revision:state.working_revision,
+        inputs_digest:state.inputs_digest,authoring_digest:state.authoring_digest,...extra});
+    }
+    $("framingSave").onclick = guarded(async()=>{
+      if (framingNeedsReload || framingSource !== state.master_id || state.framing_error)
+        throw Error("Reload saved margins or resolve the framing.json error before saving");
+      framingSubmitted = framingMargins();
+      try { await framingAction("framing-save",{margins:framingSubmitted,expected_digest:framingDigest}); }
+      catch(error) { framingSubmitted=null;throw error; }
+    });
+    async function exportFraming(draft) {
+      const framing = framingMargins();
+      if (!draft && !state.accepted_revision) throw Error("No accepted result to export");
+      await framingAction("export",{revision:draft ? state.working_revision : state.accepted_revision,draft,
+        framing,framed_transparent:$("framingTransparent").checked});
+    }
+    $("framingExportAccepted").onclick = guarded(()=>exportFraming(false));
+    $("framingExportDraft").onclick = guarded(()=>exportFraming(true));
     function requireSaved() {
       if (dirty) throw Error("Save authoring edits before preparing/running");
     }

@@ -1,5 +1,6 @@
 # Native macOS ARM64 / CPython 3.12; runtime + verification tools.
 # Generated from installed versions and official PyPI wheel SHA-256 on 2026-10-18.
+# Pillow updated to the verified upstream 13.0.0 binary wheel on 2026-10-20.
 # Install with --require-hashes --only-binary=:all:. SAM packages included; weights require explicit setup.
 ast_serialize==0.13.1 --hash=sha256:1b158f1c9e3a0d386913924c57995d6df78224868a4d0f215bdd41587c97b34a
 iniconfig==2.3.1 --hash=sha256:9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7
@@ -9,7 +10,7 @@ mypy_extensions==1.1.0 --hash=sha256:1be4cccdb0f2482337c4743e60421de3a356cd97508
 numpy==2.3.5 --hash=sha256:ee3888d9ff7c14604052b2ca5535a30216aa0a58e948cdd3eeb8d3415f638769
 packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
 pathspec==1.1.1 --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189
-pillow==12.3.0 --hash=sha256:ffd0c5368496f41b0944be820fcb7a838aa6e623d250b01acf2643939c3f99d7
+pillow==13.0.0 --hash=sha256:fc481f742ccda20e9ed760b8f978dff50f2a4e9bc253ac167fb0a05b0783ef52
 pluggy==1.7.0 --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec
 Pygments==2.21.0 --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9
 pytest==9.1.1 --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c

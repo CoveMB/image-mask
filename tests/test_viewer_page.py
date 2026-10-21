@@ -90,6 +90,153 @@ def test_export_keeps_complete_unsaved_guides_and_groups():
  """)
 
 
+def test_framing_buttons_and_reload_preserve_independent_drafts():
+    run_page(r"""
+ servedState.framing={left_px:1,right_px:2,top_px:3,bottom_px:4};
+ servedState.framing_digest='saved';servedState.framing_error=null;
+ await ready();
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ $('fadeAmount').value='35';$('fadeAmount').oninput();
+ $('cleanupSupport').value='pending-cleanup';$('shadingWidth').value='7';
+ const subject=JSON.stringify({exposureControlsIdentity,fadeControlsIdentity});
+ $('framingEqual').value='5';await $('framingSetAll').onclick();
+ assert.deepEqual(framingMargins(),{left_px:5,right_px:5,top_px:5,bottom_px:5});
+ $('framingLeft').value='2';$('framingLeft').oninput();
+ await $('framingCentre').onclick();
+ assert.deepEqual(framingMargins(),{left_px:3,right_px:4,top_px:5,bottom_px:5});
+ await refresh();assert.equal(Number($('framingLeft').value),3);
+ servedState.action={running:true,name:'framing-save',error:null,result:null};
+ await $('framingSave').onclick();
+ assert.deepEqual(posts.at(-1).margins,framingMargins());
+ servedState.action={running:false,name:'framing-save',error:null,
+  result:{framing:framingMargins(),framing_digest:'new'}};
+ servedState.framing=framingMargins();servedState.framing_digest='new';
+ actionWasRunning=true;await refresh();
+ assert.equal($('cleanupSupport').value,'pending-cleanup');
+ assert.equal($('shadingWidth').value,'7');
+ assert.equal(JSON.stringify({exposureControlsIdentity,fadeControlsIdentity}),subject);
+ assert.equal($('exposureEV').value,'1.2');assert.equal($('fadeAmount').value,'35');
+ await $('framingReset').onclick();assert.equal(framingDirty,true);
+ await $('framingReload').onclick();assert.deepEqual(framingMargins(),servedState.framing);
+ assert.equal(JSON.stringify({exposureControlsIdentity,fadeControlsIdentity}),subject);
+ """)
+
+
+def test_framing_uncertain_save_retains_fields_until_explicit_reload():
+    run_page(r"""
+ servedState.framing={left_px:1,right_px:2,top_px:3,bottom_px:4};
+ servedState.framing_digest='old';servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);await ready();
+ $('framingLeft').value='8';$('framingLeft').oninput();
+ $('geometry').value='17,23';$('cleanupSupport').value='keep-support';
+ const nativeIdentity=JSON.stringify(identity), nativeTransform=JSON.stringify(transform);
+ servedState.action={running:true,name:'framing-save',error:null,result:null};
+ await $('framingSave').onclick();
+ servedState.framing={left_px:8,right_px:2,top_px:3,bottom_px:4};servedState.framing_digest='visible';
+ servedState.action={running:false,name:'framing-save',error:'durability unconfirmed',
+   result:{framing:servedState.framing,framing_digest:'visible',framing_reload_required:true}};
+ await refresh();
+ assert.equal(Number($('framingLeft').value),8);assert.equal(framingDirty,true);
+ assert.equal(framingNeedsReload,true);assert.equal($('framingSave').disabled,true);
+ assert.match($('framingStatus').textContent,/Reload saved margins required/);
+ const count=posts.length;await $('framingSave').onclick();assert.equal(posts.length,count);
+ await $('framingReload').onclick();assert.equal(framingNeedsReload,false);
+ assert.equal(framingDigest,'visible');assert.equal(framingDirty,false);
+ assert.equal($('cleanupSupport').value,'keep-support');
+ assert.equal(JSON.stringify(identity),nativeIdentity);assert.equal(JSON.stringify(transform),nativeTransform);
+ await $('addGeometry').onclick();assert.deepEqual(regions.at(-1).xy,[17,23]);
+ $('framingLeft').value='1.5';$('framingLeft').oninput();
+ await $('framingPreview').onclick();assert.match($('message').textContent,/whole pixels/);
+ $('framingLeft').value='9';$('framingLeft').oninput();
+ servedState.master_id='replacement-source';await refresh();
+ assert.equal(Number($('framingLeft').value),9);assert.equal(framingNeedsReload,true);
+ """)
+
+
+def test_framing_exports_visible_form_without_resetting_other_drafts():
+    run_page(r"""
+ await ready();
+ $('framingLeft').value='7';$('framingLeft').oninput();
+ $('framingTransparent').checked=true;
+ $('cleanupSupport').value='keep';$('exposureEV').value='1.1';$('exposureEV').oninput();
+ $('fadeAmount').value='44';$('fadeAmount').oninput();
+ $('geometry').value='17,23';await $('addGeometry').onclick();
+ const drafts=JSON.stringify({regions,identity,exposureControlsIdentity,fadeControlsIdentity});
+ servedState.action={running:true,name:'export',error:null,result:null};
+ await $('framingExportAccepted').onclick();
+ assert.equal(posts.at(-1).revision,'rev-001');assert.equal(posts.at(-1).draft,false);
+ assert.equal(posts.at(-1).framing.left_px,7);assert.equal(posts.at(-1).framed_transparent,true);
+ servedState.action={running:false,name:'export',error:null,result:{framing:framingMargins(),directory:'synthetic'}};
+ await refresh();
+ assert.equal(JSON.stringify({regions,identity,exposureControlsIdentity,fadeControlsIdentity}),drafts);
+ assert.equal($('cleanupSupport').value,'keep');assert.equal(framingDirty,true);
+ servedState.working_revision='rev-002';
+ servedState.revisions.push({...servedState.revisions[0],revision:'rev-002'});await refresh();
+ servedState.action={running:true,name:'export',error:null,result:null};
+ await $('framingExportDraft').onclick();assert.equal(posts.at(-1).revision,'rev-002');assert.equal(posts.at(-1).draft,true);
+ """)
+
+
+@pytest.mark.parametrize("change", ["source", "revision", "digest", "margin"])
+def test_framing_bitmap_pending_decode_rejects_changed_identity(change):
+    run_page(
+        r"""
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);await ready();
+ let decode, closed=false;
+ const originalFetch=globalThis.fetch;
+ globalThis.fetch=async(path,options)=>{
+  if(path!='/api/framing-preview')return originalFetch(path,options);
+  const request=JSON.parse(options.body);
+  return {ok:true,json:async()=>({...request,source_dimensions_wh:[100,100],
+   output_dimensions_wh:[100,100],display_dimensions_wh:[100,100],source_rect_xyxy:[0,0,100,100],png_base64:'AA=='})};
+ };
+ globalThis.createImageBitmap=async()=>new Promise(resolve=>decode=()=>resolve({width:100,height:100,close(){closed=true;}}));
+ const preview=previewFraming();for(let i=0;i<20&&!decode;i++)await Promise.resolve();assert(decode);
+ """
+        + {
+            "source": "state.master_id='new-source';",
+            "revision": "$('viewRevision').value='rev-002';",
+            "digest": "state.revisions[0].revision_manifest_sha256='b'.repeat(64);",
+            "margin": "$('framingLeft').value='2';$('framingLeft').oninput();",
+        }[change]
+        + r"""
+ decode();await preview;assert.equal(closed,true);assert.equal(framingBitmap,null);
+ """
+    )
+
+
+def test_framing_preview_identity_order_and_bitmap_ownership():
+    run_page(r"""
+ servedState.framing={left_px:0,right_px:0,top_px:0,bottom_px:0};
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ await ready();
+ const nativeFetch=fetch, requests=[], closed=[];
+ globalThis.fetch=async(path,options)=>{
+   if(path!='/api/framing-preview')return nativeFetch(path,options);
+   const request=JSON.parse(options.body);
+   return new Promise(resolve=>requests.push({request,resolve}));
+ };
+ let bitmapId=0;
+ globalThis.createImageBitmap=async blob=>{
+   assert(blob instanceof Blob);assert.equal(blob.type,'image/png');
+   const id=++bitmapId;return {width:100,height:100,close(){closed.push(id);}};
+ };
+ function respond(index, overrides={}){
+   const {request,resolve}=requests[index];
+   resolve({ok:true,json:async()=>({...request,source_dimensions_wh:[100,100],
+    output_dimensions_wh:[100,100],display_dimensions_wh:[100,100],
+    source_rect_xyxy:[0,0,100,100],png_base64:'AQID',...overrides})});
+ }
+ const first=previewFraming(),second=previewFraming();
+ respond(1);await second;assert.equal(framingBitmap.width,100);
+ respond(0);await first;assert.equal(bitmapId,1,'Stale response should be discarded before decode');
+ const third=previewFraming();respond(2);await third;assert.deepEqual(closed,[1]);
+ const fourth=previewFraming();
+ $('framingLeft').value='3';$('framingLeft').oninput();
+ respond(3);await fourth;assert.equal(bitmapId,2);
+ assert($('framingPreviewStatus').textContent.includes('stale'));
+ """)
+
+
 def test_canvas_rejects_authoring_during_processing_and_crossing_action_boundary():
     run_page(r"""
  await ready();servedState.action.running=true;await refresh();

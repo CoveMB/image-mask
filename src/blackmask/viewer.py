@@ -18,11 +18,19 @@ import numpy as np
 from PIL import Image
 
 from . import operations
-from .export import export_project, saved_layers
+from .export import export_project, render_background, render_black, saved_layers
+from .framing import (
+    FramingSaveUncertain,
+    framing_preview,
+    read_framing_preset,
+    save_framing_preset,
+    validate_margins,
+)
 from .guidance import coordinates
 from .project import (
     ProjectError,
     _asset,
+    _json_bytes,
     _root,
     _validate_assets,
     _validation_scope,
@@ -49,6 +57,7 @@ class ReviewServer(ThreadingHTTPServer):
         self.sam_cache = sam_cache
         self.token = secrets.token_urlsafe(32)
         self.action_lock = threading.Lock()
+        self.framing_preview_lock = threading.Lock()
         self.action: dict[str, Any] = {"running": False, "error": None, "result": None}
         super().__init__(("127.0.0.1", 0), ReviewHandler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
@@ -58,6 +67,9 @@ class ReviewServer(ThreadingHTTPServer):
     def snapshot(self) -> dict[str, Any]:
         # Capture action first: completion must never be paired with pre-action state.
         action = dict(self.action)
+        # State pointers may advance during an active writer. Keep the established
+        # action-first polling contract; only bind immutable source/revision bytes.
+        captured = {"source.json": _asset(self.project, "source.json").read_bytes()}
         state = operations.operation_status(self.project)
         master, _ = _validate_assets(self.project, state, validate_drafts=False)
         height, width = master.shape[:2]
@@ -66,6 +78,14 @@ class ReviewServer(ThreadingHTTPServer):
             source_url=f"/image/source/{state['master_id']}/0,0,{width},{height}",
         )
         state["action"] = action
+        state.update(framing=None, framing_digest=None, framing_error=None)
+        try:
+            margins, preset_digest = read_framing_preset(
+                self.project, state["master_id"], (width, height)
+            )
+            state.update(framing=margins.to_dict(), framing_digest=preset_digest)
+        except (OSError, ValueError, TypeError) as error:
+            state["framing_error"] = str(error)
         state["draft_error"] = None
         try:
             state["inputs_digest"] = operations.draft_digest(self.project)
@@ -83,7 +103,8 @@ class ReviewServer(ThreadingHTTPServer):
         revisions = []
         for path in sorted(_asset(self.project, "revisions").glob("rev-*")):
             if re.fullmatch(r"rev-[0-9]{3,}", path.name):
-                manifest = read_revision(self.project, path.name, state["master_id"])
+                manifest, raw = self._validated_revision(path.name, state["master_id"])
+                captured[f"revisions/{path.name}/manifest.json"] = raw
                 exposure_area = None
                 if manifest.get("local_exposure", {}).get("area_sha256"):
                     exposure_area = json.loads(
@@ -117,6 +138,7 @@ class ReviewServer(ThreadingHTTPServer):
                         ],
                         "scope_xyxy": manifest.get("scope_xyxy"),
                         "draft_digest": manifest.get("draft_digest"),
+                        "revision_manifest_sha256": digest(raw),
                         "color_cleanup": manifest.get(
                             "color_cleanup", {"enabled": False, "stale": False}
                         ),
@@ -135,7 +157,90 @@ class ReviewServer(ThreadingHTTPServer):
                     }
                 )
         state["revisions"] = revisions
+        if any(_asset(self.project, name).read_bytes() != raw for name, raw in captured.items()):
+            raise ProjectError("Stale snapshot source or revision manifest; retry")
         return state
+
+    def _validated_revision(self, revision: str, source_id: str) -> tuple[dict[str, Any], bytes]:
+        if not isinstance(revision, str) or re.fullmatch(r"rev-[0-9]{3,}", revision) is None:
+            raise ProjectError("Invalid saved revision identity")
+        path = _asset(self.project, f"revisions/{revision}/manifest.json")
+        raw = path.read_bytes()
+        manifest = read_revision(self.project, revision, source_id)
+        if _json_bytes(json.loads(raw)) != _json_bytes(manifest) or path.read_bytes() != raw:
+            raise ProjectError("Stale revision manifest; reload current project")
+        return manifest, raw
+
+    @_validation_scope()
+    def preview_framing(self, data: Any) -> dict[str, Any]:
+        """Read-only final-result preview; never author or publish native assets."""
+        if (
+            not isinstance(data, dict)
+            or set(data) != {"master_id", "revision", "revision_manifest_sha256", "margins"}
+            or not isinstance(data["revision_manifest_sha256"], str)
+            or re.fullmatch("[a-f0-9]{64}", data["revision_manifest_sha256"]) is None
+        ):
+            raise ValueError("Invalid framing preview structured fields")
+        if not self.framing_preview_lock.acquire(blocking=False):
+            raise ProjectError("Framing preview busy; retry after the current preview")
+        try:
+            captured = {
+                name: _asset(self.project, name).read_bytes()
+                for name in ("state.json", "source.json")
+            }
+            state = read_project(self.project, validate_drafts=False)
+            if state["master_id"] != data["master_id"]:
+                raise ProjectError("Stale framing preview source")
+            manifest, raw = self._validated_revision(data["revision"], state["master_id"])
+            if digest(raw) != data["revision_manifest_sha256"]:
+                raise ProjectError("Stale framing preview revision manifest")
+            captured[f"revisions/{data['revision']}/manifest.json"] = raw
+            from .background import read_background
+            from .effects import effects_stale, saved_shading
+
+            if effects_stale(manifest):
+                raise ProjectError("Stale enabled appearance; rebuild or disable before preview")
+            source, _ = _validate_assets(self.project, state, validate_drafts=False)
+            settings = validate_margins(data["margins"], (source.shape[1], source.shape[0]))
+            foreground, alpha, loaded_manifest = saved_layers(
+                self.project, data["revision"], state["master_id"]
+            )
+            if _json_bytes(loaded_manifest) != _json_bytes(manifest):
+                raise ProjectError("Stale framing preview saved layers")
+            weight, opacity = saved_shading(self.project, data["revision"], alpha, loaded_manifest)
+            background = read_background(
+                _asset(self.project, f"revisions/{data['revision']}"), loaded_manifest
+            )
+            native = (
+                render_black(foreground, alpha, weight, opacity)
+                if background is None
+                else render_background(foreground, alpha, background, weight, opacity)
+            )
+            pixels, geometry = framing_preview(native, background, settings)
+            with io.BytesIO() as buffer:
+                image = Image.fromarray(pixels)
+                try:
+                    image.save(buffer, format="PNG")
+                finally:
+                    image.close()
+                png_base64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+            self._validated_revision(data["revision"], state["master_id"])
+            if any(
+                _asset(self.project, name).read_bytes() != value for name, value in captured.items()
+            ):
+                raise ProjectError("Stale framing preview inputs changed while rendering")
+            return {
+                "master_id": state["master_id"],
+                "revision": data["revision"],
+                "revision_manifest_sha256": digest(raw),
+                "margins": settings.to_dict(),
+                **geometry,
+                "algorithm": "saved-backdrop-edge-padding-v1",
+                "label": "RGB8 sampled layout preview; reduced detail, not a native editing view",
+                "png_base64": png_base64,
+            }
+        finally:
+            self.framing_preview_lock.release()
 
     def start_action(self, data: Any) -> None:
         if not isinstance(data, dict):
@@ -153,7 +258,10 @@ class ReviewServer(ThreadingHTTPServer):
             "restore": {"revision", "replace_drafts"},
             "resume": {"operation_id"},
             "export": {"revision", "draft"},
+            "framing-save": {"margins", "expected_digest"},
         }
+        if action == "export":
+            fields["export"] |= set(data) & {"framing", "framed_transparent"}
         if action == "effects":
             optional = {
                 "support_file",
@@ -189,6 +297,8 @@ class ReviewServer(ThreadingHTTPServer):
                 self.action["result"] = self.execute(data)
             except Exception as error:  # noqa: BLE001 - report all ordinary failures to the page.
                 self.action["error"] = str(error).strip() or type(error).__name__
+                if isinstance(error, FramingSaveUncertain):
+                    self.action["result"] = error.visible
             finally:
                 self.action["running"] = False
                 self.action_lock.release()
@@ -245,7 +355,20 @@ class ReviewServer(ThreadingHTTPServer):
         if action == "export":
             if type(data["draft"]) is not bool:
                 raise ProjectError("draft must be a boolean")
-            return export_project(self.project, revision=data["revision"], draft=data["draft"])
+            return export_project(
+                self.project,
+                revision=data["revision"],
+                draft=data["draft"],
+                framing=data.get("framing"),
+                framed_transparent=data.get("framed_transparent", False),
+            )
+        if action == "framing-save":
+            return save_framing_preset(
+                self.project,
+                data["margins"],
+                expected_digest=data["expected_digest"],
+                expected_source_id=data["master_id"],
+            )
         request = {
             "schema_version": 1,
             "kind": action,
@@ -460,7 +583,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if not self.allowed(True) or self.headers.get_all("Origin") != [self.server.origin]:
             self.error(403, "Forbidden host, origin or capability")
             return
-        if self.path != "/api/action":
+        if self.path not in {"/api/action", "/api/framing-preview"}:
             self.error(404, "Unknown route")
             return
         if self.headers.get_all("Content-Type") != ["application/json"] or self.headers.get(
@@ -483,10 +606,17 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 body,
                 parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Nonfinite JSON")),
             )
-            self.server.start_action(data)
-            self.reply(202, b'{"started":true}')
+            if self.path == "/api/framing-preview":
+                result = self.server.preview_framing(data)
+                self.reply(200, json.dumps(result, allow_nan=False).encode())
+            else:
+                self.server.start_action(data)
+                self.reply(202, b'{"started":true}')
         except (OSError, ValueError, TypeError) as error:
-            self.error(409 if "busy" in str(error).lower() else 400, str(error))
+            conflict = "busy" in str(error).lower() or (
+                self.path == "/api/framing-preview" and isinstance(error, ProjectError)
+            )
+            self.error(409 if conflict else 400, str(error))
 
 
 def open_viewer(

@@ -83,6 +83,44 @@ A publication collision means another tool/editor created a project asset while 
   different revision; explicit unaccepted output must use `--revision ... --draft`.
 
 
+## Framed export recovery
+
+- **No saved preset:** zeros are the default; use Save margins only when you want
+  to retain a layout. Reset is local until saved. Native exports ignore the preset.
+- **Invalid, foreign or symlinked framing.json:** preserve the file for explicit
+  recovery. Do not overwrite it automatically. Native work and explicit valid
+  preview/export margins remain usable; Save stays disabled until resolved.
+- **Stale preset:** another client saved first. Your fields remain visible. Note
+  any desired values, use Reload saved margins, then reapply your changes and save.
+- **Durability unconfirmed:** replacement may already be visible. Keep your edits,
+  use Reload saved margins to inspect the actual file, and retry only after resolving
+  the storage error. The application does not promise rollback after replacement.
+- **Preview busy, stale or unavailable:** wait for the current preview, choose a
+  complete saved revision, then Preview framing again. Unsaved effect controls do
+  not appear until their own operation is applied. Fields and the prior image remain
+  available; an old image is labelled stale and cannot author guides.
+
+- **Invalid or excessive margins:** use four nonnegative integer pixel counts in
+  left/right/top/bottom order. Each output axis is limited to 32768 pixels and the
+  total to 100,000,000 pixels. Reduce margins; the application does not resize the
+  native photograph to fit. `--framed-transparent` requires explicit `--margins`.
+- **Visible edge bands:** margins repeat the saved backdrop's nearest edge and
+  corner colours. Reduce margins or review a different saved backdrop; foreground
+  detail is never stretched into the added area.
+- **Busy, low space or stale inputs:** finish the competing write, provide room
+  above the existing 10 GiB reserve and operation budget, or reopen the saved
+  project before retrying. Stale enabled effects need their existing explicit
+  rebuild/disable workflow. Framing cannot bypass it.
+- **Delivery collision:** preserve the existing directory. Missing, different,
+  extra, symlinked or directory members prevent reuse. Do not repair a delivery by
+  overwriting individual files. A changed revision, geometry or requested variant
+  has a different presentation identity; identical retries validate exact files.
+- **Publication durability unconfirmed:** a complete directory may already be
+  visible after exclusive rename when the parent-directory sync fails. Preserve
+  it and retry the identical export to validate and sync it. An error before
+  publication leaves the prior delivery intact and retains a `.export-*` stage.
+  Stages are diagnostic evidence, not accepted results; no automatic cleanup occurs.
+
 ## Repair and restore recovery
 
 - Repair support must be the current prepared revision's returned support asset.

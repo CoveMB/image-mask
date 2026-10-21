@@ -21,6 +21,77 @@ def run(*arguments):
     )
 
 
+def test_framed_cli_saved_only_replay_variants_draft_and_busy_lock(tmp_path, monkeypatch):
+    import hashlib
+
+    import numpy as np
+    import tifffile
+    from test_effects import fixture_project, shading_request
+
+    from blackmask import operations
+    from blackmask.project import project_lock
+
+    for name in ("BLACKMASK_SAM_CACHE", "BLACKMASK_VITMATTE_CACHE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "1")
+    project, _, _ = fixture_project(tmp_path)
+    before = (project / "state.json").read_bytes()
+    native = run("export", project)
+    assert native.returncode == 0, native.stderr
+    native_directory = Path(json.loads(native.stdout)["directory"])
+    native_bytes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in native_directory.iterdir()
+    }
+    first = run("export", project, "--margins", 2, 1, 3, 0, "--framed-transparent")
+    assert first.returncode == 0, first.stderr
+    result = json.loads(first.stdout)
+    assert result["output_dimensions_wh"] == [9, 7]
+    assert result["source_rect_xyxy"] == [2, 3, 8, 7]
+    directory = Path(result["directory"])
+    pixels = tifffile.imread(directory / "result_rgb16.tif")
+    np.testing.assert_array_equal(
+        pixels[3:7, 2:8], tifffile.imread(native_directory / "result_rgb16.tif")
+    )
+    original_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in directory.iterdir()
+    }
+    # The original capture is unavailable at its recorded path in the next process.
+    (tmp_path / "source.tif").rename(tmp_path / "retained-original.tif")
+    replay = run("export", project, "--margins", 2, 1, 3, 0, "--framed-transparent")
+    assert replay.returncode == 0, replay.stderr
+    assert json.loads(replay.stdout) == result
+    assert original_hashes == {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in directory.iterdir()
+    }
+    assert before == (project / "state.json").read_bytes()
+    assert native_bytes == {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in native_directory.iterdir()
+    }
+    for args in (
+        ("--framed-transparent",),
+        ("--margins", -1, 0, 0, 0),
+        ("--margins", 32768, 0, 0, 0),
+        ("--margins", 1.5, 0, 0, 0),
+    ):
+        failed = run("export", project, *args)
+        assert failed.returncode != 0 and failed.stderr
+    with project_lock(project):
+        busy = run("export", project, "--margins", 0, 0, 0, 0)
+    assert busy.returncode != 0 and "busy" in busy.stderr.lower()
+    draft = operations.apply_operation(project, shading_request(project))
+    failed = run("export", project, "--revision", draft["revision"], "--margins", 0, 0, 0, 0)
+    assert failed.returncode != 0 and "--draft" in failed.stderr
+    delivered = run(
+        "export", project, "--revision", draft["revision"], "--draft", "--margins", 0, 0, 0, 0
+    )
+    assert delivered.returncode == 0, delivered.stderr
+    record = json.loads(Path(json.loads(delivered.stdout)["manifest_file"]).read_bytes())
+    assert record["draft"] is True and record["label"].startswith("DRAFT")
+
+
 def test_fresh_cli_create_reopen_doctor_accept(tmp_path):
     source = tiff(tmp_path / "source.bin", profile=srgb_profile())
     project = tmp_path / "project"

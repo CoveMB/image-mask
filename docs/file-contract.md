@@ -608,3 +608,105 @@ differing-content collisions are refused. Existing immutable legacy reviews are
 not regenerated on open. Current readers restore prior revisions; old readers
 are not promised to understand new records. Retain a prior project/revision for
 recovery rather than stripping fields. No automatic cleanup occurs.
+
+## Framed presentation exports
+
+`export PROJECT --margins LEFT RIGHT TOP BOTTOM [--framed-transparent]` adds a
+separate presentation delivery. Omitted margins retain the native export contract
+and file set. Explicit zero margins still select a compact presentation.
+Each margin is a nonnegative integer in native pixels. Output width/height must
+each be at most 32768 and their product at most 100,000,000; requests are checked
+before staging or expanded raster allocation. Native dimensions, editing
+coordinates, saved layers, acceptance and project schema do not change.
+
+The canonical saved renderer completes the native Result once, including selected
+cleanup/exposure/fade, shading and alpha. Framing copies those RGB16 samples without
+resampling at `(left, top)`. Outside that rectangle, only the saved native backdrop's
+nearest edge/corner pixels extend outwards; legacy backdrop absence means black.
+No foreground edge is stretched and no larger analytic backdrop is regenerated.
+The optional straight RGBA8 view retains the canonical native viewing samples and
+has zero RGB and alpha outside. All delivered rasters carry the canonical sRGB ICC
+profile; TIFF is uncompressed processed RGB16, PNGs are reduced-precision views.
+
+The flat directory `exports/<revision[-DRAFT]>-framed-<full-sha256>/` contains
+`result_rgb16.tif`, `result_RGB8_VIEW.png`, optional
+`transparent_RGBA8_VIEW.png`, `README.txt` and `manifest.json`.
+The schema-1 manifest has kind `framed-presentation`, master/revision identities,
+exact validated revision-manifest byte hash, source/output dimensions, margins,
+half-open `source_rect_xyxy`, algorithm `saved-backdrop-edge-padding-v1`,
+encoding/profile/variant identities, selected effect/backdrop identities and
+project-relative native-asset hashes. Its `files` records hash every delivered
+member except the manifest itself, with raster dimensions and precision.
+The directory identity hashes the canonical manifest inputs before delivered-file
+records are added. The bundle excludes capture paths, model configuration and
+editable native rasters; keep the local project for further editing.
+
+The accepted-source label is “Framed presentation of accepted revision; framing
+has not been separately accepted”. Explicit `--revision ... --draft` produces
+“DRAFT - explicit framed presentation”, even when that source revision is accepted.
+No new photographic acceptance is inferred.
+
+The canonical writer lock covers source selection through publication. Captured
+raw state and revision-manifest bytes must correspond to canonical validated
+objects; source identity, bytes and saved assets are checked again before publication.
+Stale enabled effects fail instead of exporting a BASE fallback. This cooperative
+lock does not provide an atomic snapshot against hostile external writers.
+Identical complete deliveries are reused; differing, missing, extra, symlinked or
+directory members are rejected without overwrite. Files and directories are synced
+before exclusive publication. A failed parent sync can leave a complete visible
+delivery with unconfirmed durability; identical retry validates and syncs it.
+After successful identical reuse and parent sync, only that attempt's verified
+duplicate stage is removed. Failed exports retain any unpublished stages;
+failed reuse validation or parent sync retains its duplicate stage. A cleanup
+failure reports that publication succeeded and identifies the stage for inspection;
+some stage files may already be removed. Earlier stages and prior deliveries are
+never swept by an export retry.
+
+Resource admission retains the 10 GiB disk reserve and adds the existing native
+allowance plus 16 bytes per framed pixel and 2 MiB. Expanded variants/readbacks are
+processed sequentially; RGB8 conversion uses one row of float64 scratch and PNG
+readback hashes decoded rows. Admission is a disk-capacity estimate, not a RAM
+estimate/reservation or a guarantee that every supported size fits current memory.
+
+
+## Saved framing and bounded preview
+
+Optional `framing.json` is an independent schema-1 source preset. It contains exactly
+`schema_version: 1`, `master_id`, `source_dimensions_wh: [width, height]` and `margins`
+with `left_px`, `right_px`, `top_px`, `bottom_px`. Dimensions and margins are strict
+JSON integers; booleans, fractions, negatives, extra fields and foreign source or
+dimensions fail. Metadata is bounded to 16 KiB and symlinks are rejected. Absence
+means in-memory zeros and a null digest, with no write. Invalid presets produce an
+independent viewer framing error; native project operations and explicit valid
+preview/export margins remain available. Invalid files are never silently repaired.
+
+The shared project writer lock covers save validation and atomic replacement.
+`framing-save` compares the raw-byte SHA-256 last loaded by the client; null means
+absent. Even semantically identical external rewrites invalidate that comparison.
+Saving an unchanged valid preset retains its exact bytes. Saves do not modify
+recipes, guidance, model/tile caches, revision manifests or working/accepted pointers.
+Restore retains the source preset; existing exports retain their own frozen layout.
+Failures before replacement retain old bytes. A failed directory sync after replacement
+can leave new visible bytes: the action reports durability uncertainty, rereads visible
+margins/digest when possible, preserves the form and requires explicit Reload saved
+margins before another save. No rollback is claimed.
+
+Each validated viewer snapshot revision entry supplies `revision_manifest_sha256`,
+the SHA-256 of the exact validated saved manifest bytes, independently of
+`draft_digest`. Authenticated same-origin `POST /api/framing-preview` accepts only
+`master_id`, `revision`, `revision_manifest_sha256` and `margins`. It requires a
+complete saved result and rejects stale enabled effects rather than rendering BASE.
+Source/state/manifest identity is checked again after rendering. The response echoes
+all request identity fields and returns `png_base64`, source/output/display dimensions,
+`source_rect_xyxy`, algorithm and a reduced-detail label. It writes no project state.
+
+The preview samples the virtual enlarged canvas directly from the completed native
+result and saved backdrop, using pixel-centre nearest-neighbour sampling, bounded
+row scratch and a display no larger than 1600 on its longest edge. It never allocates
+the enlarged full canvas; native saved-result reconstruction still needs native-sized
+arrays. One nonblocking render guard per server rejects overlapping render work as
+busy, without a queue, and releases on success or failure before HTTP transport.
+The page decodes PNG bytes through a local Blob and `createImageBitmap`, displays
+only a matching source/revision/raw digest/all-margin/request-sequence result, and
+closes rejected or replaced bitmaps. The existing CSP remains unchanged. This canvas
+has no native guide-authoring handlers and its pixels cannot define native edits.

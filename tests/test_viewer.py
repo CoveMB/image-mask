@@ -11,6 +11,251 @@ from blackmask import operations
 from blackmask.project import ProjectError, load_master, project_lock, read_project
 
 
+def test_framing_snapshot_preview_and_preset_error_are_independent(tmp_path):
+    import base64
+    import hashlib
+    import io
+
+    from PIL import Image
+    from test_background import legacy_project
+    from test_framing import margins
+
+    project, parent = legacy_project(tmp_path)
+    before = (project / "state.json").read_bytes()
+    with running(project) as server:
+        status, body, _ = http(server)
+        state = json.loads(body)
+        assert status == 200 and state["framing"] == margins(0, 0, 0, 0)
+        record = next(r for r in state["revisions"] if r["revision"] == parent["revision"])
+        expected = hashlib.sha256(
+            (project / "revisions" / parent["revision"] / "manifest.json").read_bytes()
+        ).hexdigest()
+        assert record["revision_manifest_sha256"] == expected
+        request = {
+            "master_id": state["master_id"],
+            "revision": parent["revision"],
+            "revision_manifest_sha256": record["revision_manifest_sha256"],
+            "margins": margins(),
+        }
+        status, body, headers = http(server, "/api/framing-preview", "POST", request)
+        assert status == 200
+        result = json.loads(body)
+        for key, value in request.items():
+            assert result[key] == value
+        assert result["output_dimensions_wh"] == [9, 5]
+        assert result["source_rect_xyxy"] == [1, 1, 7, 5]
+        with Image.open(io.BytesIO(base64.b64decode(result["png_base64"]))) as image:
+            assert image.mode == "RGB" and image.size == (9, 5)
+            assert image.getpixel((0, 0)) == (0, 0, 0)
+        assert "img-src 'self' blob:" in headers["Content-Security-Policy"]
+        assert http(server, "/api/framing-preview", "POST", request, Origin="null")[0] == 403
+        assert http(server, "/api/framing-preview", "POST", {**request, "path": "/tmp"})[0] == 400
+        assert (
+            http(
+                server,
+                "/api/framing-preview",
+                "POST",
+                {**request, "revision_manifest_sha256": "0" * 64},
+            )[0]
+            == 409
+        )
+        (project / "framing.json").write_text("{broken")
+        state = json.loads(http(server)[1])
+        assert state["framing"] is None and "framing.json" in state["framing_error"]
+        assert http(server, "/api/framing-preview", "POST", request)[0] == 200
+        assert (project / "state.json").read_bytes() == before
+
+
+def test_framing_save_and_explicit_export_use_independent_form(tmp_path):
+    from test_effects import fixture_project
+    from test_framing import margins
+
+    project, _, _ = fixture_project(tmp_path)
+    before = (project / "recipe.toml").read_bytes()
+    with running(project) as server:
+        saved = perform(server, "framing-save", margins=margins(), expected_digest=None)
+        assert saved["framing"] == margins()
+        exported = perform(
+            server,
+            "export",
+            revision=None,
+            draft=False,
+            framing=margins(7),
+            framed_transparent=True,
+        )
+        assert exported["framing"] == margins(7)
+        assert json.loads((project / "framing.json").read_bytes())["margins"] == margins()
+        assert (project / "recipe.toml").read_bytes() == before
+
+
+def test_framing_http_guard_disconnect_errors_and_race(tmp_path, monkeypatch):
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+
+    from test_effects import fixture_project
+    from test_framing import margins
+
+    from blackmask import viewer
+
+    project, _, parent = fixture_project(tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    original = viewer.framing_preview
+
+    def paused(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+
+    with running(project) as server:
+        state = json.loads(http(server)[1])
+        record = next(item for item in state["revisions"] if item["revision"] == parent["revision"])
+        data = {
+            "master_id": state["master_id"],
+            "revision": record["revision"],
+            "revision_manifest_sha256": record["revision_manifest_sha256"],
+            "margins": margins(),
+        }
+        monkeypatch.setattr(viewer, "framing_preview", paused)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            first = executor.submit(http, server, "/api/framing-preview", "POST", data)
+            assert entered.wait(3)
+            assert http(server, "/api/framing-preview", "POST", data)[0] == 409
+            assert http(server)[0] == 200
+            release.set()
+            assert first.result(timeout=5)[0] == 200
+        # A disconnected client cannot retain the per-server render guard.
+        entered.clear()
+        release.clear()
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        connection.request(
+            "POST",
+            "/api/framing-preview",
+            json.dumps(data),
+            {
+                "X-Blackmask-Token": server.token,
+                "Origin": server.origin,
+                "Content-Type": "application/json",
+            },
+        )
+        assert entered.wait(3)
+        connection.sock.shutdown(socket.SHUT_RDWR)
+        connection.close()
+        release.set()
+        assert server.framing_preview_lock.acquire(timeout=5)
+        server.framing_preview_lock.release()
+        monkeypatch.setattr(viewer, "framing_preview", original)
+        assert http(server, "/api/framing-preview", "POST", data)[0] == 200
+        # A raw-byte edit during sampling must not be labelled with the old digest.
+        path = project / "revisions" / record["revision"] / "manifest.json"
+        raw = path.read_bytes()
+
+        def changed(*args, **kwargs):
+            path.write_bytes(raw + b"\n")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(viewer, "framing_preview", changed)
+        assert http(server, "/api/framing-preview", "POST", data)[0] == 409
+        monkeypatch.setattr(viewer, "framing_preview", original)
+        assert http(server, "/api/framing-preview", "POST", data)[0] == 409
+        current = json.loads(http(server)[1])
+        updated = next(
+            item for item in current["revisions"] if item["revision"] == record["revision"]
+        )
+        assert updated["draft_digest"] == record["draft_digest"]
+        assert updated["revision_manifest_sha256"] != record["revision_manifest_sha256"]
+        data["revision_manifest_sha256"] = updated["revision_manifest_sha256"]
+        assert http(server, "/api/framing-preview", "POST", data)[0] == 200
+        assert http(server, "/api/framing-preview", "POST", data, Host="attacker.example")[0] == 403
+        assert (
+            http(server, "/api/framing-preview", "POST", data, **{"X-Blackmask-Token": "wrong"})[0]
+            == 403
+        )
+        assert (
+            http(server, "/api/framing-preview", "POST", data, **{"Content-Length": "2000001"})[0]
+            == 413
+        )
+
+
+def test_framing_snapshot_rejects_manifest_replacement_during_validation(tmp_path, monkeypatch):
+    from test_effects import fixture_project
+
+    from blackmask import viewer
+
+    project, _, parent = fixture_project(tmp_path)
+    original = viewer.read_revision
+
+    def replaced(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[1] == parent["revision"]:
+            path = project / "revisions" / parent["revision"] / "manifest.json"
+            path.write_bytes(path.read_bytes() + b"\n")
+        return result
+
+    monkeypatch.setattr(viewer, "read_revision", replaced)
+    with viewer.ReviewServer(project) as server, pytest.raises(ProjectError, match="Stale"):
+        server.snapshot()
+
+
+def test_framing_snapshot_rejects_source_change_despite_benign_pointer_progress(
+    tmp_path, monkeypatch
+):
+    from test_effects import fixture_project
+
+    from blackmask.viewer import ReviewServer
+
+    project, _, _ = fixture_project(tmp_path)
+    original = operations.operation_status
+
+    def changed(*args, **kwargs):
+        state = original(*args, **kwargs)
+        source = project / "source.json"
+        source.write_bytes(source.read_bytes() + b"\n")
+        return state
+
+    monkeypatch.setattr(operations, "operation_status", changed)
+    with (
+        ReviewServer(project) as server,
+        pytest.raises(ProjectError, match="Stale snapshot source"),
+    ):
+        server.snapshot()
+
+
+def test_framing_preview_rejects_stale_enabled_effect_without_base_fallback(tmp_path):
+    from unittest.mock import patch
+
+    import numpy as np
+    from test_effects import effect_request, fixture_project
+    from test_framing import margins
+    from test_matte_operations import StubSession
+    from test_repair_operations import repair_guides, repair_request, run_repair
+
+    project, _, _ = fixture_project(tmp_path)
+    operations.apply_operation(project, effect_request(project))
+    prepared = repair_guides(project, [1, 1, 4, 3])
+    with patch.object(
+        StubSession,
+        "predict",
+        side_effect=lambda rgb, guide, device: (np.full(guide.shape, 0.75), {}),
+    ):
+        result = run_repair(project, repair_request(project, prepared, [0, 0, 6, 4], [1, 1, 4, 3]))
+    with running(project) as server:
+        state = json.loads(http(server)[1])
+        record = next(item for item in state["revisions"] if item["revision"] == result["revision"])
+        assert record["color_cleanup"]["stale"]
+        status, body, _ = http(
+            server,
+            "/api/framing-preview",
+            "POST",
+            {
+                "master_id": state["master_id"],
+                "revision": record["revision"],
+                "revision_manifest_sha256": record["revision_manifest_sha256"],
+                "margins": margins(),
+            },
+        )
+        assert status == 409 and "Stale enabled appearance" in json.loads(body)["error"]
+
+
 @contextmanager
 def running(project):
     from blackmask.viewer import ReviewServer
