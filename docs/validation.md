@@ -1,5 +1,224 @@
 # Verification
 
+## Actual browser journey and export readback — 2026-10-20
+
+The orchestrator completed the synthetic journey in the user's already-loaded
+private Brave window through native computer use. The browser extension had been
+showing a different blocked normal-window tab; no browser security setting, Host,
+Origin or capability guard, or CSP was changed. Observed client hints identify
+Brave/Chromium 154 on macOS, not the exact installed build. The actual production
+CSP matched the unchanged page script, and PNG framing previews decoded and drew
+successfully. Two retained unmodified JPEG screenshots show the native canvas,
+margin controls and framing preview within its sidebar fieldset.
+
+Actual UI observations cover whole-pixel rejection/recovery, Set all sides,
+Centre image, manual margins, native zoom and window resizing, stale revision/field
+invalidation, and an older delayed preview arriving after the newer displayed
+preview. Framing reset/reload/save/export preserved independent unsaved exposure,
+fade, cleanup, shading and native-guide drafts before deliberate page reload.
+A second tab's stale null-digest save was rejected with its fields retained;
+Reload recovered the saved preset. The declared post-replacement directory-sync
+fault left Left 17 visible, reported durability uncertainty, disabled Save and
+required Reload. No successful fsync or rollback is claimed for that failed save.
+
+A subsequent keyboard-only observation verified Tab/Shift-Tab traversal through
+the labelled numeric fields, numeric editing, Space activation of Set all sides
+and Reset, and Return activation of Centre image. These edits remained local to
+the browser; saved data and code were unchanged.
+
+After free disk exceeded the unchanged 10 GiB reserve, the browser exported
+accepted rev-005 twice to the same destination and draft rev-006 separately, using
+unsaved margins 9,7,4,5. Each resulting delivery has exactly five files and the
+correct accepted/DRAFT label. Prepared readback of these actual browser-created
+files passed (exit 0), followed by supplemental literal contract assertions
+(exit 0). They verified both complete native RGB16 crops against independent
+scalar fixture expectations, every outer backdrop pixel, native RGBA8 samples
+and zero outer RGBA, full RGB8 quantization, exact geometry/member/hash sets,
+master/revision/native-asset hashes, and 621 partial alpha samples per revision
+including protected alpha16 value 26214. Export reuse was observed in the browser;
+readback verifies one exact accepted delivery identity without re-exporting.
+
+All ten export files and the raw saved 17,7,4,5 preset remained unchanged through
+page reload and restore. Original capture absence and retained synthetic capture
+identity were checked. Restore produced working/accepted rev-005, preserved the
+four original state/source/recipe/guide files in recovery, and restored the saved
+draft digest. The final native point at (17,23) remained an unsaved browser edit.
+The readback left all 226 project files unchanged. Production and test bytes remain
+identical to the canvas-selector candidate; only this evidence account changed.
+No backend/model/full-suite check was repeated.
+
+Current native rev-005/rev-006 image requests returned 200. The earlier generic
+404 header was retained error text; its exact historical failing request remains
+unknown. The bounded post-reload console observation showed favicon.ico 403 and
+no CSP violation; it is not a complete browser-history or security audit. Keyboard
+and UI observations are not full accessibility certification, real-model evidence,
+maximum-size performance proof or human photographic acceptance. The actual J1
+sequence and owner readback are recorded. All three independent result scopes,
+affected renewals and final gate reconciliation are complete. The final verification
+review concluded: “No material improvements recommended.” The synthetic Q9/J1
+verification gap is closed.
+
+## Native canvas layout repair — 2026-10-20
+
+A user-provided screenshot and DOM inspection identified the initial framing
+canvas covering the page with a dark layer. The existing global `canvas` rule
+positioned it absolutely at the page origin, with full width and its initial 1:1
+aspect ratio. That rule was originally written for the single native authoring
+canvas inside the positioned viewport.
+
+The correction scopes that unchanged positioning rule to `#canvas`. The framing
+canvas now uses its existing normal-flow sizing; the shared canvas focus style
+remains. No JavaScript, request/security behavior, bitmap ownership, native-coordinate
+logic or persisted data changed. Exact byte correspondence and the frozen narrow
+delta record the one-selector production change; static checks do not establish
+browser rendering.
+
+The actual browser observations above establish visible initial/preview layout,
+working controls after resizing and native-coordinate authoring on this repair.
+Node tests use stubbed geometry and cannot prove browser layout. Backend/model/full-suite
+checks were not repeated; their results remain historical evidence for unchanged
+behavior. The affected independent verification review is complete with no material
+improvements recommended.
+
+## Reduced framing-preview verification repair — 2026-10-20
+
+Independent verification review found a test gap: the prior literal pixel oracle
+used 1:1 output, while the reduced-preview checks asserted dimensions and allocation
+bounds. No production sampling defect was observed. A new nonsquare asymmetric
+case reduces a 6×5 virtual canvas to 4×3 and lists every expected RGB8 sample
+independently, including two native-image pixels and ten saved-backdrop pixels.
+
+Two isolated test-owned copies of the renderer change only the x or y sampling
+offset from pixel centres to pixel edges. Each produced the intended pixel-assertion
+failure (exit 1). The unchanged production renderer passed the new oracle and the
+existing bounded-preview check (2 passes, exit 0). Production files were never
+rewritten for the RED witnesses. Changed-input lint/format checks passed.
+
+The 693-pass full run below remains the actual historical full-suite result; the
+augmented suite was not rerun and no aggregate count is claimed. Exact source
+hashes and AST correspondence establish that production and all pre-existing test
+bodies are unchanged. Only the new reduced-preview oracle and this evidence account
+were added. Unchanged Pillow, resource and model evidence was not rerun. The affected
+verification reviewer subsequently closed this test gap. Later actual-browser Q9/J1
+evidence above has also completed its affected verification review.
+
+## Saved framing controls candidate — 2026-10-20
+
+The renewed coherent deterministic suite passed **693 tests**, with three explicit
+missing-model-cache skips, in 175.11 seconds (exit 0). All source/test/dependency
+inputs stayed unchanged during that run. Final Ruff lint and format checks passed
+(51 files); mypy passed for 19 source files. After the suite, one blank import
+separator in a test was corrected for Ruff; its Python AST is identical and the
+tested body plus both hashes are retained. Application code stayed unchanged until
+the later CSS-only native canvas layout repair described above.
+
+New behavior checks cover optional source-bound preset absence and validation,
+foreign/corrupt/symlink preservation, two actual processes exercising the canonical
+writer lock and raw-byte CAS, and failures at temporary creation, file sync,
+replacement and directory sync. Real HTTP tests obtain the preview identity from
+actual snapshot entries and exercise PNG transport, authentication/origin/body
+bounds, stale enabled effects, raw-manifest changes, nonblocking render contention,
+disconnect release and recovery. Shipped-page Node scenarios cover independent
+forms, local reset/reload, explicit exports, uncertainty recovery, native guide
+coordinates, out-of-order responses, pending bitmap decoding and bitmap closure.
+
+The first full run exposed four ordinary-polling regressions: an added snapshot
+state-byte check rejected legitimate operation completion. The repair preserves
+the existing action-first snapshot ordering and permits pointer progress while
+retaining source and exact consumed-manifest checks. All 37 affected tests passed,
+including deterministic completion ordering and source/manifest replacement
+counter-tests, before the renewed full suite. Assertions were not weakened.
+
+A real HTTP preview of a virtual 10000×10000 canvas from a saved 96×72 synthetic
+source returned a 1600×1600 RGB8 PNG in 0.091 seconds. Process peak RSS was
+85,917,696 bytes, compared with a pre-request high-water mark of 66,879,488 bytes;
+the PNG was 11,821 bytes and every project file hash remained unchanged. Allocation
+instrumentation separately checks that preview sampling does not allocate the
+expanded full canvas. This is one bounded observation, not maximum native-image
+performance proof. This resource observation predates the snapshot-polling
+compatibility repair; the measured preview-rendering path was unchanged. It is
+not a new whole-process measurement of the repaired snapshot or a maximum-size claim.
+
+The combined synthetic browser fixture includes boundary-reaching legs, 621
+partial samples, a protected alpha16 sample of 26214 and saved nonuniform
+backdrops. Its original synthetic capture is retained away from its original path;
+saved-only reopening succeeds. A separate copy completed nine real HTTP journey
+events: snapshot-derived preview, save, stale CAS rejection, post-replacement sync
+uncertainty, accepted export and identical reuse, explicit draft export, restore
+and fresh-server preview. Independent decoded readback compared both deliveries'
+entire native RGB16 crops to scalar composition, every outer pixel to saved backdrop
+edges, native RGBA8 samples and zero outer RGBA, exact member/hash sets and raw
+revision identities. Source preset and accepted pointer survived restore, saved
+native assets and prior deliveries stayed unchanged, and the pending browser
+fixture's hashes remained unchanged.
+
+Initial browser navigation was blocked by Brave (`ERR_BLOCKED_BY_CLIENT`); the
+in-app browser was unavailable. The local HTTP page returned 200 with the expected
+CSP, but no application UI action or security change occurred. This establishes
+neither browser rendering under CSP nor keyboard/canvas behavior. The later actual
+browser journey above supplies those observations separately. Node/HTTP checks do
+not substitute for browser evidence, independent result review, human photographic
+acceptance or real model inference.
+
+## Framed presentation candidate — 2026-10-20
+
+The settled deterministic suite passed **663 tests**, with three explicit
+missing-model-cache skips, in 157.05 seconds (exit 0). Ruff lint and format checks
+passed for 40 files; mypy passed for 19 source files. The isolated environment's
+dependency check passed. Tests selected this checkout's `src`, removed the two
+explicit model-cache environment variables and set Hugging Face/Transformers
+offline flags. All 44 recorded source/test/dependency input hashes remained
+unchanged during the full run.
+
+New application checks cover literal asymmetric geometry; strict integer, shape
+and output limits; non-257 RGB16 samples; an independent scalar composition oracle;
+nonempty protected partial/opaque pixels; saved cleanup/exposure/fade/shading once;
+TIFF/PNG/profile readback; zero RGBA margins; native export compatibility and
+explicit draft labels. Actual CLI processes exercise saved-only replay after the
+original capture is moved away, busy locks and invalid requests. Fault checks
+cover initial semantic/raw-byte correspondence, changes during rendering, stale
+enabled effects, low disk, corrupt raster readback, unexpected delivery members,
+symlinks, and failures before rename or during parent sync. Prior work is preserved.
+The initial framing tests failed for the absent module/API before implementation.
+
+Independent review identified a retained RGBA render buffer. Two added regressions
+failed before the repair, then passed: the real NumPy buffer is released before PNG
+readback, and a save failure closes the real Pillow image while preserving prior
+exports and accepted state. The transparent image now closes explicitly in
+`finally`, including on save failure. The focused framing/CLI suite passed 69 tests.
+
+A synthetic 6×4 source with 1024-pixel margins produced a 2054×2052 canvas
+(4,214,808 pixels), including the transparent variant. The warmed repair probe
+took 0.230 seconds and wrote 25,327,364 bytes. Process peak RSS was 107,167,744
+bytes, a 42,385,408-byte high-water increase. Row-based PNG readback replaced
+expanded NumPy readback copies after an earlier probe measured a larger peak.
+The renewed peak matches the probe before explicit RGBA closure; the lifetime
+regression establishes release at the readback boundary without claiming a lower peak.
+The disk-admission estimate for this case was 69,537,248 bytes; it is distinct
+from RAM use. These observations do not establish maximum-size performance or
+isolate every allocator.
+
+This is synthetic/local implementation evidence. Independent result reviews,
+human framing/photographic acceptance, browser framing controls and real model
+inference are not established by these checks.
+
+## Pillow compatibility prerequisite — 2026-10-20
+
+Pillow 12.3.0 created two tiny synthetic saved projects, one with the legacy black
+background and one with a saved backdrop. A fresh process using the isolated
+Pillow 13.0.0 environment reopened those projects and reproduced their exact saved
+native pixels, PNG samples, default export member bytes and identical-delivery
+reuse. Both comparison commands exited 0. The normalized sRGB profile stayed
+588 bytes with SHA-256
+`6f6fe5cc53cd24ceeb7997fb24ce2889fdfb88d88ce4fdc5f8e25e0481294953`.
+All application imports explicitly selected this checkout's `src`.
+
+The regression suite retains that profile identity and exercises harmless 8×6
+animated PNG rejection with each disposal method. No hostile allocation probe,
+private capture, model inference or human photographic acceptance is claimed.
+Dependency and upstream-fix provenance is recorded in
+[model-provenance.md](model-provenance.md#pillow-maintenance-update--2026-10-20).
+
 ## Retained trusted-master evidence
 
 Observed on 2026-10-18 with native ARM64 Python 3.12.14, macOS 26.5.2 and

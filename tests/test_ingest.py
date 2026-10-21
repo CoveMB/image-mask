@@ -1,3 +1,4 @@
+import hashlib
 import io
 import struct
 import zlib
@@ -31,6 +32,14 @@ def tiff(path, pixels=None, profile=None, **kwargs):
         **kwargs,
     )
     return path
+
+
+def test_canonical_srgb_bytes_preserve_saved_project_identity():
+    # Captured from the prior pinned runtime. Saved RGB16 validation compares
+    # these normalized bytes exactly, so a library upgrade must not migrate them.
+    assert hashlib.sha256(srgb_profile()).hexdigest() == (
+        "6f6fe5cc53cd24ceeb7997fb24ce2889fdfb88d88ce4fdc5f8e25e0481294953"
+    )
 
 
 def test_rgb16_non_257_roundtrip(tmp_path):
@@ -353,13 +362,15 @@ def test_gain_map_jpeg_cannot_silently_become_an_sdr_master():
         decode_source(data, {"assume_srgb": True})
 
 
-def test_animated_png_rejection_names_actual_format_and_recovery():
+@pytest.mark.parametrize("disposal", [0, 1, 2])
+def test_animated_png_rejection_names_actual_format_and_recovery(disposal):
     buffer = io.BytesIO()
     Image.new("RGB", (8, 6), (20, 80, 160)).save(
         buffer,
         format="PNG",
         save_all=True,
         append_images=[Image.new("RGB", (8, 6), (100, 100, 100))],
+        disposal=disposal,
     )
     with Image.open(io.BytesIO(buffer.getvalue())) as image:
         assert image.format == "PNG" and image.n_frames == 2

@@ -33,6 +33,9 @@ Background appearance adds a saved tone and broad variation behind the matte.
 New projects start warm near-black (`#120708`, variation 55%); older projects stay
 black until explicitly changed. [Background instructions](docs/workflow.md#background-appearance)
 explain Result, diagnostic views and separate editable exports.
+Presentation framing adds saved margins, a separate bounded RGB8 layout preview,
+and compact RGB16 exports. Native masks and editing coordinates stay unchanged.
+See [presentation margins](docs/workflow.md#add-presentation-margins).
 Prepared revisions require explicit human trimap review before matting.
 Combined computational checks and saved-only reconstruction are documented in
 [validation](docs/validation.md#combined-workflow-validation). The representative
@@ -134,6 +137,7 @@ for explicit model setup, typed preparation and human review.
 | Independent linear-sRGB Shadow fade and saved operands | `src/blackmask/shadow_fade.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
+| Presentation geometry, bounded sampling and source-bound preset | `src/blackmask/framing.py` |
 | One-project loopback server and packaged manual page | `src/blackmask/viewer.py`, `src/blackmask/ui/review.html` |
 | Shared inverse native coordinate mapping | `src/blackmask/ui/coordinates.js` |
 | Supported commands and local doctor/setup | `src/blackmask/cli.py` |

@@ -1,5 +1,31 @@
 # Package, development and model provenance
 
+## Pillow maintenance update — 2026-10-20
+
+The current pin is **Pillow 13.0.0**, replacing the historical 12.3.0 entry below.
+Its CPython 3.12 macOS ARM64 wheel is 4,852,329 bytes, with SHA-256
+`fc481f742ccda20e9ed760b8f978dff50f2a4e9bc253ac167fb0a05b0783ef52`.
+The official wheel requires Python >=3.11 and retains the MIT-CMU licence;
+the repository's Python 3.12 and existing dependency constraints remain compatible.
+No other dependency pin changed.
+
+This update includes upstream decoder fixes, including the APNG disposal allocation
+issue affecting saved-image readers as well as ingest. A `.png` filename does not
+restrict Pillow's decoder selection; rejecting animated input after opening was
+not sufficient mitigation for the older decoder. The existing input policies
+remain in place. See the [13.0.0 release notes](https://pillow.readthedocs.io/en/stable/releasenotes/13.0.0.html),
+[APNG advisory](https://github.com/python-pillow/Pillow/security/advisories/GHSA-5xm2-6676-qcp9)
+and [exact release metadata](https://pypi.org/project/pillow/13.0.0/).
+
+An isolated hash-locked binary installation reused 40 verified cached wheels and
+downloaded only this Pillow wheel. Fresh-process synthetic replay under 13.0.0
+preserved the prior 12.3.0 normalized sRGB profile bytes, saved native assets and
+legacy export bytes/reuse for both black-only and saved-backdrop projects.
+These are bounded compatibility checks, not an exhaustive security audit or
+photographic acceptance. Earlier dated results below retain their original versions.
+
+## Initial package evidence — 2026-10-18
+
 Checked 2026-10-18 against official version-specific PyPI JSON metadata, native wheel tags/hashes, installed package metadata and upstream documentation. `requirements-macos-arm64.lock` pins every installed runtime/test/type/lint dependency and the build backend; excludes the bootstrap pip and editable application. The lock selects only compatible CPython 3.12 macOS ARM64 or universal wheels; no source builds. Python is native ARM64 3.12.14. NumPy 2.3.5 and Pillow 12.3.0 retain the bundled runtime versions; rawpy 0.27.1 is pinned for RAW development. Tifffile 2026.10.15 and tomli-w 1.2.0 meet their declared Python/NumPy requirements. Installed imports/tests are separate compatibility evidence from metadata.
 
 | Package | Requires Python | Licence metadata | PyPI published advisories at check |

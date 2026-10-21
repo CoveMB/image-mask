@@ -116,6 +116,18 @@ def main() -> int:
     exported.add_argument("project", type=Path)
     exported.add_argument("--revision")
     exported.add_argument("--draft", action="store_true")
+    exported.add_argument(
+        "--margins",
+        nargs=4,
+        type=int,
+        metavar=("LEFT", "RIGHT", "TOP", "BOTTOM"),
+        help="Create a separate framed presentation using nonnegative native pixel margins",
+    )
+    exported.add_argument(
+        "--framed-transparent",
+        action="store_true",
+        help="Include a reduced-precision straight RGBA8 view; requires --margins",
+    )
     restored = commands.add_parser(
         "restore", help="Restore saved working inputs; retain acceptance"
     )
@@ -199,7 +211,19 @@ def main() -> int:
                 result = review_project(arguments.project, revision=arguments.revision, crops=crops)
         elif arguments.command == "export":
             result = export_project(
-                arguments.project, revision=arguments.revision, draft=arguments.draft
+                arguments.project,
+                revision=arguments.revision,
+                draft=arguments.draft,
+                framing=dict(
+                    zip(
+                        ("left_px", "right_px", "top_px", "bottom_px"),
+                        arguments.margins,
+                        strict=True,
+                    )
+                )
+                if arguments.margins is not None
+                else None,
+                framed_transparent=arguments.framed_transparent,
             )
         elif arguments.command == "restore":
             from .operations import restore_revision

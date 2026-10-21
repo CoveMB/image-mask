@@ -1,5 +1,7 @@
 """Single encoded-sRGB base renderer and honest lower-precision views."""
 
+import hashlib
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -216,10 +218,21 @@ def publish_artifacts(stage: Path, destination: Path) -> None:
 
 
 def export_project(
-    project: Path, *, revision: str | None = None, draft: bool = False
+    project: Path,
+    *,
+    revision: str | None = None,
+    draft: bool = False,
+    framing: dict[str, int] | None = None,
+    framed_transparent: bool = False,
 ) -> dict[str, Any]:
+    if type(framed_transparent) is not bool:
+        raise ValueError("framed_transparent must be a boolean")
+    if framed_transparent and framing is None:
+        raise ValueError("Transparent framing requires explicit margins")
     project = _root(project)
     with project_lock(project):
+        if framing is not None:
+            return _export_framed(project, revision, draft, framing, framed_transparent)
         state = read_project(project)
         if revision is None:
             if draft:
@@ -402,3 +415,282 @@ def export_project(
             "directory": str(destination),
             "manifest_file": str(destination / "manifest.json"),
         }
+
+
+def _pixel_digest(pixels: np.ndarray) -> str:
+    value = hashlib.sha256()
+    for row in pixels:
+        value.update(row.tobytes())
+    return value.hexdigest()
+
+
+def _file_digest(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _write_framed_rgb8(path: Path, pixels: np.ndarray) -> str:
+    """Keep conversion scratch to one row, rather than an expanded float64 RGB."""
+    expected = hashlib.sha256()
+    with Image.new("RGB", (pixels.shape[1], pixels.shape[0])) as image:
+        for y, row in enumerate(pixels):
+            converted = np.rint(row.astype(np.float64) / 257).astype(np.uint8)
+            expected.update(converted.tobytes())
+            with Image.fromarray(converted[None]) as strip:
+                image.paste(strip, (0, y))
+        image.save(path, icc_profile=srgb_profile())
+    return expected.hexdigest()
+
+
+def _verify_framed_png(path: Path, mode: str, size: tuple[int, int], expected: str) -> None:
+    with Image.open(path, formats=["PNG"]) as image:
+        if (
+            image.mode != mode
+            or image.size != size
+            or image.info.get("icc_profile") != srgb_profile()
+        ):
+            raise ProjectError("Framed viewing PNG round trip/profile failed")
+        actual = hashlib.sha256()
+        for y in range(size[1]):
+            with image.crop((0, y, size[0], y + 1)) as row:
+                actual.update(row.tobytes())
+        if actual.hexdigest() != expected:
+            raise ProjectError("Framed viewing PNG round trip/profile failed")
+
+
+def _check_flat_delivery(directory: Path, names: set[str]) -> None:
+    """Compact presentations have exactly these regular files, including on reuse."""
+    if directory.is_symlink() or not directory.is_dir():
+        raise ProjectError("Output collision; existing delivery preserved")
+    members = list(directory.iterdir())
+    if {path.name for path in members} != names or any(
+        path.is_symlink() or not path.is_file() for path in members
+    ):
+        raise ProjectError("Output collision: unexpected delivery members preserved")
+
+
+def _export_framed(
+    project: Path,
+    revision: str | None,
+    draft: bool,
+    framing: dict[str, int],
+    transparent: bool,
+) -> dict[str, Any]:
+    """Publish one compact presentation while holding the canonical project lock."""
+    from .background import read_background
+    from .effects import effects_stale, saved_shading
+    from .framing import frame_result, frame_transparent, framed_geometry, validate_margins
+
+    # Capture before validation, then bind the actual returned objects to these bytes.
+    # Cooperative writers use the project lock; this is not a hostile-writer snapshot.
+    captured = {name: _asset(project, name).read_bytes() for name in ("state.json", "source.json")}
+    state = read_project(project)
+    if _json_bytes(json.loads(captured["state.json"])) != _json_bytes(state):
+        raise ProjectError("Stale framed export state")
+    if revision is None:
+        if draft:
+            raise ProjectError("Draft export requires explicit revision")
+        revision = state["accepted_revision"]
+    if revision is None:
+        raise ProjectError("No accepted result to export")
+    if revision != state["accepted_revision"] and not draft:
+        raise ProjectError("Unaccepted revision requires explicit --draft")
+    manifest_name = f"revisions/{revision}/manifest.json"
+    captured[manifest_name] = _asset(project, manifest_name).read_bytes()
+    foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
+    if _json_bytes(json.loads(captured[manifest_name])) != _json_bytes(manifest):
+        raise ProjectError("Stale framed export revision manifest")
+    master, metadata = load_master(project, state["master_id"])
+    source = json.loads(captured["source.json"])
+    if source["master_id"] != state["master_id"] or source["metadata"] != metadata:
+        raise ProjectError("Stale framed export source")
+    del master
+    if any(_asset(project, name).read_bytes() != value for name, value in captured.items()):
+        raise ProjectError("Stale framed export state or saved inputs")
+    if effects_stale(manifest):
+        raise ProjectError("Stale enabled appearance: rebuild or explicitly disable before export")
+    size = (foreground.shape[1], foreground.shape[0])
+    settings = validate_margins(framing, size)
+    width, height, source_rect = framed_geometry(size, settings)
+    # Disk admission retains the native allowance and adds framed TIFF/PNG payloads
+    # with headroom. RAM use is separate; expanded variants are processed in sequence.
+    check_space(
+        project,
+        foreground.nbytes * (22 if "background" in manifest else 18)
+        + 16 * width * height
+        + 2 * 1024**2,
+    )
+    weight, opacity = saved_shading(project, revision, alpha, manifest)
+    background = read_background(_asset(project, f"revisions/{revision}"), manifest)
+    variants = ["result_rgb16.tif", "result_RGB8_VIEW.png"]
+    if transparent:
+        variants.append("transparent_RGBA8_VIEW.png")
+    native_names = {
+        "foreground_rgb16.tif",
+        "base_alpha16.png",
+        "corrected_rgb16.tif",
+        "shadow_weight16.png",
+        "trimap.png",
+        "supports/protection.png",
+        "supports/lock_values16.png",
+        "background/background_rgb16.tif",
+        "background/settings.json",
+        "effects/settings.json",
+        *(
+            f"effects/{effect}/{name}"
+            for effect in ("shading", "exposure", "shadow-fade")
+            for name in (
+                "support16.png",
+                "protection16.png",
+                "alpha16.png",
+                "settings.json",
+                "area.json",
+            )
+        ),
+    }
+    record = {
+        "schema_version": 1,
+        "kind": "framed-presentation",
+        "revision": revision,
+        "master_id": state["master_id"],
+        "revision_manifest_sha256": digest(captured[manifest_name]),
+        "draft": draft,
+        "label": "DRAFT - explicit framed presentation"
+        if draft
+        else "Framed presentation of accepted revision; framing has not been separately accepted",
+        "source_dimensions_wh": list(size),
+        "margins": settings.to_dict(),
+        "output_dimensions_wh": [width, height],
+        "source_rect_xyxy": list(source_rect),
+        "algorithm": "saved-backdrop-edge-padding-v1",
+        "encoding": {
+            "result": "uncompressed processed sRGB RGB16 TIFF; native samples copied exactly",
+            "views": "sRGB RGB8/RGBA8 reduced precision; straight RGB, zero RGBA margins",
+            "icc_profile_sha256": digest(srgb_profile()),
+        },
+        "variants": variants,
+        "effects": {
+            name: {
+                "enabled": manifest.get(name, {}).get("enabled", False),
+                "record_sha256": digest(_json_bytes(manifest[name])) if name in manifest else None,
+            }
+            for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade")
+        },
+        "background": {
+            "record_sha256": digest(_json_bytes(manifest["background"])),
+            "background_sha256": manifest["background"]["background_sha256"],
+        }
+        if "background" in manifest
+        else None,
+        "native_assets": {
+            f"masters/{state['master_id']}.tif": source["master_file_sha256"],
+            **{
+                f"revisions/{revision}/{name}": value
+                for name, value in manifest["files"].items()
+                if name in native_names
+            },
+        },
+    }
+    identity = digest(_json_bytes(record))
+    label = f"{revision}-DRAFT" if draft else revision
+    destination = _asset(project, f"exports/{label}-framed-{identity}")
+    names = {*variants, "README.txt", "manifest.json"}
+    reused = destination.exists() or destination.is_symlink()
+    if reused:
+        _check_flat_delivery(destination, names)
+    exports = _asset(project, "exports")
+    exports.mkdir(exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
+    native = (
+        render_black(foreground, alpha, weight, opacity)
+        if background is None
+        else render_background(foreground, alpha, background, weight, opacity)
+    )
+    result = frame_result(native, background, settings)
+    del native, background
+    result_digest = _pixel_digest(result)
+    write_master(stage / "result_rgb16.tif", result)
+    view_digest = _write_framed_rgb8(stage / "result_RGB8_VIEW.png", result)
+    del result
+    # Release the expanded render before any expanded readback or next variant.
+    restored = read_rgb16(stage / "result_rgb16.tif")
+    if restored.shape != (height, width, 3) or _pixel_digest(restored) != result_digest:
+        raise ProjectError("Framed RGB16 export round trip failed")
+    del restored
+    _verify_framed_png(stage / "result_RGB8_VIEW.png", "RGB", (width, height), view_digest)
+    if transparent:
+        rgba = frame_transparent(view_rgba(foreground, alpha, weight, opacity), settings)
+        rgba_digest = _pixel_digest(rgba)
+        image = Image.fromarray(rgba)
+        try:
+            image.save(stage / "transparent_RGBA8_VIEW.png", icc_profile=srgb_profile())
+        finally:
+            # RGBA images map the NumPy buffer; the context manager does not close it.
+            image.close()
+            del rgba
+        _verify_framed_png(
+            stage / "transparent_RGBA8_VIEW.png", "RGBA", (width, height), rgba_digest
+        )
+    (stage / "README.txt").write_text(
+        str(record["label"])
+        + "\nThe native image is copied without resampling at the manifest's source rectangle. "
+        "Margins extend saved backdrop edge pixels (black for legacy projects); visible bands "
+        "are possible. RGB16 TIFF retains processed sRGB precision. PNGs are reduced-precision "
+        "views; optional RGBA is straight and has zero RGBA margins. Framing does not alter "
+        "native editing coordinates or confer photographic acceptance. Editable source layers "
+        "remain in the local project at the manifest's relative native asset paths.\n"
+    )
+    record["files"] = {
+        name: {
+            "sha256": _file_digest(stage / name),
+            **(
+                {
+                    "dimensions_wh": [width, height],
+                    "precision_bits": 16 if name.endswith(".tif") else 8,
+                }
+                if name in variants
+                else {}
+            ),
+        }
+        for name in sorted(names - {"manifest.json"})
+    }
+    (stage / "manifest.json").write_bytes(_json_bytes(record))
+    _check_flat_delivery(stage, names)
+    if any(_asset(project, name).read_bytes() != value for name, value in captured.items()):
+        raise ProjectError("Stale framed export state or saved inputs")
+    final_state = read_project(project)
+    _, _, final_manifest = saved_layers(project, revision, state["master_id"])
+    if (
+        final_state != state
+        or final_manifest != manifest
+        or any(_asset(project, name).read_bytes() != value for name, value in captured.items())
+    ):
+        raise ProjectError("Stale framed export state or saved inputs")
+    if destination.exists() or destination.is_symlink():
+        _check_flat_delivery(destination, names)
+        if any(
+            (destination / name).stat().st_size != (stage / name).stat().st_size for name in names
+        ):
+            raise ProjectError("Output collision: differing existing file sizes preserved")
+    try:
+        publish_artifacts(stage, destination)
+        if reused:
+            # A prior exclusive rename may have succeeded before its parent sync
+            # failed. Identical retry also confirms that directory publication.
+            _sync_directory(destination.parent)
+    except OSError as error:
+        if not stage.exists() or reused:
+            raise ProjectError(
+                f"Framed delivery is visible at {destination}, but publication durability "
+                f"is unconfirmed; preserve it and retry identical export: {error}"
+            ) from error
+        raise
+    return {
+        "revision": revision,
+        "draft": draft,
+        "directory": str(destination),
+        "manifest_file": str(destination / "manifest.json"),
+        "framing": settings.to_dict(),
+        "output_dimensions_wh": [width, height],
+        "source_rect_xyxy": list(source_rect),
+    }
