@@ -420,7 +420,7 @@ class ReviewServer(ThreadingHTTPServer):
             else None
         )
         if pending and pending["current"] and pending["actions"]:
-            raise ProjectError("Saved pending guidance requires prepare and trimap review first")
+            raise ProjectError("Saved pending guidance requires preparation first")
         if action == "development":
             return accept_development(self.project, data["master_id"])
         if action == "trimap":

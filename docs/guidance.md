@@ -180,6 +180,6 @@ the unchanged authoritative `trimap_file`. The categorical proposal is explicitl
 morphological search band is `proposal_boundary.png`. Inspect it against the source
 before supplying source-verified foreground/background cores through typed guide
 edits. The proposal itself is never used as authoritative known values, alpha or
-human trimap approval. Later matting must consume the confirmed trimap and retain
-its human review control. A requested empty/over-eroded candidate can honestly
+human trimap approval. Later matting consumes the authoritative prepared trimap;
+human confirmation is optional. A requested empty/over-eroded candidate can honestly
 produce no suggested core; absent defensible source confirmation, unknown remains.

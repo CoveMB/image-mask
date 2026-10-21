@@ -78,7 +78,7 @@ def main() -> int:
     accepted.add_argument(
         "--trimap",
         action="store_true",
-        help="Review authoritative prepared trimap; requires revision/master/digest",
+        help="Optionally review authoritative prepared trimap; requires revision/master/digest",
     )
     accepted.add_argument("--inputs-digest")
     accepted.add_argument("--master-id", help="Identity of the master you inspected")

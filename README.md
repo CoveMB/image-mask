@@ -18,10 +18,10 @@ appearance changes require an explicit user request or manual control action.
 Typed native-coordinate guides produce named SAM
 candidates, selected membership groups and categorical trimap/support/protection
 assets. Optional morphology proposals use native-pixel margins and require separate
-review against the source. ViTMatte runs at native resolution, with separate trimap
-and final-photo approval controls, matching native-crop review assets, accepted
-RGB16 black/alpha16 exports and labelled PNG8 viewing copies. Prepared revisions
-require explicit human trimap review before matting.
+review against the source. ViTMatte runs at native resolution, with optional trimap
+confirmation and separate final-photo acceptance, matching native-crop review assets,
+accepted RGB16 black/alpha16 exports and labelled PNG8 viewing copies. Run matting
+directly after preparation to review the actual masked photograph.
 
 Scoped repairs save quantized operands for replay without models. Restore selects
 saved working inputs without changing final acceptance. `status` and `resume`

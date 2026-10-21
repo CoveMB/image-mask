@@ -60,15 +60,16 @@ A publication collision means another tool/editor created a project asset while 
 - **MPS failure:** retry explicitly with recipe device `cpu`, preserving geometry.
   Auto remains CPU; upstream implicit MPS fallback must be disabled. One synthetic
   successful MPS smoke is not photographic or regular-use acceptance.
-- **Prepared revision rejected by accept:** expected. Human trimap review comes
-  before native matting; preparation never substitutes for a final result.
+- **Prepared revision rejected by accept:** expected. Run native matting first;
+  preparation never substitutes for a final result. Trimap confirmation is optional.
 
 
 ## Native matte and export recovery
 
-- **Trimap approval missing/stale:** inspect authoritative prepared trimap against
-  source, finish typed edits, prepare again and explicitly confirm returned identities.
-  A morphology proposal never counts as confirmed guide values.
+- **Trimap approval missing/stale:** a missing approval does not block matting or
+  repair. A supplied stale/corrupt record is rejected rather than silently used.
+  Preserve it, finish typed edits and prepare a new revision; confirmation of the
+  new trimap is optional. A morphology proposal never counts as known guide values.
 - **ViTMatte missing/corrupt:** use explicit pinned setup only after authorization;
   local inference never downloads or substitutes another checkpoint. Preserve invalid
   existing assets and select a new cache rather than overwriting them.
@@ -131,11 +132,11 @@ A publication collision means another tool/editor created a project asset while 
 
 - Repair support must be the current prepared revision's returned support asset.
   Use its exact returned absolute path or project-relative equivalent. Prepare
-  edited guidance first, approve its trimap, then submit repair without repeated
+  edited guidance first, then submit repair without repeated
   guide edits. An unrelated or symlinked support file is rejected.
 - Feathered support cannot change a confirmed core. Revise support explicitly
   inside the authorized scope, or correct a genuinely erroneous core through
-  typed guide edits and new trimap review. Never expand scope or remove locks
+  typed guide edits and preparation. Trimap confirmation is optional. Never expand scope or remove locks
   merely to make a request pass.
 - Stale draft/reference/parent errors preserve newer text and final acceptance.
   Inspect actual state before a new operation. Failed temporary revisions and
@@ -170,7 +171,7 @@ operations become stale when their working parent changes; those records preserv
 history rather than indicate damage.
 
 Resume verifies original request, source/master records, draft snapshots,
-trimap approval and all consumed immutable support/lock/parent dependencies.
+any supplied trimap approval and all consumed immutable support/lock/parent dependencies.
 Completed tiles avoid repeat inference. A verified complete output stage or
 published orphan can finish publication without loading a model. Incomplete or
 invalid stages remain retained; incomplete/unknown tile entries are misses.

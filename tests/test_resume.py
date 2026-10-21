@@ -58,7 +58,8 @@ def interrupted(project, boundary="inference"):
 @pytest.mark.parametrize(
     "boundary", ["inference", "write_review", "_publish_new_directory", "_atomic_json"]
 )
-def test_resume_preserves_accepted_export_and_finishes_review(tmp_path, boundary):
+@pytest.mark.parametrize("trimap_confirmed", [False, True])
+def test_resume_preserves_accepted_export_and_finishes_review(tmp_path, boundary, trimap_confirmed):
     from blackmask.export import export_project
 
     _, project, initial = prepared(tmp_path)
@@ -68,7 +69,8 @@ def test_resume_preserves_accepted_export_and_finishes_review(tmp_path, boundary
     exported = Path(export_project(project)["directory"])
     saved_export = {p.name: p.read_bytes() for p in exported.iterdir() if p.is_file()}
     preparation = operations.apply_operation(project, request(project))
-    approve(project, preparation)
+    if trimap_confirmed:
+        approve(project, preparation)
     state_before = (project / "state.json").read_bytes()
     operation_id = interrupted(project, boundary)
     assert (project / "state.json").read_bytes() == state_before
@@ -80,6 +82,9 @@ def test_resume_preserves_accepted_export_and_finishes_review(tmp_path, boundary
     with patch("blackmask.operations.VitMatteSession", StubSession):
         result = operations.resume_operation(project, operation_id, model_cache=Path("unused"))
     assert result["status"] == "review_needed"
+    assert (
+        project / "revisions" / result["revision"] / "trimap_approval.json"
+    ).exists() is trimap_confirmed
     assert read_project(project)["accepted_revision"] == accepted["revision"]
     assert {p.name: p.read_bytes() for p in exported.iterdir() if p.is_file()} == saved_export
     assert operations.resume_operation(project, operation_id)["revision"] == result["revision"]

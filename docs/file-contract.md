@@ -119,9 +119,14 @@ human review. See [native morphology semantics](guidance.md#optional-native-morp
 ## Native matte and acceptance
 
 See [native matting](matting.md) for supported steps. `approvals/rev-NNN-trimap.json`
-binds explicit human confirmation to exact current prepared revision, master, draft,
-manifest and authoritative trimap hashes. Optional proposals remain unreviewed.
-Matte snapshots that confirmation and the current inputs, saves scalar16 alpha,
+optionally binds explicit human confirmation to exact current prepared revision,
+master, draft, manifest and authoritative trimap hashes. Optional proposals remain
+unreviewed. Matting and repair do not require this confirmation. When present, it
+is validated and copied into `trimap_approval.json`; without it, neither an approval
+record nor that revision asset is created. Effects preserve the asset only when
+their parent contains it. Existing revisions remain readable without migration;
+older application versions requiring this asset cannot read new unconfirmed mattes.
+Matte snapshots current inputs and any supplied confirmation, saves scalar16 alpha,
 RGB16 foreground, model/package/backend/padding/tile records and same-crop review
 assets. No prepare-only/incomplete/stale candidate can be final-accepted.
 `qa.json` records structural/core/lock counts and pending human photographic review;

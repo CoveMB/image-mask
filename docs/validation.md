@@ -1126,3 +1126,39 @@ recommended. This is deterministic and source-review evidence, not new model
 inference, direct browser observation or photographic acceptance. An already
 running local server must be reopened to load the changed Python workflow; retain
 pending edits before closing its page.
+
+## Optional trimap confirmation
+
+Trimap confirmation is now optional for both full matting and scoped repair.
+Preparation, current source/draft identities, asset hashes, known cores, support
+and saved-value locks remain enforced. Final photographic acceptance remains an
+explicit separate action. The manual and assisted workflows, CLI help and packaged
+page now explain how to continue directly to the masked photograph for review.
+This supersedes the mandatory-trimap-review behavior recorded in earlier results.
+
+Regression checks first failed at the former mandatory confirmation gate. The
+updated workflows exercise known-core matting and requested background effects
+without either development or trimap approval, preserving original/master RGB,
+alpha and the separate accepted pointer. An actual HTTP journey exercises
+unconfirmed matte, partial-value locks, scoped repair, acceptance, export, restore
+and resume. Four interruption boundaries are covered with trimap confirmation
+absent and present. Existing optional confirmations remain validated, copied and
+hashed; an unconfirmed matte creates no approval receipt, including on effects
+revisions. Stale prepared drafts are rejected with or without confirmation.
+
+One independent read-only review traced connected saved-project consumers and
+found no material improvements. Ruff lint/format and mypy passed; all 61 local
+links in the changed maintained operating guidance resolved. The full suite passed
+**758 tests**, with **3 optional model checks skipped**, exit 0. A focused run passed
+157 tests and hit one busy-lock failure in
+`test_background_action_failure_is_visible_and_next_action_succeeds` unrelated to
+the removed gate; its three cases passed on isolated rerun. Status polling briefly
+probes the project writer lock, so the observed contention is retained as a
+limitation rather than attributed to trimap processing. No locking behavior was
+changed in this increment.
+
+These checks do not establish photographic quality or human acceptance, and no
+real-model inference or direct browser session was run for this workflow change.
+Reopen an existing review server to load the updated Python behavior, preserving
+pending edits first. New mattes without an approval receipt require this updated
+application; existing saved projects remain readable without migration.

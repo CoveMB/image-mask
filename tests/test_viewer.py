@@ -604,8 +604,8 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
     with running(project) as server:
         server.model_cache = Path("explicit-synthetic-test-cache")
         perform(server, "prepare", scope_xyxy=[0, 0, 3, 2])
-        perform(server, "trimap", revision="rev-001")
         perform(server, "matte")
+        assert not (project / "revisions/rev-002/trimap_approval.json").exists()
         alpha = np.array(Image.open(project / "revisions/rev-002/base_alpha16.png"))
         assert np.any((alpha > 0) & (alpha < 65535))
         perform(server, "accept", revision="rev-002")
@@ -634,7 +634,6 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
         ]
         perform(server, "save", groups=[], actions=actions)
         perform(server, "prepare", scope_xyxy=[0, 0, 2, 2])
-        perform(server, "trimap", revision="rev-003")
         perform(
             server,
             "repair",
@@ -644,6 +643,7 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
             merge_policy="replace",
         )
         repaired = np.array(Image.open(project / "revisions/rev-004/base_alpha16.png"))
+        assert not (project / "revisions/rev-004/trimap_approval.json").exists()
         assert repaired[0, 0] == 0 and repaired[1, 1] == alpha[1, 1]
         assert np.array_equal(repaired[:, 2], alpha[:, 2])
         perform(server, "accept", revision="rev-004")

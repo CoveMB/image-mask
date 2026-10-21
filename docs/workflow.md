@@ -29,7 +29,8 @@ Mask work preserves that master's lighting and colours. Assistance must not
 change exposure, white balance, contrast, saturation, colour, sharpening or enable
 cleanup, shading or other appearance effects unless you explicitly request them.
 Use only the adjustments you request; retain unrelated saved settings and pending
-controls. Trimap review and final photographic acceptance remain separate actions.
+controls. Trimap confirmation is optional; final photographic acceptance remains
+a separate explicit action after reviewing the actual masked result.
 
 To retain the look you developed elsewhere, import a supported developed image,
 preferably uncompressed RGB16 sRGB TIFF. RAW cannot be used without decoding to
@@ -91,9 +92,10 @@ Author actual core/unknown guides against source before the next preparation.
 
 Use **View → Source** to inspect the authoritative **Prepared trimap**, support
 and lock overlays; prepared-only revisions have no Result view. Resolve
-contradictions and leave fragile areas unknown. Check the trimap
-review box and **Approve prepared trimap**. Then **Run full matte**. A changed draft
-needs preparation and trimap review again; saved pending guides cannot be approved
+contradictions and leave fragile areas unknown. Choose **Run full matte** to review
+the actual masked photograph. The trimap review checkbox and **Approve prepared
+trimap (optional)** let you record a review if useful; neither is needed to run.
+A changed draft needs preparation again; saved pending guides cannot be consumed
 as if they were already rasterized. All writers share the same nonblocking project
 lock; busy/error/review-needed status is visible while comparisons remain readable.
 
@@ -103,8 +105,8 @@ Inspect matching source/result crops. Mark a NEW confirmed-background core only
 where the source supports it. Draw surrounding support with the changed core fully
 inside its full-strength interior; feathering must not weaken that core. Add a lock
 bound to a saved revision over accepted partial-alpha detail or anatomy to preserve.
-Choose a narrow write scope and a larger context rectangle surrounding it. Save,
-prepare, inspect overlays and explicitly approve the prepared trimap.
+Choose a narrow write scope and a larger context rectangle surrounding it. Save
+and prepare. Trimap confirmation is optional; review the repaired photograph afterward.
 
 Write a source-supported reason, choose replace/increase-only/decrease-only, then
 **Run scoped repair**. Repair consumes the generated immutable support and prepared
@@ -136,7 +138,7 @@ the shared renderer and retain editable source/alpha assets; viewing RGBA PNG ha
 Optional color cleanup is now available in the same review window. It starts OFF.
 Use the cleanup strength, declared native write scope and project-relative grayscale16
 support file. The default support is the current saved guide support. To change it,
-author support guides, prepare and approve the trimap, then run a complete matte/repair.
+author support guides, prepare, then run a complete matte/repair. Trimap confirmation is optional.
 Enable on an accepted base, or explicitly check candidate comparison. Compare with
 cleanup OFF using the same alpha before human appearance acceptance. Strength .35 is
 a starting point, never a recommendation for every photo. Optional protected shading
@@ -210,8 +212,8 @@ correction is warranted, record that limitation rather than changing good detail
    larger **Repair context x0,y0,x1,y1** containing nearby source context. Choose
    **Save groups and pending guides**, then **Prepare saved guidance**. Inspect
    **Prepared trimap**, support and lock overlays against source. Correct conflicts
-   explicitly. Only when reviewed, check **I reviewed the current prepared trimap
-   against source** and choose **Approve prepared trimap**.
+   explicitly. Trimap confirmation is optional; you can continue directly to repair
+   and review the masked result.
 6. Enter the actual defect in **Source-supported repair reason**, choose **Replace
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
@@ -264,7 +266,7 @@ your photograph's native width, direction (0 right, 90 down), opacity, declared
 support and explicit protection. The default uses the current saved guide
 protection mask (categorical8); it may be empty. Author saved alpha/RGB lock
 guides for the selected details in the existing guide controls, then prepare,
-review the trimap and complete matte/repair. No external mask script is needed.
+complete matte/repair. Trimap confirmation is optional. No external mask script is needed.
 Explicit categorical16 files are also supported. Select hairs, antennae, web,
 tips, genuine highlights and bee yourself; automatic attenuation cannot guarantee
 their protection. Use the enable/rebuild button only on an accepted mask or with
@@ -379,7 +381,7 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
    Scalar-input areas remain usable for amount changes even without authored shapes.
 6. If alpha changed, rebuild fade or reset it. Each other stale effect needs its
    own rebuild/disable before accepting or exporting appearance. Prepared revisions
-   still need explicit trimap review and completed matte; acceptance is separate.
+   still need completed matte; trimap confirmation is optional and acceptance is separate.
 7. Export a labelled draft and preserve selected, unfaded, unexposed, base and source
    RGB16 plus alpha, independent settings/support/protection and any shading W16.
    The selected foreground already contains fade and exposure once. Follow the
@@ -391,7 +393,7 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 
 1. Open a project with a complete matte and choose **Result · saved background**
    in **View**. The revision selector must show the current working revision
-   before applying. Prepared-only state still needs trimap review and matting.
+   before applying. Prepared-only state still needs matting; trimap confirmation is optional.
 2. Under **Background appearance**, choose **Background tone** or enter a six-digit
    `#RRGGBB` colour. **Pure black** selects `#000000`; **Warm dark** selects
    `#120708`. Shortcuts keep the variation slider unchanged.

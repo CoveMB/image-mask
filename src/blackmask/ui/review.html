@@ -331,11 +331,12 @@
         ><label
           ><input id="trimapReviewed" type="checkbox" /> I reviewed the current
           prepared trimap against source</label
-        ><button id="trimap">Approve prepared trimap</button
+        ><button id="trimap">Approve prepared trimap (optional)</button
         ><button id="matte">Run full matte</button>
         <p class="small">
           Prepare preserves previous alpha; it cannot be accepted as a final
-          photo. Use a context larger than the permitted write scope for local
+          photo. Trimap confirmation is optional; run the matte to review the
+          masked photograph. Use a context larger than the permitted write scope for local
           repair.
         </p>
         <label
@@ -435,7 +436,7 @@
         <label>Declared shading write scope x0,y0,x1,y1 <input id="shadingScope" class="wide" /></label>
         <label>Project-relative scalar16 support file <input id="shadingSupport" class="wide" /></label>
         <label>Explicit protection file (authored categorical8 or scalar16) <input id="shadingProtection" class="wide" /></label>
-        <p class="small">Uses the current saved guide protection by default; it may be empty. Author saved alpha/RGB lock guides for protected details, then prepare, review the trimap and complete matte/repair before enabling shading. Choose protection for hairs, antennae, web, tips, highlights and bee explicitly. Heuristics cannot identify these details. Rebuild preserves prior W outside its own support and prior protection inside. Alpha is unchanged.</p>
+        <p class="small">Uses the current saved guide protection by default; it may be empty. Author saved alpha/RGB lock guides for protected details, then prepare and complete matte/repair before enabling shading. Trimap confirmation is optional. Choose protection for hairs, antennae, web, tips, highlights and bee explicitly. Heuristics cannot identify these details. Rebuild preserves prior W outside its own support and prior protection inside. Alpha is unchanged.</p>
         <label><input id="shadingCandidate" type="checkbox" /> Explicitly compare an unaccepted candidate</label>
         <button id="shadingApply">Enable / rebuild shading within declared support</button>
         <button id="shadingOpacityApply">Apply global opacity only (reuse saved W)</button>

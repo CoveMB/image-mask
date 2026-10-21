@@ -142,14 +142,7 @@ def test_masking_without_development_approval_preserves_source_appearance(tmp_pa
             {"id": "empty", "role": "background", "shape": "rectangle", "xyxy": [1, 0, 3, 2]},
         ],
     )
-    prepared = operations.apply_operation(project, request(project, guide_edits_file=filename))
-    before_review = (project / "state.json").read_bytes()
-    with pytest.raises(ProjectError, match="trimap review"):
-        operations.apply_operation(project, request(project, kind="matte"))
-    assert (project / "state.json").read_bytes() == before_review
-    operations.accept_trimap(
-        project, prepared["revision"], prepared["master_id"], prepared["inputs_digest"]
-    )
+    operations.apply_operation(project, request(project, guide_edits_file=filename))
     matte = operations.apply_operation(project, request(project, kind="matte"))
     revision = project / "revisions" / matte["revision"]
     np.testing.assert_array_equal(tifffile.imread(revision / "foreground_rgb16.tif"), master)
@@ -158,6 +151,8 @@ def test_masking_without_development_approval_preserves_source_appearance(tmp_pa
         np.array([[65535, 0, 0], [65535, 0, 0]], dtype=np.uint16),
     )
     assert read_project(project)["accepted_revision"] is None
+    assert not (revision / "trimap_approval.json").exists()
+    assert not (project / "approvals").exists()
     effect = operations.apply_operation(
         project,
         request(
@@ -169,6 +164,7 @@ def test_masking_without_development_approval_preserves_source_appearance(tmp_pa
         ),
     )
     effect_revision = project / "revisions" / effect["revision"]
+    assert not (effect_revision / "trimap_approval.json").exists()
     np.testing.assert_array_equal(tifffile.imread(effect_revision / "foreground_rgb16.tif"), master)
     np.testing.assert_array_equal(
         np.array(Image.open(effect_revision / "base_alpha16.png")),

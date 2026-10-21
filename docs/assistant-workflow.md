@@ -108,10 +108,12 @@ remove or alter inherited locks.
    Use the same `assisted_review` envelope throughout this attempt. Preparation
    applies those changes once, saves the original request/result and returns
    exact revision/master/draft/support paths. Selection membership is not opacity.
-2. The user inspects and explicitly confirms the authoritative trimap with
+2. Trimap confirmation is optional. Continue directly to repair when the user
+   prefers to review the actual masked photograph. A user who wants to record
+   trimap review can use
    `.venv/bin/blackmask accept PROJECT --revision REV --trimap --master-id ID --inputs-digest DIGEST`.
-   Assistance cannot infer this trimap confirmation. Source-development approval
-   is optional and does not block this workflow.
+   Assistance never invents this confirmation. Source-development review is also
+   optional; final photographic acceptance remains a separate human action.
 3. Build a finite repair request using those **returned** identities/support,
    `kind: "repair"`, `reason`, `context_xyxy`, `scope_xyxy` and `merge_policy`.
    Omit `guide_edits_file`; repair consumes prepared guides rather than reapplying

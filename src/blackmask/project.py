@@ -532,7 +532,6 @@ def _validate_revision_directory(
             "foreground_rgb16.tif",
             "qa.json",
             "review/manifest.json",
-            "trimap_approval.json",
         }
         <= set(manifest["files"])
         or manifest.get("final_acceptable") is not True
