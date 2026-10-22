@@ -15,6 +15,9 @@ blackmask = "blackmask.cli:main"
 [tool.setuptools.package-data]
 blackmask = ["ui/*.html", "ui/*.js"]
 
+[tool.setuptools.data-files]
+"share/blackmask/config" = ["config/storage.example.toml"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
