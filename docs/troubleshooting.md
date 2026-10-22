@@ -9,10 +9,13 @@
 - **Multi-frame PNG/MPO or multi-image JPEG (including Ultra HDR gain maps):**
   export a single-image SDR JPEG/PNG8 or trusted uncompressed sRGB RGB16 TIFF.
   Gain maps are not decoded; the importer refuses to silently use only the base image.
-- **Invalid camera WB:** explicitly request a daylight preview or supply developed
-  TIFF. Source-development approval is optional, but invalid RAW metadata still
-  needs an explicit rendering choice; no silent white-balance substitution occurs. No generic
-  AsShotWhiteXY conversion is available. Actual camera coverage is unverified.
+- **Camera white balance multipliers unavailable:** supported RGB DNGs can use
+  their stored `AsShotWhiteXY` and calibration profiles automatically, without
+  substituting daylight. The error means the reader's multipliers are unavailable
+  and no supported white-point fallback succeeded; it does not establish that the
+  capture is corrupt. An accompanying metadata diagnostic identifies malformed or
+  unsupported inputs. Explicitly choose a daylight preview or supply a trusted
+  developed TIFF when needed. See the [supported fallback and saved provenance](file-contract.md#raw-as-shot-white-balance).
 - **Busy:** let the existing writer finish or inspect its status. A dead process
   releases flock automatically. Never delete/recreate the lock while writers run.
 - **Low disk:** move the new project to storage with 10 GiB reserve plus pending

@@ -35,7 +35,9 @@ a separate explicit action after reviewing the actual masked result.
 To retain the look you developed elsewhere, import a supported developed image,
 preferably uncompressed RGB16 sRGB TIFF. RAW cannot be used without decoding to
 RGB; its conversion settings remain recorded in `source.json`. The tool does not
-silently substitute a different white balance when metadata is invalid: explicitly
+silently substitute a different white balance when as-shot metadata is unusable:
+supported RGB DNGs use their recorded white point and calibration profiles as
+described in the [saved contract](file-contract.md#raw-as-shot-white-balance). Otherwise, explicitly
 choose a supported rendering or supply a developed TIFF. A different development
 requires a separate project, preserving the previous one. The legacy CLI development
 review remains optional and does not gate masking; old projects open without migration.

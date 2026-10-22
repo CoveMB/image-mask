@@ -1,5 +1,44 @@
 # Verification
 
+## DNG as-shot white-point fallback — 2026-10-21
+
+Synthetic RAW-boundary checks exercise real TIFF tag parsing and white-balance
+math, with LibRaw postprocessing replaced only at the expensive decoder boundary.
+They cover single, dual and triple calibration profiles, reversed dual profiles,
+both TIFF byte orders, analog balance, matching/mismatched calibration signatures,
+custom xy illuminants, malformed/contradictory inputs, explicit daylight and saved
+master reopening. Expected single/dual results use independently evaluated
+rational arithmetic; a nontrivial triple blend uses independently compiled Adobe
+DNG SDK equations as a numeric reference.
+
+Final local verification passed 795 tests with three skipped; Ruff lint/format
+and mypy passed. Independent review's duplicate-tag finding was reproduced and
+fixed with failing-then-passing boundary tests; its targeted follow-up reported
+no material improvements. Explicit non-primary as-shot profiles also fail before
+processing. A built wheel contains the new helper and its complete BSD notice,
+with no photo/private-project/planning assets or personal paths. Two earlier
+daylight projects reopened with their master identities and saved files unchanged.
+
+The numerical comparison exercised 35 white points against SDK revision
+`de700ad461e35af50b28b861943a0b0753b10929`. That older SDK retains the published
+325-mired table typo. The original discrepancy was retained, then the reference
+was rebuilt with only the documented `u=0.24702` to `u=0.24792` correction used by
+Colour v0.4.6. Maximum absolute differences were below `1.1e-11` K, `1.9e-13`
+tint units and `2.3e-15` for weights. These are implementation comparisons, not
+estimates of photographic colour accuracy or a full SDK rendering comparison.
+
+Two private Pixel 8 DNGs (pink flower and a previously tested marigold) also passed
+actual native rawpy 0.27.1/LibRaw 0.22.1 project creation and saved-master reopen.
+Both produced oriented 3072 × 4080 RGB16 masters with non-8-bit sample values,
+selected their capture-specific third calibration and retained camera/as-shot
+development rather than daylight. Original capture SHA-256 hashes were unchanged.
+No development or photographic acceptance was recorded. Private captures, project
+assets and local numerical-reference artifacts are excluded from distribution.
+
+The fallback preserves the existing LibRaw rendering backend; it does not claim
+complete DNG 1.6 colour/profile processing or matching the phone's JPEG/HDR image.
+Human colour and photographic review remain pending.
+
 ## Fixed-size series framing
 
 Current local implementation evidence is synthetic and bound to frozen application

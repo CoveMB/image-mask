@@ -105,8 +105,13 @@ RAW/DNG uses LibRaw, full-size AHD and explicit sRGB gamma/WB/brightness setting
 LibRaw identifies TIFF-container RAW before ordinary TIFF import; an RGB8 preview
 in its first page never becomes the working master. Recognized RAW failures stop
 rather than falling back to that preview.
-Invalid camera WB requires an explicit `--white-balance daylight` preview or an
-already-developed trusted TIFF. There is no general RAW editor or crop control.
+When the reader cannot expose camera white-balance multipliers, supported RGB DNGs
+use their recorded `AsShotWhiteXY` and calibration profiles, including the Pixel 8's
+capture-specific third calibration. The applied multipliers and provenance are
+saved with the master. Unsupported or unusable as-shot metadata still requires an
+explicit `--white-balance daylight` preview or an already-developed trusted TIFF;
+the tool never silently substitutes daylight. See the [saved white-balance contract](docs/file-contract.md#raw-as-shot-white-balance).
+There is no general RAW editor or crop control.
 The local page shows a labelled RGB8 source preview. Mask preparation can start
 immediately; there is no source-development approval gate. To retain lighting and
 colour edits made in another application, import a supported developed image,
@@ -138,6 +143,7 @@ for explicit model setup, typed preparation and human review.
 | Area | Owner |
 | --- | --- |
 | Content detection, RAW development, orientation and RGB16 | `src/blackmask/ingest.py` |
+| Validated DNG white-point/calibration fallback and recorded multipliers | `src/blackmask/dng_white_balance.py` |
 | Identity, shared writer lock, publication and approval | `src/blackmask/project.py` |
 | Preparation snapshots and selected candidate publication | `src/blackmask/operations.py` |
 | Typed native guides and categorical rasterization | `src/blackmask/guidance.py` |

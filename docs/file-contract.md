@@ -58,6 +58,52 @@ after recognition stay errors, including later unsupported-operation errors.
 Ordinary TIFF precision/compression/profile rules are unchanged. Known DNG/CFA
 containers that LibRaw cannot decode cannot be imported as a developed TIFF.
 
+## RAW as-shot white balance
+
+`white_balance="camera"` first uses the existing finite, positive RGB multipliers
+exposed by LibRaw. If those are unavailable, a recognized three-channel RGBG RAW
+in a classic TIFF DNG container may resolve its recorded `AsShotWhiteXY` instead.
+This is a source-metadata conversion, not automatic or daylight white balance.
+It is not selected by camera name or filename. Explicit daylight development and
+the existing usable-multiplier route retain their prior settings and metadata.
+
+The fallback validates the primary profile's rational fields, chromaticity,
+positive analog balance and nonsingular three-by-three matrices. It supports
+single profiles, dual profiles interpolated in reciprocal correlated colour
+temperature, and DNG 1.6 triple profiles weighted in scaled temperature/tint space.
+Each applicable camera calibration is combined with its own colour matrix before
+blending. Calibration signatures must match for camera calibration to apply.
+Triple-profile lights must be distinct. Standard illuminant chromaticities and
+custom `IlluminantData` type-0 xy pairs are supported; custom spectral data and
+unrecognized illuminants fail visibly. Both TIFF byte orders are supported.
+An explicit `AsShotProfileName` must identify the primary `ProfileName`; selecting
+extra or external profiles is unsupported. Duplicate consumed metadata tags,
+contradictory `AsShotNeutral`/`AsShotWhiteXY`, incomplete profiles, zero rational
+denominators, non-positive camera neutrals and unsupported layouts also fail
+before processing. No failure falls back to a thumbnail or silently to daylight.
+
+The fallback passes explicit green-normalized RGBG `user_wb` multipliers to the
+existing LibRaw development path, with camera/automatic WB disabled for that call.
+It retains the existing demosaic, colour transform, gamma, brightness, precision,
+orientation and crop policy; it is not a complete DNG renderer or a reproduction
+of the phone's processed JPEG/HDR rendering.
+
+Only fallback-created masters add `metadata.as_shot_white_balance` to `source.json`:
+
+- `source="DNG AsShotWhiteXY"`, `algorithm="dng-as-shot-white-xy-v1"`;
+- `white_xy`, applied `multipliers`, `matching_calibration` and normalized
+  `calibration_weights`;
+- `calibration_illuminants` for multi-profile inputs and `temperature_kelvin`
+  for dual-profile interpolation.
+
+The existing `camera_whitebalance`, shape and `camera_whitebalance_valid` fields
+still describe what the RAW reader exposed. A false flag can therefore coexist
+with a successfully resolved as-shot record. The complete metadata and RGB16
+pixels remain bound by the existing master identity. Old masters are reopened
+from their saved pixels and metadata without redevelopment or migration. Creating
+a different development requires a separate project; existing guides, masks and
+accepted outputs cannot be rebound by dimensions alone.
+
 
 ## Prepared revisions
 
