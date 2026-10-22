@@ -13,6 +13,8 @@ import rawpy
 import tifffile
 from PIL import Image, ImageCms, JpegImagePlugin, UnidentifiedImageError
 
+from .dng_white_balance import dng_as_shot_white_balance
+
 RGB16 = npt.NDArray[np.uint16]
 
 
@@ -85,17 +87,27 @@ def _decode_raw(data: bytes, settings: dict[str, Any]) -> tuple[RGB16, dict[str,
                 and coefficients[3] >= 0
             )
             white_balance = settings.get("white_balance", "camera")
+            as_shot_white_balance = None
             if white_balance == "camera" and not credible:
-                raise IngestError(
-                    "Invalid camera white balance: explicitly select daylight preview "
-                    "or export a trusted developed TIFF; human review required"
-                )
-            parameters = {
+                try:
+                    as_shot_white_balance = dng_as_shot_white_balance(data)
+                except ValueError as error:
+                    raise IngestError(
+                        f"{error}; explicitly select daylight preview or supply a trusted developed TIFF"
+                    ) from error
+                if as_shot_white_balance is None:
+                    raise IngestError(
+                        "Camera white balance multipliers unavailable from the RAW reader: "
+                        "explicitly select daylight preview or export a trusted developed TIFF"
+                    )
+                if raw.num_colors != 3 or raw.color_desc != b"RGBG":
+                    raise IngestError("DNG white balance requires a three-channel RGBG RAW layout")
+            parameters: dict[str, Any] = {
                 "demosaic_algorithm": rawpy.DemosaicAlgorithm.AHD,
                 "output_color": rawpy.ColorSpace.sRGB,
                 "output_bps": 16,
                 "half_size": False,
-                "use_camera_wb": white_balance == "camera",
+                "use_camera_wb": white_balance == "camera" and as_shot_white_balance is None,
                 "use_auto_wb": False,
                 "no_auto_bright": False,
                 "auto_bright_thr": 0.01,
@@ -104,6 +116,8 @@ def _decode_raw(data: bytes, settings: dict[str, Any]) -> tuple[RGB16, dict[str,
                 "median_filter_passes": 0,
                 "fbdd_noise_reduction": rawpy.FBDDNoiseReductionMode.Off,
             }
+            if as_shot_white_balance is not None:
+                parameters["user_wb"] = as_shot_white_balance["multipliers"]
             raw_pixels = raw.postprocess(**parameters)
             if raw_pixels.dtype != np.uint16:
                 raise IngestError("RAW decoder did not return RGB16")
@@ -134,6 +148,11 @@ def _decode_raw(data: bytes, settings: dict[str, Any]) -> tuple[RGB16, dict[str,
                     "extra_DefaultCropSize": False,
                 },
                 "libraw": list(rawpy.libraw_version),
+                **(
+                    {"as_shot_white_balance": as_shot_white_balance}
+                    if as_shot_white_balance is not None
+                    else {}
+                ),
             }
             return pixels, metadata
     except rawpy.LibRawError as error:

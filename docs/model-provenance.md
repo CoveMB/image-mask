@@ -51,7 +51,26 @@ Checked 2026-10-18 against official version-specific PyPI JSON metadata, native 
 
 Loaded LibRaw: (0, 22, 1); rawpy feature flags: `{'DNGLOSSYCODEC': True, 'DNGDEFLATECODEC': True, 'OPENMP': False, 'LCMS': True, 'REDCINECODEC': True, 'RAWSPEED': False, 'DEMOSAIC_PACK_GPL2': False, 'DEMOSAIC_PACK_GPL3': False, 'X3FTOOLS': True, '6BY9RPI': True}`. rawpy wheels omit GPL demosaic packs. LibRaw is separate from rawpy's MIT wrapper; retain its LGPL-2.1/CDDL-1.0 and bundled codec notices in installed wheels. PyPI advisory counts and upstream security pages are bounded checks, not exhaustive security clearance. No decoder sandbox or formal security audit is claimed. Only local captures are decoded.
 
-RAW policy: full-size AHD, camera WB only with finite positive RGB coefficients; otherwise explicitly request daylight preview or a trusted developed TIFF. Both routes still require human inspection/approval of WB, clipping and orientation. sRGB output, 16-bit, gamma=(2.4,12.92), bright=1, auto_bright_thr=.01, automatic brightness enabled, median passes=0, FBDD off, no added sharpening, no extra DefaultCropSize crop. LibRaw alone applies RAW orientation. Captured RAW precision is unknown; white level is recorded separately. Boundary stubs verify parameter forwarding, not real RAW decoding/rendering.
+RAW policy: full-size AHD, using finite positive camera RGB white-balance
+coefficients when available. Supported RGB DNGs can otherwise resolve their
+recorded `AsShotWhiteXY` through the validated calibration fallback described in
+the [saved contract](file-contract.md#raw-as-shot-white-balance). Unavailable,
+unsupported or contradictory as-shot data requires an explicit daylight preview
+or trusted developed TIFF. Source-development approval remains optional; inspect
+WB, clipping and orientation for the photograph. sRGB output, 16-bit,
+gamma=(2.4,12.92), bright=1, auto_bright_thr=.01, automatic brightness enabled,
+median passes=0, FBDD off, no added sharpening, no extra DefaultCropSize crop.
+LibRaw alone applies RAW orientation. Captured RAW precision is unknown; white
+level is recorded separately. Boundary stubs verify parameter forwarding, not
+real RAW decoding/rendering.
+
+The fallback's calibration equations follow Adobe's DNG model and the
+[DNG SDK colour specification](https://android.googlesource.com/platform/external/dng_sdk/+/de700ad461e35af50b28b861943a0b0753b10929/source/dng_color_spec.cpp)
+and [triple-illuminant weighting](https://android.googlesource.com/platform/external/dng_sdk/+/de700ad461e35af50b28b861943a0b0753b10929/source/dng_xy_coord.cpp).
+Robertson lookup data comes from
+[Colour v0.4.6](https://github.com/colour-science/colour/blob/v0.4.6/colour/temperature/robertson1968.py),
+including its published 325-mired correction. The data's BSD notice is retained
+inside the shipped module. No Colour or Adobe SDK runtime dependency is added.
 
 No model weights/configuration were downloaded, installed or evaluated for the trusted-master checks. Selection/model evidence follows below; those trusted-master checks did not assess ViTMatte runtime. Future model revisions/configuration/licences require their own verified provenance and runtime checks. General regular-use and user-selected RAW evidence remain pending.
 
