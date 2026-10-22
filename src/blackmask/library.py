@@ -284,6 +284,8 @@ def _check_import_locations(config: StorageConfig, directory: Path, record: dict
 def _existing_owner(config: StorageConfig, source_hash: str) -> Path | None:
     published: dict[str, Path] = {}
     for bundle in (config.destination / "Photos").iterdir():
+        if bundle.name == ".DS_Store" and stat.S_ISREG(bundle.lstat().st_mode):
+            continue
         _inspect_directory(bundle, missing=False)
         source = _read_json(bundle / "project", "source.json")
         _validate_imported_source(source)
@@ -298,6 +300,8 @@ def _existing_owner(config: StorageConfig, source_hash: str) -> Path | None:
         published[key] = bundle
     pending: Path | None = None
     for directory in (config.destination / "Inbox/.imports").iterdir():
+        if directory.name == ".DS_Store" and stat.S_ISREG(directory.lstat().st_mode):
+            continue
         record = _read_import(directory)
         key = record["source_sha256"]
         if key[:12] == source_hash[:12] and key != source_hash:

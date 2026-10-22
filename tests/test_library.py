@@ -1068,3 +1068,116 @@ def test_contradictory_staged_and_published_owner_blocks_every_import_without_wr
         storage.resume_import(config, pending)
     assert inventory(tmp_path) == before
     assert (project.parent / "original/CAMERA.tif").read_bytes() == original
+
+
+def ownership_command_fixture(tmp_path, action):
+    config_path, config, source, sidecars = library_fixture(tmp_path, sidecars=1)
+    expected = {
+        path.name: (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
+        for path in (source, *sidecars)
+    }
+    if action == "import":
+        prior = tiff(config.destination / "Inbox/PRIOR.tif", ramp() // 2, profile=srgb_profile())
+        storage.import_photo(config, prior, subject="prior", development={})
+        arguments = ["import", source, "--subject", "photo", "--sidecar", sidecars[0]]
+    elif action == "duplicate":
+        storage.import_photo(config, source, subject="photo", development={}, sidecars=sidecars)
+        duplicate = config.destination / "Inbox/COPY.tif"
+        duplicate.write_bytes(expected[source.name][0])
+        arguments = ["import", duplicate, "--subject", "different"]
+    else:
+        assert action == "resume"
+        pending = pause_before_originals(config, source, sidecars)
+        arguments = ["import-resume", pending]
+    return config_path, config, expected, arguments
+
+
+@pytest.mark.parametrize("location", ["Photos", "Inbox/.imports"])
+@pytest.mark.parametrize("action", ["import", "duplicate", "resume"])
+def test_regular_finder_metadata_preserves_successful_import_duplicate_and_resume(
+    tmp_path, location, action
+):
+    config_path, config, expected, arguments = ownership_command_fixture(tmp_path, action)
+    metadata = config.destination / location / ".DS_Store"
+    metadata.write_bytes(b"\x00\xffsynthetic Finder metadata; preserve without parsing")
+    metadata.chmod(0o640)
+    before = inventory(tmp_path)
+    result = command("--config", config_path, *arguments)
+    assert result.returncode == 0, result.stderr
+    outcome = json.loads(result.stdout)
+    source_hash = hashlib.sha256(expected["CAMERA.tif"][0]).hexdigest()
+    project = config.destination / "Photos" / f"P{source_hash[:12]}_undated_photo/project"
+    assert outcome["status"] == "ready" and Path(outcome["project"]) == project
+    if action == "duplicate":
+        assert outcome["input_preserved"] is True
+        assert inventory(tmp_path) == before
+    for name, (value, mode) in expected.items():
+        original = project.parent / "original" / name
+        assert original.read_bytes() == value
+        assert stat.S_IMODE(original.stat().st_mode) == mode
+    assert metadata.read_bytes() == before[str(metadata.relative_to(tmp_path))][1]
+    assert stat.S_IMODE(metadata.lstat().st_mode) == 0o640
+    state = read_project(project)
+    assert (
+        state["working_revision"]
+        is state["accepted_revision"]
+        is state["latest_result_revision"]
+        is None
+    )
+    assert state["development_approved"] is False
+    pixels, _ = load_developed(project, state["developed_id"])
+    np.testing.assert_array_equal(pixels, ramp())
+    assert np.any(pixels % 257 != 0)
+    assert not list((config.destination / "Results Preview").iterdir())
+    assert not list((config.destination / "Comparisons").iterdir())
+
+
+@pytest.mark.parametrize("location", ["Photos", "Inbox/.imports"])
+@pytest.mark.parametrize("action", ["import", "duplicate", "resume"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "directory",
+        "symlink-file",
+        "symlink-directory",
+        "dangling",
+        "unknown-file",
+        "unknown-directory",
+        "hidden-file",
+        "lookalike",
+        "case-variant",
+        "fifo",
+    ],
+)
+def test_nonregular_finder_and_unknown_ownership_entries_fail_closed_without_writes(
+    tmp_path, location, action, kind
+):
+    config_path, config, _, arguments = ownership_command_fixture(tmp_path, action)
+    name = {
+        "unknown-file": "unexpected",
+        "unknown-directory": "unexpected",
+        "hidden-file": ".unexpected",
+        "lookalike": ".DS_Store.extra",
+        "case-variant": ".ds_store",
+    }.get(kind, ".DS_Store")
+    entry = config.destination / location / name
+    if kind in {"directory", "unknown-directory"}:
+        entry.mkdir()
+        (entry / "sentinel").write_bytes(b"unknown owned directory, preserve")
+    elif kind in {"symlink-file", "symlink-directory", "dangling"}:
+        outside = tmp_path / "outside-library"
+        if kind == "symlink-file":
+            outside.write_bytes(b"never follow this target")
+        elif kind == "symlink-directory":
+            outside.mkdir()
+            (outside / "sentinel").write_bytes(b"never follow this directory")
+        entry.symlink_to(outside, target_is_directory=kind == "symlink-directory")
+    elif kind == "fifo":
+        os.mkfifo(entry, 0o600)
+    else:
+        entry.write_bytes(b"unknown regular entry, preserve")
+    before = inventory(tmp_path)
+    result = command("--config", config_path, *arguments)
+    assert result.returncode == 1
+    assert "blackmask:" in result.stderr and "Traceback" not in result.stderr
+    assert inventory(tmp_path) == before

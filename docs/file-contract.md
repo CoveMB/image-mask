@@ -131,6 +131,8 @@ with mode0700 and new generated import/project files with mode0600 independently
 of umask. Existing permissions, including moved originals and sidecars, are preserved.
 Managed components reject
 symlinks, dangling links, files and permission conflicts.
+Ownership scans in Photos and Inbox/.imports ignore only exact `.DS_Store` entries
+identified as regular files without following links; all other unexpected entries fail closed.
 
 The library owns Inbox, Photos, Results Preview and Comparisons. Each imported
 `Photos/<frozen-basename>/` contains `original/` and `project/`. Source records retain
