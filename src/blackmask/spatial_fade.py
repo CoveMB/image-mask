@@ -277,21 +277,30 @@ def _blend_background_channel(
     return result
 
 
-def validate_spatial_bindings(directory: Path, manifest: dict[str, Any]) -> None:
+def validate_spatial_bindings(project: Path, directory: Path, manifest: dict[str, Any]) -> None:
     """Check inventory before cache lookup so unbound or symlinked files cannot hide."""
+    from .assets import revision_hashes
+
     saved = directory / "effects/spatial-fade"
-    listed = {name for name in manifest["files"] if name.startswith("effects/spatial-fade/")}
+    listed = {
+        name for name in revision_hashes(manifest) if name.startswith("effects/spatial-fade/")
+    }
     if "spatial_fade" not in manifest:
         if saved.exists() or saved.is_symlink() or listed:
             raise ProjectError("Unbound saved spatial fade operands")
         return
     required = {f"effects/spatial-fade/{name}" for name in SPATIAL_FADE_FILES}
-    if listed != required or "base_alpha16.png" not in manifest["files"]:
+    if listed != required or "base_alpha16.png" not in revision_hashes(manifest):
         raise ProjectError("Incomplete or extra bound spatial fade operands")
     try:
         if (
             saved.is_symlink()
-            or {path.name for path in saved.iterdir()} != set(SPATIAL_FADE_FILES)
+            or {path.name for path in saved.iterdir()}
+            != {
+                Path(name).name
+                for name in manifest.get("files", {})
+                if name.startswith("effects/spatial-fade/")
+            }
             or any(path.is_symlink() or not path.is_file() for path in saved.iterdir())
         ):
             raise ProjectError("Invalid saved spatial fade inventory")
@@ -307,10 +316,12 @@ def validate_spatial_bindings(directory: Path, manifest: dict[str, Any]) -> None
 
 
 def read_spatial_fade(
-    directory: Path, manifest: dict[str, Any], alpha: np.ndarray
+    project: Path, directory: Path, manifest: dict[str, Any], alpha: np.ndarray
 ) -> SpatialFadeOperands | None:
     """Read immutable operands, including OFF records; project cache owns geometric replay."""
-    validate_spatial_bindings(directory, manifest)
+    from .assets import revision_asset
+
+    validate_spatial_bindings(project, directory, manifest)
     if "spatial_fade" not in manifest:
         return None
     record = manifest["spatial_fade"]
@@ -335,7 +346,7 @@ def read_spatial_fade(
         or type(record["enabled"]) is not bool
         or type(record["stale"]) is not bool
         or type(record["candidate_comparison"]) is not bool
-        or record["source_id"] != manifest["master_id"]
+        or record["source_id"] != manifest["developed_id"]
         or record["algorithm"] != SPATIAL_FADE_ALGORITHM
         or alpha.dtype != np.uint16
         or alpha.ndim != 2
@@ -352,9 +363,15 @@ def read_spatial_fade(
         and manifest.get("shading", {}).get("enabled")
     ):
         raise ProjectError("Inconsistent saved spatial fade settings, scope or exclusive mode")
-    saved = directory / "effects/spatial-fade"
     try:
-        if json.loads((saved / "settings.json").read_bytes()) != record:
+        if (
+            json.loads(
+                revision_asset(
+                    project, directory, manifest, "effects/spatial-fade/settings.json"
+                ).read_bytes()
+            )
+            != record
+        ):
             raise ProjectError("Inconsistent saved spatial fade settings record")
         arrays = []
         for name, key in (
@@ -362,7 +379,7 @@ def read_spatial_fade(
             ("protection16.png", "protection_sha256"),
             ("alpha16.png", "alpha_sha256"),
         ):
-            path = saved / name
+            path = revision_asset(project, directory, manifest, "effects/spatial-fade/" + name)
             if path.is_symlink() or digest(path.read_bytes()) != record[key]:
                 raise ProjectError("Saved spatial fade dependency hash mismatch")
             value = scalar16(path)

@@ -9,8 +9,9 @@ from typing import Any
 
 import numpy as np
 
+from .assets import inherit_revision_files, revision_asset, revision_hashes
 from .exposure import linear_to_rgb16, srgb_to_linear
-from .project import ProjectError, _asset, _json_bytes, digest, read_revision
+from .project import ProjectError, _json_bytes, digest, read_revision
 
 DEFAULT_BACKGROUND = {"color_srgb": "#120708", "variation": 0.55}
 LEGACY_BACKGROUND = {"color_srgb": "#000000", "variation": 0.0}
@@ -117,27 +118,32 @@ def sample_background(
     return result
 
 
-def validate_background_bindings(directory: Path, manifest: dict[str, Any]) -> None:
-    """Check unlisted assets before request-local validation can return early."""
-    files = {name for name in manifest["files"] if name.startswith("background/")}
+def validate_background_bindings(project: Path, directory: Path, manifest: dict[str, Any]) -> None:
+    """Reject missing, extra and unbound roles before a semantic-cache return."""
+    bound = {name for name in revision_hashes(manifest) if name.startswith("background/")}
     expected = set(BACKGROUND_FILES) if "background" in manifest else set()
     saved = directory / "background"
-    actual = set()
+    local = set()
     if saved.exists() or saved.is_symlink():
         if saved.is_symlink() or not saved.is_dir():
             raise ProjectError("Invalid saved background directory")
-        actual = {"background/" + p.name for p in saved.iterdir()}
-        if any(p.is_symlink() or not p.is_file() for p in saved.iterdir()):
-            raise ProjectError("Invalid saved background asset")
-    if files != expected or actual != expected:
+        for path in saved.iterdir():
+            if path.is_symlink() or not path.is_file():
+                raise ProjectError("Invalid saved background asset")
+            local.add("background/" + path.name)
+    if directory.name.startswith((".prepare-", ".matte-", ".effects-")):
+        bound |= local
+    elif local != (expected & set(manifest.get("files", {}))):
+        raise ProjectError("Missing, unknown or unbound background assets")
+    if bound != expected:
         raise ProjectError("Missing, unknown or unbound background assets")
 
 
-def read_background(directory: Path, manifest: dict[str, Any]) -> np.ndarray | None:
+def read_background(project: Path, directory: Path, manifest: dict[str, Any]) -> np.ndarray | None:
     """Saved pixels are authoritative; never regenerate the analytic field on read."""
     from .export import read_rgb16
 
-    validate_background_bindings(directory, manifest)
+    validate_background_bindings(project, directory, manifest)
     recipe = tomllib.loads((directory / "recipe.toml").read_text())
     if "background" not in manifest:
         if "background" in recipe:
@@ -150,7 +156,7 @@ def read_background(directory: Path, manifest: dict[str, Any]) -> np.ndarray | N
         != {
             "schema_version",
             "algorithm",
-            "master_id",
+            "developed_id",
             "width",
             "height",
             "settings",
@@ -158,9 +164,9 @@ def read_background(directory: Path, manifest: dict[str, Any]) -> np.ndarray | N
             "settings_sha256",
         }
         or type(record["schema_version"]) is not int
-        or record["schema_version"] != 1
+        or record["schema_version"] != 2
         or record["algorithm"] != ALGORITHM
-        or record["master_id"] != manifest["master_id"]
+        or record["developed_id"] != manifest["developed_id"]
         or any(type(record[n]) is not int or record[n] < 1 for n in ("width", "height"))
     ):
         raise ProjectError("Invalid saved background identity/schema/algorithm")
@@ -169,13 +175,17 @@ def read_background(directory: Path, manifest: dict[str, Any]) -> np.ndarray | N
         raise ProjectError("Background recipe and saved settings differ")
     for name, key in zip(BACKGROUND_FILES, ("background_sha256", "settings_sha256"), strict=True):
         if (
-            manifest["files"][name] != record[key]
-            or digest((directory / name).read_bytes()) != record[key]
+            revision_hashes(manifest)[name] != record[key]
+            or digest(revision_asset(project, directory, manifest, name).read_bytes())
+            != record[key]
         ):
             raise ProjectError("Saved background hash mismatch")
-    if json.loads((directory / BACKGROUND_FILES[1]).read_bytes()) != record["settings"]:
+    if (
+        json.loads(revision_asset(project, directory, manifest, BACKGROUND_FILES[1]).read_bytes())
+        != record["settings"]
+    ):
         raise ProjectError("Saved background settings differ")
-    pixels = read_rgb16(directory / BACKGROUND_FILES[0])
+    pixels = read_rgb16(revision_asset(project, directory, manifest, BACKGROUND_FILES[0]))
     if pixels.shape != (record["height"], record["width"], 3):
         raise ProjectError("Saved background dimensions differ")
     settings = record["settings"]
@@ -187,19 +197,19 @@ def read_background(directory: Path, manifest: dict[str, Any]) -> np.ndarray | N
 
 
 def save_background(
-    stage: Path, master_id: str, shape: tuple[int, int], settings: dict[str, Any]
+    stage: Path, developed_id: str, shape: tuple[int, int], settings: dict[str, Any]
 ) -> dict[str, Any]:
-    from .ingest import write_master
+    from .ingest import write_developed
 
     settings = normalized_background(settings)
     pixels = make_background(shape, settings)
     (stage / "background").mkdir(exist_ok=True)
-    write_master(stage / BACKGROUND_FILES[0], pixels)
+    write_developed(stage / BACKGROUND_FILES[0], pixels)
     (stage / BACKGROUND_FILES[1]).write_bytes(_json_bytes(settings))
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "algorithm": ALGORITHM,
-        "master_id": master_id,
+        "developed_id": developed_id,
         "width": shape[1],
         "height": shape[0],
         "settings": settings,
@@ -212,13 +222,17 @@ def inherit_background(
     project: Path,
     parent: str | None,
     stage: Path,
-    master_id: str,
+    developed_id: str,
     shape: tuple[int, int],
     settings: dict[str, Any] | None,
+    *,
+    assets: dict[str, Any],
 ) -> dict[str, Any] | None:
     if parent is None:
-        return save_background(stage, master_id, shape, settings) if settings is not None else None
-    manifest = read_revision(project, parent, master_id)
+        return (
+            save_background(stage, developed_id, shape, settings) if settings is not None else None
+        )
+    manifest = read_revision(project, parent, developed_id)
     record = manifest.get("background")
     expected = record["settings"] if record is not None else None
     current = normalized_background(settings) if settings is not None else None
@@ -226,6 +240,5 @@ def inherit_background(
         raise ProjectError("Changed background draft requires explicit Apply background")
     if record is not None:
         (stage / "background").mkdir(exist_ok=True)
-        for name in BACKGROUND_FILES:
-            (stage / name).write_bytes(_asset(project, f"revisions/{parent}/{name}").read_bytes())
+        inherit_revision_files(project, parent, stage, assets, BACKGROUND_FILES)
     return record

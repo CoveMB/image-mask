@@ -51,7 +51,7 @@ alpha. These PNGs/contact sheets are explicitly RGB8/alpha8 viewing approximatio
 authoritative RGB16 and alpha16 paths are in `assets`. Never infer extra captured
 precision or reconstruct absent photographed detail.
 
-Use `master_id`, `working_revision` and `inputs_digest` from the current manifest.
+Use `developed_id`, `working_revision` and `inputs_digest` from the current manifest.
 Do not reuse a manifest with stale labels. `revision_inputs_digest` belongs to the
 selected saved revision; `inputs_digest` belongs to the current editable draft.
 `settings` is that revision's frozen recipe and `model` records actual execution;
@@ -75,15 +75,15 @@ detail. `source_resolved: true` records a judgement; it does not prove it correc
 ## Explicit cycle and finite operations
 
 Only an explicit user-requested new correction starts another cycle. Never start
-a new cycle automatically to reset the budget. Save a schema-1 JSON cycle request
+a new cycle automatically to reset the budget. Save a schema-2 JSON cycle request
 and invoke:
 
 ```sh
 .venv/bin/blackmask review PROJECT --cycle-request CYCLE_REQUEST.json
 ```
 
-A start request contains exactly `schema_version: 1`, `action: "start"`,
-`master_id`, `base_revision`, `inputs_digest` and `user_request` (the actual explicit
+A start request contains exactly `schema_version: 2`, `action: "start"`,
+`developed_id`, `base_revision`, `inputs_digest` and `user_request` (the actual explicit
 request). The base must be the current complete matte/repair, with no pending
 guidance. Copy identities from current saved state, never from these examples.
 The returned `cycle_id` identifies immutable events under
@@ -132,7 +132,7 @@ remove or alter inherited locks.
 2. Trimap confirmation is optional. Continue directly to repair when the user
    prefers to review the actual masked photograph. A user who wants to record
    trimap review can use
-   `.venv/bin/blackmask accept PROJECT --revision REV --trimap --master-id ID --inputs-digest DIGEST`.
+   `.venv/bin/blackmask accept PROJECT --revision REV --trimap --developed-id ID --inputs-digest DIGEST`.
    Assistance never invents this confirmation. Source-development review is also
    optional; final photographic acceptance remains a separate human action.
 3. Build a finite repair request using those **returned** identities/support,
@@ -153,7 +153,7 @@ remove or alter inherited locks.
 ## Assess, stop and present
 
 An assessment uses the cycle command above with exactly the common identity fields
-(`schema_version`, `master_id`, `base_revision`, `inputs_digest`), `action: "assess"`,
+(`schema_version`, `developed_id`, `base_revision`, `inputs_digest`), `action: "assess"`,
 `cycle_id`, `outcome` and `comparison`. The base/digest must match the current
 complete repair. `comparison` records concrete visible improvement/preservation,
 remaining uncertainty and relevant before/after observations. Outcomes are
@@ -166,7 +166,7 @@ check can disprove a change; numerical change cannot prove visual improvement.
 Stop earlier on ambiguity, absent source evidence, no clear improvement, a new
 regression or an artistic choice. To stop before a successful repair exists, send
 `action: "stop"`, the common identity fields, `cycle_id` and `reason`.
-A status request needs only `schema_version: 1`, `action: "status"` and `cycle_id`.
+A status request needs only `schema_version: 2`, `action: "status"` and `cycle_id`.
 Every start/reservation/assessment/stop is an immutable event with a content-hash filename and predecessor link, plus its
 original structured request; assessments include the operation result and
 before/after manifest paths. Reopen/status works without conversation memory. Event transitions are validated; retained immutable repair requests prevent truncated history from silently losing an attempt. A per-cycle `head.sha256` integrity anchor also detects loss of a terminal stop/assessment. Partial event/anchor publication fails closed: preserve the files and inspect the failure before an explicitly requested new cycle. This is local integrity checking, not protection against a local actor rewriting every related file.
@@ -196,7 +196,7 @@ manual workflow; do not make its commands depend on cycle history.
 
 ## Explicit background appearance
 
-Background tone/variation use the same schema-1 effects operation and current
+Background tone/variation use the same schema-2 effects operation and current
 master/base/draft identities as manual controls, with exclusive `background`
 settings and full native scope. They require explicit user appearance intent;
 the automatic alpha-repair cycle does not choose them. Preserve accepted state

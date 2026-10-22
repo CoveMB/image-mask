@@ -31,7 +31,7 @@ let poll;globalThis.setInterval=callback=>{poll=callback;return 0;};
 globalThis.confirm=()=>true;
 globalThis.createImageBitmap=async blob=>({width:blob.width,height:blob.height,close(){}});
 const servedState={
- master_id:'master',working_revision:'rev-001',accepted_revision:'rev-001',
+ developed_id:'master',working_revision:'rev-001',accepted_revision:'rev-001',
  inputs_digest:'draft',authoring_digest:'author',dimensions_wh:[100,100],
  recipe:{groups:[]},guides:{regions:[]},
  revisions:[{revision:'rev-001',kind:'matte',draft_digest:'draft',final_acceptable:true,candidates:[]}],
@@ -485,7 +485,7 @@ def test_framing_uncertain_save_retains_fields_until_explicit_reload():
  $('framingLeft').value='1.5';$('framingLeft').oninput();
  await $('framingPreview').onclick();assert.match($('message').textContent,/whole pixels/);
  $('framingLeft').value='9';$('framingLeft').oninput();
- servedState.master_id='replacement-source';await refresh();
+ servedState.developed_id='replacement-source';await refresh();
  assert.equal(Number($('framingLeft').value),9);assert.equal(framingNeedsReload,true);
  """)
 
@@ -531,7 +531,7 @@ def test_framing_bitmap_pending_decode_rejects_changed_identity(change):
  const preview=previewFraming();for(let i=0;i<20&&!decode;i++)await Promise.resolve();assert(decode);
  """
         + {
-            "source": "state.master_id='new-source';",
+            "source": "state.developed_id='new-source';",
             "revision": "$('viewRevision').value='rev-002';",
             "digest": "state.revisions[0].revision_manifest_sha256='b'.repeat(64);",
             "margin": "$('framingLeft').value='2';$('framingLeft').oninput();",
@@ -1278,7 +1278,7 @@ assert($('fadeDraftStatus').textContent.includes('Unsaved Shadow fade settings')
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("master_id", "other-master"),
+        ("developed_id", "other-master"),
         ("working_revision", "rev-002"),
         ("inputs_digest", "other-draft"),
         ("authoring_digest", "other-author"),

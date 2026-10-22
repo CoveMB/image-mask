@@ -18,6 +18,7 @@ import numpy as np
 from PIL import Image
 
 from . import operations
+from .assets import revision_hashes, saved_asset
 from .export import export_project, render_background, render_black, saved_layers
 from .framing import (
     FramingSaveUncertain,
@@ -29,7 +30,6 @@ from .framing import (
 from .guidance import coordinates
 from .project import (
     ProjectError,
-    _asset,
     _json_bytes,
     _root,
     _validate_assets,
@@ -81,19 +81,19 @@ class ReviewServer(ThreadingHTTPServer):
         action = dict(self.action)
         # State pointers may advance during an active writer. Keep the established
         # action-first polling contract; only bind immutable source/revision bytes.
-        captured = {"source.json": _asset(self.project, "source.json").read_bytes()}
+        captured = {"source.json": saved_asset(self.project, "source.json").read_bytes()}
         state = operations.operation_status(self.project)
         master, _ = _validate_assets(self.project, state, validate_drafts=False)
         height, width = master.shape[:2]
         state.update(
             dimensions_wh=[width, height],
-            source_url=f"/image/source/{state['master_id']}/0,0,{width},{height}",
+            source_url=f"/image/source/{state['developed_id']}/0,0,{width},{height}",
         )
         state["action"] = action
         state.update(framing=None, framing_digest=None, framing_error=None)
         try:
             margins, preset_digest = read_framing_preset(
-                self.project, state["master_id"], (width, height)
+                self.project, state["developed_id"], (width, height)
             )
             state.update(framing=margins.to_dict(), framing_digest=preset_digest)
         except (OSError, ValueError, TypeError) as error:
@@ -101,7 +101,7 @@ class ReviewServer(ThreadingHTTPServer):
         state.update(series_settings=None, series_digest=None, series_error=None)
         try:
             settings, preset_digest = read_series_settings(
-                self.project, state["master_id"], (width, height)
+                self.project, state["developed_id"], (width, height)
             )
             state.update(series_settings=settings.to_dict(), series_digest=preset_digest)
         except (OSError, ValueError, TypeError) as error:
@@ -109,8 +109,8 @@ class ReviewServer(ThreadingHTTPServer):
         state["draft_error"] = None
         try:
             state["inputs_digest"] = operations.draft_digest(self.project)
-            state["guides"] = json.loads(_asset(self.project, "guides.json").read_bytes())
-            state["recipe"] = tomllib.loads(_asset(self.project, "recipe.toml").read_text())
+            state["guides"] = json.loads(saved_asset(self.project, "guides.json").read_bytes())
+            state["recipe"] = tomllib.loads(saved_asset(self.project, "recipe.toml").read_text())
             read_project(self.project)
         except (OSError, ValueError, TypeError) as error:
             state["draft_error"] = str(error)
@@ -121,28 +121,28 @@ class ReviewServer(ThreadingHTTPServer):
             state["draft_error"] = str(error)
         state["authoring_digest"] = operations.guidance_draft_digest(self.project)
         revisions = []
-        for path in sorted(_asset(self.project, "revisions").glob("rev-*")):
+        for path in sorted(saved_asset(self.project, "revisions").glob("rev-*")):
             if re.fullmatch(r"rev-[0-9]{3,}", path.name):
-                manifest, raw = self._validated_revision(path.name, state["master_id"])
+                manifest, raw = self._validated_revision(path.name, state["developed_id"])
                 captured[f"revisions/{path.name}/manifest.json"] = raw
                 exposure_area = None
                 if manifest.get("local_exposure", {}).get("area_sha256"):
                     exposure_area = json.loads(
-                        _asset(
+                        saved_asset(
                             self.project, f"revisions/{path.name}/effects/exposure/area.json"
                         ).read_bytes()
                     )
                 fade_area = None
                 if manifest.get("shadow_fade", {}).get("area_sha256"):
                     fade_area = json.loads(
-                        _asset(
+                        saved_asset(
                             self.project, f"revisions/{path.name}/effects/shadow-fade/area.json"
                         ).read_bytes()
                     )
                 exposure = dict(manifest.get("local_exposure", {"enabled": False, "stale": False}))
                 if "local_exposure" in manifest and manifest["final_acceptable"]:
                     saved_review = json.loads(
-                        _asset(
+                        saved_asset(
                             self.project, f"revisions/{path.name}/review/manifest.json"
                         ).read_bytes()
                     )
@@ -178,16 +178,18 @@ class ReviewServer(ThreadingHTTPServer):
                     }
                 )
         state["revisions"] = revisions
-        if any(_asset(self.project, name).read_bytes() != raw for name, raw in captured.items()):
+        if any(
+            saved_asset(self.project, name).read_bytes() != raw for name, raw in captured.items()
+        ):
             raise ProjectError("Stale snapshot source or revision manifest; retry")
         return state
 
-    def _validated_revision(self, revision: str, source_id: str) -> tuple[dict[str, Any], bytes]:
+    def _validated_revision(self, revision: str, developed_id: str) -> tuple[dict[str, Any], bytes]:
         if not isinstance(revision, str) or re.fullmatch(r"rev-[0-9]{3,}", revision) is None:
             raise ProjectError("Invalid saved revision identity")
-        path = _asset(self.project, f"revisions/{revision}/manifest.json")
+        path = saved_asset(self.project, f"revisions/{revision}/manifest.json")
         raw = path.read_bytes()
-        manifest = read_revision(self.project, revision, source_id)
+        manifest = read_revision(self.project, revision, developed_id)
         if _json_bytes(json.loads(raw)) != _json_bytes(manifest) or path.read_bytes() != raw:
             raise ProjectError("Stale revision manifest; reload current project")
         return manifest, raw
@@ -199,7 +201,7 @@ class ReviewServer(ThreadingHTTPServer):
             not isinstance(data, dict)
             or set(data)
             != {
-                "master_id",
+                "developed_id",
                 "revision",
                 "revision_manifest_sha256",
                 "settings" if series_mode else "margins",
@@ -212,13 +214,13 @@ class ReviewServer(ThreadingHTTPServer):
             raise ProjectError("Framing preview busy; retry after the current preview")
         try:
             captured = {
-                name: _asset(self.project, name).read_bytes()
+                name: saved_asset(self.project, name).read_bytes()
                 for name in ("state.json", "source.json")
             }
             state = read_project(self.project, validate_drafts=False)
-            if state["master_id"] != data["master_id"]:
+            if state["developed_id"] != data["developed_id"]:
                 raise ProjectError("Stale framing preview source")
-            manifest, raw = self._validated_revision(data["revision"], state["master_id"])
+            manifest, raw = self._validated_revision(data["revision"], state["developed_id"])
             if digest(raw) != data["revision_manifest_sha256"]:
                 raise ProjectError("Stale framing preview revision manifest")
             captured[f"revisions/{data['revision']}/manifest.json"] = raw
@@ -237,14 +239,16 @@ class ReviewServer(ThreadingHTTPServer):
                 settings_record.update(margins.to_dict())
             del source
             foreground, alpha, loaded_manifest = saved_layers(
-                self.project, data["revision"], state["master_id"]
+                self.project, data["revision"], state["developed_id"]
             )
             if _json_bytes(loaded_manifest) != _json_bytes(manifest):
                 raise ProjectError("Stale framing preview saved layers")
             weight, opacity = saved_shading(self.project, data["revision"], alpha, loaded_manifest)
             spatial = saved_spatial_fade(self.project, data["revision"], alpha, loaded_manifest)
             background = read_background(
-                _asset(self.project, f"revisions/{data['revision']}"), loaded_manifest
+                self.project,
+                saved_asset(self.project, f"revisions/{data['revision']}"),
+                loaded_manifest,
             )
             geometry: dict[str, object]
             if series_mode:
@@ -309,13 +313,14 @@ class ReviewServer(ThreadingHTTPServer):
                 finally:
                     image.close()
                 png_base64 = base64.b64encode(buffer.getvalue()).decode("ascii")
-            self._validated_revision(data["revision"], state["master_id"])
+            self._validated_revision(data["revision"], state["developed_id"])
             if any(
-                _asset(self.project, name).read_bytes() != value for name, value in captured.items()
+                saved_asset(self.project, name).read_bytes() != value
+                for name, value in captured.items()
             ):
                 raise ProjectError("Stale framing preview inputs changed while rendering")
             return {
-                "master_id": state["master_id"],
+                "developed_id": state["developed_id"],
                 "revision": data["revision"],
                 "revision_manifest_sha256": digest(raw),
                 "settings" if series_mode else "margins": settings_record,
@@ -334,7 +339,7 @@ class ReviewServer(ThreadingHTTPServer):
     @_validation_scope()
     def preview_spatial(self, data: Any) -> dict[str, Any]:
         """Read one bound saved field/comparison under the existing bounded preview guard."""
-        required = {"master_id", "revision", "revision_manifest_sha256", "crop_xyxy", "view"}
+        required = {"developed_id", "revision", "revision_manifest_sha256", "crop_xyxy", "view"}
         if (
             not isinstance(data, dict)
             or data.get("view") not in ("off", "combined", "effective", "selected")
@@ -354,13 +359,13 @@ class ReviewServer(ThreadingHTTPServer):
             raise ProjectError("Spatial preview busy; retry after the current preview")
         try:
             captured = {
-                name: _asset(self.project, name).read_bytes()
+                name: saved_asset(self.project, name).read_bytes()
                 for name in ("state.json", "source.json")
             }
             state = read_project(self.project, validate_drafts=False)
-            if data["master_id"] != state["master_id"]:
+            if data["developed_id"] != state["developed_id"]:
                 raise ProjectError("Stale spatial preview source")
-            manifest, raw = self._validated_revision(data["revision"], state["master_id"])
+            manifest, raw = self._validated_revision(data["revision"], state["developed_id"])
             if digest(raw) != data["revision_manifest_sha256"]:
                 raise ProjectError("Stale spatial preview raw revision manifest")
             from .effects import effects_stale, saved_shading
@@ -369,26 +374,26 @@ class ReviewServer(ThreadingHTTPServer):
             current: dict[str, Any] = {}
             if state["working_revision"]:
                 current, current_raw = self._validated_revision(
-                    state["working_revision"], state["master_id"]
+                    state["working_revision"], state["developed_id"]
                 )
                 captured[f"revisions/{state['working_revision']}/manifest.json"] = current_raw
             stale = effects_stale(current) or effects_stale(manifest)
             foreground, alpha, loaded = saved_layers(
-                self.project, data["revision"], state["master_id"], effects_off=stale
+                self.project, data["revision"], state["developed_id"], effects_off=stale
             )
             if loaded != manifest:
                 raise ProjectError("Stale spatial preview layers")
             height, width = alpha.shape
             crop = coordinates(data["crop_xyxy"], width, height, box=True)
             x0, y0, x1, y1 = crop
-            directory = _asset(self.project, f"revisions/{data['revision']}")
-            saved = read_spatial_fade(directory, manifest, alpha)
+            directory = saved_asset(self.project, f"revisions/{data['revision']}")
+            saved = read_spatial_fade(self.project, directory, manifest, alpha)
             view = data["view"]
             label = "Saved geometric strength; protection and highlights excluded"
             if view == "off":
                 from .background import read_background
 
-                background = None if stale else read_background(directory, manifest)
+                background = None if stale else read_background(self.project, directory, manifest)
                 weight, opacity = saved_shading(
                     self.project, data["revision"], alpha, manifest, effects_off=stale
                 )
@@ -455,11 +460,12 @@ class ReviewServer(ThreadingHTTPServer):
             with io.BytesIO() as buffer:
                 Image.fromarray(pixels).save(buffer, format="PNG")
                 encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-            self._validated_revision(data["revision"], state["master_id"])
-            if _asset(
+            self._validated_revision(data["revision"], state["developed_id"])
+            if saved_asset(
                 self.project, f"revisions/{data['revision']}/manifest.json"
             ).read_bytes() != raw or any(
-                _asset(self.project, name).read_bytes() != value for name, value in captured.items()
+                saved_asset(self.project, name).read_bytes() != value
+                for name, value in captured.items()
             ):
                 raise ProjectError("Stale spatial preview inputs changed while rendering")
             return dict(data, label=label, png_base64=encoded)
@@ -532,7 +538,7 @@ class ReviewServer(ThreadingHTTPServer):
         if action not in fields or set(data) != fields[action] | {
             "action",
             "authoring_digest",
-            "master_id",
+            "developed_id",
             "base_revision",
             "inputs_digest",
         }:
@@ -567,7 +573,7 @@ class ReviewServer(ThreadingHTTPServer):
             )
         state = read_project(self.project, validate_drafts=action != "restore")
         if (
-            data["master_id"] != state["master_id"]
+            data["developed_id"] != state["developed_id"]
             or data["base_revision"] != state["working_revision"]
             or data["inputs_digest"] != operations.draft_digest(self.project)
             or data.get("authoring_digest") != operations.guidance_draft_digest(self.project)
@@ -581,10 +587,10 @@ class ReviewServer(ThreadingHTTPServer):
         if pending and pending["current"] and pending["actions"]:
             raise ProjectError("Saved pending guidance requires preparation first")
         if action == "development":
-            return accept_development(self.project, data["master_id"])
+            return accept_development(self.project, data["developed_id"])
         if action == "trimap":
             return operations.accept_trimap(
-                self.project, data["revision"], data["master_id"], data["inputs_digest"]
+                self.project, data["revision"], data["developed_id"], data["inputs_digest"]
             )
         if action == "accept":
             return operations.accept_revision(self.project, data["revision"])
@@ -616,14 +622,14 @@ class ReviewServer(ThreadingHTTPServer):
                 self.project,
                 data["margins"],
                 expected_digest=data["expected_digest"],
-                expected_source_id=data["master_id"],
+                expected_developed_id=data["developed_id"],
             )
         if action == "series-save":
             return save_series_settings(
                 self.project,
                 data["settings"],
                 expected_digest=data["expected_digest"],
-                expected_source_id=data["master_id"],
+                expected_developed_id=data["developed_id"],
             )
         if action == "series-export":
             if (
@@ -641,13 +647,13 @@ class ReviewServer(ThreadingHTTPServer):
                 draft=data["draft"],
                 series=data["settings"],
                 framed_transparent=data["transparent"],
-                expected_master_id=data["master_id"],
+                expected_developed_id=data["developed_id"],
                 expected_revision_manifest_sha256=data["revision_manifest_sha256"],
             )
         request = {
-            "schema_version": 1,
+            "schema_version": 2,
             "kind": action,
-            "master_id": data["master_id"],
+            "developed_id": data["developed_id"],
             "base_revision": data["base_revision"],
             "inputs_digest": data["inputs_digest"],
         }
@@ -716,12 +722,12 @@ class ReviewServer(ThreadingHTTPServer):
             [int(v) for v in rectangle.split(",")], width, height, box=True
         )
         if panel == "source":
-            if identity != state["master_id"]:
+            if identity != state["developed_id"]:
                 raise FileNotFoundError("Wrong master identity")
             pixels = np.rint(source[y0:y1, x0:x1].astype(np.float64) / 257).astype(np.uint8)
         else:
             current = (
-                read_revision(self.project, state["working_revision"], state["master_id"])
+                read_revision(self.project, state["working_revision"], state["developed_id"])
                 if state["working_revision"]
                 else {}
             )
@@ -731,7 +737,7 @@ class ReviewServer(ThreadingHTTPServer):
             foreground, alpha, manifest = saved_layers(
                 self.project,
                 identity,
-                state["master_id"],
+                state["developed_id"],
                 effects_off=bool(base == "/base" or stale),
                 exposure_off=base == "/exposure-off",
                 shadow_fade_off=base == "/shadow-fade-off",
@@ -749,7 +755,9 @@ class ReviewServer(ThreadingHTTPServer):
             from .background import read_background
 
             background = (
-                read_background(_asset(self.project, f"revisions/{identity}"), manifest)
+                read_background(
+                    self.project, saved_asset(self.project, f"revisions/{identity}"), manifest
+                )
                 if (panel == "result" or spatial is not None)
                 and not (base == "/base" or stale or effects_stale(manifest))
                 else None
@@ -788,7 +796,7 @@ class ReviewServer(ThreadingHTTPServer):
             raise FileNotFoundError("Unknown mask identity")
         revision, label = match.groups()
         state = read_project(self.project, validate_drafts=False)
-        manifest = read_revision(self.project, revision, state["master_id"])
+        manifest = read_revision(self.project, revision, state["developed_id"])
         names = {
             "trimap": "trimap.png",
             "support": "supports/support16.png",
@@ -799,10 +807,10 @@ class ReviewServer(ThreadingHTTPServer):
         }
         names.update({c["id"]: c["mask_file"] for c in manifest.get("candidates", [])})
         name = names.get(label)
-        if name is None or name not in manifest["files"]:
+        if name is None or name not in revision_hashes(manifest):
             raise FileNotFoundError("Mask not in current validated revision")
-        data = _asset(self.project, f"revisions/{revision}/{name}").read_bytes()
-        if digest(data) != manifest["files"][name]:
+        data = saved_asset(self.project, f"revisions/{revision}/{name}").read_bytes()
+        if digest(data) != revision_hashes(manifest)[name]:
             raise ProjectError("Stale mask hash")
         with Image.open(io.BytesIO(data)) as image:
             array = np.array(image)

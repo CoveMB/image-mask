@@ -40,7 +40,7 @@ supported RGB DNGs use their recorded white point and calibration profiles as
 described in the [saved contract](file-contract.md#raw-as-shot-white-balance). Otherwise, explicitly
 choose a supported rendering or supply a developed TIFF. A different development
 requires a separate project, preserving the previous one. The legacy CLI development
-review remains optional and does not gate masking; old projects open without migration.
+review remains optional and does not gate masking; schema-2 projects open without migration; schema-1 projects are refused without writes.
 
 ## Author guides and select subjects
 
@@ -158,8 +158,8 @@ Rebuild using separately declared support covering the changed alpha, preserving
 corrected RGB outside it and exact saved RGB locks inside. Any changed alpha left
 outside the rebuild keeps cleanup stale. Broader work needs explicit broader scope.
 
-CLI uses `.venv/bin/blackmask run PROJECT --request FILE` with schema_version=1, kind="effects",
-master_id, base_revision and inputs_digest copied from current review/state, explicit
+CLI uses `.venv/bin/blackmask run PROJECT --request FILE` with schema_version=2, kind="effects",
+developed_id, base_revision and inputs_digest copied from current review/state, explicit
 scope_xyxy, project-relative support_file and candidate_comparison boolean. Optional
 color_cleanup={"enabled":true,"strength":0.35} records an explicit override; omitting
 it consumes the current recipe section. Editing the recipe alone does not change saved

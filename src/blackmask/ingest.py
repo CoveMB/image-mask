@@ -303,7 +303,7 @@ def decode_source(data: bytes, development: dict[str, Any]) -> tuple[RGB16, dict
     return pixels, metadata
 
 
-def write_master(path: Path, pixels: RGB16) -> None:
+def write_developed(path: Path, pixels: RGB16) -> None:
     profile = srgb_profile()
     tifffile.imwrite(
         path,

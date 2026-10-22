@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from test_ingest import tiff
+from test_ingest import saved_raster, tiff
 
 from blackmask.ingest import srgb_profile
 
@@ -28,15 +28,15 @@ def test_series_cli_saved_only_replay_and_exclusive_modes(tmp_path):
 
     project, _, _ = fixture_project(tmp_path)
     preset = tmp_path / "series.json"
-    preset.write_bytes(
+    saved_raster(preset).write_bytes(
         portable_series_preset(SeriesSettings(output_width_px=40, output_height_px=50))
     )
     first = run("export", project, "--series-preset", preset, "--framed-transparent")
     assert first.returncode == 0, first.stderr
     output = json.loads(first.stdout)
     assert output["output_dimensions_wh"] == [40, 50]
-    (tmp_path / "source.tif").rename(tmp_path / "retained-original.tif")
-    preset.write_bytes(preset.read_bytes() + b"\n")
+    (saved_raster(tmp_path / "source.tif")).rename(tmp_path / "retained-original.tif")
+    saved_raster(preset).write_bytes(saved_raster(preset).read_bytes() + b"\n")
     replay = run("export", project, "--series-preset", preset, "--framed-transparent")
     assert replay.returncode == 0, replay.stderr
     assert json.loads(replay.stdout) == output
@@ -65,7 +65,7 @@ def test_framed_cli_saved_only_replay_variants_draft_and_busy_lock(tmp_path, mon
     assert native.returncode == 0, native.stderr
     native_directory = Path(json.loads(native.stdout)["directory"])
     native_bytes = {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        path.name: hashlib.sha256(saved_raster(path).read_bytes()).hexdigest()
         for path in native_directory.iterdir()
     }
     first = run("export", project, "--margins", 2, 1, 3, 0, "--framed-transparent")
@@ -74,24 +74,26 @@ def test_framed_cli_saved_only_replay_variants_draft_and_busy_lock(tmp_path, mon
     assert result["output_dimensions_wh"] == [9, 7]
     assert result["source_rect_xyxy"] == [2, 3, 8, 7]
     directory = Path(result["directory"])
-    pixels = tifffile.imread(directory / "result_rgb16.tif")
+    pixels = tifffile.imread(saved_raster(directory / "result_rgb16.tif"))
     np.testing.assert_array_equal(
-        pixels[3:7, 2:8], tifffile.imread(native_directory / "result_rgb16.tif")
+        pixels[3:7, 2:8], tifffile.imread(saved_raster(native_directory / "result_rgb16.tif"))
     )
     original_hashes = {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in directory.iterdir()
+        path.name: hashlib.sha256(saved_raster(path).read_bytes()).hexdigest()
+        for path in directory.iterdir()
     }
     # The original capture is unavailable at its recorded path in the next process.
-    (tmp_path / "source.tif").rename(tmp_path / "retained-original.tif")
+    (saved_raster(tmp_path / "source.tif")).rename(tmp_path / "retained-original.tif")
     replay = run("export", project, "--margins", 2, 1, 3, 0, "--framed-transparent")
     assert replay.returncode == 0, replay.stderr
     assert json.loads(replay.stdout) == result
     assert original_hashes == {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in directory.iterdir()
+        path.name: hashlib.sha256(saved_raster(path).read_bytes()).hexdigest()
+        for path in directory.iterdir()
     }
     assert before == (project / "state.json").read_bytes()
     assert native_bytes == {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        path.name: hashlib.sha256(saved_raster(path).read_bytes()).hexdigest()
         for path in native_directory.iterdir()
     }
     for args in (
@@ -112,7 +114,9 @@ def test_framed_cli_saved_only_replay_variants_draft_and_busy_lock(tmp_path, mon
         "export", project, "--revision", draft["revision"], "--draft", "--margins", 0, 0, 0, 0
     )
     assert delivered.returncode == 0, delivered.stderr
-    record = json.loads(Path(json.loads(delivered.stdout)["manifest_file"]).read_bytes())
+    record = json.loads(
+        saved_raster(Path(json.loads(delivered.stdout)["manifest_file"])).read_bytes()
+    )
     assert record["draft"] is True and record["label"].startswith("DRAFT")
 
 
@@ -125,7 +129,8 @@ def test_fresh_cli_create_reopen_doctor_accept(tmp_path):
     assert state["development_approved"] is False
     assert run("open", "--headless", "--project", project).returncode == 0
     assert (
-        run("accept", project, "--development", "--master-id", state["master_id"]).returncode == 0
+        run("accept", project, "--development", "--developed-id", state["developed_id"]).returncode
+        == 0
     )
     reopened = json.loads(run("open", "--headless", "--project", project).stdout)
     assert reopened["development_approved"] is True
@@ -152,14 +157,14 @@ def test_run_prepare_returns_paths_and_rejects_final_acceptance(tmp_path):
 
     _, project = create(tmp_path)
     state = read_project(project)
-    accept_development(project, state["master_id"])
+    accept_development(project, state["developed_id"])
     request = project / "prepare.json"
     request.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "kind": "prepare",
-                "master_id": state["master_id"],
+                "developed_id": state["developed_id"],
                 "base_revision": None,
                 "inputs_digest": draft_digest(project),
             }
@@ -174,7 +179,7 @@ def test_run_prepare_returns_paths_and_rejects_final_acceptance(tmp_path):
     )
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
-    assert Path(result["trimap_file"]).is_file() and result["revision"] == "rev-001"
+    assert saved_raster(Path(result["trimap_file"])).is_file() and result["revision"] == "rev-001"
     reopened = subprocess.run(
         [sys.executable, "-m", "blackmask", "open", "--headless", "--project", str(project)],
         capture_output=True,
@@ -217,8 +222,8 @@ def test_cli_recorded_known_only_journey_and_explicit_review_controls(tmp_path):
         "--trimap",
         "--revision",
         result["revision"],
-        "--master-id",
-        result["master_id"],
+        "--developed-id",
+        result["developed_id"],
         "--inputs-digest",
         result["inputs_digest"],
     )

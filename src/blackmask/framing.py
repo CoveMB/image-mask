@@ -7,9 +7,9 @@ from pathlib import Path
 
 import numpy as np
 
+from .assets import saved_asset
 from .project import (
     ProjectError,
-    _asset,
     _atomic_json,
     _json_bytes,
     _root,
@@ -192,10 +192,10 @@ def framing_preview(
 
 
 def read_framing_preset(
-    project: Path, source_id: str, source_size: tuple[int, int]
+    project: Path, developed_id: str, source_size: tuple[int, int]
 ) -> tuple[Margins, str | None]:
     """Read optional source-bound presentation metadata without changing native state."""
-    path = _asset(_root(project), "framing.json")
+    path = saved_asset(_root(project), "framing.json")
     try:
         with path.open("rb") as stream:
             raw = stream.read(16385)
@@ -207,10 +207,10 @@ def read_framing_preset(
         value = json.loads(raw)
         if (
             not isinstance(value, dict)
-            or set(value) != {"schema_version", "master_id", "source_dimensions_wh", "margins"}
+            or set(value) != {"schema_version", "developed_id", "source_dimensions_wh", "margins"}
             or type(value["schema_version"]) is not int
-            or value["schema_version"] != 1
-            or value["master_id"] != source_id
+            or value["schema_version"] != 2
+            or value["developed_id"] != developed_id
             or not isinstance(value["source_dimensions_wh"], list)
             or any(type(item) is not int for item in value["source_dimensions_wh"])
             or value["source_dimensions_wh"] != list(source_size)
@@ -239,7 +239,7 @@ def save_framing_preset(
     value: dict[str, object],
     *,
     expected_digest: str | None,
-    expected_source_id: str,
+    expected_developed_id: str,
 ) -> dict[str, object]:
     """Source-bound raw-byte CAS using the shared project writer and publication helpers."""
     if expected_digest is not None and (
@@ -249,41 +249,44 @@ def save_framing_preset(
         raise ProjectError("Expected framing digest must be SHA-256 or null for an absent preset")
     project = _root(project)
     with project_lock(project):
-        source_bytes = _asset(project, "source.json").read_bytes()
+        source_bytes = saved_asset(project, "source.json").read_bytes()
         state = read_project(project, validate_drafts=False)
-        if state["master_id"] != expected_source_id:
+        if state["developed_id"] != expected_developed_id:
             raise ProjectError("Stale framing source identity; reload current project")
         source, _ = _validate_assets(project, state, validate_drafts=False)
         source_size = (source.shape[1], source.shape[0])
         del source
         settings = validate_margins(value, source_size)
-        previous, previous_digest = read_framing_preset(project, expected_source_id, source_size)
+        previous, previous_digest = read_framing_preset(project, expected_developed_id, source_size)
         if previous_digest != expected_digest:
             raise ProjectError("Stale framing preset; Reload saved margins before saving")
         if previous_digest is not None and previous == settings:
             return {"framing": settings.to_dict(), "framing_digest": previous_digest}
         envelope = {
-            "schema_version": 1,
-            "master_id": expected_source_id,
+            "schema_version": 2,
+            "developed_id": expected_developed_id,
             "source_dimensions_wh": list(source_size),
             "margins": settings.to_dict(),
         }
 
         def unchanged() -> None:
-            if _asset(project, "source.json").read_bytes() != source_bytes:
+            if saved_asset(project, "source.json").read_bytes() != source_bytes:
                 raise ProjectError("Stale framing source before publication")
-            if read_framing_preset(project, expected_source_id, source_size)[1] != previous_digest:
+            if (
+                read_framing_preset(project, expected_developed_id, source_size)[1]
+                != previous_digest
+            ):
                 raise ProjectError("Stale framing preset before publication")
 
         check_space(project, 1024**2)
         try:
             _atomic_json(
-                _asset(project, "framing.json"), envelope, validate_before_replace=unchanged
+                saved_asset(project, "framing.json"), envelope, validate_before_replace=unchanged
             )
         except (OSError, ValueError) as error:
             try:
                 visible, visible_digest = read_framing_preset(
-                    project, expected_source_id, source_size
+                    project, expected_developed_id, source_size
                 )
             except (ProjectError, OSError):
                 observed: dict[str, object] = {"framing": None, "framing_digest": None}

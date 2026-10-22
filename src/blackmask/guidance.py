@@ -33,14 +33,14 @@ def coordinates(value: Any, width: int, height: int, *, box: bool = False) -> li
     return value
 
 
-def validate_guides(value: Any, master_id: str, width: int, height: int) -> dict[str, Any]:
-    keys = {"schema_version", "master_id", "width", "height", "regions"}
+def validate_guides(value: Any, developed_id: str, width: int, height: int) -> dict[str, Any]:
+    keys = {"schema_version", "developed_id", "width", "height", "regions"}
     if (
         not isinstance(value, dict)
         or set(value) != keys
         or type(value["schema_version"]) is not int
-        or value["schema_version"] != 1
-        or value["master_id"] != master_id
+        or value["schema_version"] != 2
+        or value["developed_id"] != developed_id
         or type(value["width"]) is not int
         or type(value["height"]) is not int
         or value["width"] != width
@@ -105,10 +105,10 @@ def validate_guides(value: Any, master_id: str, width: int, height: int) -> dict
 def edit_guides(guides: dict[str, Any], edits: Any) -> dict[str, Any]:
     if (
         not isinstance(edits, dict)
-        or set(edits) != {"schema_version", "master_id", "actions"}
+        or set(edits) != {"schema_version", "developed_id", "actions"}
         or type(edits["schema_version"]) is not int
-        or edits["schema_version"] != 1
-        or edits["master_id"] != guides["master_id"]
+        or edits["schema_version"] != 2
+        or edits["developed_id"] != guides["developed_id"]
         or not isinstance(edits["actions"], list)
     ):
         raise ValueError("Invalid typed guide edits")
@@ -140,7 +140,7 @@ def edit_guides(guides: dict[str, Any], edits: Any) -> dict[str, Any]:
             raise ValueError("Duplicate guide action ID; use separate recorded operations")
         seen.add(stable_id)
     result = dict(guides, regions=list(regions.values()))
-    return validate_guides(result, guides["master_id"], guides["width"], guides["height"])
+    return validate_guides(result, guides["developed_id"], guides["width"], guides["height"])
 
 
 def _region_mask(region: dict[str, Any], width: int, height: int) -> NDArray[np.bool_]:
@@ -190,7 +190,7 @@ def rasterize_regions(
     proposed_unknown: NDArray[np.bool_] | None = None,
 ) -> RasterizedGuides:
     width, height = guides["width"], guides["height"]
-    validate_guides(guides, guides["master_id"], width, height)
+    validate_guides(guides, guides["developed_id"], width, height)
     shape = (height, width)
     masks = {
         role: np.zeros(shape, dtype=bool)

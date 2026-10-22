@@ -15,7 +15,7 @@ and review the masked photograph instead. To record an optional human review of
 that exact authoritative trimap:
 
 ```sh
-.venv/bin/blackmask accept /path/to/project --trimap --revision ACTUAL_PREPARED_REVISION --master-id ACTUAL_MASTER_ID --inputs-digest ACTUAL_DRAFT_DIGEST
+.venv/bin/blackmask accept /path/to/project --trimap --revision ACTUAL_PREPARED_REVISION --developed-id ACTUAL_MASTER_ID --inputs-digest ACTUAL_DRAFT_DIGEST
 ```
 
 Source-development review and trimap confirmation are optional; final-photo
@@ -47,10 +47,10 @@ Create a JSON request with the actual returned current values:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "matte",
   "base_revision": "ACTUAL_PREPARED_REVISION",
-  "master_id": "ACTUAL_MASTER_ID",
+  "developed_id": "ACTUAL_MASTER_ID",
   "inputs_digest": "ACTUAL_DRAFT_DIGEST"
 }
 ```
@@ -145,14 +145,14 @@ foreground RGB and remains ineligible for final acceptance.
 Copy the actual returned revision, master, digest and `support_file` into a repair
 request. Both the exact returned absolute support path and its project-relative
 form are supported. Other assets and aliases are rejected. Do not include
-`guide_edits_file` again. A schema-1 request has the common identity fields plus:
+`guide_edits_file` again. A schema-2 request has the common identity fields plus:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "repair",
   "base_revision": "ACTUAL_PREPARED_REVISION",
-  "master_id": "ACTUAL_MASTER_ID",
+  "developed_id": "ACTUAL_MASTER_ID",
   "inputs_digest": "ACTUAL_RETURNED_DIGEST",
   "context_xyxy": [7, 5, 76, 46],
   "scope_xyxy": [10, 10, 60, 35],

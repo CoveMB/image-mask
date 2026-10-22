@@ -51,7 +51,7 @@ unknown and uses explicitly confirmed native cores. Optional morphology produces
 a separate, unreviewed suggestion, described below. It does not fill holes or
 automatically certify background.
 
-Guides schema 1 contains `master_id`, native integer `width`/`height`, and `regions`.
+Guides schema 2 contains `developed_id`, native integer `width`/`height`, and `regions`.
 Each region needs a stable `id`, `role`, `shape` and its shape-specific fields.
 IDs contain 1–64 ASCII letters/digits/underscores/hyphens, starting alphanumeric.
 Points are integer pixel indices from the oriented top left. Boxes/rectangles are
@@ -96,10 +96,10 @@ base before the first revision:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "prepare",
   "base_revision": null,
-  "master_id": "ACTUAL_MASTER_ID",
+  "developed_id": "ACTUAL_MASTER_ID",
   "inputs_digest": "ACTUAL_DRAFT_DIGEST",
   "guide_edits_file": "requests/guides-edit.json"
 }
@@ -109,8 +109,8 @@ The optional edit file uses the same master and typed actions:
 
 ```json
 {
-  "schema_version": 1,
-  "master_id": "ACTUAL_MASTER_ID",
+  "schema_version": 2,
+  "developed_id": "ACTUAL_MASTER_ID",
   "actions": [
     {"action":"upsert", "region":{"id":"wing-hint","role":"keep","shape":"point","xy":[40,30],"group_id":"wing"}},
     {"action":"upsert", "region":{"id":"uncertain-edge","role":"unknown","shape":"stroke","points":[[20,10],[70,50]],"radius_px":3}}

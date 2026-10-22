@@ -15,6 +15,7 @@ import tifffile
 from PIL import Image
 from test_background import legacy_project, scalar_composite
 from test_effects import fixture_project, shading_request
+from test_ingest import saved_hashes, saved_raster
 
 from blackmask import operations
 from blackmask.export import export_project, saved_layers
@@ -105,11 +106,11 @@ def test_preset_absence_save_cas_and_native_bytes_preserved(tmp_path):
     project, _, _ = fixture_project(tmp_path)
     state = read_project(project)
     before = hashes(project)
-    zero, expected = read_framing_preset(project, state["master_id"], (6, 4))
+    zero, expected = read_framing_preset(project, state["developed_id"], (6, 4))
     assert zero.to_dict() == margins(0, 0, 0, 0) and expected is None
     assert hashes(project) == before
     saved = save_framing_preset(
-        project, margins(), expected_digest=None, expected_source_id=state["master_id"]
+        project, margins(), expected_digest=None, expected_developed_id=state["developed_id"]
     )
     assert saved["framing"] == margins()
     assert (
@@ -121,9 +122,9 @@ def test_preset_absence_save_cas_and_native_bytes_preserved(tmp_path):
     } == before
     with pytest.raises(ProjectError, match="Stale"):
         save_framing_preset(
-            project, margins(9), expected_digest=None, expected_source_id=state["master_id"]
+            project, margins(9), expected_digest=None, expected_developed_id=state["developed_id"]
         )
-    assert read_framing_preset(project, state["master_id"], (6, 4))[0].to_dict() == margins()
+    assert read_framing_preset(project, state["developed_id"], (6, 4))[0].to_dict() == margins()
 
 
 @pytest.mark.parametrize("phase", ["temporary", "file-sync", "before", "after"])
@@ -132,9 +133,9 @@ def test_preset_write_failure_reports_actual_visibility(tmp_path, monkeypatch, p
     from blackmask import project as project_module
 
     project, _, _ = fixture_project(tmp_path)
-    source_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     saved = framing.save_framing_preset(
-        project, margins(), expected_digest=None, expected_source_id=source_id
+        project, margins(), expected_digest=None, expected_developed_id=developed_id
     )
     old = (project / "framing.json").read_bytes()
     before = hashes(project)
@@ -154,7 +155,7 @@ def test_preset_write_failure_reports_actual_visibility(tmp_path, monkeypatch, p
             project,
             margins(5),
             expected_digest=saved["framing_digest"],
-            expected_source_id=source_id,
+            expected_developed_id=developed_id,
         )
     if phase != "after":
         assert (project / "framing.json").read_bytes() == old
@@ -190,19 +191,19 @@ def test_invalid_presets_are_preserved_and_native_state_remains_readable(tmp_pat
     from blackmask.framing import read_framing_preset, save_framing_preset
 
     project, _, _ = fixture_project(tmp_path)
-    source_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     value = {
-        "schema_version": 1,
-        "master_id": source_id,
+        "schema_version": 2,
+        "developed_id": developed_id,
         "source_dimensions_wh": [6, 4],
         "margins": margins(),
     }
     if change == "schema":
-        value["schema_version"] = 2
+        value["schema_version"] = 1
     if change == "boolean":
         value["schema_version"] = True
     if change == "source":
-        value["master_id"] = "foreign"
+        value["developed_id"] = "foreign"
     if change == "dimensions":
         value["source_dimensions_wh"] = [6, True]
     if change == "margin":
@@ -219,30 +220,32 @@ def test_invalid_presets_are_preserved_and_native_state_remains_readable(tmp_pat
     path = project / "framing.json"
     if change == "symlink":
         target = tmp_path / "external-preset.json"
-        target.write_bytes(raw)
+        saved_raster(target).write_bytes(raw)
         path.symlink_to(target)
     else:
-        path.write_bytes(raw)
+        saved_raster(path).write_bytes(raw)
     before = hashes(project)
     with pytest.raises(ProjectError):
-        read_framing_preset(project, source_id, (6, 4))
+        read_framing_preset(project, developed_id, (6, 4))
     with pytest.raises(ProjectError):
-        save_framing_preset(project, margins(), expected_digest=None, expected_source_id=source_id)
-    assert read_project(project)["master_id"] == source_id
-    assert hashes(project) == before and path.read_bytes() == raw
+        save_framing_preset(
+            project, margins(), expected_digest=None, expected_developed_id=developed_id
+        )
+    assert read_project(project)["developed_id"] == developed_id
+    assert hashes(project) == before and saved_raster(path).read_bytes() == raw
 
 
 def test_preset_real_process_lock_and_raw_digest_cas(tmp_path):
     from blackmask.framing import read_framing_preset, save_framing_preset
 
     project, _, _ = fixture_project(tmp_path)
-    source_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     program = r"""
 import json, sys
 from pathlib import Path
 from blackmask import framing
 from blackmask.project import ProjectError
-project, source_id, mode, expected = sys.argv[1:]
+project, developed_id, mode, expected = sys.argv[1:]
 if mode == 'hold':
     original = framing._atomic_json
     def held(*args, **kwargs):
@@ -253,13 +256,13 @@ if mode == 'hold':
 try:
     result = framing.save_framing_preset(Path(project),
         dict(left_px=2,right_px=3,top_px=4,bottom_px=5),
-        expected_digest=json.loads(expected), expected_source_id=source_id)
+        expected_digest=json.loads(expected), expected_developed_id=developed_id)
 except ProjectError as error:
     print(json.dumps({'error': str(error)}), flush=True)
 else:
     print(json.dumps(result), flush=True)
 """
-    command = [sys.executable, "-c", program, str(project), source_id]
+    command = [sys.executable, "-c", program, str(project), developed_id]
     first = subprocess.Popen(
         command + ["hold", "null"],
         stdin=subprocess.PIPE,
@@ -284,29 +287,31 @@ else:
         if first.poll() is None:
             first.kill()
             first.communicate()
-    saved, expected = read_framing_preset(project, source_id, (6, 4))
+    saved, expected = read_framing_preset(project, developed_id, (6, 4))
     path = project / "framing.json"
-    original = path.read_bytes()
-    path.write_bytes(original + b"\n")
+    original = saved_raster(path).read_bytes()
+    saved_raster(path).write_bytes(original + b"\n")
     with pytest.raises(ProjectError, match="Stale"):
         save_framing_preset(
-            project, saved.to_dict(), expected_digest=expected, expected_source_id=source_id
+            project, saved.to_dict(), expected_digest=expected, expected_developed_id=developed_id
         )
-    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    actual = hashlib.sha256(saved_raster(path).read_bytes()).hexdigest()
     assert (
         save_framing_preset(
-            project, saved.to_dict(), expected_digest=actual, expected_source_id=source_id
+            project, saved.to_dict(), expected_digest=actual, expected_developed_id=developed_id
         )["framing_digest"]
         == actual
     )
-    assert path.read_bytes() == original + b"\n"
+    assert saved_raster(path).read_bytes() == original + b"\n"
 
 
 def hashes(directory):
     return {
-        str(path.relative_to(directory)): hashlib.sha256(path.read_bytes()).hexdigest()
+        str(path.relative_to(directory)): hashlib.sha256(
+            saved_raster(path).read_bytes()
+        ).hexdigest()
         for path in directory.rglob("*")
-        if path.is_file()
+        if saved_raster(path).is_file()
     }
 
 
@@ -471,14 +476,14 @@ def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_
 
     project, _, selected = protected_project(tmp_path)
     state = read_project(project)
-    foreground, alpha, manifest = saved_layers(project, selected["revision"], state["master_id"])
+    foreground, alpha, manifest = saved_layers(project, selected["revision"], state["developed_id"])
     directory = project / "revisions" / selected["revision"]
-    with Image.open(directory / "supports/protection.png") as image:
+    with Image.open(saved_raster(directory / "supports/protection.png")) as image:
         protection = np.array(image) != 0
     assert protection[1, 2] and alpha[1, 2] == 32768
     assert protection[1, 5] and alpha[1, 5] == 65535
     assert {0, 1, 32768, 65535} <= set(alpha.ravel())
-    backdrop = read_background(directory, manifest)
+    backdrop = read_background(project, directory, manifest)
     weight, opacity = saved_shading(project, selected["revision"], alpha, manifest)
     assert weight.any() and opacity != 0 and np.any(foreground % 257)
     native = scalar_composite(foreground, alpha, backdrop, weight, opacity)
@@ -500,13 +505,15 @@ def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_
         "README.txt",
         "manifest.json",
     }
-    np.testing.assert_array_equal(tifffile.imread(delivery / "result_rgb16.tif"), expected)
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(delivery / "result_rgb16.tif")), expected
+    )
     with tifffile.TiffFile(delivery / "result_rgb16.tif") as image:
         assert image.pages[0].tags[34675].value == srgb_profile()
         assert image.pages[0].compression == 1
-    with Image.open(delivery / "result_RGB8_VIEW.png") as image:
+    with Image.open(saved_raster(delivery / "result_RGB8_VIEW.png")) as image:
         np.testing.assert_array_equal(np.array(image), np.rint(expected / 257).astype(np.uint8))
-    with Image.open(delivery / "transparent_RGBA8_VIEW.png") as image:
+    with Image.open(saved_raster(delivery / "transparent_RGBA8_VIEW.png")) as image:
         rgba = np.array(image)
     expected_rgba = np.zeros((7, 9, 4), np.uint8)
     for y in range(4):
@@ -518,7 +525,7 @@ def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_
             ]
     np.testing.assert_array_equal(rgba, expected_rgba)
     record = json.loads((delivery / "manifest.json").read_bytes())
-    assert record["kind"] == "framed-presentation" and record["schema_version"] == 1
+    assert record["kind"] == "framed-presentation" and record["schema_version"] == 2
     assert record["source_dimensions_wh"] == [6, 4]
     assert record["output_dimensions_wh"] == [9, 7]
     assert record["source_rect_xyxy"] == [1, 2, 7, 6]
@@ -529,9 +536,14 @@ def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_
     assert record["label"] == (
         "Framed presentation of accepted revision; framing has not been separately accepted"
     )
-    for name, metadata in record["files"].items():
-        assert metadata["sha256"] == hashlib.sha256((delivery / name).read_bytes()).hexdigest()
-    assert set(record["files"]) == {path.name for path in delivery.iterdir()} - {"manifest.json"}
+    for name, metadata in saved_hashes(record).items():
+        assert (
+            metadata["sha256"]
+            == hashlib.sha256((saved_raster(delivery / name)).read_bytes()).hexdigest()
+        )
+    assert set(saved_hashes(record)) == {path.name for path in delivery.iterdir()} - {
+        "manifest.json"
+    }
     assert str(tmp_path) not in (delivery / "manifest.json").read_text()
     assert "original_path" not in (delivery / "manifest.json").read_text()
     assert before == (hashes(project / "revisions"), (project / "state.json").read_bytes())
@@ -545,23 +557,23 @@ def test_legacy_omission_zero_margins_variants_and_manifest_raw_identity(tmp_pat
     framed = export_project(project, framing=margins(0, 0, 0, 0))
     assert framed["directory"] != original["directory"]
     np.testing.assert_array_equal(
-        tifffile.imread(Path(framed["directory"]) / "result_rgb16.tif"),
-        tifffile.imread(Path(original["directory"]) / "black_rgb16.tif"),
+        tifffile.imread(saved_raster(Path(framed["directory"]) / "result_rgb16.tif")),
+        tifffile.imread(saved_raster(Path(original["directory"]) / "black_rgb16.tif")),
     )
-    assert not (Path(framed["directory"]) / "transparent_RGBA8_VIEW.png").exists()
+    assert not (saved_raster(Path(framed["directory"]) / "transparent_RGBA8_VIEW.png")).exists()
     variant = export_project(project, framing=margins(0, 0, 0, 0), framed_transparent=True)
     assert variant["directory"] != framed["directory"]
     explicit_draft = export_project(
         project, revision=selected["revision"], draft=True, framing=margins(0, 0, 0, 0)
     )
-    draft_record = json.loads(Path(explicit_draft["manifest_file"]).read_bytes())
+    draft_record = json.loads(saved_raster(Path(explicit_draft["manifest_file"])).read_bytes())
     assert draft_record["draft"] is True
     assert draft_record["label"] == "DRAFT - explicit framed presentation"
     assert explicit_draft["directory"] not in {framed["directory"], variant["directory"]}
     assert export_project(project) == original
     assert hashes(Path(original["directory"])) == original_hashes
     path = project / "revisions" / selected["revision"] / "manifest.json"
-    path.write_text(json.dumps(json.loads(path.read_bytes()), indent=2) + "\n")
+    path.write_text(json.dumps(json.loads(saved_raster(path).read_bytes()), indent=2) + "\n")
     changed = export_project(project, framing=margins(0, 0, 0, 0))
     assert changed["directory"] != framed["directory"]
 
@@ -593,8 +605,8 @@ def test_framed_reuse_failure_preserves_duplicate_and_prior_work(tmp_path, monke
     (retained_stage / "evidence.txt").write_text("Preserve earlier failed work")
     if failure == "mismatch":
         readme = output / "README.txt"
-        original = readme.read_bytes()
-        readme.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+        original = saved_raster(readme).read_bytes()
+        saved_raster(readme).write_bytes(bytes([original[0] ^ 1]) + original[1:])
         message = "differing existing files"
     else:
         original_sync = export._sync_directory
@@ -647,7 +659,7 @@ def test_framed_reuse_partial_cleanup_failure_reports_published_delivery(tmp_pat
     assert "durability is unconfirmed" not in str(failure.value)
     assert isinstance(failure.value.__cause__, OSError)
     assert not (cleaned[0] / "README.txt").exists()
-    assert (cleaned[0] / "result_rgb16.tif").is_file()
+    assert (saved_raster(cleaned[0] / "result_rgb16.tif")).is_file()
     after = hashes(project)
     assert all(after[name] == value for name, value in before.items())
 
@@ -673,13 +685,13 @@ def test_existing_delivery_collision_preserves_all_inputs_and_outputs(tmp_path, 
     if collision == "corrupt":
         path.write_text("deliberately changed synthetic delivery")
     elif collision == "missing":
-        path.rename(output.parent / "retained-readme.txt")
+        saved_raster(path).rename(output.parent / "retained-readme.txt")
     elif collision == "extra-file":
         (output / "extra.txt").write_text("preserve")
     elif collision == "extra-dir":
         (output / "extra").mkdir()
     elif collision == "directory-member":
-        path.rename(output.parent / "retained-readme.txt")
+        saved_raster(path).rename(output.parent / "retained-readme.txt")
         path.mkdir()
     else:
         (output / "extra-link").symlink_to(path)
@@ -752,7 +764,7 @@ def test_captured_bytes_must_correspond_to_canonical_validated_objects(
         path = project / "revisions" / selected["revision"] / "manifest.json"
         original = export.saved_layers
         name = "saved_layers"
-    captured = path.read_bytes()
+    captured = saved_raster(path).read_bytes()
     alternate = json.loads(captured)
     if changed == "state":
         alternate.update(accepted_revision=None, status="review_needed")
@@ -769,7 +781,7 @@ def test_captured_bytes_must_correspond_to_canonical_validated_objects(
         try:
             result = original(*args, **kwargs)
         finally:
-            path.write_bytes(captured)
+            saved_raster(path).write_bytes(captured)
         return result
 
     monkeypatch.setattr(export, name, canonical_read_between_changes)
@@ -778,7 +790,7 @@ def test_captured_bytes_must_correspond_to_canonical_validated_objects(
         pytest.raises(ProjectError, match="Stale"),
     ):
         export_project(project, framing=margins())
-    assert called and path.read_bytes() == captured
+    assert called and saved_raster(path).read_bytes() == captured
 
 
 @pytest.mark.parametrize("changed", ["state", "manifest", "source", "asset"])
@@ -799,9 +811,9 @@ def test_changes_during_render_fail_before_publication(tmp_path, monkeypatch, ch
     def change_after_render(*args):
         result = original(*args)
         if changed == "asset":
-            target.write_bytes(b"deliberately corrupt synthetic saved alpha")
+            saved_raster(target).write_bytes(b"deliberately corrupt synthetic saved alpha")
         else:
-            value = json.loads(target.read_bytes())
+            value = json.loads(saved_raster(target).read_bytes())
             if changed == "state":
                 value.update(accepted_revision=None, status="review_needed")
             elif changed == "source":
@@ -842,7 +854,7 @@ def test_stale_enabled_appearance_cannot_export_base_fallback(tmp_path):
         ),
     ):
         complete = run_matte(project)
-    assert effects_stale(read_revision(project, complete["revision"], complete["master_id"]))
+    assert effects_stale(read_revision(project, complete["revision"], complete["developed_id"]))
     with pytest.raises(ProjectError, match="Stale|stale"):
         export_project(project, revision=complete["revision"], draft=True, framing=margins())
 
@@ -850,12 +862,12 @@ def test_stale_enabled_appearance_cannot_export_base_fallback(tmp_path):
 def test_compact_manifest_records_identities_without_copying_private_metadata(tmp_path):
     project, _, selected = protected_project(tmp_path)
     path = project / "revisions" / selected["revision"] / "manifest.json"
-    value = json.loads(path.read_bytes())
+    value = json.loads(saved_raster(path).read_bytes())
     value["model_configuration"] = {"private": "/private/synthetic/model-cache"}
     value["shading"]["private_note"] = "/private/synthetic/capture"
     path.write_text(json.dumps(value))
     output = export_project(project, framing=margins())
-    record_bytes = Path(output["manifest_file"]).read_bytes()
+    record_bytes = saved_raster(Path(output["manifest_file"])).read_bytes()
     assert b"/private/" not in record_bytes and b"model_configuration" not in record_bytes
     record = json.loads(record_bytes)
     assert record["effects"]["shading"] == {
@@ -885,18 +897,20 @@ def test_saved_cleanup_exposure_fade_and_shading_are_composed_once(tmp_path):
         lambda project: shading_request(project, opacity=0.3),
     ):
         selected = operations.apply_operation(project, make_request(project))
-    foreground, alpha, manifest = saved_layers(project, selected["revision"], selected["master_id"])
+    foreground, alpha, manifest = saved_layers(
+        project, selected["revision"], selected["developed_id"]
+    )
     assert np.any(foreground != source) and np.any(foreground % 257)
-    backdrop = read_background(project / "revisions" / selected["revision"], manifest)
+    backdrop = read_background(project, project / "revisions" / selected["revision"], manifest)
     weight, opacity = saved_shading(project, selected["revision"], alpha, manifest)
     assert weight.any() and opacity == 0.3
     expected = scalar_composite(foreground, alpha, backdrop, weight, opacity)
     output = export_project(
         project, revision=selected["revision"], draft=True, framing=margins(2, 1, 1, 3)
     )
-    actual = tifffile.imread(Path(output["directory"]) / "result_rgb16.tif")
+    actual = tifffile.imread(saved_raster(Path(output["directory"]) / "result_rgb16.tif"))
     np.testing.assert_array_equal(actual[1:5, 2:8], expected)
-    record = json.loads(Path(output["manifest_file"]).read_bytes())
+    record = json.loads(saved_raster(Path(output["manifest_file"])).read_bytes())
     assert all(
         record["effects"][name]["enabled"] is True
         for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade")
@@ -907,7 +921,7 @@ def test_symlinked_delivery_is_rejected_without_following_or_replacing_it(tmp_pa
     project, _, _ = fixture_project(tmp_path)
     output = Path(export_project(project, framing=margins())["directory"])
     retained = output.parent / "retained-synthetic-delivery"
-    output.rename(retained)
+    saved_raster(output).rename(retained)
     before = hashes(retained), (project / "state.json").read_bytes()
     output.symlink_to(retained, target_is_directory=True)
     with pytest.raises(ProjectError, match="symlink|alias|collision"):
@@ -923,20 +937,20 @@ def test_written_raster_must_roundtrip_before_publication(tmp_path, monkeypatch,
     native = Path(export_project(project)["directory"])
     before = hashes(native), (project / "state.json").read_bytes()
     if damaged == "rgb16":
-        original = export.write_master
+        original = export.write_developed
 
         def write_changed_tiff(path, pixels):
             changed = pixels.copy()
             changed[0, 0, 0] ^= 1
             original(path, changed)
 
-        monkeypatch.setattr(export, "write_master", write_changed_tiff)
+        monkeypatch.setattr(export, "write_developed", write_changed_tiff)
     else:
         original_png = export._write_framed_rgb8
 
         def write_changed_png(path, pixels):
             expected = original_png(path, pixels)
-            with Image.open(path) as image:
+            with Image.open(saved_raster(path)) as image:
                 changed = np.array(image)
                 profile = image.info["icc_profile"]
             changed[0, 0, 0] ^= 1
@@ -979,7 +993,9 @@ def test_transparent_export_releases_render_buffer_before_readback(tmp_path, mon
     monkeypatch.setattr(export, "_verify_framed_png", verify_after_release)
     output = export_project(project, framing=margins(), framed_transparent=True)
     assert len(readbacks) == 1
-    with Image.open(Path(output["directory"]) / "transparent_RGBA8_VIEW.png") as image:
+    with Image.open(
+        saved_raster(Path(output["directory"]) / "transparent_RGBA8_VIEW.png")
+    ) as image:
         assert image.tobytes() == expected_pixels[0]
 
 
@@ -1019,5 +1035,5 @@ def test_transparent_save_failure_releases_image_and_preserves_prior_work(tmp_pa
     assert list((project / "exports").glob(".export-*"))
     monkeypatch.undo()
     output = export_project(project, framing=margins(), framed_transparent=True)
-    assert (Path(output["directory"]) / "transparent_RGBA8_VIEW.png").is_file()
+    assert (saved_raster(Path(output["directory"]) / "transparent_RGBA8_VIEW.png")).is_file()
     assert before == (hashes(native), (project / "state.json").read_bytes())

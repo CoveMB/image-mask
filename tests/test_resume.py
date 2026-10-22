@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from test_ingest import saved_raster
 from test_matte_operations import StubSession, approve, prepared, run_matte
 from test_operations import request
 
@@ -32,8 +33,8 @@ def interrupted(project, boundary="inference"):
             )
     else:
         target = (
-            "blackmask.review.write_review"
-            if boundary == "write_review"
+            "blackmask.review.write_revision_overview"
+            if boundary == "write_revision_overview"
             else "blackmask.operations." + boundary
         )
         original = operations._atomic_json
@@ -56,7 +57,7 @@ def interrupted(project, boundary="inference"):
 
 
 @pytest.mark.parametrize(
-    "boundary", ["inference", "write_review", "_publish_new_directory", "_atomic_json"]
+    "boundary", ["inference", "write_revision_overview", "_publish_new_directory", "_atomic_json"]
 )
 @pytest.mark.parametrize("trimap_confirmed", [False, True])
 def test_resume_preserves_accepted_export_and_finishes_review(tmp_path, boundary, trimap_confirmed):
@@ -86,6 +87,7 @@ def test_resume_preserves_accepted_export_and_finishes_review(tmp_path, boundary
         project / "revisions" / result["revision"] / "trimap_approval.json"
     ).exists() is trimap_confirmed
     assert read_project(project)["accepted_revision"] == accepted["revision"]
+    assert read_project(project)["latest_result_revision"] == result["revision"]
     assert {p.name: p.read_bytes() for p in exported.iterdir() if p.is_file()} == saved_export
     assert operations.resume_operation(project, operation_id)["revision"] == result["revision"]
 
@@ -101,12 +103,15 @@ def test_resume_rejects_paused_edits_without_overwriting(tmp_path, changed):
         path = project / "revisions" / result["revision"] / "supports/support16.png"
     else:
         path = project / changed
-    path.write_bytes(path.read_bytes() + b" ")
-    retained = path.read_bytes()
+    saved_raster(path).write_bytes(saved_raster(path).read_bytes() + b" ")
+    retained = saved_raster(path).read_bytes()
     state = (project / "state.json").read_bytes()
     with pytest.raises((ProjectError, ValueError), match="Stale|stale|hash|snapshot|Invalid"):
         operations.resume_operation(project, operation_id, model_cache=Path("unused"))
-    assert path.read_bytes() == retained and (project / "state.json").read_bytes() == state
+    assert (
+        saved_raster(path).read_bytes() == retained
+        and (project / "state.json").read_bytes() == state
+    )
 
 
 def test_moved_source_must_match_hash(tmp_path):
@@ -140,7 +145,12 @@ def test_unknown_cache_dependencies_are_misses(tmp_path):
 
     for _ in range(2):
         native_matte(
-            rgb, trimap, predict, "cpu", cache_dir=tmp_path, cache_identity={"master_id": "unknown"}
+            rgb,
+            trimap,
+            predict,
+            "cpu",
+            cache_dir=tmp_path,
+            cache_identity={"developed_id": "unknown"},
         )
     assert calls == ["cpu", "cpu"]
 
@@ -177,7 +187,7 @@ def test_interrupt_tiles_reuses_only_completed_and_backend_switch_restarts_all(t
 @pytest.mark.parametrize(
     "changed",
     [
-        "master_id",
+        "developed_id",
         "revision",
         "hashes",
         "packages",
@@ -208,7 +218,7 @@ def test_complete_cache_identity_changes_invalidate(tmp_path, changed):
         identity["hashes"]["config.json"] = "f" * 64
     elif changed == "packages":
         identity["packages"]["torch"] = "changed-test-version"
-    elif changed == "master_id":
+    elif changed == "developed_id":
         identity[changed] = "f" * 64
     elif changed == "revision":
         identity[changed] = "f" * 40
@@ -417,7 +427,7 @@ def test_request_edit_between_capture_and_record_rejects_completed_resume(tmp_pa
     with pytest.raises(ProjectError, match="Stale"):
         operations.resume_operation(project, operation_id)
     assert (project / "state.json").read_bytes() == state
-    assert json.loads(path.read_bytes()) == changed
+    assert json.loads(saved_raster(path).read_bytes()) == changed
 
 
 @pytest.mark.parametrize("repairing", [False, True])
@@ -453,7 +463,7 @@ def test_valid_resume_failure_preserves_cause_acceptance_and_retry(
         approve(project, prepared_result)
         operation = request(project, kind="matte")
     initial_boundary = (
-        "blackmask.review.write_review"
+        "blackmask.review.write_revision_overview"
         if boundary == "rerun"
         else "blackmask.operations._publish_new_directory"
     )
@@ -474,7 +484,7 @@ def test_valid_resume_failure_preserves_cause_acceptance_and_retry(
         return original_json(path, value, **kwargs)
 
     target = {
-        "rerun": "blackmask.review.write_review",
+        "rerun": "blackmask.review.write_revision_overview",
         "publication": "blackmask.operations._publish_new_directory",
         "sync": "blackmask.operations._sync_directory",
         "pointer": "blackmask.operations._atomic_json",

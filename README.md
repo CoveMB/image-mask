@@ -23,6 +23,12 @@ confirmation and separate final-photo acceptance, matching native-crop review as
 accepted RGB16 black/alpha16 exports and labelled PNG8 viewing copies. Run matting
 directly after preparation to review the actual masked photograph.
 
+New projects use storage schema 2 and developed-image identities. Immutable masks,
+RGB16 layers and effect operands are shared within the project; revisions retain
+text and a small overview. Old schema-1 projects are preserved and rejected without
+migration. Effective revision recipes and consumed draft snapshots are separate.
+Latest generated result history survives restore and acceptance changes.
+
 Scoped repairs save quantized operands for replay without models. Restore selects
 saved working inputs without changing final acceptance. `status` and `resume`
 recover verified tiles or completed stages from interrupted matte/repair operations.
@@ -44,7 +50,7 @@ keeps Shadow fade independent. See the [offline walkthrough](docs/workflow.md#fa
 for shape controls, saved strength maps, recovery and portable two-folder exports.
 
 Background appearance saves a tone and broad variation behind the matte. New
-projects start warm near-black (`#120708`, variation 55%); older projects stay
+projects start warm near-black (`#120708`, variation 55%); schema-2 recipes without background settings stay
 black until explicitly changed. The [background instructions](docs/workflow.md#background-appearance)
 explain Result, diagnostic views and separate editable exports. Presentation framing
 adds saved margins, a separate bounded RGB8 layout preview and compact RGB16
@@ -123,7 +129,7 @@ colour edits made in another application, import a supported developed image,
 preferably trusted uncompressed RGB16 sRGB TIFF. RAW decoding still applies the
 recorded conversion above; it is not a replacement for that application's rendering.
 Masking adds no exposure, white-balance or colour correction to the saved master.
-The existing CLI `accept --development --master-id ID` remains an optional legacy
+The existing CLI `accept --development --developed-id ID` remains an optional legacy
 review record for compatible scripts; it is never a prerequisite or final-photo acceptance.
 
 Changing development currently requires a separate project/master identity; dimensions
@@ -162,6 +168,7 @@ for explicit model setup, typed preparation and human review.
 | Independent linear-sRGB Shadow fade and saved operands | `src/blackmask/shadow_fade.py` |
 | Native oval/arc fields and background-targeted colour blend | `src/blackmask/spatial_fade.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
+| Shared immutable raster references and role validation | `src/blackmask/assets.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | Presentation geometry, bounded sampling and source-bound preset | `src/blackmask/framing.py` |
 | Fixed-size subject layout, premultiplied resampling and portable series settings | `src/blackmask/series_framing.py` |

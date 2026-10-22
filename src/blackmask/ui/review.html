@@ -796,7 +796,7 @@
     }
     function spatialCurrentIdentity() {
       const current = state?.revisions.find(r=>r.revision===state.working_revision);
-      return JSON.stringify([state?.master_id,state?.working_revision,state?.inputs_digest,current?.revision_manifest_sha256]);
+      return JSON.stringify([state?.developed_id,state?.working_revision,state?.inputs_digest,current?.revision_manifest_sha256]);
     }
     function selectedSpatialShape() {
       return selectedSpatialId === "oval" ? spatialDraft?.oval : spatialDraft?.arcs.find(arc=>arc.id===selectedSpatialId);
@@ -883,7 +883,7 @@
       if(enabled && $("spatialProtection").value.trim()) fields.spatial_fade_protection_file=$("spatialProtection").value.trim();
       const preserveDraft=!!savedSettings && spatialDirty;
       spatialDirty=true;spatialDraftStatus();
-      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,master_id:state.master_id,preserve_draft:preserveDraft};
+      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,developed_id:state.developed_id,preserve_draft:preserveDraft};
       try {await action("effects",fields);} catch(error) {spatialSubmitted=null;throw error;}
     }
     function drawSpatialShapes(scale) {
@@ -995,7 +995,7 @@
       backgroundDraftStatus();
       $("candidate").value = "";
       identity = {
-        master_id: state.master_id,
+        developed_id: state.developed_id,
         base_revision: state.working_revision,
         inputs_digest: state.inputs_digest,
         authoring_digest: state.authoring_digest,
@@ -1093,7 +1093,7 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
-      const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && a.result?.parent===spatialSubmitted.base_revision && state.master_id===spatialSubmitted.master_id;
+      const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && a.result?.parent===spatialSubmitted.base_revision && state.developed_id===spatialSubmitted.developed_id;
       if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
       if(reload || completed) spatialSubmitted=null;
       if(reload) resetSpatialFromSaved();
@@ -1273,7 +1273,7 @@
         $(id).disabled = authoringBusy();
       for(const id of spatialControlIds) $(id).disabled=authoringBusy();
       if(spatialDraft) renderSpatialControls();
-      $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.master_id || !!state?.series_error;
+      $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.developed_id || !!state?.series_error;
       const selected = state?.revisions.find(record=>record.revision === $("viewRevision").value);
       $("seriesExportAccepted").disabled = authoringBusy() || !selected?.final_acceptable || selected.revision !== state?.accepted_revision;
       $("seriesExportDraft").disabled = authoringBusy() || !selected?.final_acceptable;
@@ -1285,7 +1285,7 @@
     async function spatialBitmap(view, revision, requestedCrop, panel = "result") {
       const record=state.revisions.find(r=>r.revision===revision);
       if(!record?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
-      const request={master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,crop_xyxy:[...requestedCrop],view};
+      const request={developed_id:state.developed_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,crop_xyxy:[...requestedCrop],view};
       if(view==="selected") request.shape_id=selectedSpatialId;
       if(view==="off") request.panel=panel;
       const response=await (await api("/api/spatial-preview",request)).json();
@@ -1357,7 +1357,7 @@
       try {
         const path =
           panel === "source"
-            ? `/image/source/${state.master_id}/${requestedCrop.join(",")}`
+            ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
             : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = $("spatialCompare").checked && !["source","alpha"].includes(panel)
           ? await spatialBitmap("off",revision,requestedCrop,panel) : await bitmap(path);
@@ -1541,7 +1541,7 @@
     }
     function exposureControlsStale() {
       return exposureControlsIdentity && state && (
-        exposureControlsIdentity.master_id !== state.master_id ||
+        exposureControlsIdentity.developed_id !== state.developed_id ||
         exposureControlsIdentity.base_revision !== state.working_revision ||
         exposureControlsIdentity.inputs_digest !== state.inputs_digest ||
         exposureControlsIdentity.authoring_digest !== state.authoring_digest
@@ -1553,7 +1553,7 @@
     }
     function fadeControlsStale() {
       return fadeControlsIdentity && state && (
-        fadeControlsIdentity.master_id !== state.master_id ||
+        fadeControlsIdentity.developed_id !== state.developed_id ||
         fadeControlsIdentity.base_revision !== state.working_revision ||
         fadeControlsIdentity.inputs_digest !== state.inputs_digest ||
         fadeControlsIdentity.authoring_digest !== state.authoring_digest
@@ -1748,10 +1748,10 @@
       const record = state.revisions.find(item=>item.revision === revision);
       if (!record?.final_acceptable || !record.revision_manifest_sha256)
         throw Error("Select a complete saved revision for framing preview");
-      return {master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,margins:framingMargins()};
+      return {developed_id:state.developed_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,margins:framingMargins()};
     }
     function framingKey(request) {
-      return JSON.stringify([request.master_id,request.revision,request.revision_manifest_sha256,
+      return JSON.stringify([request.developed_id,request.revision,request.revision_manifest_sha256,
         ...Object.keys(framingFields).map(name=>request.margins[name])]);
     }
     function framingStatus() {
@@ -1760,7 +1760,7 @@
         const margins = framingMargins(), [width,height] = state.dimensions_wh;
         $("framingStatus").textContent = `Native ${width} × ${height} · output ${width+margins.left_px+margins.right_px} × ${height+margins.top_px+margins.bottom_px} pixels · ` +
           (framingDirty ? "Unsaved margins" : framingDigest ? "Saved margins" : "Zero margins; no preset saved") +
-          (framingNeedsReload || framingSource !== state.master_id ? " · Reload saved margins required before saving" : "") +
+          (framingNeedsReload || framingSource !== state.developed_id ? " · Reload saved margins required before saving" : "") +
           (state.framing_error ? " · " + state.framing_error : "");
       } catch(error) { $("framingStatus").textContent = error.message; }
       let key = "";
@@ -1776,7 +1776,7 @@
     }
     function loadFramingState() {
       setFramingFields(state.framing || {left_px:0,right_px:0,top_px:0,bottom_px:0});
-      framingSource = state.master_id;
+      framingSource = state.developed_id;
       framingDigest = state.framing_digest ?? null;
       framingDirty = false;
       framingNeedsReload = false;
@@ -1786,7 +1786,7 @@
     }
     function syncFraming() {
       if (framingSource === null) loadFramingState();
-      else if (framingSource !== state.master_id) {
+      else if (framingSource !== state.developed_id) {
         framingNeedsReload = true;
         framingBitmap?.close();framingBitmap = null;framingDisplayedKey = "";
         $("framingCanvas").getContext("2d").clearRect(0,0,$("framingCanvas").width,$("framingCanvas").height);
@@ -1796,7 +1796,7 @@
       }
       const revision = $("viewRevision").value || state.working_revision;
       const selected = state.revisions.find(item=>item.revision === revision);
-      const key = JSON.stringify([state.master_id,revision,selected?.revision_manifest_sha256]);
+      const key = JSON.stringify([state.developed_id,revision,selected?.revision_manifest_sha256]);
       if (key !== framingSelectionKey) { framingSelectionKey = key; framingSequence++; }
       framingStatus();
     }
@@ -1855,11 +1855,11 @@
     $("framingReload").onclick = guarded(async()=>{await refresh();loadFramingState();});
     $("framingPreview").onclick = guarded(previewFraming);
     function framingAction(name, extra) {
-      return action(name,{master_id:state.master_id,base_revision:state.working_revision,
+      return action(name,{developed_id:state.developed_id,base_revision:state.working_revision,
         inputs_digest:state.inputs_digest,authoring_digest:state.authoring_digest,...extra});
     }
     $("framingSave").onclick = guarded(async()=>{
-      if (framingNeedsReload || framingSource !== state.master_id || state.framing_error)
+      if (framingNeedsReload || framingSource !== state.developed_id || state.framing_error)
         throw Error("Reload saved margins or resolve the framing.json error before saving");
       framingSubmitted = framingMargins();
       try { await framingAction("framing-save",{margins:framingSubmitted,expected_digest:framingDigest}); }
@@ -1901,10 +1901,10 @@
     function seriesRequest() {
       const revision=$("viewRevision").value, record=state?.revisions.find(item=>item.revision===revision);
       if (!record?.final_acceptable || !record.revision_manifest_sha256) throw Error("Select a complete saved revision for Match series");
-      return {master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,settings:seriesSettings()};
+      return {developed_id:state.developed_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,settings:seriesSettings()};
     }
     function seriesKey(request) {
-      return JSON.stringify([request.master_id,request.revision,request.revision_manifest_sha256,...Object.keys(seriesDefaults).map(key=>request.settings[key])]);
+      return JSON.stringify([request.developed_id,request.revision,request.revision_manifest_sha256,...Object.keys(seriesDefaults).map(key=>request.settings[key])]);
     }
     function invalidateSeriesPreview() {
       seriesSequence++;seriesBitmap?.close();seriesBitmap=null;seriesLayout=null;seriesDisplayedKey="";
@@ -1921,16 +1921,16 @@
     }
     function markSeriesDirty() { seriesDirty=true;invalidateSeriesPreview();seriesStatus(); }
     function loadSeriesState() {
-      setSeriesFields(state.series_settings || seriesDefaults);seriesSource=state.master_id;seriesDigest=state.series_digest ?? null;
+      setSeriesFields(state.series_settings || seriesDefaults);seriesSource=state.developed_id;seriesDigest=state.series_digest ?? null;
       seriesDirty=false;seriesNeedsReload=false;invalidateSeriesPreview();seriesStatus();
     }
     function syncSeries() {
       if (!state) return;
       if (seriesSource===null) loadSeriesState();
-      else if (seriesSource!==state.master_id) {seriesNeedsReload=true;invalidateSeriesPreview();}
+      else if (seriesSource!==state.developed_id) {seriesNeedsReload=true;invalidateSeriesPreview();}
       else if (!seriesDirty && !seriesNeedsReload) {setSeriesFields(state.series_settings || seriesDefaults);seriesDigest=state.series_digest ?? null;}
       const selected=state.revisions.find(item=>item.revision===$("viewRevision").value);
-      const key=JSON.stringify([state.master_id,$("viewRevision").value,selected?.revision_manifest_sha256]);
+      const key=JSON.stringify([state.developed_id,$("viewRevision").value,selected?.revision_manifest_sha256]);
       if (key!==seriesSelectionKey) {seriesSelectionKey=key;invalidateSeriesPreview();}
       if (seriesBitmap) {try {if(seriesDisplayedKey!==seriesKey(seriesRequest()))invalidateSeriesPreview();}catch{invalidateSeriesPreview();}}
       seriesStatus();
@@ -1963,7 +1963,7 @@
       } catch(error) {if(matches())$("seriesPreviewStatus").textContent=error.message+" · Preview is stale; retry";}
       finally {next?.close();}
     }
-    function seriesAction(name,extra) {return action(name,{master_id:state.master_id,base_revision:state.working_revision,inputs_digest:state.inputs_digest,authoring_digest:state.authoring_digest,...extra});}
+    function seriesAction(name,extra) {return action(name,{developed_id:state.developed_id,base_revision:state.working_revision,inputs_digest:state.inputs_digest,authoring_digest:state.authoring_digest,...extra});}
     for(const id of ["seriesName","seriesWidth","seriesHeight","seriesVertical"])$(id).oninput=markSeriesDirty;
     $("seriesSide").oninput=()=>{$("seriesSideRange").value=$("seriesSide").value;markSeriesDirty();};
     $("seriesSideRange").oninput=()=>{$("seriesSide").value=$("seriesSideRange").value;markSeriesDirty();};
@@ -1971,7 +1971,7 @@
     $("seriesPreview").onclick=guarded(previewSeries);
     $("seriesReload").onclick=guarded(async()=>{await refresh();loadSeriesState();});
     $("seriesSave").onclick=guarded(async()=>{
-      if(seriesNeedsReload || seriesSource!==state.master_id || state.series_error)throw Error("Reload saved series settings or resolve series-framing.json before saving");
+      if(seriesNeedsReload || seriesSource!==state.developed_id || state.series_error)throw Error("Reload saved series settings or resolve series-framing.json before saving");
       seriesSubmitted=seriesSettings();try{await seriesAction("series-save",{settings:seriesSubmitted,expected_digest:seriesDigest});}catch(error){seriesSubmitted=null;throw error;}
     });
     async function exportSeries(draft) {
@@ -1987,13 +1987,13 @@
     $("seriesLoad").onclick=guarded(()=>$("seriesFile").click());
     $("seriesFile").onchange=guarded(async()=>{
       const file=$("seriesFile").files?.[0];if(!file)return;
-      const request=++seriesImportSequence,sequence=seriesSequence,source=state.master_id;
+      const request=++seriesImportSequence,sequence=seriesSequence,source=state.developed_id;
       try {
         if(file.size>16384)throw Error("Portable preset exceeds 16384 bytes");
         const bytes=new Uint8Array(await file.arrayBuffer());if(bytes.byteLength>16384)throw Error("Portable preset exceeds 16384 bytes");
         const raw=new TextDecoder("utf-8",{fatal:true}).decode(bytes);
         const result=await (await api("/api/series-preset-validate",{preset_json:raw})).json();
-        if(request!==seriesImportSequence || sequence!==seriesSequence || source!==state.master_id)return;
+        if(request!==seriesImportSequence || sequence!==seriesSequence || source!==state.developed_id)return;
         const settings=validateSeriesValue(result.settings);setSeriesFields(settings);markSeriesDirty();
         $("seriesPreviewStatus").textContent="Preset loaded into this form; not saved for this photo. Preview framing to inspect.";
       } finally {$("seriesFile").value="";}

@@ -43,7 +43,7 @@ def _axis_weights(length: int, origin: int, total: int) -> np.ndarray:
 
 def _complete_cache_identity(identity: dict[str, Any] | None) -> bool:
     required = {
-        "master_id",
+        "developed_id",
         "model",
         "revision",
         "hashes",
