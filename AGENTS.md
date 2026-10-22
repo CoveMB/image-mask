@@ -83,3 +83,5 @@ Maintain a local, single-photo workflow for black-background photography with ed
 ## Optional assisted review
 
 Use [the bounded assisted workflow](docs/assistant-workflow.md) for supported commands, data/coordinate meanings, effect availability, preservation and the two-attempt source-based procedure. Keep engineering safeguards above in force. Assistance never supplies human trimap or photographic acceptance.
+
+For named looks or framing references, follow the [named local reference workflow](docs/assistant-workflow.md#named-local-references).
