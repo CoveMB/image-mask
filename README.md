@@ -37,6 +37,8 @@ shared across photographs. Import creates no result or gallery image.
 Complete native generation maintains one reduced JPEG per imported photo with a
 Draft/Accepted footer and explicit pending recovery. It follows the latest generated
 Result independently of restore/export; see the [gallery contract](docs/file-contract.md#current-result-gallery).
+Repeating a fully validated equivalent effects Apply reuses the current result,
+preserving pending drafts and acceptance; [reuse rules](docs/file-contract.md#unchanged-effects-results) describe conservative misses.
 
 Scoped repairs save quantized operands for replay without models. Restore selects
 saved working inputs without changing final acceptance. `status` and `resume`

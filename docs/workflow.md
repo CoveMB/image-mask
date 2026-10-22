@@ -178,6 +178,17 @@ it consumes the current recipe section. Editing the recipe alone does not change
 appearance. The viewer records actual settings in the effects request without rewriting
 editable recipe defaults. Both routes save the same revision/effect contracts.
 
+### Repeat an unchanged adjustment
+
+Apply remains explicit. If the current effects request is fully equivalent after
+validation, the viewer reports **Reused current result; no new revision**. Acceptance
+and pending unrelated settings/areas stay as they were. Changed safety metadata or
+unproven equivalence computes normally. A reused result can still have pending
+gallery recovery or drafts that block acceptance. See the
+[saved reuse contract](file-contract.md#unchanged-effects-results).
+Saved-layer integrity checks still run before reuse, including Fade into background's
+cold geometry checks. Repeated spatial Disable uses saved shapes and keeps pending edits.
+
 ## Restore, resume and continue without an assistant
 
 Select a saved revision and **Restore working inputs**. Acceptance stays unchanged;

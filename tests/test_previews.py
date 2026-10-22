@@ -91,6 +91,80 @@ def test_generated_native_result_publishes_one_named_jpeg(tmp_path):
     assert (project.parent / "original/CAMERA.tif").read_bytes() == original
 
 
+def test_equivalent_submission_preserves_latest_history_and_repairs_only_current(tmp_path):
+    from blackmask import effects, previews
+
+    _, config, project = managed(tmp_path)
+    generate(project, config)
+    first = operations.apply_operation(project, shading_request(project), storage_config=config)
+    second = operations.apply_operation(
+        project, shading_request(project, opacity=0.24, opacity_only=True), storage_config=config
+    )
+    before = (project / "state.json").read_bytes()
+    alpha_and_weight = read_project(project)
+    path = jpeg(config, project)
+    path.unlink()  # Disposable synthetic derivative only.
+    with patch.object(effects, "make_shadow_weight", side_effect=AssertionError("repeat W")):
+        repeated = operations.apply_operation(
+            project,
+            shading_request(project, opacity=0.24, opacity_only=True),
+            storage_config=config,
+        )
+    assert repeated["reused"] and repeated["revision"] == second["revision"]
+    assert path.exists() and repeated["preview_pending"] is False
+    assert before == (project / "state.json").read_bytes()
+    operations.accept_revision(project, second["revision"], storage_config=config)
+    operations.restore_revision(
+        project, first["revision"], replace_drafts=True, storage_config=config
+    )
+    before = (project / "state.json").read_bytes()
+    # Restore A does not regenerate its result; its exact original rebuild can be reused.
+    with patch.object(
+        previews, "_render_latest", side_effect=AssertionError("older reuse rendered gallery")
+    ):
+        older = operations.apply_operation(project, shading_request(project), storage_config=config)
+    assert older["reused"] and older["revision"] == first["revision"]
+    assert before == (project / "state.json").read_bytes()
+    assert marker(path)["revision"] == second["revision"]
+    assert marker(path)["status"] == "Accepted"
+    assert (
+        read_project(project)["latest_result_revision"]
+        == alpha_and_weight["latest_result_revision"]
+    )
+
+
+@pytest.mark.parametrize("fault", ["receipt", "jpeg"])
+def test_reuse_preview_failure_preserves_native_result_and_pending(tmp_path, monkeypatch, fault):
+    from blackmask import previews
+
+    _, config, project = managed(tmp_path)
+    generate(project, config)
+    first = operations.apply_operation(project, shading_request(project), storage_config=config)
+    jpeg(config, project).unlink()
+    before = (project / "state.json").read_bytes()
+    if fault == "jpeg":
+        monkeypatch.setattr(
+            previews,
+            "_publish_gallery_bytes",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("gallery fault")),
+        )
+    else:
+        original = previews._atomic_json
+
+        def uncertain(path, *args, **kwargs):
+            original(path, *args, **kwargs)
+            raise OSError("receipt sync uncertainty")
+
+        monkeypatch.setattr(previews, "_atomic_json", uncertain)
+    result = operations.apply_operation(project, shading_request(project), storage_config=config)
+    assert result["reused"] and result["revision"] == first["revision"]
+    assert result["preview_pending"] is True
+    assert "fault" in result["preview"].get("error", "") or "uncertainty" in result["preview"].get(
+        "error", ""
+    )
+    assert before == (project / "state.json").read_bytes()
+
+
 @pytest.mark.parametrize("extra", [1, 4])
 def test_new_import_reserves_jpg_capacity_before_any_mutation(tmp_path, extra):
     config_path, destination = configuration(tmp_path)

@@ -128,7 +128,10 @@ def test_effect_requires_accepted_base_or_explicit_candidate_and_rejects_stale(t
     with pytest.raises(ProjectError, match="accepted.*base|candidate"):
         operations.apply_operation(project, old)
     operations.accept_revision(project, result["revision"])
-    operations.apply_operation(project, effect_request(project))
+    repeated = operations.apply_operation(project, effect_request(project))
+    assert repeated["reused"] and repeated["revision"] == result["revision"]
+    changed = operations.apply_operation(project, effect_request(project, strength=0.5))
+    assert changed["reused"] is False and changed["revision"] != result["revision"]
     with pytest.raises(ProjectError, match="Stale"):
         operations.apply_operation(project, old)
 
@@ -868,6 +871,572 @@ def shading_request(project, *, opacity=0.12, enabled=True, opacity_only=False, 
         Image.fromarray(protection).save(project / "shading-protection.png")
         operation["shading_protection_file"] = "shading-protection.png"
     return operation
+
+
+@pytest.mark.parametrize("prior_shading", [True, False])
+def test_geometry_omitting_shading_disable_reuses_effective_saved_settings(tmp_path, prior_shading):
+    import tomllib
+    from contextlib import ExitStack
+
+    import tomli_w
+
+    from blackmask import effects, models, review
+
+    project, _, _ = fixture_project(tmp_path)
+    if prior_shading:
+        operations.apply_operation(project, shading_request(project))
+    operation = shading_request(project, enabled=False, opacity=0)
+    operation["shading"] = {"enabled": False, "opacity": 0}
+    first = operations.apply_operation(project, operation)
+    directory = project / "revisions" / first["revision"]
+    assert json.loads((directory / "request.json").read_bytes()) == operation
+    operations.accept_revision(project, first["revision"])
+    recipe = tomllib.loads((project / "recipe.toml").read_text())
+    recipe["local_exposure"]["ev"] = 1.1
+    (project / "recipe.toml").write_bytes(tomli_w.dumps(recipe).encode())
+    repeated = dict(
+        operation, base_revision=first["revision"], inputs_digest=operations.draft_digest(project)
+    )
+    before = {
+        str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    }
+    with ExitStack() as guards:
+        for owner, name in (
+            (effects, "make_corrected_rgb"),
+            (effects, "make_shadow_weight"),
+            (review, "write_revision_overview"),
+            (operations, "VitMatteSession"),
+            (models, "SamSession"),
+        ):
+            guards.enter_context(
+                patch.object(
+                    owner, name, side_effect=AssertionError("generation on identical disable")
+                )
+            )
+        second = operations.apply_operation(project, repeated)
+    assert second["reused"] is True and second["revision"] == first["revision"]
+    assert second["parent"] == first["parent"]
+    assert second["manifest_file"] == first["manifest_file"]
+    assert second["status"] == read_project(project)["status"] == "accepted"
+    assert before == {
+        str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    }
+    expected = {"enabled": False, "opacity": 0}
+    if prior_shading:
+        expected.update(width_px=3.0, direction_degrees=90.0)
+    assert first["shading"]["settings"] == expected
+    assert second["effects_reuse"]["request"]["shading"] == expected
+    assert (
+        json.loads((directory / "inputs/effects.json").read_bytes())["request"]["shading"]
+        == expected
+    )
+
+
+def test_disabled_shading_changed_geometry_creates_meaningful_result(tmp_path):
+    project, _, _ = fixture_project(tmp_path)
+    operations.apply_operation(project, shading_request(project))
+    disabled_request = shading_request(project, enabled=False, opacity=0)
+    disabled_request["shading"] = {"enabled": False, "opacity": 0}
+    disabled = operations.apply_operation(project, disabled_request)
+    previous_rgb, previous_alpha, _ = saved_layers(
+        project, disabled["revision"], read_project(project)["developed_id"]
+    )
+    changed_request = shading_request(project, enabled=False, opacity=0)
+    changed_request["shading"]["width_px"] = 7
+    changed = operations.apply_operation(project, changed_request)
+    assert changed["reused"] is False and changed["revision"] != disabled["revision"]
+    assert changed["shading"]["settings"]["width_px"] == 7
+    rgb, alpha, _ = saved_layers(
+        project, changed["revision"], read_project(project)["developed_id"]
+    )
+    np.testing.assert_array_equal(rgb, previous_rgb)
+    np.testing.assert_array_equal(alpha, previous_alpha)
+    repeat = shading_request(project, enabled=False, opacity=0)
+    repeat["shading"] = {"enabled": False, "opacity": 0}
+    before = {
+        str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    }
+    reused = operations.apply_operation(project, repeat)
+    assert reused["reused"] and reused["revision"] == changed["revision"]
+    assert reused["shading"]["settings"]["width_px"] == 7
+    assert before == {
+        str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    "malformed", ["missing-direction", "zero-width", "invalid-direction", "opacity-only"]
+)
+def test_shading_disable_reuse_keeps_geometry_validation(tmp_path, malformed):
+    project, _, _ = fixture_project(tmp_path)
+    operations.apply_operation(project, shading_request(project))
+    disabled = shading_request(project, enabled=False, opacity=0)
+    disabled["shading"] = {"enabled": False, "opacity": 0}
+    operations.apply_operation(project, disabled)
+    operation = shading_request(project, enabled=False, opacity=0)
+    if malformed == "missing-direction":
+        operation["shading"].pop("direction_degrees")
+    elif malformed == "zero-width":
+        operation["shading"]["width_px"] = 0
+    elif malformed == "invalid-direction":
+        operation["shading"]["direction_degrees"] = 360
+    else:
+        operation["shading"] = {"enabled": False, "opacity": 0}
+        operation["opacity_only"] = True
+    before = {
+        str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    }
+    with pytest.raises(
+        ProjectError, match="shading settings|positive width|cannot change geometry"
+    ):
+        operations.apply_operation(project, operation)
+    assert before == {
+        str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "cleanup",
+        "cleanup-off",
+        "shading",
+        "opacity",
+        "shading-off",
+        "exposure",
+        "exposure-amount",
+        "exposure-off",
+        "fade",
+        "fade-amount",
+        "fade-off",
+        "background",
+    ],
+)
+def test_identical_effects_request_reuses_current_after_identity_checks(tmp_path, mode):
+    """Unconditional revision publication/generation must fail this contract."""
+    from contextlib import ExitStack
+
+    from test_background import background_request
+    from test_exposure import exposure_request
+    from test_shadow_fade import fade_request
+
+    from blackmask import background, effects
+
+    project, _, _ = fixture_project(tmp_path)
+    if mode == "opacity":
+        operations.apply_operation(project, shading_request(project))
+    if mode == "exposure-amount":
+        operations.apply_operation(project, exposure_request(project))
+    if mode == "fade-amount":
+        operations.apply_operation(project, fade_request(project))
+    if mode.startswith("cleanup"):
+        operation = effect_request(
+            project, enabled=mode != "cleanup-off", candidate_comparison=True
+        )
+    elif mode in {"shading", "opacity", "shading-off"}:
+        operation = shading_request(
+            project, opacity=0.24, opacity_only=mode == "opacity", enabled=mode != "shading-off"
+        )
+    elif mode.startswith("exposure"):
+        operation = exposure_request(
+            project, ev=0.75, amount_only=mode == "exposure-amount", enabled=mode != "exposure-off"
+        )
+    elif mode.startswith("fade"):
+        operation = fade_request(
+            project, amount=0.3, amount_only=mode == "fade-amount", enabled=mode != "fade-off"
+        )
+    else:
+        operation = background_request(project)
+    first = operations.apply_operation(project, operation)
+    before = {
+        str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    }
+    repeated = dict(
+        operation, base_revision=first["revision"], inputs_digest=operations.draft_digest(project)
+    )
+    with ExitStack() as guards:
+        for owner, name in (
+            (effects, "make_corrected_rgb"),
+            (effects, "make_shadow_weight"),
+            (effects, "write_revision_overview"),
+            (background, "make_background"),
+        ):
+            # The overview import is function-local in the baseline.
+            if name == "write_revision_overview":
+                from blackmask import review
+
+                owner = review
+            guards.enter_context(
+                patch.object(owner, name, side_effect=AssertionError("generation on reuse"))
+            )
+        guards.enter_context(
+            patch(
+                "blackmask.operations.VitMatteSession", side_effect=AssertionError("model on reuse")
+            )
+        )
+        second = operations.apply_operation(project, repeated)
+    assert second["reused"] is True
+    assert second["revision"] == first["revision"]
+    assert second["parent"] == first["parent"]
+    assert second["manifest_file"] == first["manifest_file"]
+    assert second["revision_inputs_digest"] == first["revision_inputs_digest"]
+    assert before == {
+        str(p.relative_to(project)): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    }
+    with pytest.raises(ProjectError, match="Stale"):
+        operations.apply_operation(project, operation)
+
+
+def test_reuse_preserves_pending_drafts_and_accepted_status(tmp_path):
+    import tomllib
+
+    import tomli_w
+
+    project, _, _ = fixture_project(tmp_path)
+    operation = shading_request(project)
+    first = operations.apply_operation(project, operation)
+    operations.accept_revision(project, first["revision"])
+    recipe = tomllib.loads((project / "recipe.toml").read_text())
+    recipe["notes"] = "Keep this pending note"
+    recipe["local_exposure"] = {"enabled": True, "ev": 1.25}
+    (project / "recipe.toml").write_text(tomli_w.dumps(recipe))
+    before = {
+        name: (project / name).read_bytes() for name in ("recipe.toml", "guides.json", "state.json")
+    }
+    result = operations.apply_operation(
+        project,
+        dict(
+            operation,
+            base_revision=first["revision"],
+            inputs_digest=operations.draft_digest(project),
+        ),
+    )
+    assert result["reused"] is True and result["status"] == "accepted"
+    assert result["inputs_digest"] != result["revision_inputs_digest"]
+    assert before == {name: (project / name).read_bytes() for name in before}
+    with pytest.raises(ProjectError, match="Stale final acceptance"):
+        operations.accept_revision(project, first["revision"])
+
+
+@pytest.mark.parametrize(
+    "changed", ["scope", "support", "candidate", "execution", "package", "unknown"]
+)
+def test_effect_reuse_requires_current_operands_and_provenance(tmp_path, changed, monkeypatch):
+    from blackmask import effects
+
+    project, _, _ = fixture_project(tmp_path)
+    operation = effect_request(project, candidate_comparison=True)
+    first = operations.apply_operation(project, operation)
+    operations.accept_revision(project, first["revision"])
+    repeated = dict(
+        operation, base_revision=first["revision"], inputs_digest=operations.draft_digest(project)
+    )
+    if changed == "scope":
+        repeated["scope_xyxy"] = [0, 0, 5, 4]
+    elif changed == "support":
+        support = np.zeros((4, 6), dtype=np.uint16)
+        support[:, 1:5] = 32768
+        Image.fromarray(support).save(project / "cleanup-support.png")
+    elif changed == "candidate":
+        repeated["candidate_comparison"] = False
+    elif changed == "execution":
+        monkeypatch.setattr(effects, "EFFECTS_EXECUTION_VERSION", "different-version")
+    elif changed == "package":
+        original = effects.version
+        monkeypatch.setattr(
+            effects,
+            "version",
+            lambda name: "different-package" if name == "numpy" else original(name),
+        )
+    else:
+        monkeypatch.setattr(effects, "_effects_execution_identity", lambda: None)
+    result = operations.apply_operation(project, repeated)
+    assert result["reused"] is False and result["revision"] != first["revision"]
+    assert read_project(project)["accepted_revision"] == first["revision"]
+
+
+def test_metadata_only_revision_preserves_pixels_and_new_protection(tmp_path):
+    project, _, _ = fixture_project(tmp_path)
+    operation = shading_request(project)
+    first = operations.apply_operation(project, operation)
+    state = read_project(project)
+    _, alpha, before = saved_layers(project, first["revision"], state["developed_id"])
+    protection = np.zeros((4, 6), dtype=np.uint16)
+    protection[2, 3] = 65535
+    protection[0, 5] = 65535  # Outside the write support: unchanged pixels, changed safety input.
+    assert np.any((alpha > 0) & (alpha < 65535))
+    Image.fromarray(protection).save(project / "shading-protection.png")
+    result = operations.apply_operation(
+        project,
+        dict(
+            operation,
+            base_revision=first["revision"],
+            inputs_digest=operations.draft_digest(project),
+        ),
+    )
+    _, _, after = saved_layers(project, result["revision"], state["developed_id"])
+    assert result["revision"] != first["revision"] and result["reused"] is False
+    assert before["assets"] == after["assets"]
+    assert before["effects_reuse"] != after["effects_reuse"]
+
+
+@pytest.mark.parametrize(
+    "changed", ["state.json", "recipe.toml", "source.json", "cleanup-support.png", "request"]
+)
+def test_reuse_rechecks_captured_inputs_before_return(tmp_path, changed, monkeypatch):
+    from blackmask import effects
+
+    project, _, _ = fixture_project(tmp_path)
+    operation = effect_request(project, candidate_comparison=True)
+    first = operations.apply_operation(project, operation)
+    repeated = dict(
+        operation, base_revision=first["revision"], inputs_digest=operations.draft_digest(project)
+    )
+    request_file = project / "repeat.json"
+    request_file.write_text(json.dumps(repeated))
+    target = request_file if changed == "request" else project / changed
+    original = effects._reused_effects_result
+    before_state = (project / "state.json").read_bytes()
+
+    def mutate(*arguments):
+        result = original(*arguments)
+        assert result is not None
+        target.write_bytes(target.read_bytes() + b"\n")
+        return result
+
+    monkeypatch.setattr(effects, "_reused_effects_result", mutate)
+    with pytest.raises(ProjectError, match="Stale"):
+        operations.apply_operation(project, repeated, request_file=request_file)
+    if changed != "state.json":
+        assert (project / "state.json").read_bytes() == before_state
+    assert target.read_bytes().endswith(b"\n")
+
+
+def test_failed_submission_does_not_publish_result_and_keeps_captured_inputs(tmp_path):
+    import hashlib
+
+    project, _, _ = fixture_project(tmp_path)
+    before = (project / "state.json").read_bytes()
+    operation = effect_request(project, candidate_comparison=True)
+    with (
+        patch(
+            "blackmask.effects.make_corrected_rgb", side_effect=RuntimeError("computation fault")
+        ),
+        pytest.raises(RuntimeError, match="computation fault"),
+    ):
+        operations.apply_operation(project, operation)
+    (stage,) = (project / "revisions").glob(".effects-*")
+    assert json.loads((stage / "request.json").read_bytes()) == operation
+    assert (stage / "inputs/state.json").read_bytes() == before
+    assert (
+        json.loads((stage / "inputs/effects.json").read_bytes())["inputs"]["request_files"][
+            "support_file"
+        ]
+        == hashlib.sha256((project / "cleanup-support.png").read_bytes()).hexdigest()
+    )
+    assert (project / "state.json").read_bytes() == before
+    assert not (stage / "manifest.json").exists()
+
+
+def test_equivalent_input_locator_reuses_actual_bytes(tmp_path):
+    project, _, _ = fixture_project(tmp_path)
+    operation = effect_request(project, candidate_comparison=True)
+    first = operations.apply_operation(project, operation)
+    (project / "same-support.png").write_bytes((project / "cleanup-support.png").read_bytes())
+    result = operations.apply_operation(
+        project,
+        dict(
+            operation,
+            support_file="same-support.png",
+            base_revision=first["revision"],
+            inputs_digest=operations.draft_digest(project),
+        ),
+    )
+    assert result["reused"] is True and result["revision"] == first["revision"]
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        "absent",
+        "unknown",
+        "boolean-schema",
+        "legacy-execution",
+        "legacy-execution-v2",
+        "result-mismatch",
+        "wrong-request",
+        "wrong-shading-geometry",
+        "wrong-algorithm",
+    ],
+)
+def test_unproven_saved_effects_evidence_computes_normally(tmp_path, evidence):
+    from blackmask.project import digest
+
+    project, _, _ = fixture_project(tmp_path)
+    operation = shading_request(project)
+    first = operations.apply_operation(project, operation)
+    directory = project / "revisions" / first["revision"]
+    manifest = json.loads((directory / "manifest.json").read_bytes())
+    result = json.loads((directory / "result.json").read_bytes())
+    if evidence == "absent":
+        manifest.pop("effects_reuse")
+        result.pop("effects_reuse")
+    elif evidence == "unknown":
+        manifest["effects_reuse"]["schema_version"] = 99
+        result["effects_reuse"]["schema_version"] = 99
+    elif evidence == "boolean-schema":
+        manifest["effects_reuse"]["schema_version"] = True
+        result["effects_reuse"]["schema_version"] = True
+    elif evidence in {"legacy-execution", "legacy-execution-v2"}:
+        old_version = (
+            "validated-effects-v2" if evidence == "legacy-execution-v2" else "validated-effects-v1"
+        )
+        manifest["effects_reuse"]["execution"]["version"] = old_version
+        result["effects_reuse"]["execution"]["version"] = old_version
+    elif evidence == "result-mismatch":
+        result["effects_reuse"]["schema_version"] = 99
+    elif evidence in {"wrong-request", "wrong-shading-geometry"}:
+        saved = json.loads((directory / "request.json").read_bytes())
+        if evidence == "wrong-request":
+            saved["base_revision"] = first["revision"]
+        else:
+            saved["shading"]["width_px"] = 9
+        (directory / "request.json").write_text(json.dumps(saved))
+        manifest["files"]["request.json"] = digest((directory / "request.json").read_bytes())
+    else:
+        manifest["shading"]["algorithm"] = "unknown-algorithm"
+    (directory / "result.json").write_text(json.dumps(result))
+    manifest["files"]["result.json"] = digest((directory / "result.json").read_bytes())
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    original = (directory / "manifest.json").read_bytes()
+    completed = operations.apply_operation(project, shading_request(project))
+    assert completed["reused"] is False and completed["revision"] != first["revision"]
+    assert (directory / "manifest.json").read_bytes() == original
+
+
+def test_equivalent_effects_cli_and_actual_viewer_protocol(tmp_path):
+    import subprocess
+    import sys
+    import time
+
+    from test_viewer import http, running
+
+    project, _, _ = fixture_project(tmp_path)
+    first = operations.apply_operation(project, shading_request(project))
+    operation = shading_request(project)
+    filename = project / "repeat-request.json"
+    filename.write_text(json.dumps(operation))
+    before = (project / "state.json").read_bytes()
+    bound_cli = 'import sys;from pathlib import Path;from blackmask import cli;assert Path(cli.__file__).is_relative_to(Path.cwd()/"src");sys.exit(cli.main())'
+    completed = subprocess.run(
+        [sys.executable, "-B", "-c", bound_cli, "run", str(project), "--request", str(filename)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert completed.returncode == 0, completed.stderr
+    returned = json.loads(completed.stdout)
+    assert returned["reused"] and returned["revision"] == first["revision"]
+    with running(project) as server:
+        payload = dict(
+            operation, action="effects", authoring_digest=server.snapshot()["authoring_digest"]
+        )
+        payload.pop("schema_version")
+        payload.pop("kind")
+        assert (
+            http(server, "/api/action", "POST", payload, Origin="https://attacker.invalid")[0]
+            == 403
+        )
+        assert http(server, "/api/action", "POST", payload)[0] == 202
+        for _ in range(200):
+            current = server.snapshot()["action"]
+            if not current["running"]:
+                break
+            time.sleep(0.01)
+        assert not current["running"] and not current["error"], current
+        assert current["result"]["reused"] and current["result"]["revision"] == first["revision"]
+        with pytest.raises(ProjectError, match="Stale viewer"):
+            server.execute(dict(payload, inputs_digest="0" * 64))
+    assert (project / "state.json").read_bytes() == before
+
+
+def test_equivalent_effects_still_requires_actual_process_writer_lock(tmp_path):
+    import subprocess
+    import sys
+
+    project, _, _ = fixture_project(tmp_path)
+    first = operations.apply_operation(project, shading_request(project))
+    operation = shading_request(project)
+    program = 'import sys;from pathlib import Path;from blackmask.project import project_lock\nwith project_lock(Path(sys.argv[1])):\n print("locked",flush=True)\n sys.stdin.read(1)'
+    child = subprocess.Popen(
+        [sys.executable, "-B", "-c", program, str(project)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert child.stdout.readline().strip() == "locked"
+        with pytest.raises(ProjectError, match="busy"):
+            operations.apply_operation(project, operation)
+    finally:
+        _, errors = child.communicate("x", timeout=10)
+        assert child.returncode == 0, errors
+    repeated = operations.apply_operation(project, operation)
+    assert repeated["reused"] and repeated["revision"] == first["revision"]
+
+
+@pytest.mark.parametrize(
+    "changed",
+    ["guides", "backend", "source", "alpha", "support", "permission", "symlink", "identity"],
+)
+def test_equivalent_effects_cannot_bypass_current_input_validation(tmp_path, changed):
+    import tomllib
+
+    import tomli_w
+
+    project, _, _ = fixture_project(tmp_path)
+    operation = shading_request(project)
+    first = operations.apply_operation(project, operation)
+    before = (project / "state.json").read_bytes()
+    repeated = dict(operation, base_revision=first["revision"])
+    if changed == "guides":
+        guides = json.loads((project / "guides.json").read_bytes())
+        guides["regions"][0]["xyxy"] = [0, 0, 1, 3]
+        (project / "guides.json").write_text(json.dumps(guides))
+    elif changed == "backend":
+        recipe = tomllib.loads((project / "recipe.toml").read_text())
+        recipe["matting"]["device"] = "mps"
+        (project / "recipe.toml").write_text(tomli_w.dumps(recipe))
+    elif changed == "source":
+        path = project / "assets/developed" / (read_project(project)["developed_id"] + ".tif")
+        path.write_bytes(path.read_bytes() + b"changed source identity")
+    elif changed == "alpha":
+        manifest = json.loads(
+            (project / "revisions" / first["revision"] / "manifest.json").read_bytes()
+        )
+        path = project / manifest["assets"]["base_alpha16.png"]["path"]
+        Image.fromarray(np.zeros((4, 6), dtype=np.uint16)).save(path)
+    elif changed == "support":
+        Image.fromarray(np.zeros((2, 2), dtype=np.uint16)).save(project / "cleanup-support.png")
+    elif changed == "permission":
+        repeated["candidate_comparison"] = False
+    elif changed == "symlink":
+        (project / "input-alias.png").symlink_to(project / "cleanup-support.png")
+        repeated["support_file"] = "input-alias.png"
+    else:
+        repeated["developed_id"] = "f" * 64
+    repeated["inputs_digest"] = operations.draft_digest(project)
+    with (
+        patch(
+            "blackmask.effects.make_shadow_weight",
+            side_effect=AssertionError("generation before validation"),
+        ),
+        pytest.raises(ProjectError),
+    ):
+        operations.apply_operation(project, repeated)
+    assert (project / "state.json").read_bytes() == before
 
 
 def test_shading_saved_operation_independent_cleanup_global_opacity_and_export(tmp_path):

@@ -142,6 +142,31 @@ certification remains unperformed. Browser, photographic, automated and human
 acceptance claims above are deliberately separate; human photographic acceptance
 and a representative editable branching-photo evaluation remain pending.
 
+## Unchanged effects requests
+
+The deterministic checks exercise repeated cleanup, shading rebuild/opacity,
+exposure and Shadow fade area/amount/disable, background and spatial Fade into background
+submissions through
+the shared operation owner. They check same revision/assets, independent draft
+and acceptance state, current identity/permission validation, meaningful changed
+protection/provenance, final input rechecks and failed-stage diagnostics.
+Geometry-omitting shading disable is checked with and without prior shading,
+changed/invalid geometry and legacy proof. Reused exposure/fade Reset checks paired
+controls and unrelated drafts, including failed and mismatched completions. CLI,
+viewer protocol/page handlers and latest-result gallery recovery remain connected
+to that owner. Restore A with latest B must not turn reuse into new generation.
+Spatial cases cover ON/OFF/inactive shapes, numeric equivalents, actual protection
+bytes, metadata-only protection changes, inherited saved-output bindings and matching
+reused Disable without consuming pending geometry. Cold semantic geometry validation
+is counted separately from new effects-output W generation; warm reuse retains the
+existing validation cache and mandatory binding/hash checks.
+
+Model and W-generation sentinels demonstrate routing and avoided work at those
+boundaries. They do not measure real inference speed, visual quality or human
+acceptance. Saved asset replay, extracted-package execution and native browser
+observations are separate evidence scopes. Unknown execution/request provenance
+computes normally; passing mathematical checks do not justify broader reuse.
+
 ## Current Result gallery
 
 `tests/test_previews.py` exercises synthetic imported-photo publication, native scalar
