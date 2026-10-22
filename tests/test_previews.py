@@ -918,3 +918,216 @@ def test_oversized_foreign_jpeg_header_is_pending_without_decode_or_native_failu
     assert read_project(project)["latest_result_revision"] == result["revision"]
     assert "collision preserved" in status["error"]
     assert path.read_bytes() == malformed
+
+
+def configured_reader(route, project, config_path, config):
+    """Exercise actual startup/HTTP; bound only browser launch and server lifetime."""
+    if route == "headless":
+        from test_library import command
+
+        result = command("--config", config_path, "open", "--project", project, "--headless")
+        assert result.returncode == 0, result.stderr
+        return json.loads(result.stdout)
+
+    import threading
+
+    from test_viewer import http
+
+    from blackmask import viewer
+
+    snapshots = []
+    original_serve = viewer.ReviewServer.serve_forever
+
+    def bounded_serve(server):
+        thread = threading.Thread(target=original_serve, args=(server,), daemon=True)
+        thread.start()
+        try:
+            status, body, _ = http(server)
+            assert status == 200, body
+            snapshots.append(json.loads(body))
+        finally:
+            server.shutdown()
+            thread.join(5)
+            assert not thread.is_alive()
+
+    with (
+        patch.object(viewer.webbrowser, "open", return_value=True) as browser,
+        patch.object(viewer.ReviewServer, "serve_forever", new=bounded_serve),
+    ):
+        viewer.open_viewer(project, storage_config=config)
+    assert browser.call_count == 1 and len(snapshots) == 1
+    return snapshots[0]
+
+
+def inventory_with_times(root):
+    return inventory(root), {
+        str(path.relative_to(root)): path.lstat().st_mtime_ns for path in root.rglob("*")
+    }
+
+
+@pytest.mark.parametrize("route", ["headless", "viewer"])
+@pytest.mark.parametrize("pending", [False, True])
+def test_configured_reopen_reads_during_real_writer_and_repairs_when_idle(tmp_path, route, pending):
+    import subprocess
+    import sys
+
+    from test_library import SOURCE_ROOT, command
+
+    config_path, config, project = managed(tmp_path)
+    result = generate(project, config)
+    if pending:
+        (project / "preview.json").rename(project / "retained-receipt.json")
+    state_bytes = (project / "state.json").read_bytes()
+    revisions = inventory_with_times(project / "revisions")
+    code = """
+import sys
+from pathlib import Path
+import blackmask.project as project
+assert Path(project.__file__).is_relative_to(Path(sys.argv[2]))
+with project.project_lock(Path(sys.argv[1])):
+    print('locked',flush=True)
+    sys.stdin.readline()
+"""
+    worker = subprocess.Popen(
+        [sys.executable, "-B", "-c", code, str(project), str(SOURCE_ROOT)],
+        env=dict(os.environ, PYTHONPATH=str(SOURCE_ROOT)),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert worker.stdout.readline().strip() == "locked"
+        before = inventory_with_times(config.destination)
+        actual = configured_reader(route, project, config_path, config)
+        assert actual["writer_busy"] is True
+        assert actual["preview"]["status"] == ("pending" if pending else "current")
+        assert actual["latest_result_revision"] == result["revision"]
+        assert actual["preview"]["latest_result_revision"] == result["revision"]
+        assert actual["preview_pending"] is pending
+        assert inventory_with_times(config.destination) == before
+        repaired = command("--config", config_path, "preview", "repair", project)
+        assert repaired.returncode == 1 and "Project busy" in repaired.stderr
+        accepted = command(
+            "--config", config_path, "accept", project, "--revision", result["revision"]
+        )
+        assert accepted.returncode == 1 and "Project busy" in accepted.stderr
+        assert inventory_with_times(config.destination) == before
+    finally:
+        output, error = worker.communicate("release\n", timeout=10)
+        assert worker.returncode == 0, (output, error)
+    before_idle = inventory_with_times(config.destination)
+    actual = configured_reader(route, project, config_path, config)
+    assert actual["writer_busy"] is False and actual["preview"]["status"] == "current"
+    assert actual["latest_result_revision"] == result["revision"]
+    assert (project / "state.json").read_bytes() == state_bytes
+    assert inventory_with_times(project / "revisions") == revisions
+    if not pending:
+        assert inventory_with_times(config.destination) == before_idle
+
+
+@pytest.mark.parametrize("route", ["headless", "viewer"])
+@pytest.mark.parametrize("failure", ["wrong-config", "invalid-lock"])
+def test_configured_reopen_propagates_nonbusy_errors(tmp_path, route, failure):
+    from test_library import command
+
+    from blackmask import viewer
+
+    config_path, config, project = managed(tmp_path)
+    generate(project, config)
+    if failure == "wrong-config":
+        config_path = config_path.with_name("wrong.toml")
+        config_path.write_text('[storage]\ndestination = "../wrong library"\n')
+        config = library.load_storage_config(config_path)
+        exception, message = ProjectError, "configured library"
+    else:
+        (project / ".writer.lock").rename(project / "retained-writer-lock")
+        (project / ".writer.lock").mkdir()
+        exception, message = OSError, "directory"
+    before = inventory_with_times(tmp_path)
+    if route == "headless":
+        result = command("--config", config_path, "open", "--project", project, "--headless")
+        assert result.returncode == 1 and message in result.stderr
+    else:
+        with (
+            patch.object(
+                viewer.webbrowser, "open", side_effect=AssertionError("unexpected browser")
+            ),
+            pytest.raises(exception, match=message),
+        ):
+            viewer.open_viewer(project, storage_config=config)
+    assert inventory_with_times(tmp_path) == before
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+@pytest.mark.parametrize("when", ["before", "after"])
+def test_headless_reopen_preserves_visible_receipt_sync_uncertainty(
+    tmp_path, monkeypatch, capsys, accepted, when
+):
+    import sys
+
+    from blackmask import cli, previews
+    from blackmask import project as storage
+
+    config_path, config, project = managed(tmp_path)
+    generated = generate(project, config)
+    if accepted:
+        operations.accept_revision(project, generated["revision"], storage_config=config)
+    receipt = project / "preview.json"
+    receipt.rename(project / "retained-receipt.json")
+    state_bytes = (project / "state.json").read_bytes()
+    before = inventory(config.destination)
+    real_sync = storage._sync_directory
+    events = []
+    diagnostic = f"injected receipt parent sync failure {when}"
+
+    def failed_sync(path):
+        if path == project and receipt.exists() and not events:
+            actual = json.loads(receipt.read_bytes())
+            assert actual["revision"] == generated["revision"]
+            assert actual["status"] == ("Accepted" if accepted else "Draft")
+            assert (
+                actual["jpeg_sha256"]
+                == hashlib.sha256(jpeg(config, project).read_bytes()).hexdigest()
+            )
+            events.append({"boundary": "visible receipt parent sync", "when": when})
+            if when == "after":
+                real_sync(path)
+            raise OSError(diagnostic)
+        return real_sync(path)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "blackmask",
+            "--config",
+            str(config_path),
+            "open",
+            "--project",
+            str(project),
+            "--headless",
+        ],
+    )
+    with patch.object(storage, "_sync_directory", side_effect=failed_sync):
+        assert cli.main() == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    reported = json.loads(captured.out)
+    assert len(events) == 1, "fault must hit the real post-publication receipt boundary"
+    readonly = previews.result_preview_status(project, config)
+    assert receipt.is_file() and readonly["status"] == "current"
+    assert (project / "state.json").read_bytes() == state_bytes
+    after = inventory(config.destination)
+    assert all(after[name] == value for name, value in before.items())
+    assert reported["latest_result_revision"] == generated["revision"]
+    assert reported["accepted_revision"] == (generated["revision"] if accepted else None)
+    assert reported["writer_busy"] is False
+    assert marker(jpeg(config, project))["status"] == ("Accepted" if accepted else "Draft")
+    assert reported["preview_pending"] is True, {
+        "reported_preview": reported["preview"],
+        "readonly": readonly,
+        "fault": events,
+    }
+    assert reported["preview"]["status"] == "pending"
+    assert reported["preview"]["error"] == diagnostic

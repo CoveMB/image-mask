@@ -1009,9 +1009,7 @@ def open_viewer(
     storage_config: StorageConfig | None = None,
 ) -> None:
     if storage_config is not None:
-        from .previews import refresh_result_preview
-
-        refresh_result_preview(project, storage_config)
+        operations.reopen_project_status(project, storage_config=storage_config)
     with ReviewServer(project, model_cache, sam_cache, storage_config=storage_config) as server:
         url = server.origin + "/#" + server.token
         print("Local review window: " + url, flush=True)

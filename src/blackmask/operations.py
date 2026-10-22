@@ -1053,6 +1053,25 @@ def operation_status(
     )
 
 
+def reopen_project_status(project: Path, *, storage_config: StorageConfig) -> dict[str, Any]:
+    """Refresh an idle configured gallery and report actual state without waiting."""
+    validate_library_project(project, storage_config)
+    from .previews import refresh_result_preview
+
+    preview: dict[str, Any] | None = None
+    try:
+        preview = refresh_result_preview(project, storage_config)
+    except ProjectError as error:
+        # project_lock preserves the precise flock contention as its cause.
+        if not isinstance(error.__cause__, BlockingIOError):
+            raise
+    status = operation_status(project, storage_config=storage_config)
+    # Visible files cannot establish durability after a failed publication sync.
+    if preview is not None and preview["status"] == "pending":
+        return dict(status, preview=preview, preview_pending=True)
+    return status
+
+
 def _matte(
     project: Path,
     operation: dict[str, Any],

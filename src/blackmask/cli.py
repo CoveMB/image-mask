@@ -27,6 +27,7 @@ from .operations import (
     apply_operation,
     draft_digest,
     operation_status,
+    reopen_project_status,
     resume_operation,
 )
 from .project import ProjectError, accept_development, create_project, read_project
@@ -234,14 +235,13 @@ def main() -> int:
             result = dict(
                 read_project(arguments.project), inputs_digest=draft_digest(arguments.project)
             )
-            from .previews import refresh_result_preview, result_preview_status
+            from .previews import result_preview_status
 
-            result["preview"] = (
-                refresh_result_preview(arguments.project, config)
-                if config is not None and arguments.headless
-                else result_preview_status(arguments.project, config)
-            )
-            result["preview_pending"] = result["preview"]["status"] == "pending"
+            if config is not None and arguments.headless:
+                result.update(reopen_project_status(arguments.project, storage_config=config))
+            else:
+                result["preview"] = result_preview_status(arguments.project, config)
+                result["preview_pending"] = result["preview"]["status"] == "pending"
             if not arguments.headless:
                 from .viewer import open_viewer
 
