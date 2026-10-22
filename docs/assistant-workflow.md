@@ -145,10 +145,17 @@ remove or alter inherited locks.
    attempt is reserved durably before model execution. At most **two repair
    attempts total across all defects** are allowed in this explicit cycle.
    Invalid proposals rejected before reservation do not spend an attempt.
-5. Inspect saved `review-before/manifest.json` and `review/manifest.json` under
-   the returned revision: identical native crops on source/black/gray/white/alpha,
-   plus `qa.json`, saved full-precision layers and preservation evidence. No second
-   automatic prepare/repair is allowed until the comparison is recorded.
+5. Run `.venv/bin/blackmask review PROJECT --revision REPAIR_REVISION`, using the
+   returned repair revision. This writes native RGB8/alpha8 PNG evidence under
+   `PROJECT/reviews/`. The returned absolute `manifest_file` identifies the after
+   manifest; its `assets.before_manifest` gives the matching before manifest's
+   project-relative path. Resolve that path from `PROJECT` and inspect both
+   manifests' `crops[].files` for identical native source/black/gray/white/alpha
+   crops, together with the repair revision's `qa.json`, saved full-precision
+   layers and preservation evidence. The
+   revision-local `review/manifest.json` and `review-before/manifest.json` locate
+   reduced JPEG overviews, not native inspection evidence. No second automatic
+   prepare/repair is allowed until the comparison is recorded.
 
 ## Assess, stop and present
 
@@ -162,6 +169,9 @@ remaining uncertainty and relevant before/after observations. Outcomes are
 attempt; the second assessment ends the budget. Alpha identical to the prepared
 parent forces `no_progress`, even if an improvement was claimed. This equality
 check can disprove a change; numerical change cannot prove visual improvement.
+The assessment response records project-relative `before_manifest` and
+`after_manifest` paths to its native evidence under `reviews/`; retain those
+returned paths with the recorded comparison.
 
 Stop earlier on ambiguity, absent source evidence, no clear improvement, a new
 regression or an artistic choice. To stop before a successful repair exists, send

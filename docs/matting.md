@@ -71,10 +71,13 @@ from the saved RGB16 master. Acceptance itself is not a blanket region lock.
 
 ## Review and final-photo acceptance
 
-The returned matte revision contains saved `base_alpha16.png`,
-`foreground_rgb16.tif`, structural `qa.json` and `review/manifest.json`. Review
-assets are native RGB8/alpha8 approximations; the contact sheet's panel order is
-source, black, gray, white, alpha. Inspect the full-precision assets separately.
+The completed matte's revision manifest binds saved `base_alpha16.png` and
+`foreground_rgb16.tif` through shared `assets`; structural `qa.json` stays in the
+revision. Its `review/manifest.json` locates reduced RGB8 JPEG overview panels,
+with native crop coordinates and display transforms. Use the explicit `review`
+commands below for native RGB8/alpha8 PNG crops and a contact sheet under `reviews/`.
+The diagnostic panel order is source, black, gray, white, alpha, followed by the
+saved-background result when present. Inspect the full-precision assets separately.
 Human visual status remains pending until explicit final acceptance; computation
 and synthetic fixture tests do not approve a photograph.
 
@@ -176,12 +179,19 @@ are preserved exactly. Inconsistent outside-scope lock bindings are rejected.
 .venv/bin/blackmask replay /path/to/project --revision ACTUAL_REPAIR_REVISION
 ```
 
-The returned review manifest and saved `review-before/manifest.json` use the same
-native context for source, before, after and alpha viewing panels. The default
-`review` command retains those saved crops; `--crops` explicitly overrides them. Inspect saved
-RGB16/alpha16 separately for precision; the panels are labelled RGB8 viewing
-approximations. Final acceptance remains a separate human action using `accept
---revision`, and the existing accepted export stays available during repair.
+Repair's returned `review_manifest_file` and revision-local
+`review-before/manifest.json` describe reduced JPEG overview panels, not native
+inspection evidence. Run the explicit `review` command above to write matching
+native PNG crops under the project's `reviews/`. Its returned absolute
+`manifest_file` identifies the after manifest; that manifest's
+`assets.before_manifest` is the project-relative path to the matching before
+manifest. Resolve it from the project root and follow each manifest's
+`crops[].files` for the source/black/gray/white/alpha panels. The default command
+uses the saved native context crops; `--crops` explicitly overrides them on both
+sides. Inspect saved RGB16/alpha16 separately for precision; native PNG panels
+remain labelled RGB8/alpha8 viewing approximations. Final acceptance remains a
+separate human action using `accept --revision`, and the existing accepted export
+stays available during repair.
 
 Repair saves and reloads parent P, candidate C and support16 before merging.
 Replace uses D=C; increase-only uses max(P,C); decrease-only uses min(P,C).
