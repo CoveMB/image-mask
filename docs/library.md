@@ -22,6 +22,7 @@ Use the installed `blackmask` command, or `.venv/bin/blackmask` from the reposit
 | Resume an interrupted import | `--config FILE import-resume PENDING/import.json` |
 | Open the returned project | `--config FILE open --project PROJECT` |
 | Read existing project status | `--config FILE status PROJECT` |
+| Repair the latest Result gallery image | `--config FILE preview repair PROJECT` |
 
 Initialize first, then place the selected regular capture and optional sidecars
 directly inside `Inbox`. No neighboring files are selected automatically. Sidecars
@@ -36,8 +37,25 @@ Use one readable subject component, with no surrounding whitespace, path separat
 or control characters. Unicode and internal spaces are supported. The folder name
 is frozen at import; the camera filename stays unchanged. Its `original/` holds the
 capture and declared sidecars; `project/` holds the editable project. Import creates
-no Result, gallery image or acceptance event. The preview/comparison folders can
-remain empty.
+no Result, gallery image or acceptance event. The comparison folder can remain empty.
+Complete native generation maintains one `<frozen-folder-name>.jpg` with a
+Draft/Accepted footer outside the photograph. It follows the latest generated Result
+after restoring older work. This reduced lossy viewing copy never replaces editable
+layers or native exports.
+
+Use the same explicit config for imported-project run, resume, acceptance, restore,
+export and viewer actions. Read-only status/open without config reports missing
+context. Configured reopen or explicit repair rebuilds pending output from saved
+assets without models or the original. Polling never repairs. Native completion
+survives gallery failure with `preview_pending`; resolve the reported cause and
+retry repair. Unknown collisions and failed temporaries remain preserved.
+
+New subject proposals must leave room for `.jpg` in the actual gallery parent's
+filename-byte limit, including the fixed photo/date prefix. Unicode bytes count.
+This check precedes duplicate lookup. Existing longer names and pending imports
+remain usable: generation reports `name_too_long` with required/available bytes,
+repair remains pending and acceptance changes are blocked. No alias or migration
+is available. See the [gallery contract](file-contract.md#current-result-gallery).
 
 Complete source hashes determine ownership. Reimporting identical bytes under a
 different name, subject or development selection returns the existing project;

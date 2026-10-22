@@ -142,6 +142,18 @@ certification remains unperformed. Browser, photographic, automated and human
 acceptance claims above are deliberately separate; human photographic acceptance
 and a representative editable branching-photo evaluation remain pending.
 
+## Current Result gallery
+
+`tests/test_previews.py` exercises synthetic imported-photo publication, native scalar
+composition, external footer geometry/profile, state/derivative failure ordering,
+preserved collisions, filename-byte limits, saved-only completed resume, explicit
+CLI/HTTP recovery and real process contention. The shipped-page harness checks
+pending/repair status, busy controls and unsaved-form retention without implicit
+polling writes. Stub inference is not real-model or photographic acceptance. Native
+browser observations, package contents and resource measurements remain separate
+evidence; automated checks alone do not establish full accessibility or durability
+after physical power loss. See the [gallery contract](file-contract.md#current-result-gallery).
+
 ## Fixed-size series framing
 
 Current local implementation evidence is synthetic and bound to frozen application

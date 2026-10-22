@@ -252,7 +252,12 @@ def test_open_defaults_to_viewer_and_explicit_headless_preserves_json(
 
     _, project = create(tmp_path)
     calls = []
-    monkeypatch.setattr(viewer, "open_viewer", lambda *args: calls.append(args))
+
+    def opened_window(*args, storage_config=None):
+        assert storage_config is None
+        calls.append(args)
+
+    monkeypatch.setattr(viewer, "open_viewer", opened_window)
     monkeypatch.setattr(
         sys,
         "argv",

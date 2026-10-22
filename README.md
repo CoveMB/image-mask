@@ -34,6 +34,9 @@ Photos, Results Preview and Comparisons. Explicit import moves a validated captu
 and declared sidecars once into a stable named photo folder, with interruption
 recovery and duplicate-source protection. Configured pinned model directories are
 shared across photographs. Import creates no result or gallery image.
+Complete native generation maintains one reduced JPEG per imported photo with a
+Draft/Accepted footer and explicit pending recovery. It follows the latest generated
+Result independently of restore/export; see the [gallery contract](docs/file-contract.md#current-result-gallery).
 
 Scoped repairs save quantized operands for replay without models. Restore selects
 saved working inputs without changing final acceptance. `status` and `resume`
@@ -163,6 +166,7 @@ for explicit model setup, typed preparation and human review.
 | Validated DNG white-point/calibration fallback and recorded multipliers | `src/blackmask/dng_white_balance.py` |
 | Identity, shared writer lock, publication and approval | `src/blackmask/project.py` |
 | Explicit library configuration, original ownership and import recovery | `src/blackmask/library.py` |
+| Latest native Result gallery, footer and derivative recovery | `src/blackmask/previews.py` |
 | Preparation snapshots and selected candidate publication | `src/blackmask/operations.py` |
 | Typed native guides and categorical rasterization | `src/blackmask/guidance.py` |
 | Pinned explicit setup and local-only SAM/ViTMatte sessions | `src/blackmask/models.py` |

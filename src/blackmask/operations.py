@@ -30,6 +30,7 @@ from .guidance import (
     rasterize_regions,
     validate_guides,
 )
+from .library import StorageConfig, validate_library_project
 from .models import SamSession, VitMatteSession
 from .project import (
     ProjectError,
@@ -50,6 +51,25 @@ from .project import (
     record_generated_result,
 )
 from .recipe import Recipe
+
+
+def _result_preview(
+    project: Path, result: dict[str, Any], config: StorageConfig | None, *, generated: bool = False
+) -> dict[str, Any]:
+    from .previews import _refresh_result_preview_locked, result_preview_status
+
+    # Native state already committed. Context/publication failures belong to the
+    # derivative status, while the entrypoint's preflight still guards native work.
+    preview = result_preview_status(project, config)
+    if preview["status"] == "not_applicable":
+        return result
+    if (
+        generated
+        and config is not None
+        and result.get("revision") == preview["latest_result_revision"]
+    ):
+        preview = _refresh_result_preview_locked(project, config)
+    return dict(result, preview=preview, preview_pending=preview["status"] == "pending")
 
 
 def draft_digest(project: Path) -> str:
@@ -191,8 +211,11 @@ def accept_trimap(
         return record
 
 
-def accept_revision(project: Path, revision: str) -> dict[str, Any]:
+def accept_revision(
+    project: Path, revision: str, *, storage_config: StorageConfig | None = None
+) -> dict[str, Any]:
     project = _root(project)
+    bundle = validate_library_project(project, storage_config)
     with project_lock(project):
         state = read_project(project)
         _reject_pending_guidance(project)
@@ -230,8 +253,20 @@ def accept_revision(project: Path, revision: str) -> dict[str, Any]:
             saved_layers(project, revision, state["developed_id"])
 
         check_space(project, 1024**2)
+        if bundle is not None:
+            from .previews import _demote_result_preview_locked
+
+            assert storage_config is not None
+            _demote_result_preview_locked(project, storage_config)
+            recheck()
         state.update(accepted_revision=revision, status="accepted")
         _atomic_json(saved_asset(project, "state.json"), state, validate_before_replace=recheck)
+        if bundle is not None:
+            from .previews import _refresh_result_preview_locked
+
+            assert storage_config is not None
+            preview = _refresh_result_preview_locked(project, storage_config)
+            return dict(state, preview=preview, preview_pending=preview["status"] == "pending")
         return state
 
 
@@ -242,9 +277,11 @@ def apply_operation(
     model_cache: Path | None = None,
     request_file: Path | None = None,
     expected_revision_manifest_sha256: str | None = None,
+    storage_config: StorageConfig | None = None,
 ) -> dict[str, Any]:
     """Validate a prepare request, process snapshots, return actual identities and review paths."""
     project = _root(project)
+    validate_library_project(project, storage_config)
     with project_lock(project):
         try:
             if expected_revision_manifest_sha256 is not None:
@@ -264,12 +301,24 @@ def apply_operation(
                 ):
                     raise ProjectError("Stale raw revision manifest; reload the selected result")
             if isinstance(operation, dict) and operation.get("kind") in {"matte", "repair"}:
-                return _run_matte(project, operation, model_cache, request_file)
+                return _result_preview(
+                    project,
+                    _run_matte(project, operation, model_cache, request_file),
+                    storage_config,
+                    generated=True,
+                )
             if isinstance(operation, dict) and operation.get("kind") == "effects":
                 from .effects import run_effects
 
-                return run_effects(project, operation, request_file)
-            return _prepare(project, operation, model_cache, request_file)
+                return _result_preview(
+                    project,
+                    run_effects(project, operation, request_file),
+                    storage_config,
+                    generated=True,
+                )
+            return _result_preview(
+                project, _prepare(project, operation, model_cache, request_file), storage_config
+            )
         except (ValueError, KeyError, TypeError) as error:
             if isinstance(error, ProjectError):
                 raise
@@ -811,10 +860,16 @@ def _recovery_record_errors() -> Iterator[None]:
 
 
 def resume_operation(
-    project: Path, operation_id: str, *, model_cache: Path | None = None, source: Path | None = None
+    project: Path,
+    operation_id: str,
+    *,
+    model_cache: Path | None = None,
+    source: Path | None = None,
+    storage_config: StorageConfig | None = None,
 ) -> dict[str, Any]:
     """Resume the same snapshotted matte/repair under the canonical writer lock."""
     project = _root(project)
+    validate_library_project(project, storage_config)
     if not isinstance(operation_id, str) or re.fullmatch(r"matte-[a-z0-9_]+", operation_id) is None:
         raise ProjectError("Invalid recovery operation identity")
     with project_lock(project):
@@ -905,12 +960,17 @@ def resume_operation(
                 directory / "progress.json",
                 {"status": "review_needed", "phase": "complete", "revision": revision},
             )
-            return dict(
-                result,
-                inputs_digest=draft_digest(project),
-                revision_inputs_digest=manifest["draft_digest"],
-                operation_id=operation_id,
-                resumed_completed_stage=True,
+            return _result_preview(
+                project,
+                dict(
+                    result,
+                    inputs_digest=draft_digest(project),
+                    revision_inputs_digest=manifest["draft_digest"],
+                    operation_id=operation_id,
+                    resumed_completed_stage=True,
+                ),
+                storage_config,
+                generated=True,
             )
         with _recovery_record_errors():
             operation = _verify_matte_request(project, directory)
@@ -918,16 +978,23 @@ def resume_operation(
                 saved_asset(project, f"requests/{directory.name}/manifest.json").read_bytes()
             )
             request_file = Path(manifest["request_file"]) if manifest["request_file"] else None
-        return _run_matte(
+        return _result_preview(
             project,
-            operation,
-            model_cache,
-            request_file,
-            directory,
+            _run_matte(
+                project,
+                operation,
+                model_cache,
+                request_file,
+                directory,
+            ),
+            storage_config,
+            generated=True,
         )
 
 
-def operation_status(project: Path) -> dict[str, Any]:
+def operation_status(
+    project: Path, *, storage_config: StorageConfig | None = None
+) -> dict[str, Any]:
     """Read saved pointers and recovery records without waiting for a writer."""
     project = _root(project)
     state = read_project(project, validate_drafts=False)
@@ -974,7 +1041,16 @@ def operation_status(project: Path) -> dict[str, Any]:
                 },
             )
         records.append(dict(progress, operation_id=directory.name, status=status))
-    return dict(state, writer_busy=busy, operations=records)
+    from .previews import result_preview_status
+
+    preview = result_preview_status(project, storage_config)
+    return dict(
+        state,
+        writer_busy=busy,
+        operations=records,
+        preview=preview,
+        preview_pending=preview["status"] == "pending",
+    )
 
 
 def _matte(
@@ -1698,9 +1774,11 @@ def restore_revision(
     *,
     replace_drafts: bool = False,
     expected_identity: dict[str, Any] | None = None,
+    storage_config: StorageConfig | None = None,
 ) -> dict[str, Any]:
     """Select saved working inputs; acceptance is never reassigned."""
     project = _root(project)
+    validate_library_project(project, storage_config)
     with project_lock(project):
         state = read_project(project, validate_drafts=not replace_drafts)
         if expected_identity is not None and (
@@ -1841,7 +1919,11 @@ def restore_revision(
             status=("accepted" if state["accepted_revision"] == revision else "review_needed"),
         )
         _atomic_json(saved_asset(project, "state.json"), state, validate_before_replace=recheck)
-        return dict(state, inputs_digest=target["draft_digest"], recovery_directory=str(stage))
+        return _result_preview(
+            project,
+            dict(state, inputs_digest=target["draft_digest"], recovery_directory=str(stage)),
+            storage_config,
+        )
 
 
 def _check_draft_identity(project: Path, identity: dict[str, Any]) -> dict[str, Any]:

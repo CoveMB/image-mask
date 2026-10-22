@@ -309,6 +309,27 @@ def test_prepare_does_not_require_development_review_or_change_appearance_contro
  """)
 
 
+def test_gallery_pending_repair_preserves_unsubmitted_forms_and_polling_is_read_only():
+    run_page(r"""
+ servedState.preview={status:'pending',reason:'missing',latest_result_revision:'rev-002',accepted_revision:'rev-001'};
+ await ready();
+ assert($('previewStatus').textContent.includes('pending'));
+ assert($('previewStatus').textContent.includes('rev-002'));
+ assert.equal(posts.length,0);
+ $('backgroundHex').value='#151515';$('backgroundHex').oninput();
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ await $('previewRepair').onclick();
+ assert.equal(posts.at(-1).action,'preview-repair');
+ servedState.action={running:true,name:'preview-repair',error:null,result:null};await refresh();
+ servedState.action={running:false,name:'preview-repair',error:null,result:{status:'current'}};
+ servedState.preview={status:'current',revision:'rev-002',label:'Draft'};await refresh();
+ assert.equal($('backgroundHex').value,'#151515');
+ assert.equal($('exposureEV').value,'1.2');
+ assert($('previewStatus').textContent.includes('Draft'));
+ servedState.writer_busy=true;await refresh();assert($('previewRepair').disabled);
+ """)
+
+
 def test_series_mode_and_portable_controls_preserve_independent_forms():
     run_page(r"""
  servedState.series_settings={name:'Portrait series',output_width_px:40,output_height_px:50,side_margin_tenths_percent:150,minimum_vertical_margin_tenths_percent:50};

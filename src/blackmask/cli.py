@@ -13,7 +13,13 @@ import rawpy
 
 from .export import export_project
 from .ingest import IngestError
-from .library import ensure_library, import_photo, load_storage_config, resume_import
+from .library import (
+    ensure_library,
+    import_photo,
+    load_storage_config,
+    resume_import,
+    validate_library_project,
+)
 from .models import setup_sam, setup_vitmatte, verify_sam, verify_vitmatte
 from .operations import (
     accept_revision,
@@ -170,9 +176,24 @@ def main() -> int:
     )
     status = commands.add_parser("status", help="Read recovery status without waiting for a writer")
     status.add_argument("project", type=Path)
+    preview = commands.add_parser(
+        "preview", help="Explicitly repair the latest native Result gallery"
+    )
+    preview.add_argument("action", choices=("repair",))
+    preview.add_argument("project", type=Path)
     arguments = parser.parse_args()
     try:
         config = load_storage_config(arguments.config) if arguments.config is not None else None
+        if arguments.command in {
+            "accept",
+            "run",
+            "resume",
+            "restore",
+            "review",
+            "export",
+            "preview",
+        }:
+            validate_library_project(arguments.project, config)
         result: dict[str, Any]
         if arguments.command in {"library-init", "import", "import-resume"}:
             if config is None:
@@ -213,6 +234,14 @@ def main() -> int:
             result = dict(
                 read_project(arguments.project), inputs_digest=draft_digest(arguments.project)
             )
+            from .previews import refresh_result_preview, result_preview_status
+
+            result["preview"] = (
+                refresh_result_preview(arguments.project, config)
+                if config is not None and arguments.headless
+                else result_preview_status(arguments.project, config)
+            )
+            result["preview_pending"] = result["preview"]["status"] == "pending"
             if not arguments.headless:
                 from .viewer import open_viewer
 
@@ -220,6 +249,7 @@ def main() -> int:
                     arguments.project,
                     arguments.model_cache or (config.vitmatte_cache if config else None),
                     arguments.sam_cache or (config.sam_cache if config else None),
+                    storage_config=config,
                 )
                 return 0
         elif arguments.command == "accept":
@@ -243,7 +273,9 @@ def main() -> int:
                     raise ProjectError(
                         "Final-photo acceptance uses --revision; trimap identity flags require --trimap"
                     )
-                result = accept_revision(arguments.project, arguments.revision)
+                result = accept_revision(
+                    arguments.project, arguments.revision, storage_config=config
+                )
             else:
                 if arguments.developed_id is None or arguments.inputs_digest is not None:
                     raise ProjectError("Development approval requires the inspected --developed-id")
@@ -289,7 +321,10 @@ def main() -> int:
             from .operations import restore_revision
 
             result = restore_revision(
-                arguments.project, arguments.revision, replace_drafts=arguments.replace_drafts
+                arguments.project,
+                arguments.revision,
+                replace_drafts=arguments.replace_drafts,
+                storage_config=config,
             )
         elif arguments.command == "replay":
             from .repair import replay_repair
@@ -307,9 +342,16 @@ def main() -> int:
                 arguments.operation,
                 model_cache=arguments.model_cache or (config.vitmatte_cache if config else None),
                 source=arguments.source,
+                storage_config=config,
             )
         elif arguments.command == "status":
-            result = operation_status(arguments.project)
+            result = operation_status(arguments.project, storage_config=config)
+        elif arguments.command == "preview":
+            from .previews import refresh_result_preview
+
+            if config is None:
+                raise ProjectError("Preview repair requires explicit --config FILE")
+            result = refresh_result_preview(arguments.project, config)
         elif arguments.command == "run":
             request = json.loads(arguments.request.read_bytes())
             if not isinstance(request, dict):
@@ -328,6 +370,7 @@ def main() -> int:
                     else None
                 ),
                 request_file=arguments.request,
+                storage_config=config,
             )
         else:
             result = doctor(
@@ -341,7 +384,7 @@ def main() -> int:
                 arguments.model,
             )
         print(json.dumps(result, indent=2, allow_nan=False))
-        return 0
+        return 1 if arguments.command == "preview" and result["status"] == "pending" else 0
     except (ProjectError, IngestError, OSError, ValueError, TypeError) as error:
         print(f"blackmask: {error}", file=sys.stderr)
         return 1

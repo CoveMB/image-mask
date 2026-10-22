@@ -1131,13 +1131,16 @@ def test_cli_routes_model_config_with_explicit_flag_precedence(
     monkeypatch.setenv("BLACKMASK_VITMATTE_CACHE", str(tmp_path / "unused-matte-environment"))
     selected = {}
 
-    def open_window(project, model_cache, sam_cache):
+    def open_window(project, model_cache, sam_cache, *, storage_config=None):
+        assert storage_config.destination == config.destination
         selected.update(matte=str(model_cache), sam=str(sam_cache))
 
-    def run(project, request, *, model_cache, request_file):
+    def run(project, request, *, model_cache, request_file, storage_config=None):
+        assert storage_config.destination == config.destination
         return {"selected": str(model_cache)}
 
-    def resume(project, operation, *, model_cache, source):
+    def resume(project, operation, *, model_cache, source, storage_config=None):
+        assert storage_config.destination == config.destination
         return {"selected": str(model_cache)}
 
     def doctor(path, model_cache, model):
