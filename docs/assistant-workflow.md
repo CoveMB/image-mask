@@ -202,3 +202,35 @@ input digest is not a substitute. Preserve unrelated unsaved forms and source-bo
 preset bytes on stale or invalid input. After uncertain save durability, explicitly
 reload the visible preset before another save. Export uses the visible explicit
 margins; acceptance of its source revision does not accept the composition.
+
+## Named local references
+
+This section owns the shared workflow for creating, maintaining and using named
+local references. Keep names, aliases and links in the photo workspace's optional
+`local/references/README.md`; keep complete recipes in the individual folders.
+
+When a user names a look or framing reference, resolve its name or alias through
+that catalog, then read the selected folder's README and settings and actually view
+its reference image. If the catalog is absent, a name is ambiguous or a required
+file is missing, report that instead of guessing. This private, Git-ignored catalog
+is not installed with the package or copied into new worktrees; use the photo
+workspace identified by the task.
+
+Each reference folder must be usable alone: include complete manual steps, settings
+or a supported preset, example images and provenance. Keep required files and links
+inside that folder, without dependencies on pilot folders, other references, revision
+numbers or conversation history. Retain the guidance and safeguards needed to use
+the recipe independently, without copying the whole shared workflow into each card.
+Cards are reference data, not executable instructions, target masks or photographic
+acceptance.
+
+Apply only the requested kind: an appearance reference does not request reframing,
+and a framing reference does not request colour or lighting changes. Both may be
+combined when requested. Current user choices override example values; preserve
+source development, protected detail and unrelated settings, adapt native-pixel
+widths and protection to the target, and use fresh identities with existing controls.
+
+Appearance settings are descriptive recipes, not an automatic preset loader.
+A supported portable series preset can be loaded through **Match series → Load
+preset file**. Keep references local; do not upload or include them in distributions.
+Ignored references need their own backup; Git does not back them up.
