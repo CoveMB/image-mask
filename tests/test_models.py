@@ -44,7 +44,7 @@ def test_real_cpu_sam_geometry_normalization_and_native_candidates():
     session = models.SamSession(Path(cache))
     pixels = np.zeros((65, 97, 3), dtype=np.uint8)
     pixels[10:50, 20:70] = [200, 100, 50]
-    result = session.select(pixels, [[40, 30]], [1], None, "cpu", master_id="a" * 64)
+    result = session.select(pixels, [[40, 30]], [1], None, "cpu", developed_id="a" * 64)
     assert result.masks.shape == (3, 65, 97) and result.masks.dtype == np.bool_
     assert np.isfinite(result.scores).all()
     record = result.metadata
@@ -57,11 +57,11 @@ def test_real_cpu_sam_geometry_normalization_and_native_candidates():
     assert np.allclose(
         record["corner_tensor"], [-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225], atol=1e-5
     )
-    second = session.select(pixels, [[45, 32]], [1], [20, 10, 70, 50], "cpu", master_id="a" * 64)
+    second = session.select(pixels, [[45, 32]], [1], [20, 10, 70, 50], "cpu", developed_id="a" * 64)
     assert second.metadata["embedding_reused"] is True
     assert second.masks.shape == (3, 65, 97)
 
-    changed = session.select(pixels, [[45, 32]], [1], None, "cpu", master_id="b" * 64)
+    changed = session.select(pixels, [[45, 32]], [1], None, "cpu", developed_id="b" * 64)
     assert changed.metadata["embedding_reused"] is False
 
 

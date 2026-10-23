@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from .assets import saved_asset
 from .effects import validate_cleanup
 from .export import (
     _foreground_contribution,
@@ -23,7 +24,6 @@ from .export import (
 from .guidance import coordinates
 from .project import (
     ProjectError,
-    _asset,
     _atomic_bytes,
     _atomic_json,
     _json_bytes,
@@ -31,7 +31,7 @@ from .project import (
     _root,
     check_space,
     digest,
-    load_master,
+    load_developed,
     project_lock,
     read_project,
     read_revision,
@@ -110,7 +110,7 @@ def write_review(
     foreground: np.ndarray,
     alpha16: np.ndarray,
     *,
-    master_id: str,
+    developed_id: str,
     revision: str,
     crops: list[list[int]] | None = None,
     weight16: np.ndarray | None = None,
@@ -184,8 +184,8 @@ def write_review(
         offset += row.shape[0]
     Image.fromarray(contact).save(directory / "contact_RGB8_VIEW.png")
     record = {
-        "schema_version": 1,
-        "master_id": master_id,
+        "schema_version": 2,
+        "developed_id": developed_id,
         "revision": revision,
         "label": "RGB8/alpha8 viewing approximations; native pixels, no resize; inspect saved RGB16/alpha16 separately",
         "panel_order": ["source", "black", "gray", "white", "alpha"]
@@ -197,239 +197,444 @@ def write_review(
     return record
 
 
+def write_revision_overview(
+    directory: Path,
+    source: np.ndarray,
+    foreground: np.ndarray,
+    alpha16: np.ndarray,
+    *,
+    developed_id: str,
+    revision: str,
+    crops: list[list[int]] | None = None,
+    weight16: np.ndarray | None = None,
+    opacity: float = 0,
+    background16: np.ndarray | None = None,
+    spatial_fade: SpatialFadeOperands | None = None,
+    fade_background16: np.ndarray | None = None,
+) -> dict[str, Any]:
+    """One reduced JPEG per revision; native inspection stays in explicit reviews/."""
+    from .ingest import srgb_profile
+
+    height, width = alpha16.shape
+    boxes = [coordinates(c, width, height, box=True) for c in (crops or [[0, 0, width, height]])]
+    selected = ["source", "black", "gray", "white", "alpha"] + (
+        ["result"] if background16 is not None else []
+    )
+    preview = directory.parent / "preview.jpg"
+    previous = directory.parent / "review/manifest.json"
+    old_record = (
+        json.loads(previous.read_bytes())
+        if directory.name == "review-before" and previous.exists()
+        else None
+    )
+    total_rows = len(boxes) + (len(old_record["crops"]) if old_record is not None else 0)
+    if total_rows > 1600:
+        raise ValueError("Too many overview rows for nonempty panels within 1600 pixels")
+    row_height_limit = 1600 // total_rows
+    rows: list[Image.Image] = []
+    records = []
+
+    def append_row(panels: dict[str, Image.Image], crop: dict[str, Any]) -> None:
+        # Budget for the final combined layout before resizing any panel. Scaling
+        # the whole sheet afterwards can erase a valid one-pixel-wide panel.
+        panel_width, panel_height = panels["source"].size
+        factor = min(1.0, 1600 / (panel_width * len(panels)), row_height_limit / panel_height)
+        size = (max(1, int(panel_width * factor)), max(1, int(panel_height * factor)))
+        row = Image.new("RGB", (size[0] * len(panels), size[1]))
+        top = sum(r.height for r in rows)
+        try:
+            for index, image in enumerate(panels.values()):
+                with image.resize(size, Image.Resampling.LANCZOS) as reduced:
+                    row.paste(reduced, (index * size[0], 0))
+        finally:
+            for image in panels.values():
+                image.close()
+        rows.append(row)
+        x0, y0, x1, y1 = crop["crop_xyxy"]
+        crop.update(
+            displayed_dimensions_wh=list(size),
+            scale_xy=[(x1 - x0) / size[0], (y1 - y0) / size[1]],
+            native_origin_xy=[x0, y0],
+            files={"overview": "../preview.jpg"},
+            display_reference_panel="source",
+            panel_boxes_xyxy={
+                name: [index * size[0], top, (index + 1) * size[0], top + size[1]]
+                for index, name in enumerate(panels)
+            },
+        )
+
+    for x0, y0, x1, y1 in boxes:
+        pixels = review_panels(
+            source[y0:y1, x0:x1],
+            foreground[y0:y1, x0:x1],
+            alpha16[y0:y1, x0:x1],
+            None if weight16 is None else weight16[y0:y1, x0:x1],
+            opacity,
+            background16=None if background16 is None else background16[y0:y1, x0:x1],
+            spatial_fade=None
+            if spatial_fade is None
+            else SpatialFadeOperands(
+                spatial_fade.weight16[y0:y1, x0:x1],
+                spatial_fade.protection[y0:y1, x0:x1],
+                spatial_fade.record,
+            ),
+            fade_background16=None
+            if fade_background16 is None
+            else fade_background16[y0:y1, x0:x1],
+        )
+        crop: dict[str, Any] = {"crop_xyxy": [x0, y0, x1, y1]}
+        append_row({name: Image.fromarray(pixels[name]) for name in selected}, crop)
+        records.append(crop)
+    if old_record is not None:
+        with Image.open(preview) as image:
+            for crop in old_record["crops"]:
+                append_row(
+                    {
+                        name: image.crop(crop["panel_boxes_xyxy"][name])
+                        for name in old_record["panel_order"]
+                    },
+                    crop,
+                )
+    sheet = Image.new("RGB", (max(row.width for row in rows), sum(row.height for row in rows)))
+    offset = 0
+    for row in rows:
+        sheet.paste(row, (0, offset))
+        offset += row.height
+        row.close()
+    record = {
+        "schema_version": 2,
+        "developed_id": developed_id,
+        "revision": revision,
+        "label": "Reduced RGB8 JPEG overview; use explicit native review crops for inspection",
+        "overview": True,
+        "panel_order": selected,
+        "crops": records,
+        "visual_review": "human photographic review pending",
+    }
+    for item in [record] + ([old_record] if old_record is not None else []):
+        item["overview_dimensions_wh"] = list(sheet.size)
+    directory.mkdir()
+    try:
+        sheet.save(preview, format="JPEG", quality=85, optimize=True, icc_profile=srgb_profile())
+    finally:
+        sheet.close()
+    if old_record is not None:
+        previous.write_bytes(_json_bytes(old_record))
+    (directory / "manifest.json").write_bytes(_json_bytes(record))
+    return record
+
+
+def write_preparation_overview(
+    directory: Path, source: np.ndarray, *, developed_id: str, revision: str
+) -> None:
+    from .ingest import srgb_profile
+
+    with Image.fromarray((source // 257).astype(np.uint8)) as image:
+        image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+        image.save(
+            directory / "preview.jpg",
+            format="JPEG",
+            quality=85,
+            optimize=True,
+            icc_profile=srgb_profile(),
+        )
+        displayed = list(image.size)
+    review = directory / "review"
+    review.mkdir()
+    (review / "manifest.json").write_bytes(
+        _json_bytes(
+            {
+                "schema_version": 2,
+                "developed_id": developed_id,
+                "revision": revision,
+                "overview": True,
+                "label": "Reduced preparation source overview; no matte generated",
+                "overview_dimensions_wh": displayed,
+                "files": {"overview": "../preview.jpg"},
+            }
+        )
+    )
+
+
 def review_project(
     project: Path, *, revision: str | None = None, crops: list[list[int]] | None = None
 ) -> dict[str, Any]:
     project = _root(project)
     with project_lock(project):
-        state = read_project(project)
-        revision = revision or state["working_revision"]
-        if revision is None:
-            raise ProjectError("No complete matte revision to review")
-        foreground, alpha, revision_manifest = saved_layers(project, revision, state["master_id"])
-        from .effects import effects_stale, saved_shading, saved_spatial_fade
+        return _review_project_locked(project, revision=revision, crops=crops)
 
-        weight, opacity = saved_shading(project, revision, alpha, revision_manifest)
-        source, _ = load_master(project, state["master_id"])
-        prefix = f"revisions/{revision}"
-        settings = tomllib.loads(_asset(project, f"{prefix}/recipe.toml").read_text())
-        cleanup = revision_manifest.get("color_cleanup")
-        if cleanup is not None:
-            applied_cleanup = {
-                "enabled": cleanup.get("enabled"),
-                "strength": cleanup.get("strength"),
-            }
-            validate_cleanup(applied_cleanup)
-            settings["color_cleanup"] = applied_cleanup
-        height, width = alpha.shape
-        if crops is None:
-            saved_review = _read_json(project, f"revisions/{revision}/review/manifest.json")
-            saved_crops = saved_review.get("crops")
-            if (
-                saved_review.get("master_id") != state["master_id"]
-                or saved_review.get("revision") != revision
-                or not isinstance(saved_crops, list)
-                or any(not isinstance(crop, dict) for crop in saved_crops)
-            ):
-                raise ProjectError("Invalid saved review crop identity")
-            selected = [crop.get("crop_xyxy") for crop in saved_crops]
-        else:
-            selected = crops
-        if not isinstance(selected, list) or not selected:
-            raise ProjectError("Review crops must be a nonempty list")
-        selected = [coordinates(c, width, height, box=True) for c in selected]
-        before = _asset(project, "state.json").read_bytes()
-        manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
-        check_space(
-            project,
-            source.nbytes * 30
-            + sum((c[2] - c[0]) * (c[3] - c[1]) for c in selected) * 32
-            + 1024**2,
-        )
-        root = _asset(project, f"reviews/{revision}")
-        root.mkdir(parents=True, exist_ok=True)
-        stage = Path(tempfile.mkdtemp(prefix=".review-", dir=root))
-        directory = stage / "assets"
-        from .background import read_background
 
-        background = (
-            None
-            if effects_stale(revision_manifest)
-            else read_background(_asset(project, f"revisions/{revision}"), revision_manifest)
+def _review_project_locked(
+    project: Path,
+    *,
+    revision: str | None = None,
+    crops: list[list[int]] | None = None,
+    include_before: bool = True,
+    base_comparison: bool = False,
+) -> dict[str, Any]:
+    """Generate explicit native evidence; caller owns the project writer lock."""
+    state = read_project(project)
+    revision = revision or state["working_revision"]
+    if revision is None:
+        raise ProjectError("No complete matte revision to review")
+    foreground, alpha, revision_manifest = saved_layers(
+        project, revision, state["developed_id"], effects_off=base_comparison
+    )
+    from .effects import effects_stale, saved_shading, saved_spatial_fade
+
+    weight, opacity = saved_shading(
+        project, revision, alpha, revision_manifest, effects_off=base_comparison
+    )
+    source, _ = load_developed(project, state["developed_id"])
+    prefix = f"revisions/{revision}"
+    settings = tomllib.loads(saved_asset(project, f"{prefix}/recipe.toml").read_text())
+    cleanup = revision_manifest.get("color_cleanup")
+    if cleanup is not None:
+        applied_cleanup = {
+            "enabled": cleanup.get("enabled"),
+            "strength": cleanup.get("strength"),
+        }
+        validate_cleanup(applied_cleanup)
+        settings["color_cleanup"] = applied_cleanup
+    height, width = alpha.shape
+    if crops is None:
+        saved_review = _read_json(project, f"revisions/{revision}/review/manifest.json")
+        saved_crops = saved_review.get("crops")
+        if (
+            saved_review.get("developed_id") != state["developed_id"]
+            or saved_review.get("revision") != revision
+            or not isinstance(saved_crops, list)
+            or any(not isinstance(crop, dict) for crop in saved_crops)
+        ):
+            raise ProjectError("Invalid saved review crop identity")
+        selected = [crop.get("crop_xyxy") for crop in saved_crops]
+    else:
+        selected = crops
+    if not isinstance(selected, list) or not selected:
+        raise ProjectError("Review crops must be a nonempty list")
+    selected = [coordinates(c, width, height, box=True) for c in selected]
+    before = saved_asset(project, "state.json").read_bytes()
+    manifest_bytes = saved_asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+    check_space(
+        project,
+        source.nbytes * 30 + sum((c[2] - c[0]) * (c[3] - c[1]) for c in selected) * 32 + 1024**2,
+    )
+    root = saved_asset(project, f"reviews/{revision}")
+    root.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".review-", dir=root))
+    directory = stage / "assets"
+    from .background import read_background
+
+    background = (
+        None
+        if base_comparison or effects_stale(revision_manifest)
+        else read_background(
+            project, saved_asset(project, f"revisions/{revision}"), revision_manifest
         )
-        spatial = saved_spatial_fade(project, revision, alpha, revision_manifest)
-        target = (
-            background
-            if background is not None
-            else np.zeros_like(foreground)
+    )
+    spatial = saved_spatial_fade(
+        project, revision, alpha, revision_manifest, effects_off=base_comparison
+    )
+    target = (
+        background
+        if background is not None
+        else np.zeros_like(foreground)
+        if spatial is not None
+        else None
+    )
+    record = write_review(
+        directory,
+        source,
+        foreground,
+        alpha,
+        developed_id=state["developed_id"],
+        revision=revision,
+        crops=selected,
+        background16=background,
+        spatial_fade=spatial,
+        fade_background16=target,
+        weight16=weight,
+        opacity=opacity,
+    )
+    from .operations import draft_digest, pending_guidance
+
+    current_digest = draft_digest(project)
+    stale = []
+    if revision != state["working_revision"]:
+        stale.append("not_current_working_revision")
+    if current_digest != revision_manifest["draft_digest"]:
+        stale.append("draft_changed")
+    pending = pending_guidance(project)
+    if pending and pending["current"] and pending["actions"]:
+        stale.append("pending_guidance")
+    if (
+        revision_manifest.get("color_cleanup", {}).get("stale")
+        and revision_manifest["color_cleanup"]["enabled"]
+    ):
+        stale.append("cleanup_stale")
+        record["label"] += (
+            "; BASE comparison: cleanup OFF; stale enabled cleanup needs scoped rebuild or explicit disable"
+        )
+    if revision_manifest.get("shading", {}).get("enabled") and revision_manifest["shading"].get(
+        "stale"
+    ):
+        stale.append("shading_stale")
+    if revision_manifest.get("local_exposure", {}).get("enabled") and revision_manifest[
+        "local_exposure"
+    ].get("stale"):
+        stale.append("local_exposure_stale")
+    if revision_manifest.get("shadow_fade", {}).get("enabled") and revision_manifest[
+        "shadow_fade"
+    ].get("stale"):
+        stale.append("shadow_fade_stale")
+    from .exposure import selected_exposure
+
+    unexposed = saved_layers(
+        project,
+        revision,
+        state["developed_id"],
+        exposure_off=True,
+        shadow_fade_off=True,
+        effects_off=base_comparison,
+    )[0]
+    _, clipping = selected_exposure(
+        project,
+        saved_asset(project, f"revisions/{revision}"),
+        unexposed,
+        alpha,
+        revision_manifest,
+        exposure_off=base_comparison or effects_stale(revision_manifest),
+    )
+    if "local_exposure" in revision_manifest:
+        record["label"] += (
+            "; local exposure OFF"
+            if base_comparison
+            or effects_stale(revision_manifest)
+            or not revision_manifest["local_exposure"]["enabled"]
+            else f"; local exposure ON {revision_manifest['local_exposure']['settings']['ev']} EV"
+        )
+    if "shadow_fade" in revision_manifest:
+        record["label"] += (
+            "; Shadow fade OFF"
+            if effects_stale(revision_manifest) or not revision_manifest["shadow_fade"]["enabled"]
+            else "; Shadow fade ON"
+        )
+    if "spatial_fade" in revision_manifest:
+        record["spatial_fade"] = revision_manifest["spatial_fade"]
+        record["label"] += (
+            "; Fade into background ON; diagnostics retain the selected background target"
             if spatial is not None
-            else None
+            else "; Fade into background OFF"
         )
-        record = write_review(
-            directory,
-            source,
-            foreground,
-            alpha,
-            master_id=state["master_id"],
-            revision=revision,
+        if (
+            revision_manifest["spatial_fade"]["enabled"]
+            and revision_manifest["spatial_fade"]["stale"]
+        ):
+            stale.append("spatial_fade_stale")
+    if effects_stale(revision_manifest):
+        record["label"] += (
+            "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need independent rebuild or disable"
+        )
+    elif weight is not None:
+        record["label"] += (
+            f"; encoded-sRGB; baked shading p={opacity}; width={revision_manifest['shading']['settings']['width_px']} native px; cleanup={revision_manifest.get('color_cleanup', {}).get('enabled', False)}"
+        )
+    before_manifest = None
+    if include_before and revision_manifest["kind"] == "repair":
+        from .repair import prepared_parent_layers
+
+        before_parent = read_revision(project, revision_manifest["parent"], state["developed_id"])
+        if before_parent["kind"] == "prepare":
+            before_parent = prepared_parent_layers(
+                project, before_parent["revision"], state["developed_id"]
+            )
+        before_review = _review_project_locked(
+            project,
+            revision=before_parent["revision"],
             crops=selected,
-            background16=background,
-            weight16=weight,
-            opacity=opacity,
-            spatial_fade=spatial,
-            fade_background16=target,
+            include_before=False,
+            base_comparison=base_comparison or effects_stale(revision_manifest),
         )
-        from .operations import draft_digest, pending_guidance
-
-        current_digest = draft_digest(project)
-        stale = []
-        if revision != state["working_revision"]:
-            stale.append("not_current_working_revision")
-        if current_digest != revision_manifest["draft_digest"]:
-            stale.append("draft_changed")
-        pending = pending_guidance(project)
-        if pending and pending["current"] and pending["actions"]:
-            stale.append("pending_guidance")
-        if (
-            revision_manifest.get("color_cleanup", {}).get("stale")
-            and revision_manifest["color_cleanup"]["enabled"]
-        ):
-            stale.append("cleanup_stale")
-            record["label"] += (
-                "; BASE comparison: cleanup OFF; stale enabled cleanup needs scoped rebuild or explicit disable"
+        before_manifest = str(Path(before_review["manifest_file"]).relative_to(project))
+    if base_comparison:
+        record["label"] += "; BASE comparison: optional effects OFF on both sides"
+    record.update(
+        comparison="base" if base_comparison or effects_stale(revision_manifest) else "selected",
+        inputs_digest=current_digest,
+        revision_inputs_digest=revision_manifest["draft_digest"],
+        working_revision=state["working_revision"],
+        accepted_revision=state["accepted_revision"],
+        stale_labels=stale,
+        assets={
+            "source_rgb16": f"assets/developed/{state['developed_id']}.tif",
+            "foreground_rgb16": str(
+                saved_asset(project, f"{prefix}/corrected_rgb16.tif").relative_to(project)
             )
-        if revision_manifest.get("shading", {}).get("enabled") and revision_manifest["shading"].get(
-            "stale"
-        ):
-            stale.append("shading_stale")
-        if revision_manifest.get("local_exposure", {}).get("enabled") and revision_manifest[
-            "local_exposure"
-        ].get("stale"):
-            stale.append("local_exposure_stale")
-        if revision_manifest.get("shadow_fade", {}).get("enabled") and revision_manifest[
-            "shadow_fade"
-        ].get("stale"):
-            stale.append("shadow_fade_stale")
-        from .exposure import selected_exposure
-
-        unexposed = saved_layers(
-            project, revision, state["master_id"], exposure_off=True, shadow_fade_off=True
-        )[0]
-        _, clipping = selected_exposure(
-            _asset(project, f"revisions/{revision}"),
-            unexposed,
-            alpha,
-            revision_manifest,
-            exposure_off=effects_stale(revision_manifest),
-        )
-        if "local_exposure" in revision_manifest:
-            record["label"] += (
-                "; local exposure OFF"
-                if effects_stale(revision_manifest)
-                or not revision_manifest["local_exposure"]["enabled"]
-                else f"; local exposure ON {revision_manifest['local_exposure']['settings']['ev']} EV"
-            )
-        if "shadow_fade" in revision_manifest:
-            record["label"] += (
-                "; Shadow fade OFF"
-                if effects_stale(revision_manifest)
-                or not revision_manifest["shadow_fade"]["enabled"]
-                else "; Shadow fade ON"
-            )
-        if "spatial_fade" in revision_manifest:
-            record["spatial_fade"] = revision_manifest["spatial_fade"]
-            record["label"] += (
-                "; Fade into background ON; diagnostics retain the selected background target"
-                if spatial is not None
-                else "; Fade into background OFF"
-            )
-            if (
-                revision_manifest["spatial_fade"]["enabled"]
-                and revision_manifest["spatial_fade"]["stale"]
-            ):
-                stale.append("spatial_fade_stale")
-        if effects_stale(revision_manifest):
-            record["label"] += (
-                "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need independent rebuild or disable"
-            )
-        elif weight is not None:
-            record["label"] += (
-                f"; encoded-sRGB; baked shading p={opacity}; width={revision_manifest['shading']['settings']['width_px']} native px; cleanup={revision_manifest.get('color_cleanup', {}).get('enabled', False)}"
-            )
-        record.update(
-            inputs_digest=current_digest,
-            revision_inputs_digest=revision_manifest["draft_digest"],
-            working_revision=state["working_revision"],
-            accepted_revision=state["accepted_revision"],
-            stale_labels=stale,
-            assets={
-                "source_rgb16": f"masters/{state['master_id']}.tif",
-                "foreground_rgb16": f"{prefix}/corrected_rgb16.tif"
-                if revision_manifest.get("color_cleanup", {}).get("enabled")
-                and not effects_stale(revision_manifest)
-                else f"{prefix}/foreground_rgb16.tif",
-                "local_exposure": f"{prefix}/effects/exposure/settings.json"
-                if "local_exposure" in revision_manifest
-                else None,
-                "shadow_fade": f"{prefix}/effects/shadow-fade/settings.json"
-                if "shadow_fade" in revision_manifest
-                else None,
-                **(
-                    {"spatial_fade": f"{prefix}/effects/spatial-fade/settings.json"}
-                    if "spatial_fade" in revision_manifest
-                    else {}
-                ),
-                "foreground_selection": "base, optional cleanup, local exposure once, Shadow fade once; shading at render",
-                "base_foreground_rgb16": f"{prefix}/foreground_rgb16.tif",
-                "alpha16": f"{prefix}/base_alpha16.png",
-                "before_manifest": f"{prefix}/review-before/manifest.json"
-                if revision_manifest["kind"] == "repair"
-                else None,
-            },
-            settings=settings,
-            model=revision_manifest.get("model"),
-            qa=_read_json(project, f"{prefix}/qa.json"),
-            effects={
-                "available": True,
-                "shadow_fade": revision_manifest.get(
-                    "shadow_fade", {"enabled": False, "stale": False}
-                ),
-                **(
-                    {"spatial_fade": revision_manifest["spatial_fade"]}
-                    if "spatial_fade" in revision_manifest
-                    else {}
-                ),
-                "color_cleanup": revision_manifest.get(
-                    "color_cleanup", {"enabled": False, "stale": False}
-                ),
-                "shading": revision_manifest.get("shading", {"enabled": False, "stale": False}),
-                "local_exposure": dict(
-                    revision_manifest.get("local_exposure", {"enabled": False, "stale": False}),
-                    clipping=clipping,
-                ),
-            },
-            status="review_needed",
-            view_files={p.name: digest(p.read_bytes()) for p in directory.glob("*.png")},
-        )
-        (directory / "manifest.json").write_bytes(_json_bytes(record))
-        if (
-            current_digest != draft_digest(project)
-            or before != _asset(project, "state.json").read_bytes()
-            or manifest_bytes != _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
-        ):
-            raise ProjectError("Stale review inputs")
-        saved_layers(project, revision, state["master_id"])
-        key = digest(_json_bytes({"review": record, "manifest": digest(manifest_bytes)}))
-        destination = root / key
-        publish_artifacts(directory, destination)
-        return {"revision": revision, "manifest_file": str(destination / "manifest.json")}
+            if revision_manifest.get("color_cleanup", {}).get("enabled")
+            and not base_comparison
+            and not effects_stale(revision_manifest)
+            else str(saved_asset(project, f"{prefix}/foreground_rgb16.tif").relative_to(project)),
+            "local_exposure": f"{prefix}/effects/exposure/settings.json"
+            if "local_exposure" in revision_manifest
+            else None,
+            "shadow_fade": f"{prefix}/effects/shadow-fade/settings.json"
+            if "shadow_fade" in revision_manifest
+            else None,
+            **(
+                {"spatial_fade": f"{prefix}/effects/spatial-fade/settings.json"}
+                if "spatial_fade" in revision_manifest
+                else {}
+            ),
+            "foreground_selection": "base, optional cleanup, local exposure once, Shadow fade once; shading at render",
+            "base_foreground_rgb16": str(
+                saved_asset(project, f"{prefix}/foreground_rgb16.tif").relative_to(project)
+            ),
+            "alpha16": str(saved_asset(project, f"{prefix}/base_alpha16.png").relative_to(project)),
+            "before_manifest": before_manifest,
+        },
+        settings=settings,
+        model=revision_manifest.get("model"),
+        qa=_read_json(project, f"{prefix}/qa.json"),
+        effects={
+            "available": True,
+            "shadow_fade": revision_manifest.get("shadow_fade", {"enabled": False, "stale": False}),
+            **(
+                {"spatial_fade": revision_manifest["spatial_fade"]}
+                if "spatial_fade" in revision_manifest
+                else {}
+            ),
+            "color_cleanup": revision_manifest.get(
+                "color_cleanup", {"enabled": False, "stale": False}
+            ),
+            "shading": revision_manifest.get("shading", {"enabled": False, "stale": False}),
+            "local_exposure": dict(
+                revision_manifest.get("local_exposure", {"enabled": False, "stale": False}),
+                clipping=clipping,
+            ),
+        },
+        status="review_needed",
+        view_files={p.name: digest(p.read_bytes()) for p in directory.glob("*.png")},
+    )
+    (directory / "manifest.json").write_bytes(_json_bytes(record))
+    if (
+        current_digest != draft_digest(project)
+        or before != saved_asset(project, "state.json").read_bytes()
+        or manifest_bytes
+        != saved_asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+    ):
+        raise ProjectError("Stale review inputs")
+    saved_layers(project, revision, state["developed_id"])
+    key = digest(_json_bytes({"review": record, "manifest": digest(manifest_bytes)}))
+    destination = root / key
+    publish_artifacts(directory, destination)
+    return {"revision": revision, "manifest_file": str(destination / "manifest.json")}
 
 
 # Immutable review events are advisory history, never project revision/acceptance pointers.
 def _cycle_events(project: Path, cycle_id: Any) -> tuple[dict[str, Any], str]:
     if not isinstance(cycle_id, str) or re.fullmatch(r"review-[a-f0-9]{32}", cycle_id) is None:
         raise ProjectError("Invalid assisted review cycle identity")
-    directory = _asset(project, f"requests/{cycle_id}")
+    directory = saved_asset(project, f"requests/{cycle_id}")
     files = sorted(directory.glob("*.json"))
     if not files or len(files) > 7:
         raise ProjectError("Missing or invalid assisted review history")
@@ -437,7 +642,7 @@ def _cycle_events(project: Path, cycle_id: Any) -> tuple[dict[str, Any], str]:
     prior = None
     reservations = set()
     for index, path in enumerate(files):
-        data = _asset(project, f"requests/{cycle_id}/{path.name}").read_bytes()
+        data = saved_asset(project, f"requests/{cycle_id}/{path.name}").read_bytes()
         if path.name != f"{index:03d}-{digest(data)}.json":
             raise ProjectError("Assisted review history event integrity mismatch")
         record = json.loads(data)
@@ -446,7 +651,7 @@ def _cycle_events(project: Path, cycle_id: Any) -> tuple[dict[str, Any], str]:
             or record.get("cycle_id") != cycle_id
             or record.get("event_index") != index
             or record.get("previous_sha256") != previous
-            or record.get("schema_version") != 1
+            or record.get("schema_version") != 2
             or record.get("status") != "review_needed"
             or type(record.get("attempts")) is not int
         ):
@@ -465,13 +670,13 @@ def _cycle_events(project: Path, cycle_id: Any) -> tuple[dict[str, Any], str]:
                 and record.get("best_revision")
                 == record.get("last_revision")
                 == request.get("base_revision")
-                and record.get("master_id") == request.get("master_id")
+                and record.get("developed_id") == request.get("developed_id")
                 and record.get("user_request") == request.get("user_request")
             )
         else:
             valid = prior["phase"] != "stopped" and all(
                 record.get(k) == prior.get(k)
-                for k in ("master_id", "user_request", "schema_version", "cycle_id", "status")
+                for k in ("developed_id", "user_request", "schema_version", "cycle_id", "status")
             )
             if event == "reserve":
                 checksum = digest(_json_bytes(request))
@@ -558,7 +763,7 @@ def _cycle_events(project: Path, cycle_id: Any) -> tuple[dict[str, Any], str]:
 
 def _cycle_record(project: Path, cycle_id: Any) -> dict[str, Any]:
     record, terminal = _cycle_events(project, cycle_id)
-    anchor = _asset(project, f"requests/{cycle_id}/head.sha256")
+    anchor = saved_asset(project, f"requests/{cycle_id}/head.sha256")
     if not anchor.is_file() or anchor.read_bytes() != (terminal + "\n").encode():
         raise ProjectError("Assisted review history anchor mismatch; preserve and inspect history")
     return record
@@ -569,21 +774,21 @@ def _save_cycle(
 ) -> dict[str, Any]:
     from .operations import draft_digest
 
-    state_bytes = _asset(project, "state.json").read_bytes()
+    state_bytes = saved_asset(project, "state.json").read_bytes()
     inputs = draft_digest(project)
     old = _json_bytes(record)
-    anchor = _asset(project, f"requests/{record['cycle_id']}/head.sha256")
+    anchor = saved_asset(project, f"requests/{record['cycle_id']}/head.sha256")
     anchor_before = anchor.read_bytes()
     index = record["event_index"] + 1
     updated = dict(record, **changes)
     updated.update(event=event, event_index=index, previous_sha256=digest(old))
-    path = _asset(
+    path = saved_asset(
         project, f"requests/{record['cycle_id']}/{index:03d}-{digest(_json_bytes(updated))}.json"
     )
 
     def recheck():
         if (
-            state_bytes != _asset(project, "state.json").read_bytes()
+            state_bytes != saved_asset(project, "state.json").read_bytes()
             or inputs != draft_digest(project)
             or _cycle_record(project, record["cycle_id"]) != record
         ):
@@ -595,7 +800,7 @@ def _save_cycle(
     def recheck_anchor():
         current, terminal = _cycle_events(project, record["cycle_id"])
         if (
-            state_bytes != _asset(project, "state.json").read_bytes()
+            state_bytes != saved_asset(project, "state.json").read_bytes()
             or inputs != draft_digest(project)
             or anchor.read_bytes() != anchor_before
             or current != updated
@@ -618,7 +823,7 @@ def _identity(project: Path, request: dict[str, Any]) -> dict[str, Any]:
     state = read_project(project)
     _reject_pending_guidance(project)
     if (
-        request.get("master_id") != state["master_id"]
+        request.get("developed_id") != state["developed_id"]
         or request.get("base_revision") != state["working_revision"]
         or request.get("inputs_digest") != draft_digest(project)
     ):
@@ -634,14 +839,14 @@ def review_cycle(project: Path, request: dict[str, Any]) -> dict[str, Any]:
             if (
                 not isinstance(request, dict)
                 or type(request.get("schema_version")) is not int
-                or request["schema_version"] != 1
+                or request["schema_version"] != 2
             ):
-                raise ProjectError("Invalid schema-1 review cycle request")
+                raise ProjectError("Invalid schema-2 review cycle request")
             request = json.loads(_json_bytes(request))
             action = request.get("action")
             if not isinstance(action, str):
                 raise ProjectError("Invalid review cycle action")
-            common = {"schema_version", "action", "master_id", "base_revision", "inputs_digest"}
+            common = {"schema_version", "action", "developed_id", "base_revision", "inputs_digest"}
             fields = {
                 "start": {"user_request"},
                 "assess": {"cycle_id", "outcome", "comparison"},
@@ -658,15 +863,15 @@ def review_cycle(project: Path, request: dict[str, Any]) -> dict[str, Any]:
             state = _identity(project, request)
             if action == "start":
                 _text(request["user_request"], "explicit user request")
-                saved_layers(project, state["working_revision"], state["master_id"])
+                saved_layers(project, state["working_revision"], state["developed_id"])
                 check_space(project, 1024**2)
                 cycle_id = f"review-{uuid.uuid4().hex}"
-                directory = _asset(project, f"requests/{cycle_id}")
+                directory = saved_asset(project, f"requests/{cycle_id}")
                 directory.mkdir(parents=True)
                 record = {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "cycle_id": cycle_id,
-                    "master_id": state["master_id"],
+                    "developed_id": state["developed_id"],
                     "user_request": request["user_request"],
                     "event_index": 0,
                     "previous_sha256": None,
@@ -704,7 +909,7 @@ def review_cycle(project: Path, request: dict[str, Any]) -> dict[str, Any]:
                 )
                 return record
             record = _cycle_record(project, request["cycle_id"])
-            if record["master_id"] != state["master_id"] or record["phase"] == "stopped":
+            if record["developed_id"] != state["developed_id"] or record["phase"] == "stopped":
                 raise ProjectError("Assisted review cycle stopped or belongs to another master")
             if action == "stop":
                 _text(request["reason"], "stop reason")
@@ -730,7 +935,7 @@ def review_cycle(project: Path, request: dict[str, Any]) -> dict[str, Any]:
                 raise ProjectError("Unknown source comparison disposition")
             _text(request["comparison"], "source comparison")
             revision = state["working_revision"]
-            _foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
+            _foreground, alpha, manifest = saved_layers(project, revision, state["developed_id"])
             prefix = f"revisions/{revision}"
             operation = _read_json(project, f"{prefix}/request.json")
             if (
@@ -743,14 +948,25 @@ def review_cycle(project: Path, request: dict[str, Any]) -> dict[str, Any]:
             parent = operation["base_revision"]
             from .repair import scalar16
 
-            parent_alpha = scalar16(_asset(project, f"revisions/{parent}/base_alpha16.png"))
-            before = _read_json(project, f"{prefix}/review-before/manifest.json")
-            after = _read_json(project, f"{prefix}/review/manifest.json")
+            parent_alpha = scalar16(saved_asset(project, f"revisions/{parent}/base_alpha16.png"))
+            overview = _read_json(project, f"{prefix}/review/manifest.json")
+            native = _review_project_locked(
+                project, revision=revision, crops=[c["crop_xyxy"] for c in overview["crops"]]
+            )
+            after_name = str(Path(native["manifest_file"]).relative_to(project))
+            after = _read_json(project, after_name)
+            before_name = after["assets"]["before_manifest"]
+            before = _read_json(project, before_name)
+            from .repair import prepared_parent_layers
+
+            before_parent = read_revision(project, parent, state["developed_id"])
+            if before_parent["kind"] == "prepare":
+                before_parent = prepared_parent_layers(project, parent, state["developed_id"])
             if (
                 [c["crop_xyxy"] for c in before["crops"]]
                 != [c["crop_xyxy"] for c in after["crops"]]
-                or before["master_id"] != after["master_id"]
-                or before["revision"] != parent
+                or before["developed_id"] != after["developed_id"]
+                or before["revision"] != before_parent["revision"]
                 or after["revision"] != revision
             ):
                 raise ProjectError("Mismatched native before/after review")
@@ -778,8 +994,8 @@ def review_cycle(project: Path, request: dict[str, Any]) -> dict[str, Any]:
                 unchanged_alpha=unchanged,
                 comparison=request["comparison"],
                 result=_read_json(project, f"{prefix}/result.json"),
-                before_manifest=f"{prefix}/review-before/manifest.json",
-                after_manifest=f"{prefix}/review/manifest.json",
+                before_manifest=before_name,
+                after_manifest=after_name,
                 request=request,
             )
     except (ValueError, KeyError, TypeError) as error:
@@ -820,12 +1036,12 @@ def validate_assisted(
     if record["attempts"] >= 2:
         raise ProjectError("Assisted two-attempt budget exhausted")
     state = _identity(project, operation)
-    if state["master_id"] != record["master_id"]:
+    if state["developed_id"] != record["developed_id"]:
         raise ProjectError("Assisted cycle master differs")
     # Preparation may add guides, but a manual/new completed result cannot silently join this cycle.
     ancestor = state["working_revision"]
     while ancestor != record["last_revision"]:
-        manifest = read_revision(project, ancestor, state["master_id"])
+        manifest = read_revision(project, ancestor, state["developed_id"])
         if manifest["kind"] != "prepare":
             raise ProjectError("Stale assisted cycle candidate; explicitly start a new review")
         ancestor = manifest["parent"]
@@ -860,7 +1076,7 @@ def validate_assisted(
         _text(defect[name], name)
     if defect["classification"] != "alpha" or defect["source_resolved"] is not True:
         raise ProjectError("Unresolved/user-decision defect; color/shading effects unavailable")
-    source, _ = load_master(project, state["master_id"])
+    source, _ = load_developed(project, state["developed_id"])
     height, width = source.shape[:2]
     location = coordinates(defect["location_xyxy"], width, height, box=True)
     review_path = _input_file(project, envelope["review_manifest_file"])
@@ -870,14 +1086,14 @@ def validate_assisted(
             {
                 "review": reviewed,
                 "manifest": digest(
-                    _asset(
+                    saved_asset(
                         project, f"revisions/{record['last_revision']}/manifest.json"
                     ).read_bytes()
                 ),
             }
         )
     )
-    if review_path != _asset(
+    if review_path != saved_asset(
         project, f"reviews/{record['last_revision']}/{expected_hash}/manifest.json"
     ):
         raise ProjectError("Invalid or changed immutable review manifest path")
@@ -885,16 +1101,16 @@ def validate_assisted(
         if (
             Path(name).name != name
             or digest(
-                _asset(
+                saved_asset(
                     project, f"reviews/{record['last_revision']}/{expected_hash}/{name}"
                 ).read_bytes()
             )
             != checksum
         ):
             raise ProjectError("Stale inspected crop asset")
-    expected_revision = read_revision(project, record["last_revision"], state["master_id"])
+    expected_revision = read_revision(project, record["last_revision"], state["developed_id"])
     if (
-        reviewed.get("master_id") != state["master_id"]
+        reviewed.get("developed_id") != state["developed_id"]
         or reviewed.get("revision") != record["last_revision"]
         or reviewed.get("revision_inputs_digest") != expected_revision["draft_digest"]
         or reviewed.get("inputs_digest") != expected_revision["draft_digest"]

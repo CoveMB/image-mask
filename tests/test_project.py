@@ -16,7 +16,7 @@ from blackmask.project import (
     ProjectError,
     accept_development,
     create_project,
-    load_master,
+    load_developed,
     project_lock,
     read_project,
 )
@@ -36,10 +36,11 @@ def test_create_reopen_and_explicit_identity_approval(tmp_path):
     assert state["development_approved"] is False
     assert state["status"] == "ready"
     assert state["working_revision"] is None and state["accepted_revision"] is None
-    pixels, metadata = load_master(project, state["master_id"])
+    assert state["latest_result_revision"] is None
+    pixels, metadata = load_developed(project, state["developed_id"])
     np.testing.assert_array_equal(pixels, ramp())
     assert metadata["source_sha256"] == original
-    accept_development(project, state["master_id"])
+    accept_development(project, state["developed_id"])
     assert read_project(project)["development_approved"] is True
     assert read_project(project)["accepted_revision"] is None
     assert hashlib.sha256(source.read_bytes()).hexdigest() == original
@@ -51,7 +52,7 @@ def test_identity_binds_development_not_just_dimensions(tmp_path):
     source, project = create(tmp_path)
     other = tmp_path / "other"
     create_project(source, other, {"assume_srgb": True})
-    assert read_project(project)["master_id"] != read_project(other)["master_id"]
+    assert read_project(project)["developed_id"] != read_project(other)["developed_id"]
 
 
 @pytest.mark.parametrize("status", [[], {}, "accepted"])
@@ -103,7 +104,7 @@ def test_tampered_master_and_draft_rejected(tmp_path):
     data["unexpected"] = True
     recipe.write_text(tomli_w.dumps(data))
     with pytest.raises(ProjectError, match="recipe|unknown"):
-        accept_development(project, state["master_id"])
+        accept_development(project, state["developed_id"])
     del data["unexpected"]
     data["shading"]["enabled"] = "false"
     recipe.write_text(tomli_w.dumps(data))
@@ -111,10 +112,10 @@ def test_tampered_master_and_draft_rejected(tmp_path):
         read_project(project)
     data["shading"]["enabled"] = False
     recipe.write_text(tomli_w.dumps(data))
-    master = project / "masters" / (state["master_id"] + ".tif")
+    master = project / "assets/developed" / (state["developed_id"] + ".tif")
     master.write_bytes(b"corrupt")
     with pytest.raises(ProjectError, match="master|hash"):
-        load_master(project, state["master_id"])
+        load_developed(project, state["developed_id"])
     assert json.loads((project / "state.json").read_text())["development_approved"] is False
 
 
@@ -139,7 +140,7 @@ def test_low_disk_prevents_assets(tmp_path):
     ):
         create_project(source, project, {})
     assert not (project / "state.json").exists()
-    assert not (project / "masters").exists()
+    assert not (project / "assets/developed").exists()
 
 
 def test_initial_publication_failure_and_recovery(tmp_path):
@@ -161,7 +162,9 @@ def test_initial_publication_failure_and_recovery(tmp_path):
         read_project(project)
     create_project(source, tmp_path / "recovered", {})
     np.testing.assert_array_equal(
-        load_master(tmp_path / "recovered", read_project(tmp_path / "recovered")["master_id"])[0],
+        load_developed(
+            tmp_path / "recovered", read_project(tmp_path / "recovered")["developed_id"]
+        )[0],
         ramp(),
     )
 
@@ -174,7 +177,7 @@ def test_approval_failure_preserves_exact_state(tmp_path):
         patch("blackmask.project.os.replace", side_effect=OSError("injected atomic failure")),
         pytest.raises(OSError),
     ):
-        accept_development(project, state["master_id"])
+        accept_development(project, state["developed_id"])
     assert (project / "state.json").read_bytes() == before
     assert read_project(project)["development_approved"] is False
 
@@ -195,13 +198,13 @@ def test_real_process_lock_busy_and_reads_responsive(tmp_path):
         assert process.stdout.readline().strip() == "locked"
         assert read_project(project)["development_approved"] is False
         with pytest.raises(ProjectError, match="busy"):
-            accept_development(project, read_project(project)["master_id"])
+            accept_development(project, read_project(project)["developed_id"])
         with pytest.raises(ProjectError, match="busy"), project_lock(project):
             pass
     finally:
         process.communicate("release\n", timeout=10)
     assert process.returncode == 0
-    accept_development(project, read_project(project)["master_id"])
+    accept_development(project, read_project(project)["developed_id"])
 
 
 def test_source_mutation_during_ingest_never_publishes(tmp_path):
@@ -270,12 +273,12 @@ create_project(Path(sys.argv[1]), Path(sys.argv[2]), {})
 def test_approval_low_disk_preserves_state(tmp_path):
     _, project = create(tmp_path)
     before = (project / "state.json").read_bytes()
-    master_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     with (
         patch("blackmask.project.shutil.disk_usage", return_value=type("Disk", (), {"free": 1})()),
         pytest.raises(ProjectError, match="space"),
     ):
-        accept_development(project, master_id)
+        accept_development(project, developed_id)
     assert (project / "state.json").read_bytes() == before
 
 
@@ -294,7 +297,7 @@ def test_nonfinite_wb_rejects_camera_then_creates_daylight_project(tmp_path, inv
             create_project(source, tmp_path / "camera", {})
         project = create_project(source, tmp_path / "daylight", {"white_balance": "daylight"})
     state = read_project(project)
-    pixels, metadata = load_master(project, state["master_id"])
+    pixels, metadata = load_developed(project, state["developed_id"])
     np.testing.assert_array_equal(pixels, ramp())
     assert metadata["camera_whitebalance"][0] is None
     assert metadata["camera_whitebalance_valid"] is False
@@ -346,7 +349,7 @@ def test_tiff_raw_preview_creates_identity_bound_full_precision_master(tmp_path)
     with patch("blackmask.ingest.rawpy.imread", return_value=raw):
         project = create_project(source, tmp_path / "project", {})
     state = read_project(project)
-    pixels, metadata = load_master(project, state["master_id"])
+    pixels, metadata = load_developed(project, state["developed_id"])
     np.testing.assert_array_equal(pixels, ramp())
     assert metadata["format"] == "RAW"
     assert metadata["source_precision_bits"] is None
@@ -368,4 +371,4 @@ def test_gain_map_jpeg_rejection_never_publishes_project_assets(tmp_path):
         create_project(source, project, {"assume_srgb": True})
     assert source.read_bytes() == original
     assert not (project / "state.json").exists()
-    assert not (project / "masters").exists()
+    assert not (project / "assets/developed").exists()

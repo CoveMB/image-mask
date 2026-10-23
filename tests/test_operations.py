@@ -5,6 +5,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from PIL import Image
+from test_ingest import bind_raster, saved_raster
 from test_project import create
 
 from blackmask import operations
@@ -14,16 +15,16 @@ from blackmask.project import ProjectError, accept_development, read_project
 def opened(tmp_path):
     source, project = create(tmp_path)
     state = read_project(project)
-    accept_development(project, state["master_id"])
+    accept_development(project, state["developed_id"])
     return source, project
 
 
 def request(project, **extra):
     state = read_project(project)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "prepare",
-        "master_id": state["master_id"],
+        "developed_id": state["developed_id"],
         "base_revision": state["working_revision"],
         "inputs_digest": operations.draft_digest(project),
         **extra,
@@ -35,8 +36,8 @@ def edits(project, regions):
     path.write_text(
         json.dumps(
             {
-                "schema_version": 1,
-                "master_id": read_project(project)["master_id"],
+                "schema_version": 2,
+                "developed_id": read_project(project)["developed_id"],
                 "actions": [{"action": "upsert", "region": r} for r in regions],
             }
         )
@@ -49,8 +50,8 @@ def test_prepare_real_files_snapshots_and_second_parent(tmp_path):
     original = source.read_bytes()
     result = operations.apply_operation(project, request(project))
     assert result["revision"] == "rev-001" and result["parent"] is None
-    assert Path(result["trimap_file"]).is_file()
-    assert np.all(np.array(Image.open(result["trimap_file"])) == 128)
+    assert saved_raster(Path(result["trimap_file"])).is_file()
+    assert np.all(np.array(Image.open(saved_raster(result["trimap_file"]))) == 128)
     assert result["inputs_digest"] == operations.draft_digest(project)
     assert read_project(project)["accepted_revision"] is None
     revision = Path(result["manifest_file"]).parent
@@ -67,11 +68,11 @@ def test_edits_applied_once_and_subsequent_prepare_inherits(tmp_path):
     region = {"id": "fg", "role": "foreground", "shape": "rectangle", "xyxy": [0, 0, 1, 1]}
     filename = edits(project, [region])
     result = operations.apply_operation(project, request(project, guide_edits_file=filename))
-    trimap = np.array(Image.open(result["trimap_file"]))
+    trimap = np.array(Image.open(saved_raster(result["trimap_file"])))
     assert trimap[0, 0] == 255 and trimap[1, 2] == 128
     assert json.loads((project / "guides.json").read_text())["regions"] == [region]
     second = operations.apply_operation(project, request(project))
-    np.testing.assert_array_equal(np.array(Image.open(second["trimap_file"])), trimap)
+    np.testing.assert_array_equal(np.array(Image.open(saved_raster(second["trimap_file"]))), trimap)
     manifest = json.loads(Path(result["manifest_file"]).read_text())
     assert "edits.json" in manifest["external_inputs"]
 
@@ -79,7 +80,7 @@ def test_edits_applied_once_and_subsequent_prepare_inherits(tmp_path):
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("master_id", "0" * 64),
+        ("developed_id", "0" * 64),
         ("base_revision", "rev-999"),
         ("inputs_digest", "0" * 64),
         ("kind", "shell"),
@@ -121,7 +122,7 @@ def test_masking_without_development_approval_preserves_source_appearance(tmp_pa
 
     import tifffile
 
-    from blackmask.project import load_master
+    from blackmask.project import load_developed
 
     source, project = create(tmp_path)
     state = read_project(project)
@@ -131,10 +132,10 @@ def test_masking_without_development_approval_preserves_source_appearance(tmp_pa
         original_state = (project / "state.json").read_bytes()
         assert read_project(project)["development_approved"] is False
         assert (project / "state.json").read_bytes() == original_state
-    master_path = project / "masters" / f"{state['master_id']}.tif"
+    master_path = project / "assets/developed" / f"{state['developed_id']}.tif"
     original_source = hashlib.sha256(source.read_bytes()).hexdigest()
-    original_master = hashlib.sha256(master_path.read_bytes()).hexdigest()
-    master, _ = load_master(project, state["master_id"])
+    original_master = hashlib.sha256(saved_raster(master_path).read_bytes()).hexdigest()
+    master, _ = load_developed(project, state["developed_id"])
     filename = edits(
         project,
         [
@@ -145,9 +146,11 @@ def test_masking_without_development_approval_preserves_source_appearance(tmp_pa
     operations.apply_operation(project, request(project, guide_edits_file=filename))
     matte = operations.apply_operation(project, request(project, kind="matte"))
     revision = project / "revisions" / matte["revision"]
-    np.testing.assert_array_equal(tifffile.imread(revision / "foreground_rgb16.tif"), master)
     np.testing.assert_array_equal(
-        np.array(Image.open(revision / "base_alpha16.png")),
+        tifffile.imread(saved_raster(revision / "foreground_rgb16.tif")), master
+    )
+    np.testing.assert_array_equal(
+        np.array(Image.open(saved_raster(revision / "base_alpha16.png"))),
         np.array([[65535, 0, 0], [65535, 0, 0]], dtype=np.uint16),
     )
     assert read_project(project)["accepted_revision"] is None
@@ -165,17 +168,19 @@ def test_masking_without_development_approval_preserves_source_appearance(tmp_pa
     )
     effect_revision = project / "revisions" / effect["revision"]
     assert not (effect_revision / "trimap_approval.json").exists()
-    np.testing.assert_array_equal(tifffile.imread(effect_revision / "foreground_rgb16.tif"), master)
     np.testing.assert_array_equal(
-        np.array(Image.open(effect_revision / "base_alpha16.png")),
-        np.array(Image.open(revision / "base_alpha16.png")),
+        tifffile.imread(saved_raster(effect_revision / "foreground_rgb16.tif")), master
+    )
+    np.testing.assert_array_equal(
+        np.array(Image.open(saved_raster(effect_revision / "base_alpha16.png"))),
+        np.array(Image.open(saved_raster(revision / "base_alpha16.png"))),
     )
     operations.accept_revision(project, effect["revision"])
     final = read_project(project)
     assert final["accepted_revision"] == effect["revision"]
     assert final["development_approved"] is False
     assert hashlib.sha256(source.read_bytes()).hexdigest() == original_source
-    assert hashlib.sha256(master_path.read_bytes()).hexdigest() == original_master
+    assert hashlib.sha256(saved_raster(master_path).read_bytes()).hexdigest() == original_master
 
 
 def test_low_space_and_publish_failure_preserve_pointer(tmp_path):
@@ -232,7 +237,7 @@ def test_mid_run_text_edit_stops_publication_without_clobber(tmp_path, target):
     changed = b"external editor changed draft"
 
     def interfere(*args):
-        (project / target).write_bytes(changed)
+        (saved_raster(project / target)).write_bytes(changed)
         return []
 
     with (
@@ -240,7 +245,7 @@ def test_mid_run_text_edit_stops_publication_without_clobber(tmp_path, target):
         pytest.raises(ProjectError, match="Stale|stale"),
     ):
         operations.apply_operation(project, request(project, guide_edits_file=filename))
-    assert (project / target).read_bytes() == changed
+    assert (saved_raster(project / target)).read_bytes() == changed
     if target != "state.json":
         assert (project / "state.json").read_bytes() == before
 
@@ -248,13 +253,12 @@ def test_mid_run_text_edit_stops_publication_without_clobber(tmp_path, target):
 def saved_alpha_fixture(project, values):
     # Synthetic downstream boundary: attach a saved uint16 alpha to a complete prepared fixture.
     # This is not matting or final acceptance evidence.
-    from blackmask.project import digest
 
     result = operations.apply_operation(project, request(project))
     directory = Path(result["manifest_file"]).parent
     Image.fromarray(values).save(directory / "base_alpha16.png")
     manifest = json.loads((directory / "manifest.json").read_text())
-    manifest["files"]["base_alpha16.png"] = digest((directory / "base_alpha16.png").read_bytes())
+    bind_raster(project, directory, manifest, "base_alpha16.png")
     (directory / "manifest.json").write_text(json.dumps(manifest))
     return result
 
@@ -273,8 +277,10 @@ def test_preparing_partial_lock_carries_alpha_exact_and_explicit_removal(tmp_pat
     filename = edits(project, [lock])
     result = operations.apply_operation(project, request(project, guide_edits_file=filename))
     directory = Path(result["manifest_file"]).parent
-    np.testing.assert_array_equal(np.array(Image.open(directory / "base_alpha16.png")), values)
-    lock_values = np.array(Image.open(directory / "supports/lock_values16.png"))
+    np.testing.assert_array_equal(
+        np.array(Image.open(saved_raster(directory / "base_alpha16.png"))), values
+    )
+    lock_values = np.array(Image.open(saved_raster(directory / "supports/lock_values16.png")))
     assert lock_values[0, 1] == 12345 and lock_values[1, 1] == 33333
     # Root text cannot silently remove a persistent lock without a recorded remove action.
     guides = json.loads((project / "guides.json").read_text())
@@ -287,18 +293,17 @@ def test_preparing_partial_lock_carries_alpha_exact_and_explicit_removal(tmp_pat
     (project / filename).write_text(
         json.dumps(
             {
-                "schema_version": 1,
-                "master_id": first["master_id"],
+                "schema_version": 2,
+                "developed_id": first["developed_id"],
                 "actions": [{"action": "remove", "id": "wing"}],
             }
         )
     )
     removed = operations.apply_operation(project, request(project, guide_edits_file=filename))
-    assert not np.any(np.array(Image.open(removed["protection_file"])))
+    assert not np.any(np.array(Image.open(saved_raster(removed["protection_file"]))))
 
 
 def test_midrun_saved_lock_manifest_and_values_change_rejected(tmp_path):
-    from blackmask.project import digest
 
     _, project = opened(tmp_path)
     values = np.array([[0, 12345, 65535], [17, 33333, 60000]], dtype=np.uint16)
@@ -323,9 +328,7 @@ def test_midrun_saved_lock_manifest_and_values_change_rejected(tmp_path):
     def interfere(*args):
         Image.fromarray(np.zeros_like(values)).save(directory / "base_alpha16.png")
         manifest = json.loads((directory / "manifest.json").read_text())
-        manifest["files"]["base_alpha16.png"] = digest(
-            (directory / "base_alpha16.png").read_bytes()
-        )
+        bind_raster(project, directory, manifest, "base_alpha16.png")
         (directory / "manifest.json").write_text(json.dumps(manifest))
         return []
 
@@ -356,7 +359,7 @@ def test_request_file_mutation_rejected_and_original_bytes_snapshotted(tmp_path)
     path.write_text(json.dumps(operation, indent=4))
     result = operations.apply_operation(project, operation, request_file=path)
     directory = Path(result["manifest_file"]).parent
-    assert (directory / "request.json").read_bytes() == path.read_bytes()
+    assert (directory / "request.json").read_bytes() == saved_raster(path).read_bytes()
     assert (directory / "result.json").is_file()
 
 
@@ -436,16 +439,16 @@ def test_selected_group_candidates_are_membership_only(tmp_path):
         )
     assert [c["id"] for c in result["candidates"]] == ["wing-0", "wing-1", "wing-2"]
     directory = Path(result["manifest_file"]).parent
-    assert np.all(np.array(Image.open(result["trimap_file"])) == 128)
+    assert np.all(np.array(Image.open(saved_raster(result["trimap_file"]))) == 128)
     np.testing.assert_array_equal(
-        np.array(Image.open(directory / "selected_membership.png")), masks[1] * 255
+        np.array(Image.open(saved_raster(directory / "selected_membership.png"))), masks[1] * 255
     )
 
 
 def test_corrupt_prepared_revision_is_not_reused(tmp_path):
     _, project = opened(tmp_path)
     first = operations.apply_operation(project, request(project))
-    Path(first["trimap_file"]).write_bytes(b"broken")
+    saved_raster(Path(first["trimap_file"])).write_bytes(b"broken")
     with pytest.raises(ProjectError, match="hash"):
         read_project(project)
 
@@ -458,13 +461,13 @@ def test_identity_check_binds_actual_captured_bytes(tmp_path, target):
     operation = request(project)
     before = (project / "state.json").read_bytes()
     if target == "guides.json":
-        changed = json.loads((project / target).read_bytes())
+        changed = json.loads((saved_raster(project / target)).read_bytes())
         changed["regions"] = [{"id": "late", "role": "background", "shape": "point", "xy": [0, 0]}]
     else:
         changed = json.loads(before)
         changed.update(development_approved=False, status="review_needed")
     changed_bytes = json.dumps(changed).encode()
-    original = module._asset
+    original = module.saved_asset
     state_reads = 0
 
     def change_at_capture(root, name):
@@ -472,15 +475,15 @@ def test_identity_check_binds_actual_captured_bytes(tmp_path, target):
         if root == project and name == "state.json":
             state_reads += 1
             if state_reads == 1:
-                (project / target).write_bytes(changed_bytes)
+                (saved_raster(project / target)).write_bytes(changed_bytes)
         return original(root, name)
 
     with (
-        patch("blackmask.operations._asset", side_effect=change_at_capture),
+        patch("blackmask.operations.saved_asset", side_effect=change_at_capture),
         pytest.raises(ProjectError, match="Stale|stale"),
     ):
         operations.apply_operation(project, operation)
-    assert (project / target).read_bytes() == changed_bytes
+    assert (saved_raster(project / target)).read_bytes() == changed_bytes
     if target != "state.json":
         assert (project / "state.json").read_bytes() == before
 
@@ -494,10 +497,10 @@ def test_edit_during_final_revision_validation_preserved(tmp_path, target):
     changed = b"editor saved late boundary bytes"
     original = operations.read_revision
 
-    def change_after_validation(root, revision, master_id):
-        manifest = original(root, revision, master_id)
+    def change_after_validation(root, revision, developed_id):
+        manifest = original(root, revision, developed_id)
         if revision == "rev-001":
-            (project / target).write_bytes(changed)
+            (saved_raster(project / target)).write_bytes(changed)
         return manifest
 
     with (
@@ -505,7 +508,7 @@ def test_edit_during_final_revision_validation_preserved(tmp_path, target):
         pytest.raises(ProjectError, match="Stale|stale"),
     ):
         operations.apply_operation(project, operation)
-    assert (project / target).read_bytes() == changed
+    assert (saved_raster(project / target)).read_bytes() == changed
     if target != "state.json":
         assert (project / "state.json").read_bytes() == before
 
@@ -570,9 +573,11 @@ def test_prepare_saves_opt_in_selected_native_proposal_without_forcing_trimap(tm
             model_cache=Path("unused-stub-cache"),
         )
     directory = Path(result["manifest_file"]).parent
-    assert np.all(np.array(Image.open(result["trimap_file"])) == 128)
+    assert np.all(np.array(Image.open(saved_raster(result["trimap_file"]))) == 128)
     expected = np.array([[128, 255, 128], [128, 255, 128]], dtype=np.uint8)
-    np.testing.assert_array_equal(np.array(Image.open(result["trimap_proposal_file"])), expected)
+    np.testing.assert_array_equal(
+        np.array(Image.open(saved_raster(result["trimap_proposal_file"]))), expected
+    )
     saved = tomllib.loads((directory / "recipe.toml").read_text())
     assert saved["groups"][0]["morphology"] == {
         "foreground_erosion_px": 0,
@@ -630,7 +635,7 @@ def test_proposal_partial_lock_failure_preserves_saved_alpha_and_state(tmp_path)
     values = np.array([[0, 12345, 65535], [17, 33333, 60000]], dtype=np.uint16)
     first = saved_alpha_fixture(project, values)
     directory = Path(first["manifest_file"]).parent
-    before_alpha = (directory / "base_alpha16.png").read_bytes()
+    before_alpha = (saved_raster(directory / "base_alpha16.png")).read_bytes()
     before_state = (project / "state.json").read_bytes()
     recipe = tomllib.loads((project / "recipe.toml").read_text())
     recipe["groups"] = [
@@ -669,5 +674,5 @@ def test_proposal_partial_lock_failure_preserves_saved_alpha_and_state(tmp_path)
                 request(project, guide_edits_file=filename),
                 model_cache=Path("unused-stub-cache"),
             )
-    assert (directory / "base_alpha16.png").read_bytes() == before_alpha
+    assert (saved_raster(directory / "base_alpha16.png")).read_bytes() == before_alpha
     assert (project / "state.json").read_bytes() == before_state

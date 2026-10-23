@@ -9,7 +9,13 @@ def region(role, shape="rectangle", **values):
 
 
 def document(regions):
-    return {"schema_version": 1, "master_id": "a" * 64, "width": 7, "height": 5, "regions": regions}
+    return {
+        "schema_version": 2,
+        "developed_id": "a" * 64,
+        "width": 7,
+        "height": 5,
+        "regions": regions,
+    }
 
 
 def raster(regions, **kwargs):

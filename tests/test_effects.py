@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import tifffile
 from PIL import Image
-from test_ingest import srgb_profile, tiff
+from test_ingest import bind_raster, native_review_directories, saved_raster, srgb_profile, tiff
 from test_matte_operations import approve, run_matte
 from test_operations import edits, request
 
@@ -22,7 +22,7 @@ def fixture_project(tmp_path):
     source[:, 0] = [10000, 20000, 30000]
     project = tmp_path / "project"
     create_project(tiff(tmp_path / "source.tif", source, profile=srgb_profile()), project, {})
-    accept_development(project, read_project(project)["master_id"])
+    accept_development(project, read_project(project)["developed_id"])
     name = edits(
         project,
         [
@@ -89,27 +89,33 @@ def test_cleanup_independent_inverse_mixture_preserves_all_excluded_samples():
 
 def test_public_effects_saved_precision_no_compounding_and_disable(tmp_path):
     project, _source, _parent = fixture_project(tmp_path)
-    base, alpha, _ = saved_layers(project, _parent["revision"], read_project(project)["master_id"])
+    base, alpha, _ = saved_layers(
+        project, _parent["revision"], read_project(project)["developed_id"]
+    )
     with patch("blackmask.operations.VitMatteSession", side_effect=AssertionError("No model")):
         result = operations.apply_operation(project, effect_request(project))
         rgb, actual_alpha, manifest = saved_layers(
-            project, result["revision"], read_project(project)["master_id"]
+            project, result["revision"], read_project(project)["developed_id"]
         )
         assert manifest["kind"] == "effects"
         assert np.any(rgb != _source)
         np.testing.assert_array_equal(actual_alpha, alpha)
         directory = project / "revisions" / result["revision"]
-        np.testing.assert_array_equal(tifffile.imread(directory / "corrected_rgb16.tif"), rgb)
-        np.testing.assert_array_equal(tifffile.imread(directory / "foreground_rgb16.tif"), base)
+        np.testing.assert_array_equal(
+            tifffile.imread(saved_raster(directory / "corrected_rgb16.tif")), rgb
+        )
+        np.testing.assert_array_equal(
+            tifffile.imread(saved_raster(directory / "foreground_rgb16.tif")), base
+        )
         again = operations.apply_operation(
             project, effect_request(project, candidate_comparison=True)
         )
         np.testing.assert_array_equal(
-            saved_layers(project, again["revision"], read_project(project)["master_id"])[0], rgb
+            saved_layers(project, again["revision"], read_project(project)["developed_id"])[0], rgb
         )
         disabled = operations.apply_operation(project, effect_request(project, enabled=False))
         np.testing.assert_array_equal(
-            saved_layers(project, disabled["revision"], read_project(project)["master_id"])[0],
+            saved_layers(project, disabled["revision"], read_project(project)["developed_id"])[0],
             _source,
         )
     assert read_project(project)["accepted_revision"] == _parent["revision"]
@@ -139,7 +145,7 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
     first = operations.apply_operation(project, effect_request(project))
     operations.accept_revision(project, first["revision"])
     old_rgb, old_alpha, _ = saved_layers(
-        project, first["revision"], read_project(project)["master_id"]
+        project, first["revision"], read_project(project)["developed_id"]
     )
     lock = edits(
         project,
@@ -165,9 +171,10 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
             project, repair_request(project, prepared, [0, 0, 6, 4], [1, 1, 4, 3])
         )
     _rgb, alpha, manifest = saved_layers(
-        project, repaired["revision"], read_project(project)["master_id"]
+        project, repaired["revision"], read_project(project)["developed_id"]
     )
     assert manifest["color_cleanup"]["stale"] is True
+    assert read_project(project)["latest_result_revision"] == first["revision"]
     assert np.any(alpha != old_alpha)
     np.testing.assert_array_equal(alpha[1, 2], old_alpha[1, 2])
     for name in ("review", "review-before"):
@@ -175,11 +182,13 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
             (project / "revisions" / repaired["revision"] / name / "manifest.json").read_bytes()
         )
         assert "cleanup OFF" in review["label"]
-    reviewed = json.loads(Path(review_project(project)["manifest_file"]).read_bytes())
+    reviewed = json.loads(saved_raster(Path(review_project(project)["manifest_file"])).read_bytes())
     assert "cleanup_stale" in reviewed["stale_labels"]
     assert reviewed["settings"]["color_cleanup"] == {"enabled": True, "strength": 0.35}
     assert reviewed["effects"]["color_cleanup"]["stale"] is True
-    assert reviewed["assets"]["foreground_rgb16"].endswith("/foreground_rgb16.tif")
+    assert (
+        reviewed["assets"]["foreground_rgb16"] == manifest["assets"]["foreground_rgb16.tif"]["path"]
+    )
     with pytest.raises(ProjectError, match="Stale.*cleanup"):
         operations.accept_revision(project, repaired["revision"])
     with pytest.raises(ProjectError, match="Stale.*cleanup"):
@@ -188,9 +197,10 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
         project, effect_request(project, scope=[1, 1, 4, 3], candidate_comparison=True)
     )
     new_rgb, new_alpha, manifest = saved_layers(
-        project, rebuilt["revision"], read_project(project)["master_id"]
+        project, rebuilt["revision"], read_project(project)["developed_id"]
     )
     assert manifest["color_cleanup"]["stale"] is False
+    assert read_project(project)["latest_result_revision"] == rebuilt["revision"]
     outside = np.ones(alpha.shape, bool)
     outside[1:3, 1:4] = False
     assert np.any((old_alpha[outside] > 0) & (old_alpha[outside] < 65535))
@@ -200,13 +210,13 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
     operations.accept_revision(project, rebuilt["revision"])
     exported = export_project(project)
     np.testing.assert_array_equal(
-        tifffile.imread(Path(exported["directory"]) / "black_rgb16.tif"),
+        tifffile.imread(saved_raster(Path(exported["directory"]) / "black_rgb16.tif")),
         np.rint(new_rgb.astype(np.float64) * (alpha.astype(np.float64) / 65535)[..., None]).astype(
             np.uint16
         ),
     )
     for name, data in accepted_bytes.items():
-        assert (Path(accepted["directory"]) / name).read_bytes() == data
+        assert (saved_raster(Path(accepted["directory"]) / name)).read_bytes() == data
     operations.restore_revision(project, first["revision"], replace_drafts=True)
     assert read_project(project)["accepted_revision"] == rebuilt["revision"]
 
@@ -260,7 +270,7 @@ def test_viewer_and_cli_share_effects_and_saved_comparison_mode(tmp_path):
         assert current["color_cleanup"]["enabled"] is True
         path = f"/image/black/{result['revision']}/0,0,6,4"
         assert server.image(path) != server.image(path + "/base")
-        identity = {k: state[k] for k in ("master_id", "inputs_digest", "authoring_digest")}
+        identity = {k: state[k] for k in ("developed_id", "inputs_digest", "authoring_digest")}
         identity.update(
             base_revision=state["working_revision"],
             action="effects",
@@ -308,8 +318,8 @@ def test_interrupted_effect_pointer_retains_complete_assets_and_explicit_restore
     assert read_project(project)["working_revision"] == _parent["revision"]
     assert read_project(project)["accepted_revision"] == _parent["revision"]
     revision = max((project / "revisions").glob("rev-*")).name
-    saved_layers(project, revision, read_project(project)["master_id"])
-    operations.restore_revision(project, revision)
+    saved_layers(project, revision, read_project(project)["developed_id"])
+    operations.restore_revision(project, revision, replace_drafts=True)
     assert read_project(project)["working_revision"] == revision
     assert read_project(project)["accepted_revision"] == _parent["revision"]
 
@@ -350,7 +360,7 @@ def test_effects_consumes_editable_recipe_settings_without_override(tmp_path):
     assert result["color_cleanup"]["enabled"] is True
     from blackmask.review import review_project
 
-    reviewed = json.loads(Path(review_project(project)["manifest_file"]).read_bytes())
+    reviewed = json.loads(saved_raster(Path(review_project(project)["manifest_file"])).read_bytes())
     assert "draft_changed" not in reviewed["stale_labels"]
     operations.accept_revision(project, result["revision"])
     original_recipe = (project / "recipe.toml").read_bytes()
@@ -361,20 +371,17 @@ def test_effects_consumes_editable_recipe_settings_without_override(tmp_path):
 
 
 def test_corrected_profile_validation_and_dependency_identity(tmp_path):
-    from blackmask.project import digest
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, effect_request(project))
     directory = project / "revisions" / result["revision"]
-    rgb = tifffile.imread(directory / "corrected_rgb16.tif")
+    rgb = tifffile.imread(saved_raster(directory / "corrected_rgb16.tif"))
     tifffile.imwrite(directory / "corrected_rgb16.tif", rgb, photometric="rgb", metadata=None)
     manifest = json.loads((directory / "manifest.json").read_bytes())
-    manifest["files"]["corrected_rgb16.tif"] = digest(
-        (directory / "corrected_rgb16.tif").read_bytes()
-    )
+    bind_raster(project, directory, manifest, "corrected_rgb16.tif")
     (directory / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(ProjectError, match="profile"):
-        saved_layers(project, result["revision"], read_project(project)["master_id"])
+        saved_layers(project, result["revision"], read_project(project)["developed_id"])
 
 
 def test_effect_cli_respects_actual_writer_lock(tmp_path):
@@ -406,13 +413,13 @@ def test_explicit_disable_works_with_empty_current_guide_support(tmp_path):
     result = operations.apply_operation(
         project, effect_request(project, enabled=False, support=np.zeros((4, 6), np.uint16))
     )
-    rgb, _, _ = saved_layers(project, result["revision"], read_project(project)["master_id"])
+    rgb, _, _ = saved_layers(project, result["revision"], read_project(project)["developed_id"])
     np.testing.assert_array_equal(rgb, source)
 
 
 @pytest.mark.parametrize("enabled,strength", [(True, 0.7), (False, 0.6), (True, 0.0)])
 @pytest.mark.parametrize("inherited", [False, True])
-def test_review_manifest_reports_applied_cleanup_without_rewriting_recipe(
+def test_review_manifest_reports_effective_cleanup_and_preserves_consumed_recipe(
     tmp_path, enabled, strength, inherited
 ):
     import tomllib
@@ -427,6 +434,11 @@ def test_review_manifest_reports_applied_cleanup_without_rewriting_recipe(
     result = operations.apply_operation(
         project, effect_request(project, enabled=enabled, strength=strength)
     )
+    effective_recipe_bytes = (project / "recipe.toml").read_bytes()
+    assert (
+        project / "revisions" / result["revision"] / "inputs/recipe.toml"
+    ).read_bytes() == recipe_bytes
+    effective_digest = draft_digest(project)
     saved_review = json.loads(
         (project / "revisions" / result["revision"] / "review/manifest.json").read_bytes()
     )
@@ -439,18 +451,19 @@ def test_review_manifest_reports_applied_cleanup_without_rewriting_recipe(
     directory = project / "revisions" / result["revision"]
     manifest_bytes = (directory / "manifest.json").read_bytes()
     manifest = json.loads(manifest_bytes)
-    record = json.loads(Path(review_project(project)["manifest_file"]).read_bytes())
+    record = json.loads(saved_raster(Path(review_project(project)["manifest_file"])).read_bytes())
     effective = enabled and strength != 0
     assert record["settings"]["color_cleanup"] == {"enabled": effective, "strength": strength}
     assert record["effects"]["color_cleanup"]["enabled"] is effective
     assert record["effects"]["color_cleanup"]["stale"] is False
     assert "cleanup_stale" not in record["stale_labels"]
     foreground = "corrected_rgb16.tif" if effective else "foreground_rgb16.tif"
-    assert record["assets"]["foreground_rgb16"].endswith("/" + foreground)
-    assert record["revision_inputs_digest"] == manifest["draft_digest"] == original_digest
-    assert draft_digest(project) == original_digest
-    assert (project / "recipe.toml").read_bytes() == recipe_bytes
-    assert (directory / "recipe.toml").read_bytes() == recipe_bytes
+    assert record["assets"]["foreground_rgb16"] == manifest["assets"][foreground]["path"]
+    assert record["revision_inputs_digest"] == manifest["draft_digest"] == effective_digest
+    assert draft_digest(project) == effective_digest
+    assert manifest["inputs_digest"] == (effective_digest if inherited else original_digest)
+    assert (project / "recipe.toml").read_bytes() == effective_recipe_bytes
+    assert (directory / "recipe.toml").read_bytes() == effective_recipe_bytes
     assert (directory / "manifest.json").read_bytes() == manifest_bytes
 
 
@@ -461,12 +474,12 @@ def test_review_rejects_invalid_saved_cleanup_strength(tmp_path, strength):
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, effect_request(project))
     manifest_file = project / "revisions" / result["revision"] / "manifest.json"
-    manifest = json.loads(manifest_file.read_bytes())
+    manifest = json.loads(saved_raster(manifest_file).read_bytes())
     manifest["color_cleanup"]["strength"] = strength
     manifest_file.write_text(json.dumps(manifest))
     with pytest.raises(ProjectError, match="Cleanup requires"):
         review_project(project)
-    assert not (project / "reviews" / result["revision"]).exists()
+    assert not (saved_raster(project / "reviews" / result["revision"])).exists()
 
 
 @pytest.mark.parametrize("repairing", [False, True])
@@ -479,7 +492,7 @@ def test_same_alpha_rgb_lock_survives_inherited_cleanup_and_export(tmp_path, rep
     newer = operations.apply_operation(project, effect_request(project, strength=0.75))
     operations.accept_revision(project, newer["revision"])
     before_rgb, before_alpha, _ = saved_layers(
-        project, newer["revision"], read_project(project)["master_id"]
+        project, newer["revision"], read_project(project)["developed_id"]
     )
     expected = np.array([23559, 33559, 43559], np.uint16)
     assert not np.array_equal(before_rgb[1, 2], expected)
@@ -510,7 +523,7 @@ def test_same_alpha_rgb_lock_survives_inherited_cleanup_and_export(tmp_path, rep
         else run_matte(project)
     )
     rgb, alpha, manifest = saved_layers(
-        project, result["revision"], read_project(project)["master_id"]
+        project, result["revision"], read_project(project)["developed_id"]
     )
     np.testing.assert_array_equal(alpha, before_alpha)
     assert manifest["color_cleanup"]["stale"] is False
@@ -521,7 +534,8 @@ def test_same_alpha_rgb_lock_survives_inherited_cleanup_and_export(tmp_path, rep
     operations.accept_revision(project, result["revision"])
     exported = export_project(project)
     np.testing.assert_array_equal(
-        tifffile.imread(Path(exported["directory"]) / "black_rgb16.tif")[1, 2], [5890, 8390, 10890]
+        tifffile.imread(saved_raster(Path(exported["directory"]) / "black_rgb16.tif"))[1, 2],
+        [5890, 8390, 10890],
     )
 
 
@@ -546,7 +560,7 @@ def test_first_and_reenabled_cleanup_preserve_outside_support_rgb_lock(tmp_path)
     parent = run_matte(project)
     operations.accept_revision(project, parent["revision"])
     before_rgb, alpha, _ = saved_layers(
-        project, parent["revision"], read_project(project)["master_id"]
+        project, parent["revision"], read_project(project)["developed_id"]
     )
     assert alpha[1, 2] == 16384
     np.testing.assert_array_equal(before_rgb[1, 2], [23559, 33559, 43559])
@@ -556,12 +570,12 @@ def test_first_and_reenabled_cleanup_preserve_outside_support_rgb_lock(tmp_path)
         result = operations.apply_operation(
             project, effect_request(project, scope=[3, 0, 5, 4], candidate_comparison=True)
         )
-        rgb, _, _ = saved_layers(project, result["revision"], read_project(project)["master_id"])
+        rgb, _, _ = saved_layers(project, result["revision"], read_project(project)["developed_id"])
         np.testing.assert_array_equal(rgb[outside], before_rgb[outside])
         operations.accept_revision(project, result["revision"])
         exported = export_project(project)
         np.testing.assert_array_equal(
-            tifffile.imread(Path(exported["directory"]) / "black_rgb16.tif")[1, 2],
+            tifffile.imread(saved_raster(Path(exported["directory"]) / "black_rgb16.tif"))[1, 2],
             [5890, 8390, 10890],
         )
         operations.apply_operation(project, effect_request(project, enabled=False))
@@ -576,12 +590,13 @@ def test_noop_alpha_repair_compares_matching_enabled_cleanup(tmp_path):
     result = run_repair(project, repair_request(project, prepared, [0, 0, 6, 4], [1, 1, 4, 3]))
     directory = project / "revisions" / result["revision"]
     np.testing.assert_array_equal(
-        saved_layers(project, first["revision"], read_project(project)["master_id"])[1],
-        saved_layers(project, result["revision"], read_project(project)["master_id"])[1],
+        saved_layers(project, first["revision"], read_project(project)["developed_id"])[1],
+        saved_layers(project, result["revision"], read_project(project)["developed_id"])[1],
     )
+    native = native_review_directories(project, result["revision"])
     for panel in ("black", "gray", "white"):
-        before = np.array(Image.open(directory / f"review-before/crop-000-{panel}_RGB8_VIEW.png"))
-        after = np.array(Image.open(directory / f"review/crop-000-{panel}_RGB8_VIEW.png"))
+        before = np.array(Image.open(native["review-before"] / f"crop-000-{panel}_RGB8_VIEW.png"))
+        after = np.array(Image.open(native["review"] / f"crop-000-{panel}_RGB8_VIEW.png"))
         np.testing.assert_array_equal(before, after)
     for name in ("review-before", "review"):
         record = json.loads((directory / name / "manifest.json").read_bytes())
@@ -636,8 +651,8 @@ def test_cleanup_keeps_legacy_saved_prepared_layer_rgb_locks_compatible(tmp_path
     result = run_matte(project)
     operations.accept_revision(project, result["revision"])
     cleanup = operations.apply_operation(project, effect_request(project))
-    rgb, _, _ = saved_layers(project, cleanup["revision"], read_project(project)["master_id"])
-    expected = saved_layers(project, earlier["revision"], read_project(project)["master_id"])[0][
+    rgb, _, _ = saved_layers(project, cleanup["revision"], read_project(project)["developed_id"])
+    expected = saved_layers(project, earlier["revision"], read_project(project)["developed_id"])[0][
         1, 2
     ]
     np.testing.assert_array_equal(rgb[1, 2], expected)
@@ -657,9 +672,11 @@ def test_current_appearance_rgb_lock_outside_repair_support_preserves_saved_laye
     operations.accept_revision(project, first["revision"])
     accepted = export_project(project)
     accepted_bytes = {p.name: p.read_bytes() for p in Path(accepted["directory"]).iterdir()}
-    master_bytes = (project / "masters" / f"{read_project(project)['master_id']}.tif").read_bytes()
+    master_bytes = (
+        saved_raster(project / "assets/developed" / f"{read_project(project)['developed_id']}.tif")
+    ).read_bytes()
     parent_rgb, parent_alpha, _ = saved_layers(
-        project, first["revision"], read_project(project)["master_id"]
+        project, first["revision"], read_project(project)["developed_id"]
     )
     name = edits(
         project,
@@ -695,7 +712,7 @@ def test_current_appearance_rgb_lock_outside_repair_support_preserves_saved_laye
         )
     directory = project / "revisions" / repaired["revision"]
     rgb, alpha, manifest = saved_layers(
-        project, repaired["revision"], read_project(project)["master_id"]
+        project, repaired["revision"], read_project(project)["developed_id"]
     )
     np.testing.assert_array_equal(replay_repair(project, repaired["revision"]), alpha)
     np.testing.assert_array_equal(rgb[1, 1], parent_rgb[1, 1])
@@ -707,17 +724,20 @@ def test_current_appearance_rgb_lock_outside_repair_support_preserves_saved_laye
     outside[1:3, 3:5] = False
     np.testing.assert_array_equal(alpha[outside], parent_alpha[outside])
     np.testing.assert_array_equal(
-        tifffile.imread(directory / "corrected_rgb16.tif")[outside], parent_rgb[outside]
+        tifffile.imread(saved_raster(directory / "corrected_rgb16.tif"))[outside],
+        parent_rgb[outside],
     )
     np.testing.assert_array_equal(
-        tifffile.imread(directory / "foreground_rgb16.tif")[1, 1], [23559, 33559, 43559]
+        tifffile.imread(saved_raster(directory / "foreground_rgb16.tif"))[1, 1],
+        [23559, 33559, 43559],
     )
     assert read_project(project)["accepted_revision"] == first["revision"]
     assert (
-        project / "masters" / f"{read_project(project)['master_id']}.tif"
+        saved_raster(project / "assets/developed" / f"{read_project(project)['developed_id']}.tif")
     ).read_bytes() == master_bytes
     assert manifest["color_cleanup"]["stale"] is change_alpha
     if change_alpha:
+        native = native_review_directories(project, repaired["revision"])
         # Both panels are honestly labelled base layers, including the explicit saved lock.
         for panel_name, base_revision in (
             ("review-before", prepared["revision"]),
@@ -726,12 +746,12 @@ def test_current_appearance_rgb_lock_outside_repair_support_preserves_saved_laye
             record = json.loads((directory / panel_name / "manifest.json").read_bytes())
             assert "cleanup OFF on both sides" in record["label"]
             base_rgb = tifffile.imread(
-                project / "revisions" / base_revision / "foreground_rgb16.tif"
+                saved_raster(project / "revisions" / base_revision / "foreground_rgb16.tif")
             )
             base_alpha = np.array(
-                Image.open(project / "revisions" / base_revision / "base_alpha16.png")
+                Image.open(saved_raster(project / "revisions" / base_revision / "base_alpha16.png"))
             )
-            actual = np.array(Image.open(directory / panel_name / "crop-000-black_RGB8_VIEW.png"))
+            actual = np.array(Image.open(native[panel_name] / "crop-000-black_RGB8_VIEW.png"))
             expected = np.rint(
                 np.rint(
                     base_rgb.astype(np.float64) * (base_alpha.astype(np.float64) / 65535)[..., None]
@@ -745,10 +765,11 @@ def test_current_appearance_rgb_lock_outside_repair_support_preserves_saved_laye
     operations.accept_revision(project, repaired["revision"])
     exported = export_project(project)
     np.testing.assert_array_equal(
-        tifffile.imread(Path(exported["directory"]) / "black_rgb16.tif")[1, 1], [5890, 8390, 10890]
+        tifffile.imread(saved_raster(Path(exported["directory"]) / "black_rgb16.tif"))[1, 1],
+        [5890, 8390, 10890],
     )
     for name, data in accepted_bytes.items():
-        assert (Path(accepted["directory"]) / name).read_bytes() == data
+        assert (saved_raster(Path(accepted["directory"]) / name)).read_bytes() == data
 
 
 def test_different_historical_rgb_lock_outside_support_still_rejects(tmp_path):
@@ -856,25 +877,32 @@ def test_shading_saved_operation_independent_cleanup_global_opacity_and_export(t
     project, source, _parent = fixture_project(tmp_path)
     cleaned = operations.apply_operation(project, effect_request(project))
     rgb, alpha, cleanup_manifest = saved_layers(
-        project, cleaned["revision"], read_project(project)["master_id"]
+        project, cleaned["revision"], read_project(project)["developed_id"]
     )
     with patch("blackmask.operations.VitMatteSession", side_effect=AssertionError("No model")):
         shaded = operations.apply_operation(project, shading_request(project))
         foreground, actual_alpha, manifest = saved_layers(
-            project, shaded["revision"], read_project(project)["master_id"]
+            project, shaded["revision"], read_project(project)["developed_id"]
         )
         np.testing.assert_array_equal(foreground, rgb)
         np.testing.assert_array_equal(actual_alpha, alpha)
         assert manifest["color_cleanup"] == cleanup_manifest["color_cleanup"]
-        weight = scalar16(project / "revisions" / shaded["revision"] / "shadow_weight16.png")
+        weight = scalar16(
+            saved_raster(project / "revisions" / shaded["revision"] / "shadow_weight16.png")
+        )
         assert np.any(weight) and weight[2, 3] == 0
         operations.accept_revision(project, shaded["revision"])
         exported = Path(export_project(project)["directory"])
         np.testing.assert_array_equal(
-            tifffile.imread(exported / "black_rgb16.tif"), render_black(rgb, alpha, weight, 0.12)
+            tifffile.imread(saved_raster(exported / "black_rgb16.tif")),
+            render_black(rgb, alpha, weight, 0.12),
         )
-        np.testing.assert_array_equal(scalar16(exported / "shadow_weight16.png"), weight)
-        np.testing.assert_array_equal(tifffile.imread(exported / "foreground_rgb16.tif"), rgb)
+        np.testing.assert_array_equal(
+            scalar16(saved_raster(exported / "shadow_weight16.png")), weight
+        )
+        np.testing.assert_array_equal(
+            tifffile.imread(saved_raster(exported / "foreground_rgb16.tif")), rgb
+        )
         assert "baked shading" in (exported / "README.txt").read_text()
         with patch(
             "blackmask.effects.make_shadow_weight",
@@ -884,7 +912,9 @@ def test_shading_saved_operation_independent_cleanup_global_opacity_and_export(t
                 project, shading_request(project, opacity=0.24, opacity_only=True)
             )
         directory = project / "revisions" / changed["revision"]
-        np.testing.assert_array_equal(scalar16(directory / "shadow_weight16.png"), weight)
+        np.testing.assert_array_equal(
+            scalar16(saved_raster(directory / "shadow_weight16.png")), weight
+        )
         assert (
             json.loads((directory / "effects/shading/settings.json").read_bytes())[
                 "operation_scope"
@@ -893,14 +923,19 @@ def test_shading_saved_operation_independent_cleanup_global_opacity_and_export(t
         )
         disabled = operations.apply_operation(project, shading_request(project, enabled=False))
         assert (
-            saved_layers(project, disabled["revision"], read_project(project)["master_id"])[2][
+            saved_layers(project, disabled["revision"], read_project(project)["developed_id"])[2][
                 "color_cleanup"
             ]
             == cleanup_manifest["color_cleanup"]
         )
     assert read_project(project)["accepted_revision"] == shaded["revision"]
     np.testing.assert_array_equal(
-        tifffile.imread(project / "masters" / (read_project(project)["master_id"] + ".tif")), source
+        tifffile.imread(
+            saved_raster(
+                project / "assets/developed" / (read_project(project)["developed_id"] + ".tif")
+            )
+        ),
+        source,
     )
 
 
@@ -920,11 +955,13 @@ def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path
     operations.accept_revision(project, first["revision"])
     accepted = Path(export_project(project)["directory"])
     original = {p.name: p.read_bytes() for p in accepted.iterdir()}
-    old_weight = scalar16(project / "revisions" / first["revision"] / "shadow_weight16.png")
-    old_corrected = tifffile.imread(
-        project / "revisions" / first["revision"] / "corrected_rgb16.tif"
+    old_weight = scalar16(
+        saved_raster(project / "revisions" / first["revision"] / "shadow_weight16.png")
     )
-    old_alpha = saved_layers(project, first["revision"], read_project(project)["master_id"])[1]
+    old_corrected = tifffile.imread(
+        saved_raster(project / "revisions" / first["revision"] / "corrected_rgb16.tif")
+    )
+    old_alpha = saved_layers(project, first["revision"], read_project(project)["developed_id"])[1]
     lock_file = edits(
         project,
         [
@@ -955,13 +992,14 @@ def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path
         side_effect=lambda rgb, guide, device: (np.full(guide.shape, 0.75), {}),
     ):
         repair = run_repair(project, repair_request(project, prepared, [0, 0, 6, 4], [1, 1, 4, 3]))
-    manifest = saved_layers(project, repair["revision"], read_project(project)["master_id"])[2]
+    manifest = saved_layers(project, repair["revision"], read_project(project)["developed_id"])[2]
     assert manifest["color_cleanup"]["stale"] and manifest["shading"]["stale"]
     for name in ("review", "review-before"):
         label = json.loads(
             (project / "revisions" / repair["revision"] / name / "manifest.json").read_bytes()
         )["label"]
         assert "cleanup OFF" in label and "shading OFF" in label
+    native = native_review_directories(project, repair["revision"])
     # Independently derive BASE pixels on both sides; no production renderer reused.
     expected_alpha = old_alpha.copy()
     expected_alpha[1:3, 1:4] = 49151
@@ -979,18 +1017,12 @@ def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path
             expected_rgb.astype(np.float64) * (expected_a.astype(np.float64) / 65535)[..., None]
         ).astype(np.uint16)
         expected_view = np.rint(expected_black16.astype(np.float64) / 257).astype(np.uint8)
-        with Image.open(
-            project
-            / "revisions"
-            / repair["revision"]
-            / review_name
-            / "crop-000-black_RGB8_VIEW.png"
-        ) as image:
+        with Image.open(native[review_name] / "crop-000-black_RGB8_VIEW.png") as image:
             np.testing.assert_array_equal(np.array(image), expected_view)
     from blackmask.repair import replay_repair
 
     np.testing.assert_array_equal(replay_repair(project, repair["revision"]), expected_alpha)
-    label = json.loads(Path(review_project(project)["manifest_file"]).read_bytes())
+    label = json.loads(saved_raster(Path(review_project(project)["manifest_file"])).read_bytes())
     assert {"cleanup_stale", "shading_stale"} <= set(label["stale_labels"])
     with pytest.raises(ProjectError, match="Stale"):
         operations.accept_revision(project, repair["revision"])
@@ -1011,18 +1043,21 @@ def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path
     rebuilt = operations.apply_operation(project, shading_request(project, support=scope_support))
     assert not rebuilt["shading"]["stale"] and not rebuilt["color_cleanup"]["stale"]
     directory = project / "revisions" / rebuilt["revision"]
-    weight = scalar16(directory / "shadow_weight16.png")
+    weight = scalar16(saved_raster(directory / "shadow_weight16.png"))
     outside = scope_support == 0
     assert old_weight[outside].any() and np.any(old_corrected[outside] != source[outside])
     np.testing.assert_array_equal(weight[outside], old_weight[outside])
     assert weight[2, 3] == 0 and weight[1, 2] == 0
-    np.testing.assert_array_equal(scalar16(directory / "base_alpha16.png"), expected_alpha)
+    np.testing.assert_array_equal(
+        scalar16(saved_raster(directory / "base_alpha16.png")), expected_alpha
+    )
     np.testing.assert_array_equal(expected_alpha[outside], old_alpha[outside])
-    final_rgb = tifffile.imread(directory / "corrected_rgb16.tif")
+    final_rgb = tifffile.imread(saved_raster(directory / "corrected_rgb16.tif"))
     np.testing.assert_array_equal(final_rgb[1, 2], old_corrected[1, 2])
     np.testing.assert_array_equal(final_rgb[0, 4], old_corrected[0, 4])
     np.testing.assert_array_equal(
-        tifffile.imread(directory / "corrected_rgb16.tif")[outside], old_corrected[outside]
+        tifffile.imread(saved_raster(directory / "corrected_rgb16.tif"))[outside],
+        old_corrected[outside],
     )
     operations.accept_revision(project, rebuilt["revision"])
     # New process uses only saved layers, no model/cache setup or original capture lookup.
@@ -1034,15 +1069,19 @@ def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path
     )
     assert result.returncode == 0, result.stderr
     exported = Path(json.loads(result.stdout)["directory"])
-    rgb, alpha, _ = saved_layers(project, rebuilt["revision"], read_project(project)["master_id"])
+    rgb, alpha, _ = saved_layers(
+        project, rebuilt["revision"], read_project(project)["developed_id"]
+    )
     expected = np.rint(
         rgb.astype(np.float64)
         * (alpha.astype(np.float64) / 65535)[..., None]
         * (1 - 0.12 * weight.astype(np.float64) / 65535)[..., None]
     ).astype(np.uint16)
-    np.testing.assert_array_equal(tifffile.imread(exported / "black_rgb16.tif"), expected)
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(exported / "black_rgb16.tif")), expected
+    )
     for name, data in original.items():
-        assert (accepted / name).read_bytes() == data
+        assert (saved_raster(accepted / name)).read_bytes() == data
 
 
 def test_viewer_shading_same_native_crop_comparisons_and_independent_disable(tmp_path):
@@ -1054,8 +1093,10 @@ def test_viewer_shading_same_native_crop_comparisons_and_independent_disable(tmp
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, shading_request(project))
-    rgb, alpha, _ = saved_layers(project, result["revision"], read_project(project)["master_id"])
-    weight = scalar16(project / "revisions" / result["revision"] / "shadow_weight16.png")
+    rgb, alpha, _ = saved_layers(project, result["revision"], read_project(project)["developed_id"])
+    weight = scalar16(
+        saved_raster(project / "revisions" / result["revision"] / "shadow_weight16.png")
+    )
     server = ReviewServer(project)
     try:
         state = server.snapshot()
@@ -1063,12 +1104,12 @@ def test_viewer_shading_same_native_crop_comparisons_and_independent_disable(tmp
         assert current["shading"]["settings"]["width_px"] == 3
         for opacity in (0, 0.12, 0.24):
             data = server.image(f"/image/black/{result['revision']}/1,0,5,4/p{opacity}")
-            with Image.open(io.BytesIO(data)) as image:
+            with Image.open(saved_raster(io.BytesIO(data))) as image:
                 expected = np.rint(
                     render_black(rgb, alpha, weight, opacity).astype(np.float64) / 257
                 ).astype(np.uint8)[:, 1:5]
                 np.testing.assert_array_equal(np.array(image), expected)
-        identity = {k: state[k] for k in ("master_id", "inputs_digest", "authoring_digest")}
+        identity = {k: state[k] for k in ("developed_id", "inputs_digest", "authoring_digest")}
         operation = shading_request(project, enabled=False)
         operation.pop("schema_version")
         operation.pop("kind")
@@ -1151,9 +1192,9 @@ def test_first_shading_uses_offline_authored_guides_without_external_mask(tmp_pa
     server = ReviewServer(project)
     try:
         state = server.snapshot()
-        identity = {k: state[k] for k in ("master_id", "inputs_digest", "authoring_digest")}
+        identity = {k: state[k] for k in ("developed_id", "inputs_digest", "authoring_digest")}
         prefix = "revisions/" + matte["revision"]
-        with Image.open(project / prefix / "supports/protection.png") as image:
+        with Image.open(saved_raster(project / prefix / "supports/protection.png")) as image:
             assert image.mode == "L" and np.array(image)[1, 4] == 255
         result = server.execute(
             dict(
@@ -1172,10 +1213,14 @@ def test_first_shading_uses_offline_authored_guides_without_external_mask(tmp_pa
                 },
             )
         )
-        weight = scalar16(project / "revisions" / result["revision"] / "shadow_weight16.png")
+        weight = scalar16(
+            saved_raster(project / "revisions" / result["revision"] / "shadow_weight16.png")
+        )
         assert weight.any() and weight[1, 4] == 0
         protection = scalar16(
-            project / "revisions" / result["revision"] / "effects/shading/protection16.png"
+            saved_raster(
+                project / "revisions" / result["revision"] / "effects/shading/protection16.png"
+            )
         )
         assert protection[1, 4] == 65535
     finally:

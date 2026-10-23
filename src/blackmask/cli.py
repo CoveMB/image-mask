@@ -81,7 +81,7 @@ def main() -> int:
         help="Optionally review authoritative prepared trimap; requires revision/master/digest",
     )
     accepted.add_argument("--inputs-digest")
-    accepted.add_argument("--master-id", help="Identity of the master you inspected")
+    accepted.add_argument("--developed-id", help="Identity of the master you inspected")
     checked = commands.add_parser("doctor", help="Report local preflight without downloading")
     checked.add_argument("--project", type=Path, default=Path.cwd())
     checked.add_argument("--model-cache", type=Path)
@@ -177,28 +177,28 @@ def main() -> int:
             if arguments.trimap:
                 if (
                     arguments.revision is None
-                    or arguments.master_id is None
+                    or arguments.developed_id is None
                     or arguments.inputs_digest is None
                 ):
                     raise ProjectError(
-                        "Trimap approval requires --revision, --master-id and --inputs-digest"
+                        "Trimap approval requires --revision, --developed-id and --inputs-digest"
                     )
                 result = accept_trimap(
                     arguments.project,
                     arguments.revision,
-                    arguments.master_id,
+                    arguments.developed_id,
                     arguments.inputs_digest,
                 )
             elif arguments.revision is not None:
-                if arguments.inputs_digest is not None or arguments.master_id is not None:
+                if arguments.inputs_digest is not None or arguments.developed_id is not None:
                     raise ProjectError(
                         "Final-photo acceptance uses --revision; trimap identity flags require --trimap"
                     )
                 result = accept_revision(arguments.project, arguments.revision)
             else:
-                if arguments.master_id is None or arguments.inputs_digest is not None:
-                    raise ProjectError("Development approval requires the inspected --master-id")
-                result = accept_development(arguments.project, arguments.master_id)
+                if arguments.developed_id is None or arguments.inputs_digest is not None:
+                    raise ProjectError("Development approval requires the inspected --developed-id")
+                result = accept_development(arguments.project, arguments.developed_id)
         elif arguments.command == "setup-model":
             result = (
                 setup_sam(arguments.model_cache)

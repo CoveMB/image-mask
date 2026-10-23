@@ -2,6 +2,7 @@ import hashlib
 import io
 import struct
 import zlib
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -9,7 +10,7 @@ import pytest
 import tifffile
 from PIL import Image, ImageCms
 
-from blackmask.ingest import IngestError, decode_source, srgb_profile, write_master
+from blackmask.ingest import IngestError, decode_source, srgb_profile, write_developed
 
 
 def ramp():
@@ -50,8 +51,8 @@ def test_rgb16_non_257_roundtrip(tmp_path):
     np.testing.assert_array_equal(pixels, ramp())
     assert metadata["format"] == "TIFF" and metadata["source_precision_bits"] == 16
     output = tmp_path / "master.tif"
-    write_master(output, pixels)
-    np.testing.assert_array_equal(tifffile.imread(output), ramp())
+    write_developed(output, pixels)
+    np.testing.assert_array_equal(tifffile.imread(saved_raster(output)), ramp())
     assert source.read_bytes() == before
     with tifffile.TiffFile(output) as image:
         assert image.pages[0].compression == 1
@@ -464,7 +465,7 @@ def test_triple_profile_interpolation_matches_independent_sdk_reference():
 def test_dng_white_point_project_reopens_saved_master_without_raw_decoder(tmp_path):
     import json
 
-    from blackmask.project import create_project, load_master, read_project
+    from blackmask.project import create_project, load_developed, read_project
 
     source = tmp_path / "capture.dng"
     source.write_bytes(dng_white_point_metadata())
@@ -475,8 +476,8 @@ def test_dng_white_point_project_reopens_saved_master_without_raw_decoder(tmp_pa
     created = json.loads((project / "state.json").read_bytes())
     with patch("blackmask.ingest.rawpy.imread", side_effect=AssertionError("must not redevelop")):
         reopened = read_project(project)
-        pixels, metadata = load_master(project, reopened["master_id"])
-    assert created["master_id"] == reopened["master_id"]
+        pixels, metadata = load_developed(project, reopened["developed_id"])
+    assert created["developed_id"] == reopened["developed_id"]
     np.testing.assert_array_equal(pixels, ramp())
     assert metadata["as_shot_white_balance"]["multipliers"] == [2, 1, 2, 1]
     assert reopened["development_approved"] is False
@@ -639,7 +640,7 @@ def multi_image_jpeg(*, gain_map=False):
 
 def test_mpo_rejection_names_actual_format_and_recovery():
     data = multi_image_jpeg()
-    with Image.open(io.BytesIO(data)) as image:
+    with Image.open(saved_raster(io.BytesIO(data))) as image:
         assert image.format == "MPO" and image.n_frames == 2
     with pytest.raises(IngestError, match="Multi-frame MPO.*single-image SDR JPEG/PNG8"):
         decode_source(data, {"assume_srgb": True})
@@ -647,7 +648,7 @@ def test_mpo_rejection_names_actual_format_and_recovery():
 
 def test_gain_map_jpeg_cannot_silently_become_an_sdr_master():
     data = multi_image_jpeg(gain_map=True)
-    with Image.open(io.BytesIO(data)) as image:
+    with Image.open(saved_raster(io.BytesIO(data))) as image:
         assert image.format == "JPEG" and getattr(image, "n_frames", 1) == 1
         assert image._getmp()[0xB001] == 2
     with pytest.raises(
@@ -666,7 +667,71 @@ def test_animated_png_rejection_names_actual_format_and_recovery(disposal):
         append_images=[Image.new("RGB", (8, 6), (100, 100, 100))],
         disposal=disposal,
     )
-    with Image.open(io.BytesIO(buffer.getvalue())) as image:
+    with Image.open(saved_raster(io.BytesIO(buffer.getvalue()))) as image:
         assert image.format == "PNG" and image.n_frames == 2
     with pytest.raises(IngestError, match="Multi-frame PNG.*single-image SDR JPEG/PNG8"):
         decode_source(buffer.getvalue(), {"assume_srgb": True})
+
+
+def saved_raster(path):
+    """Resolve a fixture role to raw bytes; application readers still validate every binding."""
+    if not isinstance(path, Path) or path.exists() or path.suffix.lower() not in {".png", ".tif"}:
+        return path
+    for ancestor in path.parents:
+        if ancestor.name == "revisions":
+            root = ancestor.parent
+            relative = path.relative_to(ancestor)
+            if len(relative.parts) < 2:
+                return path
+            import json
+
+            try:
+                manifest = json.loads((ancestor / relative.parts[0] / "manifest.json").read_bytes())
+            except (OSError, ValueError):
+                return path
+            name = str(Path(*relative.parts[1:]))
+            if name in manifest.get("assets", {}):
+                return root / manifest["assets"][name]["path"]
+            return path
+    return path
+
+
+def bind_raster(project, directory, manifest, name):
+    """Publish a deliberately changed synthetic operand with a fresh immutable binding."""
+    from blackmask.assets import store_asset
+    from blackmask.project import digest
+
+    path = directory / name
+    if path.suffix.lower() not in {".png", ".tif"}:
+        manifest["files"][name] = digest(path.read_bytes())
+        return manifest["files"][name]
+    if not path.exists():
+        path = project / manifest["assets"][name]["path"]
+    reference = store_asset(project, path)
+    manifest.setdefault("assets", {})[name] = reference
+    manifest["files"].pop(name, None)
+    if path.is_relative_to(directory):
+        path.unlink()
+    return reference["sha256"]
+
+
+def saved_hashes(record):
+    """Fixture inspection includes shared operands as well as retained small files."""
+    return {
+        **record["files"],
+        **{name: ref["sha256"] for name, ref in record.get("assets", {}).items()},
+    }
+
+
+def native_review_directories(project, revision):
+    """Explicitly request full native evidence instead of reading the reduced overview."""
+    import json
+
+    from blackmask.review import review_project
+
+    after = Path(review_project(project, revision=revision)["manifest_file"])
+    record = json.loads(after.read_bytes())
+    return {
+        "review": after.parent,
+        "review-before": (project / record["assets"]["before_manifest"]).parent,
+    }

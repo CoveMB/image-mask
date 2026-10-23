@@ -7,8 +7,9 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from .assets import revision_asset, revision_hashes, saved_asset
 from .guidance import coordinates
-from .project import ProjectError, _asset, digest, read_project, read_revision
+from .project import ProjectError, digest, read_project, read_revision
 
 ORDER = "directional P/C; float64 P*(1-w)+D*w; rint ties-to-even; copy locks"
 
@@ -99,16 +100,20 @@ def validate_support(
         raise ProjectError("Repair support exceeds explicit scope/context or is empty")
 
 
-def replay_directory(directory: Path) -> np.ndarray:
+def replay_directory(project: Path, directory: Path, manifest: dict[str, Any]) -> np.ndarray:
     """Merge only reloaded canonical files; caller validates immutable manifest hashes."""
     record = json.loads((directory / "repair/merge.json").read_bytes())
-    parent = scalar16(directory / "repair/parent_alpha16.png")
-    candidate = scalar16(directory / "repair/candidate_alpha16.png")
-    support = scalar16(directory / "repair/support16.png")
-    locked = scalar16(directory / "supports/lock_values16.png")
-    with Image.open(directory / "supports/protection.png") as image:
+    parent = scalar16(revision_asset(project, directory, manifest, "repair/parent_alpha16.png"))
+    candidate = scalar16(
+        revision_asset(project, directory, manifest, "repair/candidate_alpha16.png")
+    )
+    support = scalar16(revision_asset(project, directory, manifest, "repair/support16.png"))
+    locked = scalar16(revision_asset(project, directory, manifest, "supports/lock_values16.png"))
+    with Image.open(
+        revision_asset(project, directory, manifest, "supports/protection.png")
+    ) as image:
         protection = np.array(image) != 0
-    with Image.open(directory / "trimap.png") as image:
+    with Image.open(revision_asset(project, directory, manifest, "trimap.png")) as image:
         trimap = np.array(image)
     height, width = parent.shape
     context = coordinates(record["context_xyxy"], width, height, box=True)
@@ -129,9 +134,9 @@ def replay_directory(directory: Path) -> np.ndarray:
     return merged
 
 
-def prepared_parent_layers(project: Path, revision: str, master_id: str) -> dict[str, Any]:
+def prepared_parent_layers(project: Path, revision: str, developed_id: str) -> dict[str, Any]:
     """Follow prepared ancestry and prove unchanged alpha/RGB carry-forward bindings."""
-    manifest = read_revision(project, revision, master_id)
+    manifest = read_revision(project, revision, developed_id)
     visited = set()
     while manifest.get("kind") == "prepare":
         current = manifest["revision"]
@@ -141,15 +146,15 @@ def prepared_parent_layers(project: Path, revision: str, master_id: str) -> dict
         parent = manifest.get("parent")
         if not isinstance(parent, str):
             raise ProjectError("Prepared repair needs immutable parental revision")
-        previous = read_revision(project, parent, master_id)
-        if digest(_asset(project, f"revisions/{parent}/manifest.json").read_bytes()) != (
+        previous = read_revision(project, parent, developed_id)
+        if digest(saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()) != (
             manifest.get("parent_manifest_sha256")
         ):
             raise ProjectError("Stale prepared parent manifest")
         for name in ("base_alpha16.png", "foreground_rgb16.tif"):
             if (
-                name not in previous["files"]
-                or manifest["files"].get(name) != previous["files"][name]
+                name not in revision_hashes(previous)
+                or revision_hashes(manifest).get(name) != revision_hashes(previous)[name]
             ):
                 raise ProjectError("Prepared repair must preserve parental alpha and foreground")
         if manifest.get("spatial_fade") != previous.get("spatial_fade") or any(
@@ -168,27 +173,29 @@ def prepared_parent_layers(project: Path, revision: str, master_id: str) -> dict
 
 def replay_repair(project: Path, revision: str) -> np.ndarray:
     state = read_project(project)
-    manifest = read_revision(project, revision, state["master_id"])
+    manifest = read_revision(project, revision, state["developed_id"])
     if manifest.get("kind") != "repair":
         raise ProjectError("Replay requires a saved repair revision")
-    directory = _asset(project, f"revisions/{revision}")
+    directory = saved_asset(project, f"revisions/{revision}")
     record = json.loads((directory / "repair/merge.json").read_bytes())
     parent = manifest["parent"]
-    parent_manifest = read_revision(project, parent, state["master_id"])
+    parent_manifest = read_revision(project, parent, state["developed_id"])
     if (
         record.get("parent") != parent
-        or record.get("master_id") != state["master_id"]
+        or record.get("developed_id") != state["developed_id"]
         or record.get("parent_manifest_sha256") != manifest.get("parent_manifest_sha256")
         or record.get("parent_manifest_sha256")
-        != digest(_asset(project, f"revisions/{parent}/manifest.json").read_bytes())
-        or manifest["files"]["repair/parent_alpha16.png"]
-        != parent_manifest["files"].get("base_alpha16.png")
-        or manifest["files"]["repair/support16.png"]
-        != parent_manifest["files"].get("supports/support16.png")
+        != digest(saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes())
+        or revision_hashes(manifest)["repair/parent_alpha16.png"]
+        != revision_hashes(parent_manifest).get("base_alpha16.png")
+        or revision_hashes(manifest)["repair/support16.png"]
+        != revision_hashes(parent_manifest).get("supports/support16.png")
     ):
         raise ProjectError("Stale repair parent/master/operand bindings")
-    prepared_parent_layers(project, parent, state["master_id"])
-    merged = replay_directory(directory)
-    if not np.array_equal(merged, scalar16(directory / "base_alpha16.png")):
+    prepared_parent_layers(project, parent, state["developed_id"])
+    merged = replay_directory(project, directory, manifest)
+    if not np.array_equal(
+        merged, scalar16(revision_asset(project, directory, manifest, "base_alpha16.png"))
+    ):
         raise ProjectError("Saved repair replay differs from published alpha")
     return merged

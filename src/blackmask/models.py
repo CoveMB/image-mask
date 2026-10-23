@@ -148,7 +148,7 @@ class SamSession:
         box: list[int] | None,
         device: str,
         *,
-        master_id: str | None = None,
+        developed_id: str | None = None,
     ) -> Candidates:
         import torch
 
@@ -156,8 +156,8 @@ class SamSession:
 
         if pixels.dtype != np.uint8 or pixels.ndim != 3 or pixels.shape[2] != 3:
             raise ValueError("SAM requires separate RGB8 proxy")
-        if master_id is not None and (
-            not isinstance(master_id, str) or re.fullmatch("[0-9a-f]{64}", master_id) is None
+        if developed_id is not None and (
+            not isinstance(developed_id, str) or re.fullmatch("[0-9a-f]{64}", developed_id) is None
         ):
             raise ValueError("Invalid SAM master identity")
         height, width = pixels.shape[:2]
@@ -200,14 +200,14 @@ class SamSession:
                 pixels.tobytes()
                 + str(pixels.shape).encode()
                 + selected.encode()
-                + (master_id or "unknown").encode()
+                + (developed_id or "unknown").encode()
             ).hexdigest()
             arguments = {
                 key: value.to(selected) for key, value in inputs.items() if key != "original_sizes"
             }
             with torch.inference_mode():
                 reused = (
-                    master_id is not None
+                    developed_id is not None
                     and image_key == self.embedding_key
                     and self.embeddings is not None
                 )

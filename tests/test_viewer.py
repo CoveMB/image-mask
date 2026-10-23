@@ -5,10 +5,11 @@ from http.client import HTTPConnection
 from pathlib import Path
 
 import pytest
+from test_ingest import saved_raster
 from test_operations import opened, request
 
 from blackmask import operations
-from blackmask.project import ProjectError, load_master, project_lock, read_project
+from blackmask.project import ProjectError, load_developed, project_lock, read_project
 
 
 def test_spatial_saved_preview_routes_bind_revision_shape_crop_and_preview_guard(tmp_path):
@@ -37,7 +38,7 @@ def test_spatial_saved_preview_routes_bind_revision_shape_crop_and_preview_guard
         ],
     )
     result = operations.apply_operation(project, spatial_request(project, settings, candidate=True))
-    foreground, alpha, manifest = saved_layers(project, result["revision"], result["master_id"])
+    foreground, alpha, manifest = saved_layers(project, result["revision"], result["developed_id"])
     saved = saved_spatial_fade(project, result["revision"], alpha, manifest)
     crop = [1, 1, 5, 3]
     with running(project) as server:
@@ -47,7 +48,7 @@ def test_spatial_saved_preview_routes_bind_revision_shape_crop_and_preview_guard
         )
         assert revision["spatial_fade"] == manifest["spatial_fade"]
         identity = {
-            "master_id": snapshot["master_id"],
+            "developed_id": snapshot["developed_id"],
             "revision": result["revision"],
             "revision_manifest_sha256": revision["revision_manifest_sha256"],
             "crop_xyxy": crop,
@@ -221,7 +222,7 @@ def test_spatial_off_and_effective_maps_follow_working_stale_base_policy(tmp_pat
         )
         assert current["shadow_fade"]["stale"] and not viewed["shadow_fade"]["stale"]
         identity = {
-            "master_id": snapshot["master_id"],
+            "developed_id": snapshot["developed_id"],
             "revision": accepted["revision"],
             "revision_manifest_sha256": viewed["revision_manifest_sha256"],
             "crop_xyxy": [0, 0, 6, 4],
@@ -270,7 +271,7 @@ def test_spatial_viewer_action_forwards_exact_protection_and_raw_identity(tmp_pa
             )
             data = {
                 "action": "effects",
-                "master_id": state["master_id"],
+                "developed_id": state["developed_id"],
                 "base_revision": state["working_revision"],
                 "inputs_digest": state["inputs_digest"],
                 "authoring_digest": state["authoring_digest"],
@@ -297,9 +298,11 @@ def test_spatial_viewer_action_forwards_exact_protection_and_raw_identity(tmp_pa
             assert server.action["error"] is None, server.action
             result = server.action["result"]
             foreground, alpha, manifest = saved_layers(
-                project, result["revision"], result["master_id"]
+                project, result["revision"], result["developed_id"]
             )
-            saved = read_spatial_fade(project / "revisions" / result["revision"], manifest, alpha)
+            saved = read_spatial_fade(
+                project, project / "revisions" / result["revision"], manifest, alpha
+            )
             assert 0 < alpha[1, 3] < 65535 and saved.protection[1, 3]
             background = np.full_like(foreground, [4608, 1792, 2048])
             expected = render_background(foreground, alpha, background)
@@ -352,7 +355,7 @@ def test_spatial_framing_preview_uses_saved_fade_and_bound_target(tmp_path, seri
             item for item in state["revisions"] if item["revision"] == result["revision"]
         )
         request = {
-            "master_id": state["master_id"],
+            "developed_id": state["developed_id"],
             "revision": result["revision"],
             "revision_manifest_sha256": selected["revision_manifest_sha256"],
             "settings" if series_mode else "margins": values if series_mode else margins,
@@ -371,7 +374,9 @@ def test_spatial_framing_preview_uses_saved_fade_and_bound_target(tmp_path, seri
             ).astype(np.uint8)
         else:
             background = tifffile.imread(
-                project / "revisions" / result["revision"] / "background/background_rgb16.tif"
+                saved_raster(
+                    project / "revisions" / result["revision"] / "background/background_rgb16.tif"
+                )
             )
             expected = framing_preview(background, background, validate_margins(margins, (6, 4)))[0]
         with Image.open(io.BytesIO(base64.b64decode(data["png_base64"]))) as image:
@@ -405,7 +410,7 @@ def test_series_http_validation_preview_and_independent_errors(tmp_path):
             assert http(server, "/api/series-preset-validate", "POST", invalid)[0] == 400
         revision = next(r for r in state["revisions"] if r["revision"] == parent["revision"])
         data = {
-            "master_id": state["master_id"],
+            "developed_id": state["developed_id"],
             "revision": parent["revision"],
             "revision_manifest_sha256": revision["revision_manifest_sha256"],
             "settings": settings.to_dict(),
@@ -415,7 +420,7 @@ def test_series_http_validation_preview_and_independent_errors(tmp_path):
         result = json.loads(body)
         assert all(result[key] == value for key, value in data.items())
         assert result["output_dimensions_wh"] == [40, 50]
-        with Image.open(io.BytesIO(base64.b64decode(result["png_base64"]))) as image:
+        with Image.open(saved_raster(io.BytesIO(base64.b64decode(result["png_base64"])))) as image:
             assert image.mode == "RGB" and image.size == (40, 50)
         assert "img-src 'self' blob:" in headers["Content-Security-Policy"]
         assert http(server, "/api/series-preview", "POST", data, Origin="null")[0] == 403
@@ -463,7 +468,7 @@ def test_series_preview_busy_disconnect_and_identity_races(tmp_path, monkeypatch
         state = server.snapshot()
         revision = next(r for r in state["revisions"] if r["revision"] == parent["revision"])
         data = {
-            "master_id": state["master_id"],
+            "developed_id": state["developed_id"],
             "revision": parent["revision"],
             "revision_manifest_sha256": revision["revision_manifest_sha256"],
             "settings": series_settings(output_width_px=40, output_height_px=50).to_dict(),
@@ -473,7 +478,7 @@ def test_series_preview_busy_disconnect_and_identity_races(tmp_path, monkeypatch
             first = executor.submit(http, server, "/api/series-preview", "POST", data)
             assert entered.wait(5)
             framing = {
-                key: data[key] for key in ("master_id", "revision", "revision_manifest_sha256")
+                key: data[key] for key in ("developed_id", "revision", "revision_manifest_sha256")
             }
             assert (
                 http(server, "/api/framing-preview", "POST", {**framing, "margins": margins()})[0]
@@ -483,16 +488,16 @@ def test_series_preview_busy_disconnect_and_identity_races(tmp_path, monkeypatch
             release.set()
             assert first.result(timeout=5)[0] == 200
         path = project / "revisions" / parent["revision"] / "manifest.json"
-        raw = path.read_bytes()
+        raw = saved_raster(path).read_bytes()
 
         def changed(*args, **kwargs):
             result = original(*args, **kwargs)
-            path.write_bytes(raw + b"\n")
+            saved_raster(path).write_bytes(raw + b"\n")
             return result
 
         monkeypatch.setattr(viewer, "render_series", changed)
         assert http(server, "/api/series-preview", "POST", data)[0] == 409
-        path.write_bytes(raw)
+        saved_raster(path).write_bytes(raw)
         monkeypatch.setattr(viewer, "render_series", original)
         connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
         connection.request(
@@ -522,7 +527,8 @@ def test_series_actions_bind_selected_revision_and_preserve_other_drafts(tmp_pat
     ]
     assert len({accepted["revision"], selected, working}) == 3
     before = {
-        name: (project / name).read_bytes() for name in ("state.json", "recipe.toml", "guides.json")
+        name: (saved_raster(project / name)).read_bytes()
+        for name in ("state.json", "recipe.toml", "guides.json")
     }
     settings = series_settings(output_width_px=40, output_height_px=50).to_dict()
     with running(project) as server:
@@ -539,10 +545,12 @@ def test_series_actions_bind_selected_revision_and_preserve_other_drafts(tmp_pat
             transparent=True,
         )
         assert output["revision"] == selected and output["draft"] is True
-        record = json.loads(Path(output["manifest_file"]).read_bytes())
+        record = json.loads(saved_raster(Path(output["manifest_file"])).read_bytes())
         assert record["settings"] == settings
         assert record["revision_manifest_sha256"] == revision["revision_manifest_sha256"]
-        assert all((project / name).read_bytes() == value for name, value in before.items())
+        assert all(
+            (saved_raster(project / name)).read_bytes() == value for name, value in before.items()
+        )
 
 
 def test_framing_snapshot_preview_and_preset_error_are_independent(tmp_path):
@@ -566,7 +574,7 @@ def test_framing_snapshot_preview_and_preset_error_are_independent(tmp_path):
         ).hexdigest()
         assert record["revision_manifest_sha256"] == expected
         request = {
-            "master_id": state["master_id"],
+            "developed_id": state["developed_id"],
             "revision": parent["revision"],
             "revision_manifest_sha256": record["revision_manifest_sha256"],
             "margins": margins(),
@@ -578,7 +586,7 @@ def test_framing_snapshot_preview_and_preset_error_are_independent(tmp_path):
             assert result[key] == value
         assert result["output_dimensions_wh"] == [9, 5]
         assert result["source_rect_xyxy"] == [1, 1, 7, 5]
-        with Image.open(io.BytesIO(base64.b64decode(result["png_base64"]))) as image:
+        with Image.open(saved_raster(io.BytesIO(base64.b64decode(result["png_base64"])))) as image:
             assert image.mode == "RGB" and image.size == (9, 5)
             assert image.getpixel((0, 0)) == (0, 0, 0)
         assert "img-src 'self' blob:" in headers["Content-Security-Policy"]
@@ -644,7 +652,7 @@ def test_framing_http_guard_disconnect_errors_and_race(tmp_path, monkeypatch):
         state = json.loads(http(server)[1])
         record = next(item for item in state["revisions"] if item["revision"] == parent["revision"])
         data = {
-            "master_id": state["master_id"],
+            "developed_id": state["developed_id"],
             "revision": record["revision"],
             "revision_manifest_sha256": record["revision_manifest_sha256"],
             "margins": margins(),
@@ -681,10 +689,10 @@ def test_framing_http_guard_disconnect_errors_and_race(tmp_path, monkeypatch):
         assert http(server, "/api/framing-preview", "POST", data)[0] == 200
         # A raw-byte edit during sampling must not be labelled with the old digest.
         path = project / "revisions" / record["revision"] / "manifest.json"
-        raw = path.read_bytes()
+        raw = saved_raster(path).read_bytes()
 
         def changed(*args, **kwargs):
-            path.write_bytes(raw + b"\n")
+            saved_raster(path).write_bytes(raw + b"\n")
             return original(*args, **kwargs)
 
         monkeypatch.setattr(viewer, "framing_preview", changed)
@@ -722,7 +730,7 @@ def test_framing_snapshot_rejects_manifest_replacement_during_validation(tmp_pat
         result = original(*args, **kwargs)
         if args[1] == parent["revision"]:
             path = project / "revisions" / parent["revision"] / "manifest.json"
-            path.write_bytes(path.read_bytes() + b"\n")
+            saved_raster(path).write_bytes(saved_raster(path).read_bytes() + b"\n")
         return result
 
     monkeypatch.setattr(viewer, "read_revision", replaced)
@@ -781,7 +789,7 @@ def test_framing_preview_rejects_stale_enabled_effect_without_base_fallback(tmp_
             "/api/framing-preview",
             "POST",
             {
-                "master_id": state["master_id"],
+                "developed_id": state["developed_id"],
                 "revision": record["revision"],
                 "revision_manifest_sha256": record["revision_manifest_sha256"],
                 "margins": margins(),
@@ -828,7 +836,7 @@ def test_new_viewer_serves_only_authenticated_project_and_packaged_page(tmp_path
         assert "default-src 'none'" in headers["Content-Security-Policy"]
         status, body, _ = http(server)
         state = json.loads(body)
-        assert status == 200 and state["master_id"] == read_project(project)["master_id"]
+        assert status == 200 and state["developed_id"] == read_project(project)["developed_id"]
         assert state["dimensions_wh"] == [3, 2]
         assert http(server, "/api/state", **{"X-Blackmask-Token": ""})[0] == 403
         assert http(server, "/api/state", Host="attacker.example")[0] == 403
@@ -872,7 +880,7 @@ def test_viewer_asset_identity_and_symlink_rejection(tmp_path):
         path = state["source_url"]
         status, png, _ = http(server, path)
         assert status == 200 and png.startswith(b"\x89PNG")
-        assert http(server, path.replace(state["master_id"], "0" * 64))[0] == 404
+        assert http(server, path.replace(state["developed_id"], "0" * 64))[0] == 404
         source = project / "source.json"
         original = source.read_bytes()
         source.rename(project / "source-original.json")
@@ -889,7 +897,7 @@ def test_viewer_reads_responsive_and_writer_reports_busy(tmp_path):
         data = {
             k: v
             for k, v in request(project).items()
-            if k in {"master_id", "base_revision", "inputs_digest"}
+            if k in {"developed_id", "base_revision", "inputs_digest"}
         }
         data["action"] = "development"
         data["authoring_digest"] = operations.guidance_draft_digest(project)
@@ -912,7 +920,7 @@ def test_saved_pending_guides_block_approval_and_replaced_restore_rejects_stale_
     identity = {
         k: v
         for k, v in request(project).items()
-        if k in {"master_id", "base_revision", "inputs_digest"}
+        if k in {"developed_id", "base_revision", "inputs_digest"}
     }
     region = {"id": "pending", "role": "unknown", "shape": "point", "xy": [1, 1]}
     operations.save_guidance_draft(project, identity, [], [{"action": "upsert", "region": region}])
@@ -940,7 +948,7 @@ def perform(server, action, **extra):
     state = json.loads(body)
     data = {
         "action": action,
-        "master_id": state["master_id"],
+        "developed_id": state["developed_id"],
         "base_revision": state["working_revision"],
         "inputs_digest": state["inputs_digest"],
         "authoring_digest": state["authoring_digest"],
@@ -967,13 +975,17 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
 
     monkeypatch.setattr(operations, "VitMatteSession", StubSession)
     _, project = opened(tmp_path)
-    original = (project / "masters" / (read_project(project)["master_id"] + ".tif")).read_bytes()
+    original = (
+        saved_raster(
+            project / "assets/developed" / (read_project(project)["developed_id"] + ".tif")
+        )
+    ).read_bytes()
     with running(project) as server:
         server.model_cache = Path("explicit-synthetic-test-cache")
         perform(server, "prepare", scope_xyxy=[0, 0, 3, 2])
         perform(server, "matte")
         assert not (project / "revisions/rev-002/trimap_approval.json").exists()
-        alpha = np.array(Image.open(project / "revisions/rev-002/base_alpha16.png"))
+        alpha = np.array(Image.open(saved_raster(project / "revisions/rev-002/base_alpha16.png")))
         assert np.any((alpha > 0) & (alpha < 65535))
         perform(server, "accept", revision="rev-002")
         accepted = perform(server, "export", revision="rev-002", draft=False)
@@ -1009,7 +1021,9 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
             reason="Synthetic BG correction; automated control test, no human approval",
             merge_policy="replace",
         )
-        repaired = np.array(Image.open(project / "revisions/rev-004/base_alpha16.png"))
+        repaired = np.array(
+            Image.open(saved_raster(project / "revisions/rev-004/base_alpha16.png"))
+        )
         assert not (project / "revisions/rev-004/trimap_approval.json").exists()
         assert repaired[0, 0] == 0 and repaired[1, 1] == alpha[1, 1]
         assert np.array_equal(repaired[:, 2], alpha[:, 2])
@@ -1029,7 +1043,9 @@ def test_actual_http_manual_journey_new_support_partial_lock_accept_restore_resu
             if p.is_file():
                 assert p.read_bytes() == hashes[p.name]
         assert (
-            project / "masters" / (read_project(project)["master_id"] + ".tif")
+            saved_raster(
+                project / "assets/developed" / (read_project(project)["developed_id"] + ".tif")
+            )
         ).read_bytes() == original
 
 
@@ -1122,7 +1138,7 @@ def test_actual_viewer_writer_excludes_cli_accept_restore_and_keeps_reads_respon
         perform(server, "prepare", scope_xyxy=[0, 0, 3, 2])
         perform(server, "trimap", revision="rev-001")
         state = json.loads(http(server)[1])
-        data = {k: state[k] for k in ("master_id", "inputs_digest", "authoring_digest")}
+        data = {k: state[k] for k in ("developed_id", "inputs_digest", "authoring_digest")}
         data.update(action="matte", base_revision=state["working_revision"])
         assert http(server, "/api/action", "POST", data)[0] == 202
         try:
@@ -1130,7 +1146,7 @@ def test_actual_viewer_writer_excludes_cli_accept_restore_and_keeps_reads_respon
             assert json.loads(http(server)[1])["writer_busy"]
             assert http(server, state["source_url"])[0] == 200
             for arguments in [
-                ["accept", str(project), "--development", "--master-id", state["master_id"]],
+                ["accept", str(project), "--development", "--developed-id", state["developed_id"]],
                 ["restore", str(project), "--revision", "rev-001"],
             ]:
                 child = subprocess.run(
@@ -1198,22 +1214,24 @@ def test_damaged_pending_guidance_stays_readable_and_explicit_restore_preserves_
         ],
     )
     pointer = project / "viewer-draft.json"
-    pending = json.loads(pointer.read_bytes())
+    pending = json.loads(saved_raster(pointer).read_bytes())
     if damage == "pointer-json":
-        pointer.write_bytes(b"{broken pending pointer")
+        saved_raster(pointer).write_bytes(b"{broken pending pointer")
     elif damage == "pointer-fields":
         pointer.write_text("[]")
     elif damage == "missing-record":
-        (project / pending["record_file"]).rename(project / "retained-record.json")
+        (saved_raster(project / pending["record_file"])).rename(project / "retained-record.json")
     elif damage == "record-fields":
-        record = json.loads((project / pending["record_file"]).read_bytes())
+        record = json.loads((saved_raster(project / pending["record_file"])).read_bytes())
         del record["actions"]
         (project / pending["record_file"]).write_text(json.dumps(record))
     elif damage == "missing-edits":
-        (project / pending["guide_edits_file"]).rename(project / "retained-edits.json")
+        (saved_raster(project / pending["guide_edits_file"])).rename(
+            project / "retained-edits.json"
+        )
     else:
         (project / pending["guide_edits_file"]).write_text("{broken edits")
-    before = pointer.read_bytes()
+    before = saved_raster(pointer).read_bytes()
     state_before = read_project(project)
     with pytest.raises(ProjectError):
         operations.pending_guidance(project)
@@ -1228,7 +1246,7 @@ def test_damaged_pending_guidance_stays_readable_and_explicit_restore_preserves_
         assert http(server)[0] == 200
     assert operations.pending_guidance(project) is None
     assert read_project(project)["accepted_revision"] == state_before["accepted_revision"]
-    assert read_project(project)["master_id"] == state_before["master_id"]
+    assert read_project(project)["developed_id"] == state_before["developed_id"]
 
 
 def test_snapshot_reuses_validated_master_and_revision_within_one_read(tmp_path, monkeypatch):
@@ -1238,8 +1256,11 @@ def test_snapshot_reuses_validated_master_and_revision_within_one_read(tmp_path,
 
     _, project, result = prepared(tmp_path)
     operations.save_guidance_draft(project, request(project), [], [])
-    master = project / "masters" / (result["master_id"] + ".tif")
-    trimap = project / "revisions" / result["revision"] / "trimap.png"
+    master = project / "assets/developed" / (result["developed_id"] + ".tif")
+    trimap = saved_raster(project / "revisions" / result["revision"] / "trimap.png")
+    from blackmask import assets
+
+    checksum = assets._checksum
     reads = {master: 0, trimap: 0}
     original = Path.read_bytes
 
@@ -1248,14 +1269,20 @@ def test_snapshot_reuses_validated_master_and_revision_within_one_read(tmp_path,
             reads[path] += 1
         return original(path)
 
+    def counted_checksum(path):
+        if path in reads:
+            reads[path] += 1
+        return checksum(path)
+
     with ReviewServer(project) as server:
         monkeypatch.setattr(Path, "read_bytes", counted)
+        monkeypatch.setattr(assets, "_checksum", counted_checksum)
         snapshot = server.snapshot()
         assert snapshot["pending"]["current"]
         assert reads == {master: 1, trimap: 1}
         snapshot = server.snapshot()
         assert reads == {master: 2, trimap: 2}, "Validation must not survive a request"
-    pixels, _ = load_master(project, result["master_id"])
+    pixels, _ = load_developed(project, result["developed_id"])
     assert pixels.flags.writeable, "Read-only viewer buffers leaked into processing callers"
 
 
@@ -1267,15 +1294,15 @@ def test_snapshot_rejects_changes_during_reused_validation(tmp_path, monkeypatch
 
     _, project, result = prepared(tmp_path)
     path = {
-        "master": project / "masters" / (result["master_id"] + ".tif"),
+        "master": project / "assets/developed" / (result["developed_id"] + ".tif"),
         "source": project / "source.json",
         "trimap": project / "revisions" / result["revision"] / "trimap.png",
     }[asset]
     original = viewer._validate_assets
 
     def changed(*args, **kwargs):
-        data = path.read_bytes()
-        path.write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
+        data = saved_raster(path).read_bytes()
+        saved_raster(path).write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
         return original(*args, **kwargs)
 
     with viewer.ReviewServer(project) as server:
@@ -1290,18 +1317,18 @@ def test_request_local_master_reuse_keeps_buffers_readonly_and_metadata_independ
     from blackmask.project import _validation_scope
 
     _, project = opened(tmp_path)
-    master_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     with _validation_scope():
-        pixels, metadata = load_master(project, master_id)
+        pixels, metadata = load_developed(project, developed_id)
         expected_metadata = copy.deepcopy(metadata)
         assert not pixels.flags.writeable
         with pytest.raises(ValueError, match="read-only"):
             pixels[0, 0] = 0
         metadata["reader_note"] = "not saved"
-        reused_pixels, fresh_metadata = load_master(project, master_id)
+        reused_pixels, fresh_metadata = load_developed(project, developed_id)
         assert not reused_pixels.flags.writeable
         assert fresh_metadata == expected_metadata
-    assert load_master(project, master_id)[0].flags.writeable
+    assert load_developed(project, developed_id)[0].flags.writeable
 
 
 def test_request_local_revision_reuse_preserves_identity_and_manifest_copies(tmp_path):
@@ -1311,13 +1338,13 @@ def test_request_local_revision_reuse_preserves_identity_and_manifest_copies(tmp
 
     _, project, result = prepared(tmp_path)
     with _validation_scope():
-        expected = read_revision(project, result["revision"], result["master_id"])
-        changed_by_reader = read_revision(project, result["revision"], result["master_id"])
+        expected = read_revision(project, result["revision"], result["developed_id"])
+        changed_by_reader = read_revision(project, result["revision"], result["developed_id"])
         changed_by_reader["files"].clear()
-        assert read_revision(project, result["revision"], result["master_id"]) == expected
-        with pytest.raises(ProjectError, match="master"):
+        assert read_revision(project, result["revision"], result["developed_id"]) == expected
+        with pytest.raises(ProjectError, match="developed identity"):
             read_revision(project, result["revision"], "0" * 64)
-        assert read_revision(project, result["revision"], result["master_id"]) == expected
+        assert read_revision(project, result["revision"], result["developed_id"]) == expected
 
 
 @pytest.mark.parametrize(
@@ -1342,7 +1369,7 @@ def test_background_action_failure_is_visible_and_next_action_succeeds(
         status, body, _ = http(server)
         assert status == 200
         state = json.loads(body)
-        data = {key: state[key] for key in ("master_id", "inputs_digest", "authoring_digest")}
+        data = {key: state[key] for key in ("developed_id", "inputs_digest", "authoring_digest")}
         data.update(action="development", base_revision=state["working_revision"])
         assert http(server, "/api/action", "POST", data)[0] == 202
         for _ in range(100):
@@ -1358,7 +1385,7 @@ def test_background_action_failure_is_visible_and_next_action_succeeds(
         server.action_lock.release()
         monkeypatch.setattr(server, "execute", execute)
         result = perform(server, "development")
-        assert result["master_id"] == state["master_id"]
+        assert result["developed_id"] == state["developed_id"]
         assert result["development_approved"] is True
 
 
@@ -1383,7 +1410,7 @@ def test_background_action_base_exception_propagates_after_cleanup(tmp_path, mon
         status, body, _ = http(server)
         assert status == 200
         state = json.loads(body)
-        data = {key: state[key] for key in ("master_id", "inputs_digest", "authoring_digest")}
+        data = {key: state[key] for key in ("developed_id", "inputs_digest", "authoring_digest")}
         data.update(action="development", base_revision=state["working_revision"])
         assert http(server, "/api/action", "POST", data)[0] == 202
         assert propagated.wait(3), "BaseException was swallowed by the worker"

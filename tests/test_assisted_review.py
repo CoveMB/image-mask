@@ -7,6 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from PIL import Image
+from test_ingest import saved_raster
 from test_matte_operations import StubSession, approve, prepared, run_matte
 from test_operations import edits, request
 
@@ -26,9 +27,9 @@ def baseline(tmp_path):
 
 def cycle_request(project, action, **fields):
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "action": action,
-        "master_id": read_project(project)["master_id"],
+        "developed_id": read_project(project)["developed_id"],
         "base_revision": read_project(project)["working_revision"],
         "inputs_digest": operations.draft_digest(project),
         **fields,
@@ -125,7 +126,7 @@ def test_shared_two_attempt_budget_and_preservation_reopen(tmp_path):
     capture = source.read_bytes()
     accepted = {p.name: p.read_bytes() for p in exported.iterdir() if p.is_file()}
     original_alpha = np.array(
-        Image.open(project / "revisions" / original["revision"] / "base_alpha16.png")
+        Image.open(saved_raster(project / "revisions" / original["revision"] / "base_alpha16.png"))
     )
     cycle = start(project)
     for index in range(2):
@@ -137,7 +138,9 @@ def test_shared_two_attempt_budget_and_preservation_reopen(tmp_path):
         cycle = assess(project, cycle)
         assert cycle["attempts"] == index + 1
         alpha = np.array(
-            Image.open(project / "revisions" / result["revision"] / "base_alpha16.png")
+            Image.open(
+                saved_raster(project / "revisions" / result["revision"] / "base_alpha16.png")
+            )
         )
         assert alpha[1, 1] == original_alpha[1, 1] == 16384
         assert alpha[0, 0] == original_alpha[0, 0] and alpha[1, 2] == original_alpha[1, 2]
@@ -146,7 +149,7 @@ def test_shared_two_attempt_budget_and_preservation_reopen(tmp_path):
     with pytest.raises(ProjectError, match="stopped|budget"):
         operations.apply_operation(project, request(project, assisted_review=envelope))
     saved = review.review_cycle(
-        project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+        project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
     )
     assert saved == cycle
     assert len(list((project / "requests" / cycle["cycle_id"]).glob("*.json"))) == 5
@@ -213,7 +216,7 @@ def test_invalid_proposal_does_not_run_or_change_state(tmp_path, field, value):
     assert (project / "state.json").read_bytes() == before
     assert (
         review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         )["attempts"]
         == 0
     )
@@ -222,7 +225,7 @@ def test_invalid_proposal_does_not_run_or_change_state(tmp_path, field, value):
 def test_review_manifest_has_current_identity_paths_settings_and_stale_labels(tmp_path):
     _, project, original, _ = baseline(tmp_path)
     first = review.review_project(project, crops=[[1, 0, 3, 2]])
-    manifest = json.loads(Path(first["manifest_file"]).read_bytes())
+    manifest = json.loads(saved_raster(Path(first["manifest_file"])).read_bytes())
     assert manifest["inputs_digest"] == operations.draft_digest(project)
     assert manifest["working_revision"] == original["revision"]
     assert manifest["qa"]["structural_checks"] == "passed"
@@ -231,11 +234,11 @@ def test_review_manifest_has_current_identity_paths_settings_and_stale_labels(tm
     assert manifest["effects"]["color_cleanup"]["enabled"] is False
     assert manifest["stale_labels"] == []
     for name in ("source_rgb16", "foreground_rgb16", "alpha16"):
-        assert (project / manifest["assets"][name]).is_file()
+        assert (saved_raster(project / manifest["assets"][name])).is_file()
     with (project / "recipe.toml").open("a") as stream:
         stream.write("\n# external draft edit\n")
     second = review.review_project(project, crops=[[1, 0, 3, 2]])
-    stale = json.loads(Path(second["manifest_file"]).read_bytes())
+    stale = json.loads(saved_raster(Path(second["manifest_file"])).read_bytes())
     assert second != first and "draft_changed" in stale["stale_labels"]
 
 
@@ -250,7 +253,7 @@ def test_failed_attempt_resumes_once_and_stopped_cycle_cannot_resume_completed(t
     ):
         repair(project, operation)
     saved = review.review_cycle(
-        project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+        project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
     )
     assert saved["attempts"] == 1 and saved["phase"] == "awaiting_assessment"
     statuses = operations.operation_status(project)
@@ -263,7 +266,7 @@ def test_failed_attempt_resumes_once_and_stopped_cycle_cannot_resume_completed(t
         )
     assert (
         review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         )["attempts"]
         == 1
     )
@@ -297,8 +300,8 @@ def test_assisted_lock_removal_and_conflicting_core_rejected(tmp_path):
     (project / filename).write_text(
         json.dumps(
             {
-                "schema_version": 1,
-                "master_id": read_project(project)["master_id"],
+                "schema_version": 2,
+                "developed_id": read_project(project)["developed_id"],
                 "actions": [{"action": "remove", "id": "protected"}],
             }
         )
@@ -322,18 +325,20 @@ def test_stale_or_changed_review_assets_fail_without_attempt(tmp_path, corrupt):
     else:
         manifest = project / envelope["review_manifest_file"]
         if corrupt == "manifest":
-            data = json.loads(manifest.read_bytes())
+            data = json.loads(saved_raster(manifest).read_bytes())
             data["crops"][0]["native_origin_xy"] = [999, 999]
             manifest.write_text(json.dumps(data))
         else:
-            next(manifest.parent.glob("crop-*.png")).write_bytes(b"changed reviewed pixels")
+            saved_raster(next(manifest.parent.glob("crop-*.png"))).write_bytes(
+                b"changed reviewed pixels"
+            )
     before = (project / "state.json").read_bytes()
     with pytest.raises(ProjectError, match="Stale|stale|changed|Invalid"):
         operations.apply_operation(project, operation)
     assert (project / "state.json").read_bytes() == before
     assert (
         review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         )["attempts"]
         == 0
     )
@@ -370,7 +375,7 @@ def test_cycle_cli_round_trip_and_actual_competing_process(tmp_path):
     assert winner.returncode == 0, winner.stderr
     cycle = json.loads(winner.stdout)
     cycle_file.write_text(
-        json.dumps({"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]})
+        json.dumps({"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]})
     )
     reopened = subprocess.run(command, capture_output=True, text=True, env=environment, check=False)
     assert reopened.returncode == 0 and json.loads(reopened.stdout) == cycle
@@ -393,7 +398,7 @@ def test_unknown_off_image_reapplied_and_stale_repairs_fail_before_attempt(tmp_p
     assert (project / "state.json").read_bytes() == before
     assert (
         review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         )["attempts"]
         == 0
     )
@@ -418,7 +423,7 @@ def test_consumed_viewer_draft_allows_manual_to_assisted_continuation(tmp_path):
     run_matte(project)
     cycle = start(project)
     envelope = proposal(project, cycle)
-    manifest = json.loads((project / envelope["review_manifest_file"]).read_bytes())
+    manifest = json.loads((saved_raster(project / envelope["review_manifest_file"])).read_bytes())
     assert manifest["stale_labels"] == []
     result = operations.apply_operation(project, request(project, assisted_review=envelope))
     assert result["status"] == "review_needed"
@@ -439,14 +444,14 @@ def test_altered_terminal_event_rejects_status_new_attempt_and_resume(tmp_path, 
         )
     directory = project / "requests" / cycle["cycle_id"]
     last = max(directory.glob("*.json"))
-    last.with_suffix(".preserved").write_bytes(last.read_bytes())
-    record = json.loads(last.read_bytes())
+    saved_raster(last.with_suffix(".preserved")).write_bytes(saved_raster(last).read_bytes())
+    record = json.loads(saved_raster(last).read_bytes())
     record["phase"] = "ready"
     last.write_text(json.dumps(record))
     before = (project / "state.json").read_bytes()
     with pytest.raises(ProjectError, match="history|event|integrity"):
         review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         )
     with pytest.raises(ProjectError, match="history|event|integrity"):
         operations.apply_operation(project, request(project, assisted_review=envelope))
@@ -467,11 +472,11 @@ def test_truncated_reserved_history_rejected_by_retained_recovery(tmp_path):
         repair(project, operation)
     directory = project / "requests" / cycle["cycle_id"]
     last = max(directory.glob("*.json"))
-    last.rename(last.with_suffix(".retained-reservation"))
+    saved_raster(last).rename(last.with_suffix(".retained-reservation"))
     before = (project / "state.json").read_bytes()
     for action in [
         lambda: review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         ),
         lambda: operations.apply_operation(project, request(project, assisted_review=envelope)),
     ]:
@@ -490,14 +495,14 @@ def test_renamed_contradictory_stop_event_rejected(tmp_path):
     )
     directory = project / "requests" / cycle["cycle_id"]
     last = max(directory.glob("*.json"))
-    record = json.loads(last.read_bytes())
+    record = json.loads(saved_raster(last).read_bytes())
     record["phase"] = "ready"
-    last.rename(last.with_suffix(".retained-stop"))
+    saved_raster(last).rename(last.with_suffix(".retained-stop"))
     data = _json_bytes(record)
-    (directory / f"001-{digest(data)}.json").write_bytes(data)
+    (saved_raster(directory / f"001-{digest(data)}.json")).write_bytes(data)
     with pytest.raises(ProjectError, match="history|event|transition"):
         review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         )
 
 
@@ -515,11 +520,11 @@ def test_lost_terminal_disposition_rejects_status_and_completed_resume(tmp_path,
         assess(project, cycle, "regression")
     directory = project / "requests" / cycle["cycle_id"]
     last = max(directory.glob("*.json"))
-    last.rename(last.with_suffix(".retained-terminal"))
+    saved_raster(last).rename(last.with_suffix(".retained-terminal"))
     before = (project / "state.json").read_bytes()
     with pytest.raises(ProjectError, match="history|anchor|integrity"):
         review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         )
     with pytest.raises(ProjectError, match="history|anchor|integrity"):
         operations.resume_operation(project, result["operation_id"], model_cache=Path("unused"))
@@ -531,7 +536,7 @@ def test_failed_integrity_anchor_publication_preserves_history_and_fails_closed(
     cycle = start(project)
     directory = project / "requests" / cycle["cycle_id"]
     anchor = directory / "head.sha256"
-    original_anchor = anchor.read_bytes()
+    original_anchor = saved_raster(anchor).read_bytes()
     original_state = (project / "state.json").read_bytes()
     with (
         patch(
@@ -544,11 +549,11 @@ def test_failed_integrity_anchor_publication_preserves_history_and_fails_closed(
             project,
             cycle_request(project, "stop", cycle_id=cycle["cycle_id"], reason="Explicit stop"),
         )
-    assert anchor.read_bytes() == original_anchor
+    assert saved_raster(anchor).read_bytes() == original_anchor
     assert len(list(directory.glob("*.json"))) == 2
     with pytest.raises(ProjectError, match="history|anchor|integrity"):
         review.review_cycle(
-            project, {"schema_version": 1, "action": "status", "cycle_id": cycle["cycle_id"]}
+            project, {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
         )
     assert (project / "state.json").read_bytes() == original_state
 
@@ -561,7 +566,7 @@ def test_integrity_anchor_loss_during_repair_stops_publication(tmp_path):
     anchor = project / "requests" / cycle["cycle_id"] / "head.sha256"
 
     def remove_anchor(rgb, trimap, device):
-        anchor.rename(anchor.with_suffix(".retained-anchor"))
+        saved_raster(anchor).rename(anchor.with_suffix(".retained-anchor"))
         return np.full(trimap.shape, 0.25), {"fixture": "synthetic-anchor-loss"}
 
     with (

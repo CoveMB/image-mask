@@ -10,6 +10,7 @@ import pytest
 import tifffile
 from PIL import Image
 from test_effects import effect_request, fixture_project, shading_request
+from test_ingest import bind_raster, saved_raster
 from test_matte_operations import approve, run_matte
 from test_operations import edits, request
 
@@ -173,16 +174,18 @@ def test_saved_exposure_noncompounding_disable_compare_and_export(tmp_path):
     from blackmask.review import review_project
 
     project, source, parent = fixture_project(tmp_path)
-    base, alpha, _ = saved_layers(project, parent["revision"], read_project(project)["master_id"])
+    base, alpha, _ = saved_layers(
+        project, parent["revision"], read_project(project)["developed_id"]
+    )
     accepted = read_project(project)["accepted_revision"]
     with patch("blackmask.operations.VitMatteSession", side_effect=AssertionError("No model")):
         first = operations.apply_operation(project, exposure_request(project))
         rgb, actual_alpha, manifest = saved_layers(
-            project, first["revision"], read_project(project)["master_id"]
+            project, first["revision"], read_project(project)["developed_id"]
         )
         directory = project / "revisions" / first["revision"] / "effects/exposure"
-        support = scalar16(directory / "support16.png")
-        protection = scalar16(directory / "protection16.png") != 0
+        support = scalar16(saved_raster(directory / "support16.png"))
+        protection = scalar16(saved_raster(directory / "protection16.png")) != 0
         expected, counts = apply_exposure(
             base, alpha, support, protection, {"enabled": True, "ev": 1}
         )
@@ -198,39 +201,46 @@ def test_saved_exposure_noncompounding_disable_compare_and_export(tmp_path):
                 base, alpha, support, protection, {"enabled": True, "ev": ev}
             )
             np.testing.assert_array_equal(
-                saved_layers(project, changed["revision"], read_project(project)["master_id"])[0],
+                saved_layers(project, changed["revision"], read_project(project)["developed_id"])[
+                    0
+                ],
                 expected,
             )
         off_rgb = saved_layers(
-            project, first["revision"], read_project(project)["master_id"], exposure_off=True
+            project, first["revision"], read_project(project)["developed_id"], exposure_off=True
         )[0]
         np.testing.assert_array_equal(off_rgb, base)
         exported = Path(
             export_project(project, revision=first["revision"], draft=True)["directory"]
         )
-        np.testing.assert_array_equal(tifffile.imread(exported / "foreground_rgb16.tif"), rgb)
         np.testing.assert_array_equal(
-            tifffile.imread(exported / "unexposed_foreground_rgb16.tif"), base
+            tifffile.imread(saved_raster(exported / "foreground_rgb16.tif")), rgb
         )
-        assert (exported / "exposure_support16.png").is_file()
-        assert (exported / "exposure_protection16.png").is_file()
+        np.testing.assert_array_equal(
+            tifffile.imread(saved_raster(exported / "unexposed_foreground_rgb16.tif")), base
+        )
+        assert (saved_raster(exported / "exposure_support16.png")).is_file()
+        assert (saved_raster(exported / "exposure_protection16.png")).is_file()
         assert json.loads((exported / "manifest.json").read_bytes())["local_exposure"]["enabled"]
         reviewed = json.loads(
-            Path(review_project(project, revision=first["revision"])["manifest_file"]).read_bytes()
+            saved_raster(
+                Path(review_project(project, revision=first["revision"])["manifest_file"])
+            ).read_bytes()
         )
         assert reviewed["effects"]["local_exposure"]["clipping"] == counts
         disabled = operations.apply_operation(
             project, exposure_request(project, enabled=False, ev=0)
         )
         np.testing.assert_array_equal(
-            saved_layers(project, disabled["revision"], read_project(project)["master_id"])[0], base
+            saved_layers(project, disabled["revision"], read_project(project)["developed_id"])[0],
+            base,
         )
         assert (
             project / "revisions" / disabled["revision"] / "effects/exposure/area.json"
         ).read_bytes() == (directory / "area.json").read_bytes()
         operations.restore_revision(project, first["revision"], replace_drafts=True)
         np.testing.assert_array_equal(
-            saved_layers(project, first["revision"], read_project(project)["master_id"])[0], rgb
+            saved_layers(project, first["revision"], read_project(project)["developed_id"])[0], rgb
         )
     np.testing.assert_array_equal(source, base)
     assert read_project(project)["accepted_revision"] == accepted
@@ -243,11 +253,11 @@ def test_exposure_only_comparison_retains_cleanup_and_shading(tmp_path):
     cleanup = operations.apply_operation(project, effect_request(project))
     shaded = operations.apply_operation(project, shading_request(project))
     base, alpha, before = saved_layers(
-        project, shaded["revision"], read_project(project)["master_id"]
+        project, shaded["revision"], read_project(project)["developed_id"]
     )
     result = operations.apply_operation(project, exposure_request(project))
     rgb, _, manifest = saved_layers(
-        project, result["revision"], read_project(project)["master_id"], exposure_off=True
+        project, result["revision"], read_project(project)["developed_id"], exposure_off=True
     )
     np.testing.assert_array_equal(rgb, base)
     assert manifest["color_cleanup"] == before["color_cleanup"]
@@ -259,9 +269,9 @@ def test_exposure_only_comparison_retains_cleanup_and_shading(tmp_path):
     )
     assert rebuilt["local_exposure"]["settings"] == result["local_exposure"]["settings"]
     unexposed = saved_layers(
-        project, rebuilt["revision"], read_project(project)["master_id"], exposure_off=True
+        project, rebuilt["revision"], read_project(project)["developed_id"], exposure_off=True
     )[0]
-    actual = saved_layers(project, rebuilt["revision"], read_project(project)["master_id"])[0]
+    actual = saved_layers(project, rebuilt["revision"], read_project(project)["developed_id"])[0]
     assert np.any(actual != unexposed)
     assert cleanup["color_cleanup"]["enabled"]
 
@@ -278,8 +288,8 @@ def test_area_replacement_requires_union_scope_and_restores_old_area(tmp_path):
         )
     assert (project / "state.json").read_bytes() == before
     result = operations.apply_operation(project, exposure_request(project, area=area_b))
-    rgb = saved_layers(project, result["revision"], read_project(project)["master_id"])[0]
-    base = saved_layers(project, parent["revision"], read_project(project)["master_id"])[0]
+    rgb = saved_layers(project, result["revision"], read_project(project)["developed_id"])[0]
+    base = saved_layers(project, parent["revision"], read_project(project)["developed_id"])[0]
     np.testing.assert_array_equal(rgb[:, 1], base[:, 1])
     assert np.any(rgb[:, 4] != base[:, 4])
 
@@ -314,7 +324,7 @@ def test_scalar_exposure_inputs_recheck_before_publication(tmp_path):
     operation = exposure_request(project)
     operation.pop("exposure_area")
     operation.update(support_file="area.png", exposure_protection_file="protect.png")
-    original = review.write_review
+    original = review.write_revision_overview
     before = (project / "state.json").read_bytes()
 
     def changing(*args, **kwargs):
@@ -322,7 +332,10 @@ def test_scalar_exposure_inputs_recheck_before_publication(tmp_path):
         Image.fromarray(np.zeros_like(support)).save(project / "area.png")
         return result
 
-    with patch.object(review, "write_review", changing), pytest.raises(ProjectError, match="Stale"):
+    with (
+        patch.object(review, "write_revision_overview", changing),
+        pytest.raises(ProjectError, match="Stale"),
+    ):
         operations.apply_operation(project, operation)
     assert (project / "state.json").read_bytes() == before
 
@@ -339,14 +352,14 @@ def test_legacy_recipe_missing_exposure_loads_without_rewrite(tmp_path):
     recipe = tomllib.loads(path.read_text())
     recipe.pop("local_exposure", None)
     path.write_text(tomli_w.dumps(recipe))
-    before = path.read_bytes()
-    assert Recipe.from_dict(recipe, read_project(project)["master_id"]).local_exposure == {
+    before = saved_raster(path).read_bytes()
+    assert Recipe.from_dict(recipe, read_project(project)["developed_id"]).local_exposure == {
         "enabled": False,
         "ev": 0,
     }
-    assert path.read_bytes() == before
+    assert saved_raster(path).read_bytes() == before
     assert "local_exposure" not in read_revision(
-        project, parent["revision"], read_project(project)["master_id"]
+        project, parent["revision"], read_project(project)["developed_id"]
     )
 
 
@@ -361,7 +374,7 @@ def test_exposure_inherits_through_partial_alpha_lock_and_matte_or_repair(
     project, _, _ = fixture_project(tmp_path)
     first = operations.apply_operation(project, exposure_request(project))
     before_rgb, before_alpha, _ = saved_layers(
-        project, first["revision"], read_project(project)["master_id"]
+        project, first["revision"], read_project(project)["developed_id"]
     )
     assert 0 < before_alpha[1, 3] < 65535
     name = edits(
@@ -393,7 +406,7 @@ def test_exposure_inherits_through_partial_alpha_lock_and_matte_or_repair(
             else run_matte(project)
         )
     rgb, alpha, manifest = saved_layers(
-        project, repaired["revision"], read_project(project)["master_id"]
+        project, repaired["revision"], read_project(project)["developed_id"]
     )
     assert manifest["local_exposure"]["stale"] is change_alpha
     np.testing.assert_array_equal(rgb[1, 3], before_rgb[1, 3])
@@ -442,11 +455,15 @@ def test_viewer_exposure_roundtrip_compare_security_and_stale_identity(tmp_path)
         assert record["exposure_area"] == operation["exposure_area"]
         assert record["local_exposure"]["clipping"]["eligible_pixels"] > 0
         image = np.array(
-            Image.open(io.BytesIO(server.image(f"/image/black/{revision}/0,0,6,4/exposure-off")))
+            Image.open(
+                saved_raster(
+                    io.BytesIO(server.image(f"/image/black/{revision}/0,0,6,4/exposure-off"))
+                )
+            )
         )
         from blackmask.export import render_black
 
-        rgb, alpha, _ = saved_layers(project, revision, current["master_id"], exposure_off=True)
+        rgb, alpha, _ = saved_layers(project, revision, current["developed_id"], exposure_off=True)
         np.testing.assert_array_equal(
             image, np.rint(render_black(rgb, alpha) / 257).astype(np.uint8)
         )
@@ -477,11 +494,13 @@ def test_scalar_area_roundtrip_and_saved_disabled_validation(tmp_path):
     from blackmask.project import _json_bytes, digest
 
     settings = directory / "effects/exposure/settings.json"
-    settings.write_bytes(_json_bytes(record))
-    manifest["files"]["effects/exposure/settings.json"] = digest(settings.read_bytes())
+    saved_raster(settings).write_bytes(_json_bytes(record))
+    manifest["files"]["effects/exposure/settings.json"] = digest(
+        saved_raster(settings).read_bytes()
+    )
     (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError, match="EV"):
-        read_revision(project, disabled["revision"], read_project(project)["master_id"])
+        read_revision(project, disabled["revision"], read_project(project)["developed_id"])
 
 
 @pytest.mark.parametrize(
@@ -500,15 +519,18 @@ def test_changed_exposure_inputs_abort_before_publication(tmp_path, filename):
     operation_path = project / "request.json"
     operation_path.write_text(json.dumps(operation))
     before = (project / "state.json").read_bytes()
-    original = review.write_review
+    original = review.write_revision_overview
 
     def changing(*args, **kwargs):
         result = original(*args, **kwargs)
         path = project / filename
-        path.write_bytes(path.read_bytes() + b" ")
+        saved_raster(path).write_bytes(saved_raster(path).read_bytes() + b" ")
         return result
 
-    with patch.object(review, "write_review", changing), pytest.raises(ProjectError, match="Stale"):
+    with (
+        patch.object(review, "write_revision_overview", changing),
+        pytest.raises(ProjectError, match="Stale"),
+    ):
         operations.apply_operation(project, operation, request_file=operation_path)
     assert (project / "state.json").read_bytes() == before
 
@@ -531,7 +553,7 @@ def test_interrupted_exposure_publication_retains_complete_revision_and_restore(
     ):
         operations.apply_operation(project, exposure_request(project))
     assert (project / "state.json").read_bytes() == before
-    result = read_revision(project, "rev-003", read_project(project)["master_id"])
+    result = read_revision(project, "rev-003", read_project(project)["developed_id"])
     assert result["local_exposure"]["enabled"]
     operations.restore_revision(project, "rev-003", replace_drafts=True)
     assert read_project(project)["working_revision"] == "rev-003"
@@ -541,9 +563,9 @@ def test_interrupted_exposure_publication_retains_complete_revision_and_restore(
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("schema_version", 2),
+        ("schema_version", 1),
         ("enabled", 1),
-        ("source_id", "foreign"),
+        ("developed_id", "foreign"),
         ("algorithm", "unknown"),
         ("stale", True),
         ("unsupported", True),
@@ -554,16 +576,18 @@ def test_saved_exposure_rejects_inconsistent_or_unsupported_record(tmp_path, fie
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, exposure_request(project))
-    master_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     directory = project / "revisions" / result["revision"]
     manifest = json.loads((directory / "manifest.json").read_bytes())
     manifest["local_exposure"][field] = value
     settings = directory / "effects/exposure/settings.json"
-    settings.write_bytes(_json_bytes(manifest["local_exposure"]))
-    manifest["files"]["effects/exposure/settings.json"] = digest(settings.read_bytes())
+    saved_raster(settings).write_bytes(_json_bytes(manifest["local_exposure"]))
+    manifest["files"]["effects/exposure/settings.json"] = digest(
+        saved_raster(settings).read_bytes()
+    )
     (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError):
-        read_revision(project, result["revision"], master_id)
+        read_revision(project, result["revision"], developed_id)
 
 
 def test_warm_viewer_snapshot_reuses_exposure_semantics_without_decoding_masks(tmp_path):
@@ -612,18 +636,18 @@ def test_warm_exposure_validation_still_checks_every_asset_hash(tmp_path, asset,
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, exposure_request(project))
-    master_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     with _validation_scope() if request_local else nullcontext():
-        expected = read_revision(project, result["revision"], master_id)
+        expected = read_revision(project, result["revision"], developed_id)
         path = project / "revisions" / result["revision"] / asset
-        saved = path.read_bytes()
+        saved = saved_raster(path).read_bytes()
         try:
-            path.write_bytes(saved + b" ")
+            saved_raster(path).write_bytes(saved + b" ")
             with pytest.raises(ProjectError, match="hash mismatch"):
-                read_revision(project, result["revision"], master_id)
+                read_revision(project, result["revision"], developed_id)
         finally:
-            path.write_bytes(saved)
-        assert read_revision(project, result["revision"], master_id) == expected
+            saved_raster(path).write_bytes(saved)
+        assert read_revision(project, result["revision"], developed_id) == expected
 
 
 @pytest.mark.parametrize("enabled", [True, False])
@@ -640,17 +664,17 @@ def test_warm_scalar_exposure_rejects_new_unbound_authored_area(tmp_path, enable
     result = operations.apply_operation(project, operation)
     if not enabled:
         result = operations.apply_operation(project, exposure_request(project, enabled=False))
-    master_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     with _validation_scope() if request_local else nullcontext():
-        expected = read_revision(project, result["revision"], master_id)
+        expected = read_revision(project, result["revision"], developed_id)
         path = project / "revisions" / result["revision"] / "effects/exposure/area.json"
         path.write_text("{}")
         try:
             with pytest.raises(ProjectError, match="Unbound"):
-                read_revision(project, result["revision"], master_id)
+                read_revision(project, result["revision"], developed_id)
         finally:
-            path.unlink()
-        assert read_revision(project, result["revision"], master_id) == expected
+            saved_raster(path).unlink()
+        assert read_revision(project, result["revision"], developed_id) == expected
 
 
 def test_changed_rehashed_exposure_operands_invalidate_prior_semantic_validation(tmp_path):
@@ -659,26 +683,28 @@ def test_changed_rehashed_exposure_operands_invalidate_prior_semantic_validation
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, exposure_request(project))
-    master_id = read_project(project)["master_id"]
-    read_revision(project, result["revision"], master_id)
+    developed_id = read_project(project)["developed_id"]
+    read_revision(project, result["revision"], developed_id)
     directory = project / "revisions" / result["revision"]
     manifest_path = directory / "manifest.json"
-    manifest = json.loads(manifest_path.read_bytes())
+    manifest = json.loads(saved_raster(manifest_path).read_bytes())
     support_path = directory / "effects/exposure/support16.png"
-    support = scalar16(support_path)
+    support = scalar16(saved_raster(support_path))
     assert support[0, 1] == 65535
     support[0, 1] = 0
     Image.fromarray(support).save(support_path)
-    checksum = digest(support_path.read_bytes())
+    checksum = digest(saved_raster(support_path).read_bytes())
     manifest["local_exposure"]["support_sha256"] = checksum
-    manifest["files"]["effects/exposure/support16.png"] = checksum
+    bind_raster(project, directory, manifest, "effects/exposure/support16.png")
     settings_path = directory / "effects/exposure/settings.json"
-    settings_path.write_bytes(_json_bytes(manifest["local_exposure"]))
-    manifest["files"]["effects/exposure/settings.json"] = digest(settings_path.read_bytes())
-    manifest_path.write_bytes(_json_bytes(manifest))
+    saved_raster(settings_path).write_bytes(_json_bytes(manifest["local_exposure"]))
+    manifest["files"]["effects/exposure/settings.json"] = digest(
+        saved_raster(settings_path).read_bytes()
+    )
+    saved_raster(manifest_path).write_bytes(_json_bytes(manifest))
     for _ in range(2):
         with pytest.raises(ProjectError, match="area differs"):
-            read_revision(project, result["revision"], master_id)
+            read_revision(project, result["revision"], developed_id)
 
 
 def test_prepared_exposure_requires_manifest_bound_base_alpha(tmp_path):
@@ -687,12 +713,12 @@ def test_prepared_exposure_requires_manifest_bound_base_alpha(tmp_path):
     project, _, _ = fixture_project(tmp_path)
     operations.apply_operation(project, exposure_request(project))
     prepared = operations.apply_operation(project, request(project))
-    master_id = read_project(project)["master_id"]
-    read_revision(project, prepared["revision"], master_id)
+    developed_id = read_project(project)["developed_id"]
+    read_revision(project, prepared["revision"], developed_id)
     directory = project / "revisions" / prepared["revision"]
     manifest_path = directory / "manifest.json"
-    manifest = json.loads(manifest_path.read_bytes())
-    del manifest["files"]["base_alpha16.png"]
-    manifest_path.write_bytes(_json_bytes(manifest))
+    manifest = json.loads(saved_raster(manifest_path).read_bytes())
+    del manifest["assets"]["base_alpha16.png"]
+    saved_raster(manifest_path).write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError, match="Incomplete local exposure"):
-        read_revision(project, prepared["revision"], master_id)
+        read_revision(project, prepared["revision"], developed_id)

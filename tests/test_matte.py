@@ -3,11 +3,12 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from test_ingest import saved_raster
 
 
 def cache_identity():
     return {
-        "master_id": "a" * 64,
+        "developed_id": "a" * 64,
         "model": "synthetic-only",
         "revision": "b" * 40,
         "hashes": {
@@ -118,7 +119,7 @@ def test_tile_cache_hash_validation_and_device_separation(tmp_path):
     )
     assert calls == ["cpu", "cpu"] and record["reused_tiles"] == 2
     np.testing.assert_array_equal(first, second)
-    next(tmp_path.glob("*.npz")).write_bytes(b"corrupt")
+    saved_raster(next(tmp_path.glob("*.npz"))).write_bytes(b"corrupt")
     matte.native_matte(
         rgb, guide, predict, "cpu", cache_dir=tmp_path, cache_identity=cache_identity()
     )

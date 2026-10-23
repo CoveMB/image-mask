@@ -13,17 +13,17 @@ import numpy as np
 import tifffile
 from PIL import Image
 
-from .ingest import srgb_profile, write_master
+from .assets import revision_hashes, saved_asset
+from .ingest import srgb_profile, write_developed
 from .project import (
     ProjectError,
-    _asset,
     _json_bytes,
     _publish_new_directory,
     _root,
     _sync_directory,
     check_space,
     digest,
-    load_master,
+    load_developed,
     project_lock,
     read_project,
     read_revision,
@@ -201,32 +201,34 @@ def read_rgb16(path: Path) -> np.ndarray:
 def saved_layers(
     project: Path,
     revision: str,
-    master_id: str,
+    developed_id: str,
     *,
     effects_off: bool = False,
     exposure_off: bool = False,
     shadow_fade_off: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    manifest = read_revision(project, revision, master_id)
+    manifest = read_revision(project, revision, developed_id)
     if (
         manifest.get("kind") not in {"matte", "repair", "effects"}
         or manifest.get("final_acceptable") is not True
     ):
         raise ProjectError("Export/review requires a complete matte, not prepared-only state")
-    foreground = read_rgb16(_asset(project, f"revisions/{revision}/foreground_rgb16.tif"))
-    with Image.open(_asset(project, f"revisions/{revision}/base_alpha16.png")) as image:
+    foreground = read_rgb16(saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif"))
+    with Image.open(saved_asset(project, f"revisions/{revision}/base_alpha16.png")) as image:
         if image.format != "PNG" or image.mode not in {"I;16", "I;16B", "I;16L"}:
             raise ProjectError("Invalid saved scalar alpha16")
         alpha = np.array(image)
-    master, _ = load_master(project, master_id)
+    master, _ = load_developed(project, developed_id)
     if foreground.shape != master.shape:
         raise ProjectError("Saved foreground dimensions differ from master")
     render_black(foreground, alpha)
-    with Image.open(_asset(project, f"revisions/{revision}/trimap.png")) as image:
+    with Image.open(saved_asset(project, f"revisions/{revision}/trimap.png")) as image:
         trimap = np.array(image)
-    with Image.open(_asset(project, f"revisions/{revision}/supports/protection.png")) as image:
+    with Image.open(saved_asset(project, f"revisions/{revision}/supports/protection.png")) as image:
         protection = np.array(image)
-    with Image.open(_asset(project, f"revisions/{revision}/supports/lock_values16.png")) as image:
+    with Image.open(
+        saved_asset(project, f"revisions/{revision}/supports/lock_values16.png")
+    ) as image:
         locked = np.array(image)
     if (
         trimap.shape != alpha.shape
@@ -297,7 +299,7 @@ def export_project(
     framing: dict[str, int] | None = None,
     framed_transparent: bool = False,
     series: dict[str, object] | None = None,
-    expected_master_id: str | None = None,
+    expected_developed_id: str | None = None,
     expected_revision_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     if type(framed_transparent) is not bool:
@@ -305,11 +307,11 @@ def export_project(
     if series is not None and framing is not None:
         raise ValueError("Series settings and pixel margins are mutually exclusive")
     if series is None and (
-        expected_master_id is not None or expected_revision_manifest_sha256 is not None
+        expected_developed_id is not None or expected_revision_manifest_sha256 is not None
     ):
         raise ValueError("Expected presentation identities require series settings")
     if series is not None:
-        if type(draft) is not bool or (expected_master_id is None) != (
+        if type(draft) is not bool or (expected_developed_id is None) != (
             expected_revision_manifest_sha256 is None
         ):
             raise ValueError(
@@ -322,7 +324,7 @@ def export_project(
                 or len(value) != 64
                 or any(c not in "0123456789abcdef" for c in value)
             )
-            for value in (expected_master_id, expected_revision_manifest_sha256)
+            for value in (expected_developed_id, expected_revision_manifest_sha256)
         ):
             raise ValueError("Series expected identities must be SHA-256 hex strings")
     if framed_transparent and framing is None and series is None:
@@ -337,7 +339,7 @@ def export_project(
                 framing,
                 framed_transparent,
                 series=series,
-                expected_master_id=expected_master_id,
+                expected_developed_id=expected_developed_id,
                 expected_revision_manifest_sha256=expected_revision_manifest_sha256,
             )
         state = read_project(project)
@@ -349,7 +351,7 @@ def export_project(
             raise ProjectError("No accepted result to export")
         if revision != state["accepted_revision"] and not draft:
             raise ProjectError("Unaccepted revision requires explicit --draft")
-        foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
+        foreground, alpha, manifest = saved_layers(project, revision, state["developed_id"])
         return _export_native_locked(
             project,
             revision=revision,
@@ -380,8 +382,8 @@ def _export_native_locked(
         )
     weight, opacity = saved_shading(project, revision, alpha, manifest)
     spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    before = _asset(project, "state.json").read_bytes()
-    manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+    before = saved_asset(project, "state.json").read_bytes()
+    manifest_bytes = saved_asset(project, f"revisions/{revision}/manifest.json").read_bytes()
     check_space(
         project,
         foreground.nbytes * (22 if "background" in manifest else 18)
@@ -392,13 +394,13 @@ def _export_native_locked(
         )
         + 1024**2,
     )
-    exports = _asset(project, "exports")
+    exports = saved_asset(project, "exports")
     exports.mkdir(exist_ok=True)
     label = f"{revision}-DRAFT" if draft else revision
     stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
     from .background import read_background
 
-    background = read_background(_asset(project, f"revisions/{revision}"), manifest)
+    background = read_background(project, saved_asset(project, f"revisions/{revision}"), manifest)
     target = (
         background
         if background is not None
@@ -416,7 +418,7 @@ def _export_native_locked(
             spatial_fade=spatial,
             fade_background16=target,
         )
-        write_master(stage / "result_rgb16.tif", result_pixels)
+        write_developed(stage / "result_rgb16.tif", result_pixels)
         Image.fromarray(np.rint(result_pixels.astype(np.float64) / 257).astype(np.uint8)).save(
             stage / "result_RGB8_VIEW.png"
         )
@@ -425,14 +427,14 @@ def _export_native_locked(
             ("background/settings.json", "background_settings.json"),
         ):
             (stage / delivered).write_bytes(
-                _asset(project, f"revisions/{revision}/{saved}").read_bytes()
+                saved_asset(project, f"revisions/{revision}/{saved}").read_bytes()
             )
         if not np.array_equal(read_rgb16(stage / "result_rgb16.tif"), result_pixels):
             raise ProjectError("Result RGB16 export round trip failed")
     black = render_black(
         foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
     )
-    write_master(stage / "black_rgb16.tif", black)
+    write_developed(stage / "black_rgb16.tif", black)
     Image.fromarray(alpha).save(stage / "alpha16.png")
     Image.fromarray(np.rint(black.astype(np.float64) / 257).astype(np.uint8)).save(
         stage / "black_RGB8_VIEW.png"
@@ -451,13 +453,13 @@ def _export_native_locked(
             or "gamma" in image.info
         ):
             raise ProjectError("Scalar16 export round trip/profile failed")
-    write_master(stage / "foreground_rgb16.tif", foreground)
+    write_developed(stage / "foreground_rgb16.tif", foreground)
     if "local_exposure" in manifest:
         unexposed, _, _ = saved_layers(
-            project, revision, state["master_id"], exposure_off=True, shadow_fade_off=True
+            project, revision, state["developed_id"], exposure_off=True, shadow_fade_off=True
         )
-        write_master(stage / "unexposed_foreground_rgb16.tif", unexposed)
-        base = _asset(project, f"revisions/{revision}/foreground_rgb16.tif")
+        write_developed(stage / "unexposed_foreground_rgb16.tif", unexposed)
+        base = saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif")
         (stage / "base_foreground_rgb16.tif").write_bytes(base.read_bytes())
         for name in (
             "support16.png",
@@ -467,17 +469,17 @@ def _export_native_locked(
             "area.json",
         ):
             asset = f"effects/exposure/{name}"
-            if asset in manifest["files"]:
+            if asset in revision_hashes(manifest):
                 (stage / ("exposure_" + name)).write_bytes(
-                    _asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                    saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
                 )
     if "shadow_fade" in manifest:
-        unfaded, _, _ = saved_layers(project, revision, state["master_id"], shadow_fade_off=True)
-        write_master(stage / "unfaded_foreground_rgb16.tif", unfaded)
+        unfaded, _, _ = saved_layers(project, revision, state["developed_id"], shadow_fade_off=True)
+        write_developed(stage / "unfaded_foreground_rgb16.tif", unfaded)
         if "local_exposure" not in manifest:
-            write_master(stage / "unexposed_foreground_rgb16.tif", unfaded)
+            write_developed(stage / "unexposed_foreground_rgb16.tif", unfaded)
             (stage / "base_foreground_rgb16.tif").write_bytes(
-                _asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
+                saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
             )
         for name in (
             "support16.png",
@@ -487,21 +489,25 @@ def _export_native_locked(
             "area.json",
         ):
             asset = f"effects/shadow-fade/{name}"
-            if asset in manifest["files"]:
+            if asset in revision_hashes(manifest):
                 (stage / ("shadow_fade_" + name)).write_bytes(
-                    _asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                    saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
                 )
-    write_master(stage / "source_rgb16.tif", load_master(project, state["master_id"])[0])
+    write_developed(stage / "source_rgb16.tif", load_developed(project, state["developed_id"])[0])
     if "spatial_fade" in manifest:
         from .spatial_fade import SPATIAL_FADE_FILES
 
         for name in SPATIAL_FADE_FILES:
             (stage / ("spatial_fade_" + name)).write_bytes(
-                _asset(project, f"revisions/{revision}/effects/spatial-fade/{name}").read_bytes()
+                saved_asset(
+                    project, f"revisions/{revision}/effects/spatial-fade/{name}"
+                ).read_bytes()
             )
     for name in ("shadow_weight16.png", "corrected_rgb16.tif", "recipe.toml"):
-        if name in manifest["files"]:
-            (stage / name).write_bytes(_asset(project, f"revisions/{revision}/{name}").read_bytes())
+        if name in revision_hashes(manifest):
+            (stage / name).write_bytes(
+                saved_asset(project, f"revisions/{revision}/{name}").read_bytes()
+            )
     for effect, name in (
         ("color_cleanup", "effects/settings.json"),
         ("shading", "effects/shading/settings.json"),
@@ -509,9 +515,9 @@ def _export_native_locked(
         if effect in manifest:
             (stage / (effect + "_settings.json")).write_bytes(_json_bytes(manifest[effect]))
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "revision": revision,
-        "master_id": state["master_id"],
+        "developed_id": state["developed_id"],
         "draft": draft,
         "label": "DRAFT - unaccepted explicit export" if draft else "Human-accepted saved revision",
         "revision_manifest_sha256": digest(manifest_bytes),
@@ -566,12 +572,13 @@ def _export_native_locked(
         + "\n"
     )
     if (
-        before != _asset(project, "state.json").read_bytes()
-        or manifest_bytes != _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+        before != saved_asset(project, "state.json").read_bytes()
+        or manifest_bytes
+        != saved_asset(project, f"revisions/{revision}/manifest.json").read_bytes()
     ):
         raise ProjectError("Stale export state or saved inputs")
-    read_revision(project, revision, state["master_id"])
-    destination = _asset(project, f"exports/{label}")
+    read_revision(project, revision, state["developed_id"])
+    destination = saved_asset(project, f"exports/{label}")
     if "spatial_fade" in manifest:
         expected = {p.name: _file_digest(p) for p in stage.iterdir()}
         reused = destination.exists() or destination.is_symlink()
@@ -681,7 +688,7 @@ def _editable_companion_binding(
         native.get(key) != value
         for key, value in (
             ("revision", manifest["revision"]),
-            ("master_id", manifest["master_id"]),
+            ("developed_id", manifest["developed_id"]),
             ("draft", draft),
             ("revision_manifest_sha256", revision_manifest_sha256),
             ("spatial_fade", manifest["spatial_fade"]),
@@ -709,7 +716,7 @@ def _export_framed(
     transparent: bool,
     *,
     series: dict[str, object] | None = None,
-    expected_master_id: str | None = None,
+    expected_developed_id: str | None = None,
     expected_revision_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Publish one compact presentation while holding the canonical project lock."""
@@ -719,9 +726,11 @@ def _export_framed(
 
     # Capture before validation, then bind the actual returned objects to these bytes.
     # Cooperative writers use the project lock; this is not a hostile-writer snapshot.
-    captured = {name: _asset(project, name).read_bytes() for name in ("state.json", "source.json")}
+    captured = {
+        name: saved_asset(project, name).read_bytes() for name in ("state.json", "source.json")
+    }
     state = read_project(project)
-    if expected_master_id is not None and state["master_id"] != expected_master_id:
+    if expected_developed_id is not None and state["developed_id"] != expected_developed_id:
         raise ProjectError("Stale series source identity; reload the selected photo")
     if _json_bytes(json.loads(captured["state.json"])) != _json_bytes(state):
         raise ProjectError("Stale framed export state")
@@ -734,21 +743,21 @@ def _export_framed(
     if revision != state["accepted_revision"] and not draft:
         raise ProjectError("Unaccepted revision requires explicit --draft")
     manifest_name = f"revisions/{revision}/manifest.json"
-    captured[manifest_name] = _asset(project, manifest_name).read_bytes()
+    captured[manifest_name] = saved_asset(project, manifest_name).read_bytes()
     if (
         expected_revision_manifest_sha256 is not None
         and digest(captured[manifest_name]) != expected_revision_manifest_sha256
     ):
         raise ProjectError("Stale series revision manifest; reload the selected result")
-    foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
+    foreground, alpha, manifest = saved_layers(project, revision, state["developed_id"])
     if _json_bytes(json.loads(captured[manifest_name])) != _json_bytes(manifest):
         raise ProjectError("Stale framed export revision manifest")
-    master, metadata = load_master(project, state["master_id"])
+    master, metadata = load_developed(project, state["developed_id"])
     source = json.loads(captured["source.json"])
-    if source["master_id"] != state["master_id"] or source["metadata"] != metadata:
+    if source["developed_id"] != state["developed_id"] or source["metadata"] != metadata:
         raise ProjectError("Stale framed export source")
     del master
-    if any(_asset(project, name).read_bytes() != value for name, value in captured.items()):
+    if any(saved_asset(project, name).read_bytes() != value for name, value in captured.items()):
         raise ProjectError("Stale framed export state or saved inputs")
     if effects_stale(manifest):
         raise ProjectError("Stale enabled appearance: rebuild or explicitly disable before export")
@@ -788,7 +797,7 @@ def _export_framed(
     )
     weight, opacity = saved_shading(project, revision, alpha, manifest)
     spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    background = read_background(_asset(project, f"revisions/{revision}"), manifest)
+    background = read_background(project, saved_asset(project, f"revisions/{revision}"), manifest)
     # Native layer conversion/readback and framed rendering run sequentially. This
     # conservative native envelope includes retained layers, float conversion and
     # allocator scratch; it is an admission estimate, not measured resident memory.
@@ -838,10 +847,10 @@ def _export_framed(
         ),
     }
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "framed-presentation",
         "revision": revision,
-        "master_id": state["master_id"],
+        "developed_id": state["developed_id"],
         "revision_manifest_sha256": digest(captured[manifest_name]),
         "draft": draft,
         "label": "DRAFT - explicit framed presentation"
@@ -878,10 +887,12 @@ def _export_framed(
         if "background" in manifest
         else None,
         "native_assets": {
-            f"masters/{state['master_id']}.tif": source["master_file_sha256"],
+            f"assets/developed/{state['developed_id']}.tif": source["developed_file_sha256"],
             **{
-                f"revisions/{revision}/{name}": value
-                for name, value in manifest["files"].items()
+                str(
+                    saved_asset(project, f"revisions/{revision}/{name}").relative_to(project)
+                ): value
+                for name, value in revision_hashes(manifest).items()
                 if name in native_names
             },
         },
@@ -931,7 +942,7 @@ def _export_framed(
     companion = None
     companion_binding = None
     if "spatial_fade" in manifest:
-        companion_directory = _asset(project, f"exports/{revision}{'-DRAFT' if draft else ''}")
+        companion_directory = saved_asset(project, f"exports/{revision}{'-DRAFT' if draft else ''}")
         try:
             companion = _export_native_locked(
                 project,
@@ -956,12 +967,12 @@ def _export_framed(
         identity = digest(_json_bytes(record))
         label = f"{revision}-DRAFT" if draft else revision
         delivery_mode = "series-framed" if sampling is not None else "framed"
-        destination = _asset(project, f"exports/{label}-{delivery_mode}-{identity}")
+        destination = saved_asset(project, f"exports/{label}-{delivery_mode}-{identity}")
         names = {*variants, "README.txt", "manifest.json"}
         reused = destination.exists() or destination.is_symlink()
         if reused:
             _check_flat_delivery(destination, names)
-        exports = _asset(project, "exports")
+        exports = saved_asset(project, "exports")
         exports.mkdir(exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
         if sampling is not None:
@@ -1005,7 +1016,7 @@ def _export_framed(
             result = frame_result(native, background, settings)
             del native
         result_digest = _pixel_digest(result)
-        write_master(stage / "result_rgb16.tif", result)
+        write_developed(stage / "result_rgb16.tif", result)
         view_digest = _write_framed_rgb8(stage / "result_RGB8_VIEW.png", result)
         del result
         # Release the expanded render before any expanded readback or next variant.
@@ -1088,14 +1099,18 @@ def _export_framed(
         }
         (stage / "manifest.json").write_bytes(_json_bytes(record))
         _check_flat_delivery(stage, names)
-        if any(_asset(project, name).read_bytes() != value for name, value in captured.items()):
+        if any(
+            saved_asset(project, name).read_bytes() != value for name, value in captured.items()
+        ):
             raise ProjectError("Stale framed export state or saved inputs")
         final_state = read_project(project)
-        final_manifest = read_revision(project, revision, state["master_id"])
+        final_manifest = read_revision(project, revision, state["developed_id"])
         if (
             final_state != state
             or final_manifest != manifest
-            or any(_asset(project, name).read_bytes() != value for name, value in captured.items())
+            or any(
+                saved_asset(project, name).read_bytes() != value for name, value in captured.items()
+            )
         ):
             raise ProjectError("Stale framed export state or saved inputs")
         if destination.exists() or destination.is_symlink():

@@ -24,7 +24,7 @@ import tifffile
 import tomli_w
 
 from .guidance import validate_guides
-from .ingest import RGB16, decode_source, srgb_profile, write_master
+from .ingest import RGB16, decode_source, srgb_profile, write_developed
 from .recipe import Recipe
 
 RESERVE_BYTES = 10 * 1024**3
@@ -72,6 +72,9 @@ def _read_json(project: Path, name: str) -> dict[str, Any]:
 def project_lock(project: Path) -> Iterator[None]:
     """One stable nonblocking OS lock for every project writer; readers stay unlocked."""
     project = _root(project)
+    state_path = _asset(project, "state.json")
+    if state_path.exists() and _read_json(project, "state.json").get("schema_version") != 2:
+        raise ProjectError("Unsupported project schema; old project preserved without migration")
     path = _asset(project, ".writer.lock")
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
@@ -128,7 +131,19 @@ def _atomic_bytes(
         os.replace(temporary, path)
     else:
         _publish_new_file(Path(temporary), path)
-    _sync_directory(path.parent)
+    try:
+        _sync_directory(path.parent)
+    except OSError as error:
+        if path.name != "state.json" or not replace_existing:
+            raise
+        try:
+            observed = _read_json(path.parent, "state.json")
+            description = json.dumps(observed, sort_keys=True)
+        except ProjectError:
+            description = "state could not be reread"
+        raise ProjectError(
+            f"State replacement occurred; directory durability is uncertain; observed {description}"
+        ) from error
 
 
 def _publish_new_file(source: Path, destination: Path) -> None:
@@ -167,7 +182,7 @@ def check_space(path: Path, pending_bytes: int) -> None:
         )
 
 
-def _master_identity(pixels: RGB16, metadata: dict[str, Any]) -> str:
+def _developed_identity(pixels: RGB16, metadata: dict[str, Any]) -> str:
     return digest(_json_bytes(metadata) + pixels.astype("<u2", copy=False).tobytes())
 
 
@@ -191,34 +206,34 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
         source_hash = digest(capture)
         pixels, metadata = decode_source(capture, development)
         metadata["source_sha256"] = source_hash
-        master_id = _master_identity(pixels, metadata)
+        developed_id = _developed_identity(pixels, metadata)
         check_space(project, source_size + pixels.nbytes * 3 + 1024**2)
         stage = Path(tempfile.mkdtemp(prefix=".initial-", dir=project))
-        (stage / "masters").mkdir()
-        master = stage / "masters" / f"{master_id}.tif"
-        write_master(master, pixels)
+        (stage / "assets/developed").mkdir(parents=True)
+        master = stage / "assets/developed" / f"{developed_id}.tif"
+        write_developed(master, pixels)
         reloaded = tifffile.imread(master)
         if reloaded.dtype != np.uint16 or not np.array_equal(reloaded, pixels):
             raise ProjectError("Master TIFF round trip failed")
         source_record = {
-            "schema_version": 1,
+            "schema_version": 2,
             "original_path": str(source),
             "source_sha256": source_hash,
-            "master_id": master_id,
-            "master_file_sha256": digest(master.read_bytes()),
+            "developed_id": developed_id,
+            "developed_file_sha256": digest(master.read_bytes()),
             "metadata": metadata,
         }
         (stage / "source.json").write_bytes(_json_bytes(source_record))
         from .background import DEFAULT_BACKGROUND
 
         (stage / "recipe.toml").write_text(
-            tomli_w.dumps(Recipe(master_id, background=dict(DEFAULT_BACKGROUND)).to_dict())
+            tomli_w.dumps(Recipe(developed_id, background=dict(DEFAULT_BACKGROUND)).to_dict())
         )
         (stage / "guides.json").write_bytes(
             _json_bytes(
                 {
-                    "schema_version": 1,
-                    "master_id": master_id,
+                    "schema_version": 2,
+                    "developed_id": developed_id,
                     "width": pixels.shape[1],
                     "height": pixels.shape[0],
                     "regions": [],
@@ -227,34 +242,35 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
         )
         (stage / "README.md").write_text(
             "# Photo project\n\nReady for mask preparation. No final result exists.\n"
-            "Open masters/<master-id>.tif in a trusted RGB16 sRGB viewer; inspect orientation, "
+            "Open assets/developed/<master-id>.tif in a trusted RGB16 sRGB viewer; inspect orientation, "
             "white balance and clipping if desired; source-development approval is optional.\n"
-            "source.json locates the untouched original; masters/ retains developed RGB16; "
+            "source.json locates the untouched original; assets/developed/ retains developed RGB16; "
             "recipe.toml/guides.json are drafts; state.json alone owns acceptance.\n"
         )
         for file in stage.rglob("*"):
             if file.is_file():
                 with file.open("rb") as stream:
                     os.fsync(stream.fileno())
-        _sync_directory(stage / "masters")
+        _sync_directory(stage / "assets/developed")
         _sync_directory(stage)
         if digest(source.read_bytes()) != source_hash:
             raise ProjectError("Stale source changed during ingestion; no state published")
         try:
-            (project / "masters").mkdir()
+            (project / "assets/developed").mkdir(parents=True)
         except FileExistsError as error:
             raise ProjectError("Initial masters collision; incomplete project preserved") from error
-        _publish_new_file(master, project / "masters" / master.name)
-        _sync_directory(project / "masters")
+        _publish_new_file(master, project / "assets/developed" / master.name)
+        _sync_directory(project / "assets/developed")
         for name in ("source.json", "recipe.toml", "guides.json", "README.md"):
             _publish_new_file(stage / name, project / name)
         _sync_directory(project)
         state = {
-            "schema_version": 1,
-            "master_id": master_id,
+            "schema_version": 2,
+            "developed_id": developed_id,
             "development_approved": False,
             "working_revision": None,
             "accepted_revision": None,
+            "latest_result_revision": None,
             "status": "ready",
         }
         # Validate the final saved assets before the state pointer becomes visible.
@@ -290,12 +306,16 @@ def _file_signature(path: Path) -> tuple[int, ...]:
 
 def _revision_signature(project: Path, directory: str, manifest: dict[str, Any]) -> tuple[Any, ...]:
     signatures = []
-    for name in manifest["files"]:
+    from .assets import revision_asset, revision_hashes
+
+    for name in revision_hashes(manifest):
         relative = Path(name)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
             raise ProjectError("Invalid revision asset path")
         try:
-            signatures.append((name, _file_signature(_asset(project, f"{directory}/{name}"))))
+            signatures.append(
+                (name, _file_signature(revision_asset(project, Path(directory), manifest, name)))
+            )
         except OSError as error:
             raise ProjectError(f"Missing saved revision asset: {name}") from error
     return (digest(_json_bytes(manifest)), tuple(signatures))
@@ -304,14 +324,19 @@ def _revision_signature(project: Path, directory: str, manifest: dict[str, Any])
 def _validate_assets(
     project: Path, state: dict[str, Any], *, validate_drafts: bool = True
 ) -> tuple[RGB16, dict[str, Any]]:
-    master_id = state.get("master_id")
-    if not isinstance(master_id, str) or re.fullmatch("[0-9a-f]{64}", master_id) is None:
+    developed_id = state.get("developed_id")
+    if not isinstance(developed_id, str) or re.fullmatch("[0-9a-f]{64}", developed_id) is None:
         raise ProjectError("Invalid master identity")
     record = _read_json(project, "source.json")
     metadata = record.get("metadata")
-    if record.get("master_id") != master_id or not isinstance(metadata, dict):
+    if (
+        type(record.get("schema_version")) is not int
+        or record["schema_version"] != 2
+        or record.get("developed_id") != developed_id
+        or not isinstance(metadata, dict)
+    ):
         raise ProjectError("Source/master identity mismatch")
-    master = _asset(project, f"masters/{master_id}.tif")
+    master = _asset(project, f"assets/developed/{developed_id}.tif")
     try:
         validation = _read_validation.get()
         key = (str(master), digest(_json_bytes(record)), _file_signature(master))
@@ -319,7 +344,7 @@ def _validate_assets(
         if cached is not None and cached[0] == key:
             pixels = cached[1]
         else:
-            if digest(master.read_bytes()) != record.get("master_file_sha256"):
+            if digest(master.read_bytes()) != record.get("developed_file_sha256"):
                 raise ProjectError("Master file hash mismatch")
             with tifffile.TiffFile(master) as image:
                 page = image.pages[0]
@@ -336,7 +361,7 @@ def _validate_assets(
             if (
                 pixels.ndim != 3
                 or pixels.shape[2] != 3
-                or _master_identity(pixels, metadata) != master_id
+                or _developed_identity(pixels, metadata) != developed_id
             ):
                 raise ProjectError("Master sample/metadata identity mismatch")
             if validation is not None and _file_signature(master) == key[2]:
@@ -346,12 +371,12 @@ def _validate_assets(
             recipe = tomllib.loads(_asset(project, "recipe.toml").read_text())
             Recipe.from_dict(
                 recipe,
-                master_id,
+                developed_id,
                 max_margin_px=max(pixels.shape[:2]),
                 dimensions_wh=(pixels.shape[1], pixels.shape[0]),
             )
             guides = _read_json(project, "guides.json")
-            validate_guides(guides, master_id, pixels.shape[1], pixels.shape[0])
+            validate_guides(guides, developed_id, pixels.shape[1], pixels.shape[0])
     except (OSError, ValueError, TypeError, KeyError, tifffile.TiffFileError) as error:
         raise ProjectError(f"Invalid project master or recipe: {error}") from error
     return pixels, metadata
@@ -361,18 +386,21 @@ def read_project(project: Path, *, validate_drafts: bool = True) -> dict[str, An
     """Validate state/immutable assets; draft parsing may be deferred for explicit restore only."""
     project = _root(project)
     state = _read_json(project, "state.json")
+    if state.get("schema_version") != 2:
+        raise ProjectError("Unsupported project schema; old project preserved without migration")
     expected = {
         "schema_version",
-        "master_id",
+        "developed_id",
         "development_approved",
         "working_revision",
         "accepted_revision",
+        "latest_result_revision",
         "status",
     }
     if (
         set(state) != expected
         or type(state["schema_version"]) is not int
-        or state["schema_version"] != 1
+        or state["schema_version"] != 2
         or type(state["development_approved"]) is not bool
         or type(state["status"]) is not str
         or state["status"]
@@ -388,31 +416,56 @@ def read_project(project: Path, *, validate_drafts: bool = True) -> dict[str, An
         raise ProjectError("Invalid project state")
     _validate_assets(project, state, validate_drafts=validate_drafts)
     if state["working_revision"] is not None:
-        read_revision(project, state["working_revision"], state["master_id"])
+        read_revision(project, state["working_revision"], state["developed_id"])
     if state["accepted_revision"] is not None:
-        accepted = read_revision(project, state["accepted_revision"], state["master_id"])
+        accepted = read_revision(project, state["accepted_revision"], state["developed_id"])
         if (
             accepted.get("kind") not in {"matte", "repair", "effects"}
             or accepted.get("final_acceptable") is not True
         ):
             raise ProjectError("Invalid accepted complete matte revision")
+    latest = state["latest_result_revision"]
+    if latest is not None:
+        result = read_revision(project, latest, state["developed_id"])
+        from .effects import effects_stale
+
+        if (
+            result.get("kind") not in {"matte", "repair", "effects"}
+            or result.get("final_acceptable") is not True
+            or effects_stale(result)
+        ):
+            raise ProjectError("Invalid latest complete result revision")
     return state
 
 
-def load_master(project: Path, master_id: str) -> tuple[RGB16, dict[str, Any]]:
+def record_generated_result(state: dict[str, Any], revision: str, manifest: dict[str, Any]) -> None:
+    """Advance generation history only alongside a fresh complete working result."""
+    from .effects import effects_stale
+
+    state.update(working_revision=revision, status="review_needed")
+    if (
+        manifest.get("complete") is True
+        and manifest.get("kind") in {"matte", "repair", "effects"}
+        and manifest.get("final_acceptable") is True
+        and not effects_stale(manifest)
+    ):
+        state["latest_result_revision"] = revision
+
+
+def load_developed(project: Path, developed_id: str) -> tuple[RGB16, dict[str, Any]]:
     project = _root(project)
     state = read_project(project)
-    if state["master_id"] != master_id:
+    if state["developed_id"] != developed_id:
         raise ProjectError("Requested master identity is stale")
     return _validate_assets(project, state)
 
 
-def accept_development(project: Path, master_id: str) -> dict[str, Any]:
+def accept_development(project: Path, developed_id: str) -> dict[str, Any]:
     """Optional legacy development review; never required for masking or photo acceptance."""
     project = _root(project)
     with project_lock(project):
         state = read_project(project)
-        if state["master_id"] != master_id:
+        if state["developed_id"] != developed_id:
             raise ProjectError("Development approval master identity is stale")
         check_space(project, 1024**2)
         state.update(
@@ -430,48 +483,64 @@ def accept_development(project: Path, master_id: str) -> dict[str, Any]:
     return state
 
 
-def read_revision(project: Path, revision: str, master_id: str) -> dict[str, Any]:
+def read_revision(project: Path, revision: str, developed_id: str) -> dict[str, Any]:
     """Validate application-immutable saved dependencies before reuse; never infer pointers."""
     if not isinstance(revision, str) or re.fullmatch(r"rev-[0-9]{3,}", revision) is None:
         raise ProjectError("Invalid saved revision identity")
-    return _validate_revision_directory(project, revision, master_id, f"revisions/{revision}")
+    return _validate_revision_directory(project, revision, developed_id, f"revisions/{revision}")
 
 
 @lru_cache(maxsize=128)
-def _validate_exposure_semantics(directory: Path, manifest_bytes: bytes) -> None:
+def _validate_exposure_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
     """Bound successful checks only; callers must rehash every operand before reuse."""
+    from .assets import revision_asset
     from .exposure import read_exposure
     from .repair import scalar16
 
-    read_exposure(directory, json.loads(manifest_bytes), scalar16(directory / "base_alpha16.png"))
-
-
-@lru_cache(maxsize=128)
-def _validate_shadow_fade_semantics(directory: Path, manifest_bytes: bytes) -> None:
-    """Bound successful checks only; callers must rehash every operand before reuse."""
-    from .repair import scalar16
-    from .shadow_fade import read_shadow_fade
-
-    read_shadow_fade(
-        directory, json.loads(manifest_bytes), scalar16(directory / "base_alpha16.png")
+    read_exposure(
+        project,
+        directory,
+        json.loads(manifest_bytes),
+        scalar16(
+            revision_asset(project, directory, json.loads(manifest_bytes), "base_alpha16.png")
+        ),
     )
 
 
 @lru_cache(maxsize=128)
-def _validate_background_semantics(directory: Path, manifest_bytes: bytes) -> None:
-    from .background import read_background
+def _validate_shadow_fade_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
+    """Bound successful checks only; callers must rehash every operand before reuse."""
+    from .assets import revision_asset
+    from .repair import scalar16
+    from .shadow_fade import read_shadow_fade
 
-    read_background(directory, json.loads(manifest_bytes))
+    read_shadow_fade(
+        project,
+        directory,
+        json.loads(manifest_bytes),
+        scalar16(
+            revision_asset(project, directory, json.loads(manifest_bytes), "base_alpha16.png")
+        ),
+    )
 
 
 @lru_cache(maxsize=128)
-def _validate_spatial_fade_semantics(directory: Path, manifest_bytes: bytes) -> None:
+def _validate_background_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
+    from .background import read_background
+
+    read_background(project, directory, json.loads(manifest_bytes))
+
+
+@lru_cache(maxsize=128)
+def _validate_spatial_fade_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
     """Replay bounded geometry after fresh hashes; ordinary renders reuse saved W16."""
+    from .assets import revision_asset
     from .repair import scalar16
     from .spatial_fade import make_spatial_weight, read_spatial_fade
 
-    alpha = scalar16(directory / "base_alpha16.png")
-    saved = read_spatial_fade(directory, json.loads(manifest_bytes), alpha)
+    manifest = json.loads(manifest_bytes)
+    alpha = scalar16(revision_asset(project, directory, manifest, "base_alpha16.png"))
+    saved = read_spatial_fade(project, directory, manifest, alpha)
     if saved is not None and not np.array_equal(
         saved.weight16, make_spatial_weight(alpha.shape, saved.record["settings"])
     ):
@@ -479,17 +548,20 @@ def _validate_spatial_fade_semantics(directory: Path, manifest_bytes: bytes) -> 
 
 
 def _validate_revision_directory(
-    project: Path, revision: str, master_id: str, directory: str
+    project: Path, revision: str, developed_id: str, directory: str
 ) -> dict[str, Any]:
     """Same immutable contract for a retained completed stage and a published revision."""
     manifest = _read_json(project, f"{directory}/manifest.json")
     if (
-        manifest.get("revision") != revision
-        or manifest.get("master_id") != master_id
+        type(manifest.get("schema_version")) is not int
+        or manifest["schema_version"] != 2
+        or manifest.get("revision") != revision
+        or manifest.get("developed_id") != developed_id
         or manifest.get("complete") is not True
         or not isinstance(manifest.get("files"), dict)
+        or not isinstance(manifest.get("assets"), dict)
     ):
-        raise ProjectError("Invalid saved revision/master/complete manifest")
+        raise ProjectError("Invalid saved revision/developed identity/schema/complete manifest")
     # An unlisted area is absent from file signatures; reject it before either cache can return.
     record = manifest.get("local_exposure")
     if (
@@ -508,8 +580,8 @@ def _validate_revision_directory(
     from .background import validate_background_bindings
     from .spatial_fade import validate_spatial_bindings
 
-    validate_background_bindings(_asset(project, directory), manifest)
-    validate_spatial_bindings(_asset(project, directory), manifest)
+    validate_background_bindings(project, _asset(project, directory), manifest)
+    validate_spatial_bindings(project, _asset(project, directory), manifest)
     if "background" in manifest:
         record = manifest["background"]
         metadata = _read_json(project, "source.json")["metadata"]
@@ -526,11 +598,16 @@ def _validate_revision_directory(
         cached = validation["revisions"].get(key)
         if cached is not None and cached[0] == signature:
             return copy.deepcopy(cached[1])
-    for name, expected_hash in manifest["files"].items():
+    from .assets import revision_asset, revision_hashes
+
+    for name, expected_hash in revision_hashes(manifest).items():
         relative = Path(name)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
             raise ProjectError("Invalid revision asset path")
-        path = _asset(project, f"{directory}/{name}")
+        path = revision_asset(project, Path(directory), manifest, name)
+        if name in manifest["assets"]:
+            # The canonical resolver already hashes every shared object before cache reuse.
+            continue
         try:
             if digest(path.read_bytes()) != expected_hash:
                 raise ProjectError(f"Saved revision hash mismatch: {revision}/{name}")
@@ -545,7 +622,7 @@ def _validate_revision_directory(
         "supports/support16.png",
         "supports/protection.png",
         "supports/lock_values16.png",
-    } <= set(manifest["files"]):
+    } <= set(revision_hashes(manifest)):
         raise ProjectError("Incomplete prepared revision files")
     if manifest.get("kind") in {"matte", "repair", "effects"} and (
         not {
@@ -554,7 +631,7 @@ def _validate_revision_directory(
             "qa.json",
             "review/manifest.json",
         }
-        <= set(manifest["files"])
+        <= set(revision_hashes(manifest))
         or manifest.get("final_acceptable") is not True
     ):
         raise ProjectError("Incomplete matte revision files")
@@ -563,9 +640,9 @@ def _validate_revision_directory(
         "repair/candidate_alpha16.png",
         "repair/support16.png",
         "repair/merge.json",
-    } <= set(manifest["files"]):
+    } <= set(revision_hashes(manifest)):
         raise ProjectError("Incomplete repair operands")
-    _validate_background_semantics(_asset(project, directory), _json_bytes(manifest))
+    _validate_background_semantics(project, _asset(project, directory), _json_bytes(manifest))
     if "local_exposure" in manifest:
         record = manifest["local_exposure"]
         from .exposure import EXPOSURE_FILES
@@ -573,7 +650,7 @@ def _validate_revision_directory(
         required_exposure = {"base_alpha16.png"} | {
             f"effects/exposure/{name}" for name in EXPOSURE_FILES
         }
-        if not required_exposure <= set(manifest["files"]):
+        if not required_exposure <= set(revision_hashes(manifest)):
             raise ProjectError("Incomplete local exposure assets")
         if (
             isinstance(record, dict)
@@ -581,7 +658,7 @@ def _validate_revision_directory(
             and "effects/exposure/area.json" not in manifest["files"]
         ):
             raise ProjectError("Missing bound local exposure authored area")
-        _validate_exposure_semantics(_asset(project, directory), _json_bytes(manifest))
+        _validate_exposure_semantics(project, _asset(project, directory), _json_bytes(manifest))
     if "shadow_fade" in manifest:
         record = manifest["shadow_fade"]
         from .shadow_fade import SHADOW_FADE_FILES
@@ -589,7 +666,7 @@ def _validate_revision_directory(
         required_fade = {"base_alpha16.png"} | {
             f"effects/shadow-fade/{name}" for name in SHADOW_FADE_FILES
         }
-        if not required_fade <= set(manifest["files"]):
+        if not required_fade <= set(revision_hashes(manifest)):
             raise ProjectError("Incomplete Shadow fade assets")
         if (
             isinstance(record, dict)
@@ -597,9 +674,9 @@ def _validate_revision_directory(
             and "effects/shadow-fade/area.json" not in manifest["files"]
         ):
             raise ProjectError("Missing bound Shadow fade authored area")
-        _validate_shadow_fade_semantics(_asset(project, directory), _json_bytes(manifest))
+        _validate_shadow_fade_semantics(project, _asset(project, directory), _json_bytes(manifest))
     if "spatial_fade" in manifest:
-        _validate_spatial_fade_semantics(_asset(project, directory), _json_bytes(manifest))
+        _validate_spatial_fade_semantics(project, _asset(project, directory), _json_bytes(manifest))
     if (
         validation is not None
         and _revision_signature(project, directory, manifest) == signature
