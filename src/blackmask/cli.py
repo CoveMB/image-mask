@@ -13,6 +13,7 @@ import rawpy
 
 from .export import export_project
 from .ingest import IngestError
+from .library import ensure_library, import_photo, load_storage_config, resume_import
 from .models import setup_sam, setup_vitmatte, verify_sam, verify_vitmatte
 from .operations import (
     accept_revision,
@@ -49,7 +50,20 @@ def doctor(path: Path, model_cache: Path | None = None, model: str = "sam") -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="blackmask")
+    parser.add_argument("--config", type=Path, help="Explicit local storage TOML; no discovery")
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("library-init", help="Safely create the configured library folders")
+    imported = commands.add_parser(
+        "import", help="Move a selected Inbox original and declared sidecars"
+    )
+    imported.add_argument("source", type=Path)
+    imported.add_argument("--subject", required=True)
+    imported.add_argument("--capture-date")
+    imported.add_argument("--sidecar", type=Path, action="append", default=[])
+    imported.add_argument("--assume-srgb", action="store_true")
+    imported.add_argument("--white-balance", choices=("camera", "daylight"), default="camera")
+    imported_resume = commands.add_parser("import-resume", help="Resume one exact pending import")
+    imported_resume.add_argument("pending", type=Path)
     opened = commands.add_parser(
         "open", help="Create/reopen a project and open its offline review window"
     )
@@ -158,7 +172,38 @@ def main() -> int:
     status.add_argument("project", type=Path)
     arguments = parser.parse_args()
     try:
-        if arguments.command == "open":
+        config = load_storage_config(arguments.config) if arguments.config is not None else None
+        result: dict[str, Any]
+        if arguments.command in {"library-init", "import", "import-resume"}:
+            if config is None:
+                raise ProjectError("Library commands require an explicit --config FILE")
+            if arguments.command == "library-init":
+                ensure_library(config)
+                result = {"destination": str(config.destination)}
+            else:
+                path = (
+                    resume_import(config, arguments.pending)
+                    if arguments.command == "import-resume"
+                    else import_photo(
+                        config,
+                        arguments.source,
+                        subject=arguments.subject,
+                        capture_date=arguments.capture_date,
+                        development={
+                            "assume_srgb": arguments.assume_srgb,
+                            "white_balance": arguments.white_balance,
+                        },
+                        sidecars=tuple(arguments.sidecar),
+                    )
+                )
+                result = (
+                    {"status": "pending", "pending": str(path), "input_preserved": True}
+                    if path.name == "import.json"
+                    else {"status": "ready", "project": str(path)}
+                )
+                if arguments.command == "import":
+                    result["input_preserved"] = arguments.source.exists()
+        elif arguments.command == "open":
             if arguments.source is not None:
                 development = {
                     "assume_srgb": arguments.assume_srgb,
@@ -171,7 +216,11 @@ def main() -> int:
             if not arguments.headless:
                 from .viewer import open_viewer
 
-                open_viewer(arguments.project, arguments.model_cache, arguments.sam_cache)
+                open_viewer(
+                    arguments.project,
+                    arguments.model_cache or (config.vitmatte_cache if config else None),
+                    arguments.sam_cache or (config.sam_cache if config else None),
+                )
                 return 0
         elif arguments.command == "accept":
             if arguments.trimap:
@@ -256,20 +305,41 @@ def main() -> int:
             result = resume_operation(
                 arguments.project,
                 arguments.operation,
-                model_cache=arguments.model_cache,
+                model_cache=arguments.model_cache or (config.vitmatte_cache if config else None),
                 source=arguments.source,
             )
         elif arguments.command == "status":
             result = operation_status(arguments.project)
         elif arguments.command == "run":
+            request = json.loads(arguments.request.read_bytes())
+            if not isinstance(request, dict):
+                raise ProjectError("Operation request must be a JSON object")
             result = apply_operation(
                 arguments.project,
-                json.loads(arguments.request.read_bytes()),
-                model_cache=arguments.model_cache,
+                request,
+                model_cache=arguments.model_cache
+                or (
+                    (
+                        config.sam_cache
+                        if request.get("kind") == "prepare"
+                        else config.vitmatte_cache
+                    )
+                    if config
+                    else None
+                ),
                 request_file=arguments.request,
             )
         else:
-            result = doctor(arguments.project, arguments.model_cache, arguments.model)
+            result = doctor(
+                arguments.project,
+                arguments.model_cache
+                or (
+                    (config.sam_cache if arguments.model == "sam" else config.vitmatte_cache)
+                    if config
+                    else None
+                ),
+                arguments.model,
+            )
         print(json.dumps(result, indent=2, allow_nan=False))
         return 0
     except (ProjectError, IngestError, OSError, ValueError, TypeError) as error:

@@ -1,5 +1,11 @@
 # Offline manual review
 
+For managed original ownership, first follow the [configured library and safe
+import](library.md) instructions, then open the returned `project/` path with the
+same explicit `--config FILE`. This selects shared existing model locations and
+leaves the manual masking controls below unchanged. Standalone projects use the
+commands below without library configuration.
+
 After [explicit environment/model setup](../README.md) and [model cache setup](guidance.md),
 open one source/project. From the repository root, use the environment executable
 shown below; shell activation is unnecessary. Use your own paths and select guides

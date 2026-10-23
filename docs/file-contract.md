@@ -7,10 +7,12 @@ compatibility tree is provided. The independent portable series preset remains
 schema 1; it contains settings, not project identity.
 
 One project contains one untouched source reference and one developed image.
-`source.json` records original resolved path/SHA-256, detected format, original
+`source.json` records original locator/SHA-256, detected format, original
 precision (RAW captured precision unknown), original dimensions/profile hash where
 available, applied orientation owner, crop/development decisions, output encoding,
-clipping count and developed file hash. The original remains outside writable assets.
+clipping count and developed file hash. Standalone locators are resolved absolute
+paths; imported locators are `../original/<camera-name>`, relative to `project/`.
+The original remains outside writable assets.
 
 `assets/developed/<developed_id>.tif` is uncompressed RGB16 with embedded canonical sRGB ICC.
 Identity is SHA-256 of canonical JSON development/source metadata followed by
@@ -118,6 +120,58 @@ from their saved pixels and metadata without redevelopment or migration. Creatin
 a different development requires a separate project; existing guides, masks and
 accepted outputs cannot be rebound by dimensions alone.
 
+
+## Configured library and original ownership
+
+Explicit storage TOML owns the library destination and optional existing native
+model paths. Relative values bind to the selected file's canonical parent; there
+is no config discovery or fallback. Unknown fields and unsafe paths reject before
+mutation. Loading/status create nothing. Writes create missing managed directories
+with mode0700 and new generated import/project files with mode0600 independently
+of umask. Existing permissions, including moved originals and sidecars, are preserved.
+Managed components reject
+symlinks, dangling links, files and permission conflicts.
+Ownership scans in Photos and Inbox/.imports ignore only exact `.DS_Store` entries
+identified as regular files without following links; all other unexpected entries fail closed.
+
+The library owns Inbox, Photos, Results Preview and Comparisons. Each imported
+`Photos/<frozen-basename>/` contains `original/` and `project/`. Source records retain
+schema2 and add `original_filename` and `library={photo_id,folder_basename,sidecars}`;
+sidecars have filename/SHA-256 records. Photo ID is P plus the first12 source-hash
+hex characters; full hashes determine identity and prefix collisions reject.
+Project validation checks this ownership structure without requiring the original
+to be available for ordinary saved-asset reopen/replay. No schema/state/revision
+transition or migration is introduced.
+
+One stable `.import.lock` holds a nonblocking flock across an entire import/resume,
+including published/pending identity checks, preparation, original moves and final
+publication. Existing-photo processing retains its project lock. Only explicitly
+selected regular same-stem Inbox files move. All inputs, space and device identities
+are checked before first move; a complete usable project is prepared through the
+canonical decoder/create_project first. Native exclusive same-filesystem moves and
+parent syncs preserve destinations; cross-device imports have no copy/delete fallback.
+Only a complete validated photo bundle is published under Photos. Imports do not
+advance working/accepted/latest state or produce a gallery image.
+
+Private `Inbox/.imports/<photo-id>/import.json` is product recovery state, retained
+after completion. Its schema2 `kind="photo-import"` records the full source hash,
+frozen photo/folder identity, exact development options, phase and selected filenames,
+hashes and sizes. Inbox/original paths derive only from those confined components.
+The record survives the exclusive move of its staged `bundle/` into Photos. Each
+move syncs the file, both changed parents and the record. Resume validates actual
+Inbox/staged/final files rather than trusting phase as proof of movement. Ambiguous,
+missing, changed or malformed ownership fails closed and preserves remnants.
+Preparation attempts interrupted before bundle publication are retained; explicit
+resume can prepare a new empty attempt under the same reservation. No automatic
+cleanup or general transaction service exists.
+
+Published duplicates return the validated existing project and preserve the extra
+Inbox input. Pending duplicates return the exact recovery record; they never
+create a second photo or implicitly resume. Changed config does not relocate a
+library; recovery requires its matching original destination. Publication followed
+by sync/record failure can leave a complete published photo with uncertain
+durability. Resume rechecks actual state and reports it; no rollback is promised.
+Originals and recovery records require independent backups. See [library usage](library.md).
 
 ## Shared raster operands and effective recipes
 

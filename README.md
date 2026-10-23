@@ -29,6 +29,12 @@ text and a small overview. Old schema-1 projects are preserved and rejected with
 migration. Effective revision recipes and consumed draft snapshots are separate.
 Latest generated result history survives restore and acceptance changes.
 
+An optional [configured photo library](docs/library.md) safely creates Inbox,
+Photos, Results Preview and Comparisons. Explicit import moves a validated capture
+and declared sidecars once into a stable named photo folder, with interruption
+recovery and duplicate-source protection. Configured pinned model directories are
+shared across photographs. Import creates no result or gallery image.
+
 Scoped repairs save quantized operands for replay without models. Restore selects
 saved working inputs without changing final acceptance. `status` and `resume`
 recover verified tiles or completed stages from interrupted matte/repair operations.
@@ -156,6 +162,7 @@ for explicit model setup, typed preparation and human review.
 | Content detection, RAW development, orientation and RGB16 | `src/blackmask/ingest.py` |
 | Validated DNG white-point/calibration fallback and recorded multipliers | `src/blackmask/dng_white_balance.py` |
 | Identity, shared writer lock, publication and approval | `src/blackmask/project.py` |
+| Explicit library configuration, original ownership and import recovery | `src/blackmask/library.py` |
 | Preparation snapshots and selected candidate publication | `src/blackmask/operations.py` |
 | Typed native guides and categorical rasterization | `src/blackmask/guidance.py` |
 | Pinned explicit setup and local-only SAM/ViTMatte sessions | `src/blackmask/models.py` |
@@ -184,7 +191,8 @@ for explicit model setup, typed preparation and human review.
 ## Local data and repository hygiene
 
 Keep private captures, working projects, model assets, credentials and evaluation
-output outside this repository or under the ignored root `local/` directory.
+output outside this repository, under the ignored root `local/` directory, or in an
+explicitly configured ignored [photo library](docs/library.md).
 Ignored files are not disposable and are not backed up by Git. Arrange independent
 backups. Common photo formats are ignored; only deliberately owned synthetic test
 fixtures may be included beneath `tests/fixtures/`. Review actual staged content

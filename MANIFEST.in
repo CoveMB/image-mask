@@ -9,3 +9,11 @@ include docs/matting.md
 include docs/workflow.md
 
 include docs/assistant-workflow.md
+
+include config/storage.example.toml docs/library.md
+exclude config/storage.local.toml
+prune library
+prune local
+prune Photo-workflow-reference
+prune docs/incremental-plans
+prune docs/superpowers

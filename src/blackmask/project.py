@@ -9,15 +9,17 @@ import json
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 import tomllib
+import unicodedata
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 import tifffile
@@ -32,6 +34,31 @@ RESERVE_BYTES = 10 * 1024**3
 
 class ProjectError(ValueError):
     """Project is busy, stale, incomplete or unsafe to modify."""
+
+
+class OriginalSidecar(TypedDict):
+    filename: str
+    sha256: str
+
+
+class ImportedPhotoIdentity(TypedDict):
+    photo_id: str
+    folder_basename: str
+    original_filename: str
+    sidecars: list[OriginalSidecar]
+
+
+def _filename_component(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or any(unicodedata.category(character) in {"Cc", "Cs"} for character in value)
+    ):
+        raise ProjectError("Photo names must be single nonempty filename components")
+    return value
 
 
 def digest(data: bytes) -> str:
@@ -69,6 +96,62 @@ def _read_json(project: Path, name: str) -> dict[str, Any]:
 
 
 @contextmanager
+def _directory(path: Path, *, create: bool = False) -> Iterator[int]:
+    """Walk held parents without following links; chmod only directories we create."""
+    path = Path(os.path.abspath(path))
+    descriptor = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for name in path.parts[1:]:
+            created = False
+            try:
+                child = os.open(
+                    name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor
+                )
+            except FileNotFoundError:
+                if not create:
+                    raise
+                try:
+                    os.mkdir(name, 0o700, dir_fd=descriptor)
+                    created = True
+                except FileExistsError:
+                    pass
+                if created:
+                    observed = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                    if not stat.S_ISDIR(observed.st_mode):
+                        raise ProjectError(f"Created directory was replaced: {path}")
+                    # A restrictive umask can remove even owner access. Do not change the
+                    # process-wide umask or permissions on any pre-existing component.
+                    os.chmod(name, 0o700, dir_fd=descriptor, follow_symlinks=False)
+                child = os.open(
+                    name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor
+                )
+            try:
+                observed = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                opened = os.fstat(child)
+                if (observed.st_dev, observed.st_ino) != (opened.st_dev, opened.st_ino):
+                    raise ProjectError(f"Directory changed during creation: {path}")
+                if created:
+                    os.fchmod(child, 0o700)
+                    os.fsync(child)
+                    os.fsync(descriptor)
+            except BaseException:
+                os.close(child)
+                raise
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _private_temporary_directory(parent: Path, prefix: str) -> Path:
+    path = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
+    # This path was just exclusively created; never repair a retained attempt.
+    path.chmod(0o700, follow_symlinks=False)
+    return path
+
+
+@contextmanager
 def project_lock(project: Path) -> Iterator[None]:
     """One stable nonblocking OS lock for every project writer; readers stay unlocked."""
     project = _root(project)
@@ -76,12 +159,27 @@ def project_lock(project: Path) -> Iterator[None]:
     if state_path.exists() and _read_json(project, "state.json").get("schema_version") != 2:
         raise ProjectError("Unsupported project schema; old project preserved without migration")
     path = _asset(project, ".writer.lock")
-    descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with _file_lock(path, "Project"):
+        yield
+
+
+@contextmanager
+def _file_lock(path: Path, owner: str) -> Iterator[None]:
+    try:
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        descriptor = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+    else:
+        try:
+            os.fchmod(descriptor, 0o600)
+        except BaseException:
+            os.close(descriptor)
+            raise
     try:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
-            raise ProjectError("Project busy: another writer holds the project lock") from error
+            raise ProjectError(f"{owner} busy: another writer holds the lock") from error
         yield
     finally:
         os.close(descriptor)
@@ -122,6 +220,9 @@ def _atomic_bytes(
     descriptor, temporary = tempfile.mkstemp(prefix=".state-", suffix=".tmp", dir=path.parent)
     # Failed temporary files are retained for diagnosis and never read as state.
     with os.fdopen(descriptor, "wb") as stream:
+        # Set access on our new temporary inode, preserving an existing target's mode.
+        mode = stat.S_IMODE(path.stat().st_mode) if replace_existing and path.exists() else 0o600
+        os.fchmod(stream.fileno(), mode)
         stream.write(value)
         stream.flush()
         os.fsync(stream.fileno())
@@ -159,14 +260,46 @@ def _publish_new_file(source: Path, destination: Path) -> None:
 
 def _publish_new_directory(source: Path, destination: Path) -> None:
     """Atomic exclusive publication on the supported native macOS filesystem."""
+    _exclusive_rename(source, destination)
+
+
+def _exclusive_rename(
+    source: Path,
+    destination: Path,
+    *,
+    source_directory: int | None = None,
+    destination_directory: int | None = None,
+) -> None:
+    """Same-filesystem move without replacement; held parents confine original imports."""
     if sys.platform != "darwin":
         raise ProjectError("Exclusive revision publication requires supported native macOS")
     library = ctypes.CDLL(None, use_errno=True)
-    rename = library.renamex_np
-    rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    arguments: tuple[object, ...]
+    if source_directory is None and destination_directory is None:
+        rename = library.renamex_np
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        arguments = (os.fsencode(source), os.fsencode(destination), 4)
+    elif source_directory is not None and destination_directory is not None:
+        rename = library.renameatx_np
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        arguments = (
+            source_directory,
+            os.fsencode(source),
+            destination_directory,
+            os.fsencode(destination),
+            4,
+        )
+    else:
+        raise ProjectError("Exclusive move needs both parent descriptors")
     rename.restype = ctypes.c_int
     # Darwin stdio.h RENAME_EXCL=4; ordinary rename can replace an empty directory.
-    if rename(os.fsencode(source), os.fsencode(destination), 4) != 0:
+    if rename(*arguments) != 0:
         code = ctypes.get_errno()
         if code == errno.EEXIST:
             raise ProjectError("Directory publication collision; existing output preserved")
@@ -186,7 +319,13 @@ def _developed_identity(pixels: RGB16, metadata: dict[str, Any]) -> str:
     return digest(_json_bytes(metadata) + pixels.astype("<u2", copy=False).tobytes())
 
 
-def create_project(source: Path, project_dir: Path, development: dict[str, Any]) -> Path:
+def create_project(
+    source: Path,
+    project_dir: Path,
+    development: dict[str, Any],
+    *,
+    imported_photo: ImportedPhotoIdentity | None = None,
+) -> Path:
     """Create once; preserve source and all existing files, publish complete state last."""
     source = Path(source).resolve(strict=True)
     project = Path(project_dir).absolute()
@@ -194,7 +333,18 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
         raise ProjectError("Source/output alias or symlink project path refused")
     if not source.is_file():
         raise ProjectError("Source must be a regular file")
-    project.mkdir(parents=True, exist_ok=True)
+    directory_mode = 0o700 if imported_photo is not None else 0o777
+    if imported_photo is None:
+        project.mkdir(parents=True, exist_ok=True, mode=directory_mode)
+    else:
+        with _directory(project, create=True):
+            pass
+
+    def make_directory(path: Path) -> None:
+        path.mkdir(mode=directory_mode)
+        if imported_photo is not None:
+            path.chmod(0o700, follow_symlinks=False)
+
     with project_lock(project):
         if any(path.name != ".writer.lock" for path in project.iterdir()):
             raise ProjectError(
@@ -208,10 +358,13 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
         metadata["source_sha256"] = source_hash
         developed_id = _developed_identity(pixels, metadata)
         check_space(project, source_size + pixels.nbytes * 3 + 1024**2)
-        stage = Path(tempfile.mkdtemp(prefix=".initial-", dir=project))
-        (stage / "assets/developed").mkdir(parents=True)
+        stage = _private_temporary_directory(project, ".initial-")
+        make_directory(stage / "assets")
+        make_directory(stage / "assets/developed")
         master = stage / "assets/developed" / f"{developed_id}.tif"
         write_developed(master, pixels)
+        if imported_photo is not None:
+            master.chmod(0o600, follow_symlinks=False)
         reloaded = tifffile.imread(master)
         if reloaded.dtype != np.uint16 or not np.array_equal(reloaded, pixels):
             raise ProjectError("Master TIFF round trip failed")
@@ -223,6 +376,19 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
             "developed_file_sha256": digest(master.read_bytes()),
             "metadata": metadata,
         }
+        if imported_photo is not None:
+            source_record.update(
+                original_path=f"../original/{source.name}",
+                original_filename=source.name,
+                library={
+                    "photo_id": imported_photo["photo_id"],
+                    "folder_basename": imported_photo["folder_basename"],
+                    "sidecars": imported_photo["sidecars"],
+                },
+            )
+            if imported_photo["original_filename"] != source.name:
+                raise ProjectError("Imported original filename mismatch")
+            _validate_imported_source(source_record)
         (stage / "source.json").write_bytes(_json_bytes(source_record))
         from .background import DEFAULT_BACKGROUND
 
@@ -249,6 +415,8 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
         )
         for file in stage.rglob("*"):
             if file.is_file():
+                if imported_photo is not None:
+                    file.chmod(0o600, follow_symlinks=False)
                 with file.open("rb") as stream:
                     os.fsync(stream.fileno())
         _sync_directory(stage / "assets/developed")
@@ -256,7 +424,8 @@ def create_project(source: Path, project_dir: Path, development: dict[str, Any])
         if digest(source.read_bytes()) != source_hash:
             raise ProjectError("Stale source changed during ingestion; no state published")
         try:
-            (project / "assets/developed").mkdir(parents=True)
+            make_directory(project / "assets")
+            make_directory(project / "assets/developed")
         except FileExistsError as error:
             raise ProjectError("Initial masters collision; incomplete project preserved") from error
         _publish_new_file(master, project / "assets/developed" / master.name)
@@ -321,6 +490,44 @@ def _revision_signature(project: Path, directory: str, manifest: dict[str, Any])
     return (digest(_json_bytes(manifest)), tuple(signatures))
 
 
+def _validate_imported_source(record: dict[str, Any]) -> None:
+    if "library" not in record and "original_filename" not in record:
+        return
+    identity = record.get("library")
+    filename = record.get("original_filename")
+    source_hash = record.get("source_sha256")
+
+    if (
+        not isinstance(identity, dict)
+        or set(identity) != {"photo_id", "folder_basename", "sidecars"}
+        or not isinstance(source_hash, str)
+        or type(record.get("schema_version")) is not int
+        or record["schema_version"] != 2
+        or re.fullmatch("[0-9a-f]{64}", source_hash) is None
+        or identity.get("photo_id") != "P" + source_hash[:12]
+        or not _filename_component(identity.get("folder_basename"))
+        or not identity["folder_basename"].startswith(identity["photo_id"] + "_")
+        or not _filename_component(filename)
+        or record.get("original_path") != f"../original/{filename}"
+        or not isinstance(identity.get("sidecars"), list)
+        or not isinstance(record.get("metadata"), dict)
+        or record["metadata"].get("source_sha256") != source_hash
+    ):
+        raise ProjectError("Invalid imported source ownership")
+    names = {filename}
+    for sidecar in identity["sidecars"]:
+        if (
+            not isinstance(sidecar, dict)
+            or set(sidecar) != {"filename", "sha256"}
+            or not _filename_component(sidecar.get("filename"))
+            or sidecar["filename"] in names
+            or not isinstance(sidecar.get("sha256"), str)
+            or re.fullmatch("[0-9a-f]{64}", sidecar["sha256"]) is None
+        ):
+            raise ProjectError("Invalid imported sidecar ownership")
+        names.add(sidecar["filename"])
+
+
 def _validate_assets(
     project: Path, state: dict[str, Any], *, validate_drafts: bool = True
 ) -> tuple[RGB16, dict[str, Any]]:
@@ -328,6 +535,7 @@ def _validate_assets(
     if not isinstance(developed_id, str) or re.fullmatch("[0-9a-f]{64}", developed_id) is None:
         raise ProjectError("Invalid master identity")
     record = _read_json(project, "source.json")
+    _validate_imported_source(record)
     metadata = record.get("metadata")
     if (
         type(record.get("schema_version")) is not int
