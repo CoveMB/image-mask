@@ -660,18 +660,34 @@ def test_spatial_saved_operands_are_validated_even_off_and_after_cache_warmup(
     from test_effects import fixture_project
 
     from blackmask import operations
-    from blackmask.project import read_project, read_revision
+    from blackmask.assets import revision_asset
+    from blackmask.project import _validation_scope, read_project, read_revision
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(
         project, spatial_request(project, dict(spatial_settings(6, 4), enabled=enabled))
     )
     master = read_project(project)["developed_id"]
-    read_revision(project, result["revision"], master)
-    target = project / "revisions" / result["revision"] / "effects/spatial-fade" / asset
-    target.write_bytes(b"tampered")
-    with pytest.raises(ProjectError):
-        read_revision(project, result["revision"], master)
+    directory = project / "revisions" / result["revision"]
+    logical_name = f"effects/spatial-fade/{asset}"
+    with _validation_scope():
+        manifest = read_revision(project, result["revision"], master)
+        if asset.endswith(".png"):
+            assert logical_name in manifest["assets"]
+            target = revision_asset(project, directory, manifest, logical_name)
+            assert target.is_file()
+            expected_error = "^Stale shared asset hash mismatch or changed while reading$"
+        else:
+            target = directory / logical_name
+            if asset == "settings.json":
+                assert target.is_file()
+                expected_error = "^Saved revision hash mismatch:"
+            else:
+                assert not target.exists()
+                expected_error = "^Invalid saved spatial fade inventory$"
+        target.write_bytes(b"tampered")
+        with pytest.raises(ProjectError, match=expected_error):
+            read_revision(project, result["revision"], master)
 
 
 @pytest.mark.parametrize("change_alpha,repairing", [(False, False), (True, False), (True, True)])
