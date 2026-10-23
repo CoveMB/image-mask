@@ -502,8 +502,10 @@ stale or protection gives q=0. Decode F and selected background B, blend
 `(1-q)*F+q*B` in linear sRGB, encode, then compose encoded-sRGB alpha ONCE.
 Exact q=0/q=1 preserves F/B. Alpha never changes; the effect may tint or brighten.
 Black/gray/white diagnostics still use selected B as fade target. Transparent
-straight RGB retains that tint; RGBA8 is reduced precision and hidden RGB is zero
-where quantized alpha is zero.
+straight RGB retains that tint; RGBA8 is reduced precision. Match-series RGBA8
+zeros hidden RGB where quantized alpha is zero. Native RGBA8 retains its existing
+straight RGB at zero alpha; Add margins preserves that native rectangle and adds
+zero RGBA outside it.
 
 With spatial fade enabled (inward shading OFF), Match series samples
 `P=R(A*F)`, `A'=R(A)`, `Q=R(A*q)` with the same transform

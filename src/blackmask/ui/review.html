@@ -871,18 +871,19 @@
       targets[id]();if(id==="spatialRotation" && Number.isFinite(value)) $(id).value=String(shape.rotation_degrees);
       markSpatialDirty();
     }
-    async function applySpatial(enabled = spatialDraft?.enabled) {
+    async function applySpatial(enabled = spatialDraft?.enabled, savedSettings = null) {
       if(!identity || !spatialDraft) throw Error("Load a complete saved working revision first");
-      if(spatialDraftIdentity!==spatialCurrentIdentity()) throw Error("Stale fade shapes; Cancel / reload saved fade shapes before Apply");
+      if(!savedSettings && spatialDraftIdentity!==spatialCurrentIdentity()) throw Error("Stale fade shapes; Cancel / reload saved fade shapes before Apply");
       if(enabled && (imageLoading || !image || !transform || $("viewRevision").value!==state.working_revision)) throw Error("Load the matching working native view before applying fade shapes");
-      spatialDraft.enabled=enabled;validateSpatialSettings();
+      const settings=structuredClone(savedSettings || spatialDraft);settings.enabled=enabled;validateSpatialSettings(settings);
       if(enabled && state.working_revision!==state.accepted_revision && !$("spatialCandidate").checked) throw Error("Use an accepted base or explicitly choose candidate comparison");
       const revision=state.revisions.find(r=>r.revision===state.working_revision);
       if(!revision?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
-      const settings=structuredClone(spatialDraft),fields={scope_xyxy:[0,0,...state.dimensions_wh],spatial_fade:settings,candidate_comparison:$("spatialCandidate").checked,revision_manifest_sha256:revision.revision_manifest_sha256};
+      const fields={scope_xyxy:[0,0,...state.dimensions_wh],spatial_fade:settings,candidate_comparison:$("spatialCandidate").checked,revision_manifest_sha256:revision.revision_manifest_sha256};
       if(enabled && $("spatialProtection").value.trim()) fields.spatial_fade_protection_file=$("spatialProtection").value.trim();
+      const preserveDraft=!!savedSettings && spatialDirty;
       spatialDirty=true;spatialDraftStatus();
-      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,master_id:state.master_id};
+      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,master_id:state.master_id,preserve_draft:preserveDraft};
       try {await action("effects",fields);} catch(error) {spatialSubmitted=null;throw error;}
     }
     function drawSpatialShapes(scale) {
@@ -928,7 +929,11 @@
     $("spatialRemove").onclick=guarded(()=>{if(selectedSpatialId==="oval")throw Error("Use the oval switch to disable its contribution");spatialDraft.arcs=spatialDraft.arcs.filter(arc=>arc.id!==selectedSpatialId);selectedSpatialId="oval";markSpatialDirty();renderSpatialControls();refreshSpatialSelectionMap();});
     $("spatialFlip").onclick=guarded(()=>{const arc=selectedSpatialShape();if(selectedSpatialId==="oval")throw Error("Select an arc to flip");arc.fade_side=arc.fade_side==="positive" ? "negative" : "positive";markSpatialDirty();renderSpatialControls();});
     $("spatialApply").onclick=guarded(()=>applySpatial());
-    $("spatialDisable").onclick=guarded(()=>{spatialDraft.enabled=false;markSpatialDirty();renderSpatialControls();return applySpatial(false);});
+    $("spatialDisable").onclick=guarded(()=>{
+      const saved=state.revisions.find(r=>r.revision===state.working_revision)?.spatial_fade?.settings;
+      if(!saved){spatialDraft.enabled=false;markSpatialDirty();renderSpatialControls();}
+      return applySpatial(false,saved);
+    });
     $("spatialCancel").onclick=guarded(()=>{resetSpatialFromSaved();return loadImage();});
     $("spatialMap").onchange=guarded(()=>loadImage());$("spatialOpacity").oninput=draw;
     $("spatialCandidate").oninput=markSpatialDirty;$("spatialProtection").oninput=markSpatialDirty;
@@ -1089,7 +1094,7 @@
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
       const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && a.result?.parent===spatialSubmitted.base_revision && state.master_id===spatialSubmitted.master_id;
-      if(spatialCompleted && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
+      if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
       if(reload || completed) spatialSubmitted=null;
       if(reload) resetSpatialFromSaved();
       if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;

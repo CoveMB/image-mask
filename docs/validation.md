@@ -69,6 +69,16 @@ after; the affected export/reconstruction suite passed **280 tests**, exit 0
 (46.88 s), with no warnings. Rendering was unchanged by that last repair. See the
 [implementation review record](superpowers/plans/2026-10-22-fade-into-background-reviews.md#implementation-execution).
 
+Hosted CodeRabbit reviewed all 28 feature files on MR #25. Its two findings were
+verified and fixed: Disable now submits saved geometry with only the master
+switch OFF while preserving unapplied drafts; the native/series transparent
+hidden-RGB contract is clarified without changing pixels. Four new page-handler
+cases failed before repair. After repair, all **82 page checks** and **47 connected
+viewer/coordinate checks** passed (6.90 s / 28.79 s, both exit 0). A targeted
+independent recheck found no material improvement. The final Disable repair was
+checked through the shipped-page Node harness and source review; the earlier
+actual browser walkthrough below was not repeated for this delta.
+
 Native and active-series delivery tests copy BOTH folders and make the original
 project unavailable before reconstructing from delivered files. Independent scalar
 P/A/Q tests cover identity, enlargement, reduction and strong aspect changes.

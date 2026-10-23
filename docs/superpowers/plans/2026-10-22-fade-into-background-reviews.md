@@ -201,3 +201,29 @@ remain in ignored local evidence.
 These reviews establish code-review outcomes, not exact-pin certification,
 real-model inference, full HTTP/export memory measurements, accessibility
 certification, editable branching-photo evaluation or human photographic acceptance.
+
+### Hosted CodeRabbit follow-up
+
+[MR #25](https://github.com/CoveMB/image-mask/pull/25) received a completed hosted
+review of all 28 changed files through commit `605a548`. The owner verified both
+actionable findings and fixed them:
+
+- Native RGBA8 preserves straight RGB at zero quantized alpha; Add margins keeps
+  that native rectangle and zeros only the added outside area. The file contract
+  now distinguishes this from Match-series hidden-RGB zeroing. No pixels changed.
+- Disable fade had submitted pending geometry. It now clones current saved
+  settings and changes only the master switch. Unapplied geometry remains local,
+  including invalid/stale drafts; raw revision identity remains writer-checked.
+
+Four new handler cases demonstrated failure before repair. After repair,
+82 shipped-page checks and 47 connected viewer/coordinate checks passed, exit 0.
+The existing regular reviewer independently rechecked only the three-file delta
+and connected action/refresh/identity handling: **“No material improvements
+recommended.”** No remaining material finding was retained. Browser rendering,
+accessibility and photographs were not repeated for this focused UI delta.
+
+The provider's generic 80% docstring-coverage suggestion was declined: no material
+defect or repository-required threshold was evidenced, and bulk changes across
+148 touched functions would add unrelated churn. This does not weaken any test
+or documented behavior requirement. Provider review status is separate from
+human acceptance and from any subsequently throttled automatic follow-up.

@@ -161,6 +161,44 @@ def test_spatial_canvas_handles_and_numeric_values_match_without_saving_on_drag(
  """)
 
 
+@pytest.mark.parametrize("pending", ["none", "geometry", "invalid", "stale"])
+def test_spatial_disable_uses_saved_geometry_and_retains_unapplied_draft(pending):
+    run_page(
+        "const pending="
+        + repr(pending)
+        + r""";
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ await ready();addSpatialArc([30,40]);
+ spatialDraft.enabled=true;spatialDraft.arcs[0].amount=.7;
+ const saved=structuredClone(spatialDraft);
+ servedState.revisions[0].spatial_fade={enabled:true,stale:false,settings:saved};
+ servedState.accepted_revision='rev-000';await refresh(true);
+ if(pending!=='none') {
+   await $('spatialRemove').onclick();addSpatialArc([60,70]);
+   if(pending==='invalid') {$('spatialBend').value='99999';$('spatialBend').oninput();}
+   if(pending==='stale') {servedState.revisions[0].revision_manifest_sha256='b'.repeat(64);await refresh();}
+ }
+ $('backgroundHex').value='#AB1234';$('backgroundHex').oninput();
+ $('spatialProtection').value='pending-protection.png';
+ const draft=structuredClone(spatialDraft),expected={...structuredClone(saved),enabled:false};
+ const originalFetch=fetch;globalThis.fetch=async(path,options)=>{if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return originalFetch(path,options);};
+ const count=posts.length;await $('spatialDisable').onclick();
+ assert.equal(posts.length,count+1);
+ const sent=posts.at(-1);assert.equal(sent.action,'effects');assert.deepEqual(sent.spatial_fade,expected);
+ assert.equal(sent.candidate_comparison,false);assert(!('spatial_fade_protection_file' in sent));
+ assert.equal(sent.revision_manifest_sha256,(pending==='stale'?'b':'a').repeat(64));
+ assert.deepEqual(spatialDraft,draft,'Disable must not replace pending geometry or switches');
+ servedState.working_revision='rev-002';
+ servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',revision_manifest_sha256:'c'.repeat(64),spatial_fade:{enabled:false,stale:false,settings:expected}});
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-002',parent:'rev-001',spatial_fade:{enabled:false,stale:false,settings:expected}}};
+ await refresh();
+ if(pending==='none') {assert(!spatialDirty);assert.deepEqual(spatialDraft,expected);}
+ else {assert(spatialDirty);assert.deepEqual(spatialDraft,draft);assert($('spatialDraftStatus').textContent.includes('Stale'));}
+ assert.equal($('backgroundHex').value,'#AB1234');
+ """
+    )
+
+
 def test_spatial_shape_limit_and_late_apply_result_do_not_drop_newer_drafts():
     run_page(r"""
  servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
