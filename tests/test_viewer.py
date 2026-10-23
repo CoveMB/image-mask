@@ -11,6 +11,373 @@ from blackmask import operations
 from blackmask.project import ProjectError, load_master, project_lock, read_project
 
 
+def test_spatial_saved_preview_routes_bind_revision_shape_crop_and_preview_guard(tmp_path):
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+    from test_effects import fixture_project
+    from test_shadow_fade import fade_request
+    from test_spatial_fade import arc_settings, spatial_request, spatial_settings
+
+    from blackmask.effects import saved_spatial_fade
+    from blackmask.export import saved_layers
+    from blackmask.spatial_fade import combined_fade_weight, spatial_fade_amount
+
+    project, _, _ = fixture_project(tmp_path)
+    operations.apply_operation(project, fade_request(project, amount=0.38))
+    settings = spatial_settings(6, 4)
+    settings.update(
+        arcs_enabled=True,
+        arcs=[
+            arc_settings(
+                center_xy=[3, 2], half_span=2, bend=0, transition_width=0.5, end_softness=0.5
+            )
+        ],
+    )
+    result = operations.apply_operation(project, spatial_request(project, settings, candidate=True))
+    foreground, alpha, manifest = saved_layers(project, result["revision"], result["master_id"])
+    saved = saved_spatial_fade(project, result["revision"], alpha, manifest)
+    crop = [1, 1, 5, 3]
+    with running(project) as server:
+        snapshot = server.snapshot()
+        revision = next(
+            item for item in snapshot["revisions"] if item["revision"] == result["revision"]
+        )
+        assert revision["spatial_fade"] == manifest["spatial_fade"]
+        identity = {
+            "master_id": snapshot["master_id"],
+            "revision": result["revision"],
+            "revision_manifest_sha256": revision["revision_manifest_sha256"],
+            "crop_xyxy": crop,
+        }
+        for view in ("combined", "effective", "selected", "off"):
+            data = dict(identity, view=view)
+            if view == "selected":
+                data["shape_id"] = settings["arcs"][0]["id"]
+            status, body, _ = http(server, "/api/spatial-preview", "POST", data)
+            assert status == 200, body
+            response = json.loads(body)
+            assert all(response[key] == value for key, value in data.items())
+            with Image.open(io.BytesIO(base64.b64decode(response["png_base64"]))) as image:
+                pixels = np.array(image)
+            if view == "combined":
+                expected = np.rint(saved.weight16[1:3, 1:5] / 257).astype(np.uint8)
+            elif view == "effective":
+                expected = np.rint(
+                    spatial_fade_amount(foreground, alpha, saved)[1:3, 1:5] * 255
+                ).astype(np.uint8)
+            elif view == "selected":
+                x, y = np.meshgrid(np.arange(1, 5) + 0.5, np.arange(1, 3) + 0.5)
+                expected = np.rint(
+                    combined_fade_weight(x, y, settings, shape_id=data["shape_id"]) * 255
+                ).astype(np.uint8)
+            else:
+                assert pixels.shape == (2, 4, 3)
+                continue
+            np.testing.assert_array_equal(pixels, expected)
+        assert (
+            http(
+                server,
+                "/api/spatial-preview",
+                "POST",
+                dict(identity, view="combined"),
+                Origin="null",
+            )[0]
+            == 403
+        )
+        for bad in (
+            dict(identity, view="combined", path="/tmp/private"),
+            dict(identity, view="wrong"),
+            dict(identity, view="selected", shape_id="../escape"),
+            dict(identity, view="selected", shape_id="5ce6b442-6fa0-4c07-a938-dbf012c52c00"),
+            dict(identity, view="combined", revision_manifest_sha256="0" * 64),
+            dict(identity, view="combined", crop_xyxy=[-1, 0, 2, 3]),
+        ):
+            assert http(server, "/api/spatial-preview", "POST", bad)[0] in (400, 409)
+        assert server.framing_preview_lock.acquire(blocking=False)
+        try:
+            assert (
+                http(server, "/api/spatial-preview", "POST", dict(identity, view="combined"))[0]
+                == 409
+            )
+        finally:
+            server.framing_preview_lock.release()
+        assert (
+            http(server, "/api/spatial-preview", "POST", dict(identity, view="combined"))[0] == 200
+        )
+        disabled = dict(settings, arcs_enabled=False)
+        disabled_result = operations.apply_operation(
+            project, spatial_request(project, disabled, candidate=True)
+        )
+        selected_revision = next(
+            item
+            for item in server.snapshot()["revisions"]
+            if item["revision"] == disabled_result["revision"]
+        )
+        newer = dict(
+            identity,
+            revision=disabled_result["revision"],
+            revision_manifest_sha256=selected_revision["revision_manifest_sha256"],
+        )
+        status, body, _ = http(
+            server,
+            "/api/spatial-preview",
+            "POST",
+            dict(newer, view="selected", shape_id=settings["arcs"][0]["id"]),
+        )
+        assert status == 200, body
+        with Image.open(io.BytesIO(base64.b64decode(json.loads(body)["png_base64"]))) as image:
+            assert not np.array(image).any()
+        removed = operations.apply_operation(
+            project, spatial_request(project, dict(disabled, arcs=[]), candidate=True)
+        )
+        selected_revision = next(
+            item
+            for item in server.snapshot()["revisions"]
+            if item["revision"] == removed["revision"]
+        )
+        newer.update(
+            revision=removed["revision"],
+            revision_manifest_sha256=selected_revision["revision_manifest_sha256"],
+        )
+        assert (
+            http(
+                server,
+                "/api/spatial-preview",
+                "POST",
+                dict(newer, view="selected", shape_id=settings["arcs"][0]["id"]),
+            )[0]
+            == 409
+        )
+
+
+def test_spatial_viewer_raw_manifest_check_occurs_inside_the_writer_lock(tmp_path, monkeypatch):
+    from test_effects import fixture_project
+    from test_spatial_fade import spatial_request, spatial_settings
+
+    from blackmask.project import digest
+
+    project, _, parent = fixture_project(tmp_path)
+    manifest = project / "revisions" / parent["revision"] / "manifest.json"
+    expected = digest(manifest.read_bytes())
+    before = (project / "state.json").read_bytes()
+    revisions_before = sorted(path.name for path in (project / "revisions").iterdir())
+    original_lock = operations.project_lock
+
+    @contextmanager
+    def changed_under_lock(path):
+        with original_lock(path):
+            manifest.write_bytes(manifest.read_bytes() + b"\n")
+            yield
+
+    monkeypatch.setattr(operations, "project_lock", changed_under_lock)
+    with pytest.raises(ProjectError, match="Stale"):
+        operations.apply_operation(
+            project,
+            spatial_request(project, spatial_settings(6, 4)),
+            expected_revision_manifest_sha256=expected,
+        )
+    assert (project / "state.json").read_bytes() == before
+    assert sorted(path.name for path in (project / "revisions").iterdir()) == revisions_before
+
+
+@pytest.mark.parametrize("with_spatial", [False, True])
+def test_spatial_off_and_effective_maps_follow_working_stale_base_policy(tmp_path, with_spatial):
+    import base64
+    import io
+    from unittest.mock import patch
+
+    import numpy as np
+    from PIL import Image
+    from test_effects import fixture_project
+    from test_matte_operations import StubSession
+    from test_repair_operations import repair_guides, repair_request, run_repair
+    from test_shadow_fade import fade_request
+    from test_spatial_fade import spatial_request
+
+    project, _, _ = fixture_project(tmp_path)
+    accepted = operations.apply_operation(project, fade_request(project, amount=0.38))
+    if with_spatial:
+        accepted = operations.apply_operation(project, spatial_request(project, candidate=True))
+    operations.accept_revision(project, accepted["revision"])
+    prepared = repair_guides(project, [1, 1, 4, 3])
+    with patch.object(
+        StubSession,
+        "predict",
+        side_effect=lambda rgb, guide, device: (np.full(guide.shape, 0.75), {}),
+    ):
+        run_repair(project, repair_request(project, prepared, [0, 0, 6, 4], [1, 1, 4, 3]))
+    with running(project) as server:
+        snapshot = server.snapshot()
+        viewed = next(
+            item for item in snapshot["revisions"] if item["revision"] == accepted["revision"]
+        )
+        current = next(
+            item
+            for item in snapshot["revisions"]
+            if item["revision"] == snapshot["working_revision"]
+        )
+        assert current["shadow_fade"]["stale"] and not viewed["shadow_fade"]["stale"]
+        identity = {
+            "master_id": snapshot["master_id"],
+            "revision": accepted["revision"],
+            "revision_manifest_sha256": viewed["revision_manifest_sha256"],
+            "crop_xyxy": [0, 0, 6, 4],
+        }
+        for panel in ("result", "black", "gray", "white"):
+            status, body, _ = http(
+                server, "/api/spatial-preview", "POST", dict(identity, view="off", panel=panel)
+            )
+            assert status == 200, body
+            response = json.loads(body)
+            assert "BASE" in response["label"]
+            with Image.open(io.BytesIO(base64.b64decode(response["png_base64"]))) as image:
+                off = np.array(image)
+            normal = http(server, f"/image/{panel}/{accepted['revision']}/0,0,6,4")
+            assert normal[0] == 200
+            with Image.open(io.BytesIO(normal[1])) as image:
+                np.testing.assert_array_equal(off, np.array(image))
+        status, body, _ = http(
+            server, "/api/spatial-preview", "POST", dict(identity, view="effective")
+        )
+        assert status == 200, body
+        with Image.open(io.BytesIO(base64.b64decode(json.loads(body)["png_base64"]))) as image:
+            assert not np.array(image).any()
+
+
+def test_spatial_viewer_action_forwards_exact_protection_and_raw_identity(tmp_path):
+    import numpy as np
+    from PIL import Image
+    from test_effects import fixture_project
+    from test_spatial_fade import spatial_settings
+
+    from blackmask.export import render_background, saved_layers
+    from blackmask.spatial_fade import read_spatial_fade
+
+    project, _, parent = fixture_project(tmp_path)
+    protected = np.zeros((4, 6), np.uint16)
+    protected[1, 3] = 65535
+    Image.fromarray(protected).save(project / "explicit-protection.png")
+    settings = spatial_settings(6, 4)
+    with running(project) as server:
+
+        def payload(*, enabled=True, explicit=False, candidate=False):
+            state = server.snapshot()
+            selected = next(
+                item for item in state["revisions"] if item["revision"] == state["working_revision"]
+            )
+            data = {
+                "action": "effects",
+                "master_id": state["master_id"],
+                "base_revision": state["working_revision"],
+                "inputs_digest": state["inputs_digest"],
+                "authoring_digest": state["authoring_digest"],
+                "revision_manifest_sha256": selected["revision_manifest_sha256"],
+                "scope_xyxy": [0, 0, 6, 4],
+                "candidate_comparison": candidate,
+                "spatial_fade": dict(settings, enabled=enabled),
+            }
+            if explicit:
+                data["spatial_fade_protection_file"] = "explicit-protection.png"
+            return data
+
+        for data in (payload(explicit=True), payload(candidate=True), payload(enabled=False)):
+            # Refresh each complete request after the preceding action; never merge by index.
+            data = payload(
+                enabled=data["spatial_fade"]["enabled"],
+                explicit="spatial_fade_protection_file" in data,
+                candidate=data["candidate_comparison"],
+            )
+            status, body, _ = http(server, "/api/action", "POST", data)
+            assert status == 202, body
+            assert server.action_lock.acquire(timeout=5)
+            server.action_lock.release()
+            assert server.action["error"] is None, server.action
+            result = server.action["result"]
+            foreground, alpha, manifest = saved_layers(
+                project, result["revision"], result["master_id"]
+            )
+            saved = read_spatial_fade(project / "revisions" / result["revision"], manifest, alpha)
+            assert 0 < alpha[1, 3] < 65535 and saved.protection[1, 3]
+            background = np.full_like(foreground, [4608, 1792, 2048])
+            expected = render_background(foreground, alpha, background)
+            np.testing.assert_array_equal(
+                render_background(
+                    foreground, alpha, background, spatial_fade=saved, fade_background16=background
+                )[1, 3],
+                expected[1, 3],
+            )
+        before = (project / "state.json").read_bytes()
+        bad = payload(candidate=True)
+        bad["revision_manifest_sha256"] = "0" * 64
+        assert http(server, "/api/action", "POST", bad)[0] == 202
+        assert server.action_lock.acquire(timeout=5)
+        server.action_lock.release()
+        assert "Stale" in server.action["error"]
+        assert (project / "state.json").read_bytes() == before
+        missing = payload(candidate=True)
+        del missing["revision_manifest_sha256"]
+        assert http(server, "/api/action", "POST", missing)[0] == 400
+    assert read_project(project)["accepted_revision"] == parent["revision"]
+
+
+@pytest.mark.parametrize("series_mode", [False, True])
+def test_spatial_framing_preview_uses_saved_fade_and_bound_target(tmp_path, series_mode):
+    import base64
+    import io
+
+    import numpy as np
+    import tifffile
+    from PIL import Image
+    from test_effects import fixture_project
+    from test_series_framing import series_settings
+    from test_spatial_fade import spatial_request, spatial_settings
+
+    from blackmask.background import make_background
+    from blackmask.framing import framing_preview, validate_margins
+
+    project, _, _ = fixture_project(tmp_path)
+    settings = spatial_settings(6, 4)
+    settings["oval"].update(
+        center_xy=[0, 0], inner_radii_xy=[0.5, 0.5], transition_width=0.5, amount=1
+    )
+    result = operations.apply_operation(project, spatial_request(project, settings))
+    margins = {"left_px": 1, "right_px": 2, "top_px": 1, "bottom_px": 2}
+    values = series_settings(output_width_px=17, output_height_px=19).to_dict()
+    with running(project) as server:
+        state = json.loads(http(server)[1])
+        selected = next(
+            item for item in state["revisions"] if item["revision"] == result["revision"]
+        )
+        request = {
+            "master_id": state["master_id"],
+            "revision": result["revision"],
+            "revision_manifest_sha256": selected["revision_manifest_sha256"],
+            "settings" if series_mode else "margins": values if series_mode else margins,
+        }
+        status, body, _ = http(
+            server,
+            "/api/series-preview" if series_mode else "/api/framing-preview",
+            "POST",
+            request,
+        )
+        assert status == 200, body
+        data = json.loads(body)
+        if series_mode:
+            expected = np.rint(
+                make_background((19, 17), {"color_srgb": "#120708", "variation": 0.55}) / 257
+            ).astype(np.uint8)
+        else:
+            background = tifffile.imread(
+                project / "revisions" / result["revision"] / "background/background_rgb16.tif"
+            )
+            expected = framing_preview(background, background, validate_margins(margins, (6, 4)))[0]
+        with Image.open(io.BytesIO(base64.b64decode(data["png_base64"]))) as image:
+            np.testing.assert_array_equal(np.array(image), expected)
+
+
 def test_series_http_validation_preview_and_independent_errors(tmp_path):
     import base64
     import io

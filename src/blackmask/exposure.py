@@ -29,11 +29,23 @@ def srgb_to_linear(encoded: np.ndarray) -> np.ndarray:
     return np.where(encoded <= 0.04045, encoded / 12.92, ((encoded + 0.055) / 1.055) ** 2.4)
 
 
-def linear_to_rgb16(linear: np.ndarray) -> np.ndarray:
-    """Encode and quantize once, with NumPy's ties-to-even rounding."""
+def linear_to_srgb(linear: np.ndarray) -> np.ndarray:
+    """Encode normalized linear sRGB without introducing an intermediate quantization."""
     linear = np.clip(linear.astype(np.float64), 0, 1)
     encoded = np.where(linear <= 0.0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - 0.055)
-    return np.rint(np.clip(encoded, 0, 1) * 65535).astype(np.uint16)
+    return np.clip(encoded, 0, 1)
+
+
+def linear_to_rgb16(linear: np.ndarray) -> np.ndarray:
+    """Encode and quantize once, with NumPy's ties-to-even rounding."""
+    return np.rint(linear_to_srgb(linear) * 65535).astype(np.uint16)
+
+
+def highlight_weight(linear_rgb: np.ndarray) -> np.ndarray:
+    """Shared cubic highlight protection; preserve the established arithmetic order."""
+    luminance = linear_rgb @ np.array([0.2126, 0.7152, 0.0722])
+    transition = np.clip((luminance - 0.10) / 0.65, 0, 1)
+    return transition * transition * (3 - 2 * transition)
 
 
 def apply_exposure(

@@ -344,7 +344,12 @@ def _validate_assets(
                 validation["master"] = (key, pixels)
         if validate_drafts:
             recipe = tomllib.loads(_asset(project, "recipe.toml").read_text())
-            Recipe.from_dict(recipe, master_id, max_margin_px=max(pixels.shape[:2]))
+            Recipe.from_dict(
+                recipe,
+                master_id,
+                max_margin_px=max(pixels.shape[:2]),
+                dimensions_wh=(pixels.shape[1], pixels.shape[0]),
+            )
             guides = _read_json(project, "guides.json")
             validate_guides(guides, master_id, pixels.shape[1], pixels.shape[0])
     except (OSError, ValueError, TypeError, KeyError, tifffile.TiffFileError) as error:
@@ -459,6 +464,20 @@ def _validate_background_semantics(directory: Path, manifest_bytes: bytes) -> No
     read_background(directory, json.loads(manifest_bytes))
 
 
+@lru_cache(maxsize=128)
+def _validate_spatial_fade_semantics(directory: Path, manifest_bytes: bytes) -> None:
+    """Replay bounded geometry after fresh hashes; ordinary renders reuse saved W16."""
+    from .repair import scalar16
+    from .spatial_fade import make_spatial_weight, read_spatial_fade
+
+    alpha = scalar16(directory / "base_alpha16.png")
+    saved = read_spatial_fade(directory, json.loads(manifest_bytes), alpha)
+    if saved is not None and not np.array_equal(
+        saved.weight16, make_spatial_weight(alpha.shape, saved.record["settings"])
+    ):
+        raise ProjectError("Saved spatial fade geometry differs from its settings")
+
+
 def _validate_revision_directory(
     project: Path, revision: str, master_id: str, directory: str
 ) -> dict[str, Any]:
@@ -487,8 +506,10 @@ def _validate_revision_directory(
     ):
         raise ProjectError("Unbound saved Shadow fade authored area")
     from .background import validate_background_bindings
+    from .spatial_fade import validate_spatial_bindings
 
     validate_background_bindings(_asset(project, directory), manifest)
+    validate_spatial_bindings(_asset(project, directory), manifest)
     if "background" in manifest:
         record = manifest["background"]
         metadata = _read_json(project, "source.json")["metadata"]
@@ -577,6 +598,8 @@ def _validate_revision_directory(
         ):
             raise ProjectError("Missing bound Shadow fade authored area")
         _validate_shadow_fade_semantics(_asset(project, directory), _json_bytes(manifest))
+    if "spatial_fade" in manifest:
+        _validate_spatial_fade_semantics(_asset(project, directory), _json_bytes(manifest))
     if (
         validation is not None
         and _revision_signature(project, directory, manifest) == signature

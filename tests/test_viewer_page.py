@@ -79,6 +79,182 @@ async function ready(){
     assert result.returncode == 0, result.stderr
 
 
+def test_spatial_authoring_uses_stable_independent_shapes_and_cancel_preserves_other_drafts():
+    run_page(r"""
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ servedState.revisions[0].shadow_fade={enabled:true,stale:false,settings:{enabled:true,amount:.38,preserve_highlights:.7}};
+ await ready();
+ assert.equal(spatialDraft.enabled,false);assert.equal(spatialDraft.oval.enabled,true);
+ assert.equal(spatialDraft.preserve_highlights,0);assert.equal(spatialDraft.arcs.length,0);
+ assert.equal($('spatialCandidate').checked,false);
+ const oval=JSON.stringify(spatialDraft.oval);
+ addSpatialArc([20,30]);const first=selectedSpatialId;
+ addSpatialArc([70,80]);const second=selectedSpatialId;
+ assert.notEqual(first,second);assert.equal(spatialDraft.arcs.length,2);
+ $('spatialSelect').value=first;$('spatialSelect').onchange();
+ $('spatialBend').value='-7';$('spatialBend').oninput();
+ $('spatialStrength').value='65';$('spatialStrength').oninput();
+ assert.equal(spatialDraft.arcs.find(a=>a.id===first).bend,-7);
+ assert.equal(spatialDraft.arcs.find(a=>a.id===first).amount,.65);
+ assert.equal(spatialDraft.arcs.find(a=>a.id===second).amount,0);
+ assert.equal(JSON.stringify(spatialDraft.oval),oval);
+ await $('spatialDuplicate').onclick();const duplicate=selectedSpatialId;
+ assert.notEqual(duplicate,first);assert.equal(spatialDraft.arcs.length,3);
+ await $('spatialFlip').onclick();assert.equal(spatialDraft.arcs.find(a=>a.id===duplicate).fade_side,'negative');
+ $('spatialUseArcs').checked=false;$('spatialUseArcs').oninput();
+ assert.equal(spatialDraft.arcs.length,3);
+ $('spatialUseArcs').checked=true;$('spatialUseArcs').oninput();
+ $('spatialArcEnabled').checked=false;$('spatialArcEnabled').oninput();
+ assert.equal(spatialDraft.arcs.find(a=>a.id===duplicate).enabled,false);
+ await $('spatialRemove').onclick();assert(!spatialDraft.arcs.some(a=>a.id===duplicate));
+ $('backgroundHex').value='#AB1234';$('backgroundHex').oninput();
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ await $('spatialCancel').onclick();assert.equal(spatialDraft.arcs.length,0);assert.equal(selectedSpatialId,'oval');
+ assert.equal($('backgroundHex').value,'#AB1234');assert.equal($('exposureEV').value,'1.2');
+ assert.equal($('fadeAmount').value,38);assert.equal($('fadePreserve').value,70);
+ assert(!posts.some(p=>p.action==='effects'));
+ """)
+
+
+def test_spatial_apply_is_complete_bound_and_candidate_choice_stays_explicit():
+    run_page(r"""
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ await ready();
+ $('spatialMaster').checked=true;$('spatialMaster').oninput();
+ $('spatialStrength').value='60';$('spatialStrength').oninput();
+ await $('spatialApply').onclick();
+ const sent=posts.at(-1);assert.equal(sent.action,'effects');assert.equal(sent.revision_manifest_sha256,'a'.repeat(64));
+ assert.deepEqual(sent.scope_xyxy,[0,0,100,100]);assert.equal(sent.candidate_comparison,false);
+ assert.deepEqual(Object.keys(sent.spatial_fade).sort(),['enabled','preserve_highlights','oval','arcs_enabled','arcs'].sort());
+ assert.equal(sent.spatial_fade.oval.amount,.6);
+ servedState.accepted_revision='rev-000';await refresh();
+ const count=posts.length;await $('spatialApply').onclick();assert.equal(posts.length,count);
+ assert.equal($('spatialCandidate').checked,false);assert($('message').textContent.includes('candidate'));
+ $('spatialCandidate').checked=true;
+ await $('spatialApply').onclick();assert.equal(posts.at(-1).candidate_comparison,true);
+ $('spatialCandidate').checked=false;
+ await $('spatialDisable').onclick();assert.equal(posts.at(-1).spatial_fade.enabled,false);
+ assert.equal(posts.at(-1).candidate_comparison,false);
+ """)
+
+
+def test_spatial_canvas_handles_and_numeric_values_match_without_saving_on_drag():
+    run_page(r"""
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ await ready();$('authorMode').value='spatial';
+ $('spatialRotation').value='397';$('spatialRotation').oninput();assert.equal(spatialDraft.oval.rotation_degrees,37);
+ $('spatialWidth').value='30';$('spatialWidth').oninput();assert.equal(spatialDraft.oval.inner_radii_xy[0],15);
+ zoom=2;pan=[9,-7];draw();
+ const handle=spatialHandles(spatialDraft.oval,true).find(h=>h.name==='center');
+ const rect=canvas.getBoundingClientRect(),size=[canvas.width,canvas.height];
+ const start=nativeToScreen(handle.point,rect,size,transform,crop),end=nativeToScreen([55,57],rect,size,transform,crop);
+ canvas.onpointerdown({clientX:start[0],clientY:start[1],pointerId:1,shiftKey:false});
+ canvas.onpointermove({clientX:end[0],clientY:end[1],pointerId:1});
+ canvas.onpointerup({clientX:end[0],clientY:end[1],pointerId:1});
+ assert(Math.abs(spatialDraft.oval.center_xy[0]-55)<1e-8);assert(Math.abs(spatialDraft.oval.center_xy[1]-57)<1e-8);
+ assert.equal(posts.length,0);assert(spatialDirty);assert($('spatialDraftStatus').textContent.includes('Unapplied'));
+ addSpatialArc([40,50]);$('spatialBend').value='-8';$('spatialBend').oninput();
+ $('spatialSide').value='negative';$('spatialSide').oninput();
+ const arc=spatialDraft.arcs.at(-1),mid=spatialHandles(arc,false).find(h=>h.name==='bend');
+ assert.equal(mid.point[1],42);assert.equal(arc.fade_side,'negative');
+ canvas.onkeydown({key:'Escape',preventDefault(){}});assert.equal(spatialDraft.arcs.length,0);
+ """)
+
+
+def test_spatial_shape_limit_and_late_apply_result_do_not_drop_newer_drafts():
+    run_page(r"""
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ await ready();for(let i=0;i<32;i++)addSpatialArc([50,50]);
+ const ids=spatialDraft.arcs.map(a=>a.id);await $('spatialDuplicate').onclick();
+ assert.deepEqual(spatialDraft.arcs.map(a=>a.id),ids);assert($('message').textContent.includes('32'));
+ await $('spatialCancel').onclick();addSpatialArc([30,40]);
+ $('spatialMaster').checked=true;$('spatialMaster').oninput();
+ servedState.action={running:true,name:'effects',error:null,result:null};
+ // Keep the mocked action initially available; it becomes running only after POST.
+ const originalFetch=fetch;globalThis.fetch=async(path,options)=>{
+  if(path==='/api/action')servedState.action.running=true;
+  return originalFetch(path,options);
+ };
+ servedState.action.running=false;
+ await $('spatialApply').onclick();const sent=posts.at(-1).spatial_fade,id=selectedSpatialId;
+ $('spatialBend').value='-9';$('spatialBend').oninput();
+ servedState.working_revision='rev-002';servedState.inputs_digest='new-draft';
+ servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',draft_digest:'new-draft',revision_manifest_sha256:'b'.repeat(64),spatial_fade:{enabled:true,stale:false,settings:sent}});
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-002',parent:'rev-001',spatial_fade:{enabled:true,stale:false,settings:sent}}};
+ await refresh();assert.equal(selectedSpatialId,id);assert.equal(spatialDraft.arcs[0].bend,-9);assert(spatialDirty);
+ assert($('spatialDraftStatus').textContent.includes('Stale'));
+ """)
+
+
+def test_spatial_export_status_distinguishes_paired_success_and_uncertain_error():
+    run_page(r"""
+ await ready();
+ servedState.action={running:false,name:'export',error:null,result:{directory:'exports/frame',editable_companion:{directory:'exports/native',manifest_file:'exports/native/manifest.json',manifest_sha256:'a'.repeat(64)}}};
+ await refresh();assert($('result').textContent.includes('exports/frame'));assert($('result').textContent.includes('exports/native'));assert($('result').textContent.includes('both'));
+ servedState.action={running:false,name:'export',error:'Native-only pair incomplete; durability unconfirmed',result:{directory:'exports/native'}};
+ await refresh();assert(!$('result').textContent.includes('Export saved:'));assert($('message').textContent.includes('unconfirmed'));
+ """)
+
+
+def test_spatial_keyboard_controls_round_trip_and_apply_preserves_other_dirty_controls():
+    run_page(r"""
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ servedState.revisions[0].shadow_fade={enabled:true,stale:false,settings:{enabled:true,amount:.38,preserve_highlights:.7}};
+ await ready();
+ for(const [id,value] of Object.entries({spatialCenterX:'41',spatialCenterY:'43',spatialWidth:'30',spatialHeight:'40',spatialTransition:'11',spatialRotation:'397',spatialStrength:'52',spatialPreserve:'20'})){$(id).value=value;$(id).oninput();}
+ assert.deepEqual(spatialDraft.oval.center_xy,[41,43]);assert.deepEqual(spatialDraft.oval.inner_radii_xy,[15,20]);
+ assert.equal(spatialDraft.oval.transition_width,11);assert.equal(spatialDraft.oval.rotation_degrees,37);assert.equal(spatialDraft.oval.amount,.52);
+ addSpatialArc([30,40]);const id=selectedSpatialId;
+ for(const [field,value] of Object.entries({spatialCenterX:'33',spatialCenterY:'44',spatialSpan:'30',spatialBend:'-10',spatialTransition:'7',spatialEndSoftness:'6',spatialRotation:'361',spatialStrength:'75'})){$(field).value=value;$(field).oninput();}
+ const arc=spatialDraft.arcs[0];assert.equal(arc.id,id);assert.equal(arc.half_span,15);assert.equal(arc.bend,-10);assert.equal(arc.end_softness,6);assert.equal(arc.rotation_degrees,1);assert.equal(arc.amount,.75);
+ assert.equal(spatialDraft.preserve_highlights,.2);assert.equal($('fadeAmount').value,38);assert.equal($('fadePreserve').value,70);
+ $('backgroundHex').value='#AB1234';$('backgroundHex').oninput();
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ $('fadeAmount').value='42';$('fadeAmount').oninput();
+ $('spatialMaster').checked=true;$('spatialMaster').oninput();
+ const originalFetch=fetch;globalThis.fetch=async(path,options)=>{if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return originalFetch(path,options);};
+ await $('spatialApply').onclick();const sent=structuredClone(posts.at(-1).spatial_fade);
+ servedState.working_revision='rev-002';servedState.inputs_digest='new-draft';
+ servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',draft_digest:'new-draft',revision_manifest_sha256:'b'.repeat(64),spatial_fade:{enabled:true,stale:false,settings:sent}});
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-002',parent:'rev-001',spatial_fade:{enabled:true,stale:false,settings:sent}}};
+ await refresh();assert(!spatialDirty);assert.equal(selectedSpatialId,id);assert.deepEqual(spatialDraft,sent);
+ assert.equal($('backgroundHex').value,'#AB1234');assert.equal($('exposureEV').value,'1.2');assert.equal($('fadeAmount').value,'42');
+ assert.equal(servedState.revisions.at(-1).shadow_fade.settings.amount,.38);
+ """)
+
+
+def test_spatial_saved_map_decode_cannot_overwrite_removed_shape_selection_or_dirty_inputs():
+    run_page(r"""
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ await ready();addSpatialArc([20,30]);addSpatialArc([60,70]);
+ servedState.revisions[0].spatial_fade={enabled:false,stale:false,settings:structuredClone(spatialDraft)};
+ await refresh();
+ resetSpatialFromSaved();$('spatialSelect').value=spatialDraft.arcs[1].id;$('spatialSelect').onchange();
+ const removed=selectedSpatialId,remaining=spatialDraft.arcs[0].id;
+ const originalFetch=fetch;let malformed=false;
+ globalThis.fetch=async(path,options)=>{
+  if(path!=='/api/spatial-preview')return originalFetch(path,options);
+  const request=JSON.parse(options.body);return {ok:true,json:async()=>malformed ? {started:true} : {...request,png_base64:'AA=='}};
+ };
+ let pending=[],closed=0;globalThis.createImageBitmap=async blob=>{
+  if(blob.width!==undefined)return {width:blob.width,height:blob.height,close(){}};
+  return new Promise(resolve=>pending.push(()=>resolve({width:100,height:100,close(){closed++;}})));
+ };
+ $('spatialMap').value='selected';const old=loadImage();
+ for(let i=0;i<30&&!pending.length;i++)await Promise.resolve();assert.equal(pending.length,1);
+ await $('spatialRemove').onclick();
+ for(let i=0;i<30&&pending.length<2;i++)await Promise.resolve();assert.equal(selectedSpatialId,'oval');assert.equal(spatialDraft.arcs[0].id,remaining);
+ pending[0]();await old;assert.equal(closed,1);assert(!spatialDraft.arcs.some(a=>a.id===removed));
+ pending[1]();for(let i=0;i<20;i++)await Promise.resolve();
+ assert.equal(selectedSpatialId,'oval');assert(spatialDirty);assert(spatialOverlayLoaded);
+ const geometry=JSON.stringify(spatialDraft),version=spatialDraftVersion;
+ $('spatialOpacity').value='.1';$('spatialOpacity').oninput();assert.equal(JSON.stringify(spatialDraft),geometry);assert.equal(spatialDraftVersion,version);
+ malformed=true;$('spatialMap').value='combined';await loadImage();
+ assert($('message').textContent.includes('does not match'));assert.equal(JSON.stringify(spatialDraft),geometry);assert(spatialDirty);
+ assert.equal(selectedSpatialId,'oval');assert.equal(image,null);
+ """)
+
+
 def test_prepare_does_not_require_development_review_or_change_appearance_controls():
     run_page(r"""
  servedState.development_approved=false;

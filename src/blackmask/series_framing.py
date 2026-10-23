@@ -26,6 +26,12 @@ from .project import (
     project_lock,
     read_project,
 )
+from .spatial_fade import (
+    SpatialFadeOperands,
+    _blend_background_channel,
+    blend_background_float,
+    spatial_fade_amount,
+)
 
 METADATA_LIMIT = 16384
 
@@ -324,12 +330,21 @@ def series_sampling_plan(
 
 
 def estimate_series_resources(
-    sampling: SeriesSamplingPlan, *, retained_native_bytes: int, transparent: bool
+    sampling: SeriesSamplingPlan,
+    *,
+    retained_native_bytes: int,
+    transparent: bool,
+    spatial_fade_pixels: int = 0,
+    native_export_peak_bytes: int = 0,
 ) -> dict[str, int]:
     if (
         type(retained_native_bytes) is not int
         or retained_native_bytes < 0
         or type(transparent) is not bool
+        or type(spatial_fade_pixels) is not int
+        or spatial_fade_pixels < 0
+        or type(native_export_peak_bytes) is not int
+        or native_export_peak_bytes < 0
     ):
         raise ValueError("Invalid series resource inputs")
     x, y = sampling.x, sampling.y
@@ -353,9 +368,17 @@ def estimate_series_resources(
         "coefficient_bytes": coefficients,
         "row_and_allocator_headroom_bytes": 2 * 1024**2 + 64 * 256 * max(width, height),
     }
-    values["estimated_peak_bytes"] = sum(
-        value for key, value in values.items() if key != "output_rgba8_bytes"
-    )
+    if spatial_fade_pixels:
+        values.update(
+            native_spatial_amount_bytes=8 * spatial_fade_pixels,
+            filtered_spatial_amount_bytes=4 * x.output_length * y.output_length,
+            spatial_blend_tile_bytes=64 * max(width, height) * 128,
+            spatial_transparent_rgba_bytes=4 * width * height if transparent else 0,
+        )
+    series_peak = sum(value for key, value in values.items() if key != "output_rgba8_bytes")
+    if native_export_peak_bytes:
+        values["native_export_peak_bytes"] = native_export_peak_bytes
+    values["estimated_peak_bytes"] = max(series_peak, native_export_peak_bytes)
     if values["estimated_peak_bytes"] > sys.maxsize:
         raise ValueError("Series sampling resource estimate exceeds allocation bounds")
     return values
@@ -389,6 +412,7 @@ def _plane_tiles(
     plane: int,
     weight16: np.ndarray | None,
     opacity: float,
+    spatial_amount: np.ndarray | None = None,
 ) -> Iterator[tuple[slice, slice, np.ndarray]]:
     from .export import _foreground_contribution
 
@@ -396,10 +420,12 @@ def _plane_tiles(
     foreground_core = foreground[y0:y1, x0:x1]
     alpha_core = alpha16[y0:y1, x0:x1]
     weight_core = None if weight16 is None else weight16[y0:y1, x0:x1]
+    amount_core = None if spatial_amount is None else spatial_amount[y0:y1, x0:x1]
     if not sampling.horizontal_first:
         foreground_core = foreground_core.transpose(1, 0, 2)
         alpha_core = alpha_core.T
         weight_core = None if weight_core is None else weight_core.T
+        amount_core = None if amount_core is None else amount_core.T
     first, second = (
         (sampling.x, sampling.y) if sampling.horizontal_first else (sampling.y, sampling.x)
     )
@@ -409,6 +435,10 @@ def _plane_tiles(
             rows = slice(start, min(start + 64, second.core_length))
             if plane == -1:
                 source = alpha_core[rows].astype(np.float64) / 65535
+            elif plane == -2:
+                if amount_core is None:
+                    raise ValueError("Series amount sampling requires the combined native q field")
+                source = alpha_core[rows].astype(np.float64) / 65535 * amount_core[rows]
             else:
                 contribution = _foreground_contribution(
                     foreground_core[rows],
@@ -419,7 +449,7 @@ def _plane_tiles(
                 source = contribution[..., plane]
             intermediate[rows] = _resize_rows(source, first)
             del source
-            if plane != -1:
+            if plane >= 0:
                 del contribution
         for start in range(0, first.output_length, 64):
             columns = slice(start, min(start + 64, first.output_length))
@@ -441,6 +471,7 @@ def render_series(
     opacity: float = 0,
     background_settings: dict[str, Any] | None = None,
     transparent: bool = False,
+    spatial_fade: SpatialFadeOperands | None = None,
 ) -> np.ndarray:
     from .background import LEGACY_BACKGROUND, make_background, sample_background
     from .export import _foreground_contribution
@@ -472,13 +503,33 @@ def render_series(
     _foreground_contribution(
         foreground[:1, :1], alpha16[:1, :1], None if weight16 is None else weight16[:1, :1], opacity
     )
+    active_spatial = (
+        spatial_fade is not None
+        and spatial_fade.record["enabled"]
+        and not spatial_fade.record["stale"]
+    )
+    if active_spatial and opacity != 0:
+        raise ValueError("Spatial fade and inward shading are mutually exclusive")
     estimate_series_resources(
         sampling,
         retained_native_bytes=foreground.nbytes
         + alpha16.nbytes
-        + (0 if weight16 is None else weight16.nbytes),
+        + (0 if weight16 is None else weight16.nbytes)
+        + (
+            spatial_fade.weight16.nbytes + spatial_fade.protection.nbytes
+            if active_spatial and spatial_fade is not None
+            else 0
+        ),
         transparent=transparent,
+        **({"spatial_fade_pixels": alpha16.size} if active_spatial else {}),
     )
+    native_amount = (
+        spatial_fade_amount(foreground, alpha16, spatial_fade)
+        if active_spatial and spatial_fade is not None
+        else None
+    )
+    if native_amount is not None and not native_amount.any():
+        native_amount = None
     width, height = sampling.display_dimensions_wh
     settings = LEGACY_BACKGROUND if background_settings is None else background_settings
     if transparent:
@@ -488,6 +539,15 @@ def render_series(
     else:
         output_width, output_height = sampling.layout.output_dimensions_wh
         result = sample_background((output_height, output_width), settings, (width, height))
+    target = None
+    if native_amount is not None:
+        if not transparent:
+            target = result
+        elif sampling.display_dimensions_wh == sampling.layout.output_dimensions_wh:
+            target = make_background((height, width), settings)
+        else:
+            output_width, output_height = sampling.layout.output_dimensions_wh
+            target = sample_background((output_height, output_width), settings, (width, height))
     x, y = sampling.x, sampling.y
     x0, y0, x1, y1 = sampling.layout.subject_bounds_xyxy
     if sampling.identity:
@@ -502,6 +562,15 @@ def render_series(
                 None if weight16 is None else weight16[start:stop, x0:x1],
                 opacity,
             )
+            if native_amount is not None and target is not None:
+                contribution = (
+                    blend_background_float(
+                        foreground[start:stop, x0:x1],
+                        target[rows, columns],
+                        native_amount[start:stop, x0:x1],
+                    )
+                    * alpha[..., None]
+                )
             if transparent:
                 result[rows, columns, 3] = np.rint(alpha * 255).astype(np.uint8)
                 np.divide(
@@ -520,6 +589,16 @@ def render_series(
         if not np.isfinite(tile).all():
             raise ValueError("Nonfinite series alpha samples")
         alpha[rows, columns] = np.clip(tile, 0, 1)
+    filtered_amount = None
+    if native_amount is not None:
+        filtered_amount = np.empty_like(alpha)
+        for rows, columns, tile in _plane_tiles(
+            foreground, alpha16, sampling, -2, weight16, opacity, native_amount
+        ):
+            if not np.isfinite(tile).all():
+                raise ValueError("Nonfinite series spatial amount samples")
+            filtered_amount[rows, columns] = np.clip(tile, 0, alpha[rows, columns])
+        native_amount = None
     if transparent:
         for start in range(0, y.output_length, 64):
             stop = min(start + 64, y.output_length)
@@ -538,6 +617,30 @@ def render_series(
             contribution = np.clip(tile.astype(np.float64), 0, 65535 * bounded_alpha)
             target_rows = slice(rows.start + y.output_start, rows.stop + y.output_start)
             target_columns = slice(columns.start + x.output_start, columns.stop + x.output_start)
+            if filtered_amount is not None and target is not None:
+                ratio = np.divide(
+                    filtered_amount[rows, columns].astype(np.float64),
+                    bounded_alpha,
+                    out=np.zeros_like(bounded_alpha),
+                    where=bounded_alpha > 0,
+                )
+                straight = np.divide(
+                    contribution,
+                    bounded_alpha,
+                    out=np.zeros_like(contribution),
+                    where=bounded_alpha > 0,
+                )
+                faded = _blend_background_channel(
+                    straight, target[target_rows, target_columns, channel], ratio
+                )
+                if transparent:
+                    result[target_rows, target_columns, channel] = np.rint(faded / 257).astype(
+                        np.uint8
+                    )
+                    continue
+                else:
+                    changed = ratio != 0
+                    contribution[changed] = faded[changed] * bounded_alpha[changed]
             if transparent:
                 np.divide(contribution, bounded_alpha, out=contribution, where=bounded_alpha > 0)
                 result[target_rows, target_columns, channel] = np.rint(contribution / 257).astype(

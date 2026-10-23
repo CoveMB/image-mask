@@ -39,6 +39,299 @@ def series_settings(**changes):
     return validate_series_settings(values)
 
 
+def spatial_operands_for_series(alpha, configuration="both"):
+    from test_spatial_fade import arc_settings, spatial_settings
+
+    from blackmask.spatial_fade import SpatialFadeOperands, make_spatial_weight
+
+    height, width = alpha.shape
+    settings = spatial_settings(width, height)
+    settings["oval"].update(
+        enabled=configuration != "arcs",
+        inner_radii_xy=[1, 2],
+        transition_width=2,
+        rotation_degrees=37,
+        amount=0.8,
+    )
+    settings["arcs_enabled"] = configuration != "oval"
+    settings["arcs"] = [
+        arc_settings(
+            center_xy=[width / 2, height / 2],
+            half_span=min(width, height) / 2,
+            bend=1,
+            end_softness=0.5,
+            transition_width=1,
+            rotation_degrees=90,
+        )
+    ]
+    return SpatialFadeOperands(
+        make_spatial_weight(alpha.shape, settings),
+        np.zeros(alpha.shape, bool),
+        {"enabled": True, "stale": False, "settings": settings},
+    )
+
+
+def scalar_background_blend(foreground, background, amount):
+    if amount == 0:
+        return foreground
+    if amount == 1:
+        return background
+
+    def decode(value):
+        value /= 65535
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+    linear = (1 - amount) * decode(foreground) + amount * decode(background)
+    return 65535 * (12.92 * linear if linear <= 0.0031308 else 1.055 * linear ** (1 / 2.4) - 0.055)
+
+
+@pytest.mark.parametrize("configuration", ["oval", "arcs", "both"])
+@pytest.mark.parametrize(
+    "shape,output", [((4, 6), (6, 4)), ((4, 6), (17, 19)), ((9, 12), (7, 11)), ((5, 31), (11, 23))]
+)
+def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
+    configuration, shape, output
+):
+    from blackmask.background import make_background
+
+    alpha = np.full(shape, 32768, np.uint16)
+    alpha.flat[0] = 1
+    alpha.flat[-1] = 65535
+    foreground = (np.arange(alpha.size * 3).reshape((*shape, 3)) * 293 + 117).astype(np.uint16)
+    saved = spatial_operands_for_series(alpha, configuration)
+    saved.protection[1, 2] = True
+    sampling = series_sampling_plan(
+        compute_series_layout(
+            alpha,
+            series_settings(
+                output_width_px=output[0],
+                output_height_px=output[1],
+                side_margin_tenths_percent=0,
+                minimum_vertical_margin_tenths_percent=0,
+            ),
+        )
+    )
+    background_settings = {"color_srgb": "#45202B", "variation": 0.8}
+    expected = make_background((output[1], output[0]), background_settings)
+    native_alpha = alpha.astype(np.float64) / 65535
+    native_q = saved.weight16.astype(np.float64) / 65535
+    native_q[saved.protection] = 0
+    a = np.clip(scalar_sample(native_alpha, sampling, effective=True), 0, 1)
+    q = np.clip(scalar_sample(native_alpha * native_q, sampling, effective=True), 0, a)
+    ratio = np.divide(q, a, out=np.zeros_like(q), where=a > 0)
+    for channel in range(3):
+        p = np.clip(
+            scalar_sample(native_alpha * foreground[..., channel], sampling, effective=True),
+            0,
+            65535 * a,
+        )
+        straight = np.divide(p, a, out=np.zeros_like(p), where=a > 0)
+        for y in range(a.shape[0]):
+            for x in range(a.shape[1]):
+                oy, ox = sampling.y.output_start + y, sampling.x.output_start + x
+                b = int(expected[oy, ox, channel])
+                faded = scalar_background_blend(straight[y, x], b, ratio[y, x])
+                contribution = p[y, x] if ratio[y, x] == 0 else faded * a[y, x]
+                expected[oy, ox, channel] = round(contribution + b * (1 - a[y, x]))
+    original = alpha.copy()
+    with np.errstate(divide="raise", invalid="raise"):
+        actual = render_series(
+            foreground, alpha, sampling, spatial_fade=saved, background_settings=background_settings
+        )
+        rgba = render_series(
+            foreground,
+            alpha,
+            sampling,
+            spatial_fade=saved,
+            background_settings=background_settings,
+            transparent=True,
+        )
+    np.testing.assert_allclose(actual.astype(np.int32), expected.astype(np.int32), rtol=0, atol=2)
+    baseline_rgba = render_series(foreground, alpha, sampling, transparent=True)
+    np.testing.assert_array_equal(rgba[..., 3], baseline_rgba[..., 3])
+    assert not rgba[rgba[..., 3] == 0, :3].any()
+    np.testing.assert_array_equal(alpha, original)
+    saved.weight16[:] = 0
+    np.testing.assert_array_equal(
+        render_series(
+            foreground, alpha, sampling, spatial_fade=saved, background_settings=background_settings
+        ),
+        render_series(foreground, alpha, sampling, background_settings=background_settings),
+    )
+    np.testing.assert_array_equal(
+        render_series(
+            foreground,
+            alpha,
+            sampling,
+            spatial_fade=saved,
+            background_settings=background_settings,
+            transparent=True,
+        ),
+        render_series(
+            foreground, alpha, sampling, background_settings=background_settings, transparent=True
+        ),
+    )
+
+
+def test_spatial_series_combines_before_sampling_and_full_fade_has_no_target_halo():
+    from test_spatial_fade import arc_settings, spatial_settings
+
+    from blackmask.background import make_background, sample_background
+    from blackmask.spatial_fade import (
+        SpatialFadeOperands,
+        combined_fade_weight,
+        make_spatial_weight,
+    )
+
+    alpha = np.full((4, 6), 26214, np.uint16)
+    settings = spatial_settings(6, 4)
+    settings["oval"]["enabled"] = False
+    settings["arcs_enabled"] = True
+    settings["arcs"] = [
+        arc_settings(
+            center_xy=[3, 2],
+            half_span=6,
+            bend=0,
+            transition_width=0.5,
+            end_softness=0.5,
+            amount=1,
+            fade_side=side,
+        )
+        for side in ("positive", "negative")
+    ]
+    weight = make_spatial_weight(alpha.shape, settings)
+    assert np.all(weight == 65535)
+    saved = SpatialFadeOperands(
+        weight, np.zeros(alpha.shape, bool), {"enabled": True, "stale": False, "settings": settings}
+    )
+    sampling = series_sampling_plan(
+        compute_series_layout(alpha, series_settings(output_width_px=17, output_height_px=19))
+    )
+    x, y = np.meshgrid(np.arange(6) + 0.5, np.arange(4) + 0.5)
+    planes = [combined_fade_weight(x, y, settings, shape_id=arc["id"]) for arc in settings["arcs"]]
+    correct = scalar_sample(np.maximum(*planes), sampling, effective=True)
+    wrong = np.maximum(*(scalar_sample(plane, sampling, effective=True) for plane in planes))
+    assert np.max(correct - wrong) > 0.1
+    foreground = np.full((4, 6, 3), [10000, 50000, 30000], np.uint16)
+    background = {"color_srgb": "#45202B", "variation": 0.8}
+    expected = make_background((19, 17), background)
+    np.testing.assert_array_equal(
+        render_series(
+            foreground, alpha, sampling, spatial_fade=saved, background_settings=background
+        ),
+        expected,
+    )
+    preview = series_sampling_plan(sampling.layout, display_dimensions_wh=(9, 10))
+    np.testing.assert_array_equal(
+        render_series(
+            foreground, alpha, preview, spatial_fade=saved, background_settings=background
+        ),
+        sample_background((19, 17), background, (9, 10)),
+    )
+
+
+def test_spatial_series_resource_estimate_and_admission_include_scalar_operands(monkeypatch):
+    alpha = np.full((4, 6), 32768, np.uint16)
+    foreground = np.full((4, 6, 3), 20000, np.uint16)
+    sampling = series_sampling_plan(
+        compute_series_layout(alpha, series_settings(output_width_px=17, output_height_px=19))
+    )
+    legacy = estimate_series_resources(
+        sampling, retained_native_bytes=foreground.nbytes + alpha.nbytes, transparent=True
+    )
+    additional = estimate_series_resources(
+        sampling,
+        retained_native_bytes=foreground.nbytes + alpha.nbytes,
+        transparent=True,
+        spatial_fade_pixels=alpha.size,
+    )
+    assert additional["native_spatial_amount_bytes"] == 8 * alpha.size
+    assert (
+        additional["filtered_spatial_amount_bytes"]
+        >= 4 * sampling.x.output_length * sampling.y.output_length
+    )
+    assert (
+        additional["estimated_peak_bytes"]
+        >= legacy["estimated_peak_bytes"] + 8 * alpha.size + 4 * 17 * 19
+    )
+    sequential = estimate_series_resources(
+        sampling,
+        retained_native_bytes=foreground.nbytes + alpha.nbytes,
+        transparent=True,
+        spatial_fade_pixels=alpha.size,
+        native_export_peak_bytes=100_000_000,
+    )
+    assert sequential["estimated_peak_bytes"] == 100_000_000
+    saved = spatial_operands_for_series(alpha)
+
+    def reject(*args, **kwargs):
+        assert kwargs["spatial_fade_pixels"] == alpha.size
+        raise ValueError("Synthetic memory admission rejection")
+
+    monkeypatch.setattr(series, "estimate_series_resources", reject)
+    with pytest.raises(ValueError, match="admission"):
+        render_series(foreground, alpha, sampling, spatial_fade=saved)
+
+
+def test_spatial_active_series_reconstructs_from_delivered_pair_with_project_unavailable(tmp_path):
+    import shutil
+
+    from test_effects import fixture_project
+    from test_spatial_fade import delivered_spatial, spatial_request
+
+    from blackmask import operations
+    from blackmask.export import export_project
+    from blackmask.repair import scalar16
+
+    project, _, _ = fixture_project(tmp_path)
+    result = operations.apply_operation(project, spatial_request(project))
+    values = series_settings(output_width_px=17, output_height_px=19).to_dict()
+    exported = export_project(
+        project, revision=result["revision"], draft=True, series=values, framed_transparent=True
+    )
+    portable = tmp_path / "portable"
+    portable.mkdir()
+    native_path = Path(exported["editable_companion"]["directory"])
+    framed_path = Path(exported["directory"])
+    native = Path(shutil.copytree(native_path, portable / native_path.name))
+    framed = Path(shutil.copytree(framed_path, portable / framed_path.name))
+    project.rename(tmp_path / "unavailable-project")
+    native_manifest = json.loads((native / "manifest.json").read_bytes())
+    compact = json.loads((framed / "manifest.json").read_bytes())
+    foreground = tifffile.imread(native / "foreground_rgb16.tif")
+    alpha = scalar16(native / "alpha16.png")
+    saved = delivered_spatial(native, native_manifest["spatial_fade"])
+    settings = validate_series_settings(compact["settings"])
+    sampling = series_sampling_plan(compute_series_layout(alpha, settings))
+    assert (
+        sampling.layout.to_dict() == compact["layout"] and sampling.to_dict() == compact["sampling"]
+    )
+    background = native_manifest["background"]["settings"]
+    replay = render_series(
+        foreground, alpha, sampling, spatial_fade=saved, background_settings=background
+    )
+    np.testing.assert_array_equal(replay, tifffile.imread(framed / "result_rgb16.tif"))
+    with Image.open(framed / "transparent_RGBA8_VIEW.png") as image:
+        np.testing.assert_array_equal(
+            render_series(
+                foreground,
+                alpha,
+                sampling,
+                spatial_fade=saved,
+                background_settings=background,
+                transparent=True,
+            ),
+            np.array(image),
+        )
+    saved.record["enabled"] = saved.record["settings"]["enabled"] = False
+    np.testing.assert_array_equal(
+        render_series(
+            foreground, alpha, sampling, spatial_fade=saved, background_settings=background
+        ),
+        render_series(foreground, alpha, sampling, background_settings=background),
+    )
+
+
 def test_series_settings_strict_portable_round_trip(tmp_path):
     settings = series_settings(name="Été 🦋 <series>")
     raw = portable_series_preset(settings)

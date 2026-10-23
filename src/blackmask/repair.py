@@ -152,6 +152,12 @@ def prepared_parent_layers(project: Path, revision: str, master_id: str) -> dict
                 or manifest["files"].get(name) != previous["files"][name]
             ):
                 raise ProjectError("Prepared repair must preserve parental alpha and foreground")
+        if manifest.get("spatial_fade") != previous.get("spatial_fade") or any(
+            manifest["files"].get(name) != previous["files"].get(name)
+            for name in previous["files"]
+            if name.startswith("effects/spatial-fade/")
+        ):
+            raise ProjectError("Prepared repair must preserve parental spatial fade operands")
         manifest = previous
     if manifest.get("kind") not in {"matte", "repair", "effects"} or not manifest.get(
         "final_acceptable"

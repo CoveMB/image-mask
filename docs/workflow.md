@@ -348,6 +348,101 @@ for authored/scalar inputs, strict field rules, scope coverage and reconstructio
 The exposure-only comparison is distinct from all-effects-off BASE comparison.
 
 
+## Fade into background
+
+Use **Fade into background** to make a subject disappear toward the chosen
+background while keeping its editable mask. The blend can tint or brighten as
+well as darken. Choose the background first. Shadow fade remains independent;
+this feature does not change its Amount or Preserve highlights. Enabling this
+feature switches off Protected inward shading and retains its saved settings.
+Enabling inward shading switches this feature off. Disabling either does not
+automatically revive the other.
+
+### Oval only
+
+1. Select the working revision and **Canvas authoring mode → Fade shapes**.
+   In **Fade into background**, select **Fade ON**, **Use oval**, and clear
+   **Use arcs**. Choose **Oval** in **Selected shape**.
+2. Position **Centre X/Y**, **Unfaded centre width/height**, and **Rotation**.
+   These are native pixels and clockwise degrees. Drag the selected handles or
+   enter numbers; Shift-drag pans and the existing zoom controls retain registration.
+3. Set **Transition width** and **Fade strength (%)**. Inside the inner oval
+   there is no contribution; outward along each ray the fade reaches a plateau
+   beyond the transition. Place a disappearing tip beyond the outer boundary.
+4. Adjust this feature's **Preserve highlights (%)**. Optional explicit protection
+   uses **Optional aligned categorical protection file (project-relative)**: a
+   full-size PNG containing only 0/255 (8-bit) or 0/65535 (16-bit). Saved locks and
+   previous protection remain protected. A mask boundary alone is not protection.
+5. Draft outlines are labelled **Unapplied fade shapes**; images and strength maps
+   still show the saved revision. Select **Explicitly compare an unaccepted
+   candidate** only when you intend that choice; it starts unchecked. Otherwise
+   enabling needs an accepted base. Choose **Apply fade shapes**, then inspect
+   the saved photograph and **Compare Fade OFF**. OFF retains Shadow fade and
+   the selected background. It creates no revision.
+
+### Arcs only
+
+1. Select **Fade ON**, clear **Use oval**, and select **Use arcs**. Click
+   **Add arc**, then the image to place its centre. Keyboard activation of Add
+   places it at image centre. New arcs start at zero strength. Up to 32 are retained.
+2. Select an arc in **Selected shape**. Set **Centre X/Y**, **Rotation**,
+   **Span (endpoint to endpoint)** and **Bend**. Negative bend is supported.
+   The middle handle follows the actual curve midpoint. Use **Flip arrow** or
+   **Fade direction** to choose which side fades.
+3. Set **Transition width**, **End softness** and **Fade strength**. Beyond the
+   transition in the arrow direction the contribution stays at its plateau;
+   there is no trailing taper. Softness applies laterally near the endpoints.
+   Keep a disappearing tip within the core span: tips near a soft endpoint
+   receive less fade. Inspect neighbouring branches that enter that soft region.
+4. Add another arc for a different petal or branch. Select by the list when
+   outlines overlap. **Duplicate arc** creates an independent copy; **Selected
+   arc ON** disables just that contribution, **Use arcs** disables the group,
+   and **Remove arc** removes only the selected draft arc. Inactive settings
+   remain saved. **Cancel / reload saved fade shapes** restores this form without
+   discarding unrelated effect drafts. Escape cancels placement or reloads the form.
+5. Apply and compare as above. Reopening the project restores saved vectors and
+   switches. No drag, numeric edit, map choice or opacity change saves a revision.
+
+### Oval and arcs together
+
+1. Select both **Use oval** and **Use arcs**. Establish a broad oval, then add
+   local arcs where more fade is needed. Each keeps its own position and strength.
+2. Overlap uses the strongest contribution, once. A weak arc cannot undo a
+   stronger oval. Opposing arcs, soft endpoints and arbitrary photographic paths
+   can change direction through the combined field; only each shape's specified
+   local direction is monotonic. Photo brightness also depends on source colour,
+   alpha, protection, highlights and the target background.
+3. Use **Saved strength map → Selected shape**, **Combined geometry**, and
+   **Effective after protection / highlights**. Selected shows that saved shape's
+   strength; disabled shapes/groups show zero. Combined includes shape strengths;
+   effective also includes the master switch, protected regions and highlights.
+   **Map display opacity** affects only the display. An unapplied new arc has no
+   saved map. Check endpoints, junctions, adjacent traces and the full photograph.
+4. Apply, inspect **Compare Fade OFF**, and keep the result as a labelled draft
+   until a person accepts the photograph. Computational checks do not accept it.
+
+After an alpha change, enabled Fade into background can become **STALE**. Reload
+the current form, then Apply to explicitly rebuild from the saved vectors, or
+choose **Disable fade**. Disable works on a valid working revision without an
+accepted/candidate gate; it retains operands and protection. Invalid or corrupted
+saved assets must be recovered from a valid revision rather than silently repaired.
+Other stale effects require their own recovery. Earlier accepted work remains saved.
+
+Native export retains pre-spatial foreground, alpha, combined weight, protection,
+settings and background as separate editable operands. Transparent viewing RGB
+retains the tint toward the selected background; alpha is unchanged. Black/gray/
+white diagnostics change the backdrop but keep that same fade target.
+
+Every framed or Match series export with a saved spatial record, including OFF
+or zero strength, returns a presentation folder **and a native editable folder**.
+Keep both siblings and their names for portable reconstruction. The presentation
+contains compact flattened results; its manifest binds all companion files. A
+native-only partial result or visible-but-durability-unconfirmed error is still an
+error: retain the named folders/stages, inspect them and retry the identical export.
+Retry verifies existing bytes and never overwrites a different delivery. The pair
+publishes sequentially, so one folder can remain after failure. See the normative
+[saved and delivery contract](file-contract.md#optional-fade-into-background).
+
 ## Shadow fade
 
 Use **Shadow fade** for soft interior subject fading independently of Local exposure.

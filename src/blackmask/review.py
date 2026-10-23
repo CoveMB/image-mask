@@ -12,7 +12,14 @@ import numpy as np
 from PIL import Image
 
 from .effects import validate_cleanup
-from .export import publish_artifacts, render_background, render_black, saved_layers, shading_factor
+from .export import (
+    _foreground_contribution,
+    publish_artifacts,
+    render_background,
+    render_black,
+    saved_layers,
+    shading_factor,
+)
 from .guidance import coordinates
 from .project import (
     ProjectError,
@@ -29,6 +36,7 @@ from .project import (
     read_project,
     read_revision,
 )
+from .spatial_fade import SpatialFadeOperands
 
 
 def review_panels(
@@ -39,26 +47,57 @@ def review_panels(
     opacity: float = 0,
     *,
     background16: np.ndarray | None = None,
+    spatial_fade: SpatialFadeOperands | None = None,
+    fade_background16: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     """Shared labelled RGB8 approximations; authoritative layers remain RGB16/alpha16."""
     factor = alpha16.astype(np.float64)[..., None] / 65535
     appearance = (
         foreground.astype(np.float64) * shading_factor(alpha16.shape, weight16, opacity)[..., None]
     )
-    black = render_black(foreground, alpha16, weight16, opacity)
+    black = render_black(
+        foreground,
+        alpha16,
+        weight16,
+        opacity,
+        spatial_fade=spatial_fade,
+        fade_background16=fade_background16,
+    )
+    contribution = (
+        _foreground_contribution(
+            foreground,
+            alpha16,
+            weight16,
+            opacity,
+            spatial_fade=spatial_fade,
+            fade_background16=fade_background16,
+        )
+        if spatial_fade is not None
+        and spatial_fade.record["enabled"]
+        and not spatial_fade.record["stale"]
+        else appearance * factor
+    )
     return {
         "result": np.rint(
             (
                 black
                 if background16 is None
-                else render_background(foreground, alpha16, background16, weight16, opacity)
+                else render_background(
+                    foreground,
+                    alpha16,
+                    background16,
+                    weight16,
+                    opacity,
+                    spatial_fade=spatial_fade,
+                    fade_background16=fade_background16,
+                )
             ).astype(np.float64)
             / 257
         ).astype(np.uint8),
         "source": np.rint(source.astype(np.float64) / 257).astype(np.uint8),
         "black": np.rint(black.astype(np.float64) / 257).astype(np.uint8),
-        "gray": np.rint((appearance * factor + 32768 * (1 - factor)) / 257).astype(np.uint8),
-        "white": np.rint((appearance * factor + 65535 * (1 - factor)) / 257).astype(np.uint8),
+        "gray": np.rint((contribution + 32768 * (1 - factor)) / 257).astype(np.uint8),
+        "white": np.rint((contribution + 65535 * (1 - factor)) / 257).astype(np.uint8),
         "alpha": np.repeat(
             np.rint(alpha16.astype(np.float64) / 257).astype(np.uint8)[..., None], 3, axis=2
         ),
@@ -77,6 +116,8 @@ def write_review(
     weight16: np.ndarray | None = None,
     opacity: float = 0,
     background16: np.ndarray | None = None,
+    spatial_fade: SpatialFadeOperands | None = None,
+    fade_background16: np.ndarray | None = None,
 ) -> dict[str, Any]:
     height, width = alpha16.shape
     if crops is None:
@@ -98,6 +139,16 @@ def write_review(
             None if weight16 is None else weight16[y0:y1, x0:x1],
             opacity,
             background16=None if background16 is None else background16[y0:y1, x0:x1],
+            spatial_fade=None
+            if spatial_fade is None
+            else SpatialFadeOperands(
+                spatial_fade.weight16[y0:y1, x0:x1],
+                spatial_fade.protection[y0:y1, x0:x1],
+                spatial_fade.record,
+            ),
+            fade_background16=None
+            if fade_background16 is None
+            else fade_background16[y0:y1, x0:x1],
         )
         names = {
             "source": "source_RGB8_VIEW",
@@ -156,7 +207,7 @@ def review_project(
         if revision is None:
             raise ProjectError("No complete matte revision to review")
         foreground, alpha, revision_manifest = saved_layers(project, revision, state["master_id"])
-        from .effects import effects_stale, saved_shading
+        from .effects import effects_stale, saved_shading, saved_spatial_fade
 
         weight, opacity = saved_shading(project, revision, alpha, revision_manifest)
         source, _ = load_master(project, state["master_id"])
@@ -206,6 +257,14 @@ def review_project(
             if effects_stale(revision_manifest)
             else read_background(_asset(project, f"revisions/{revision}"), revision_manifest)
         )
+        spatial = saved_spatial_fade(project, revision, alpha, revision_manifest)
+        target = (
+            background
+            if background is not None
+            else np.zeros_like(foreground)
+            if spatial is not None
+            else None
+        )
         record = write_review(
             directory,
             source,
@@ -217,6 +276,8 @@ def review_project(
             background16=background,
             weight16=weight,
             opacity=opacity,
+            spatial_fade=spatial,
+            fade_background16=target,
         )
         from .operations import draft_digest, pending_guidance
 
@@ -275,6 +336,18 @@ def review_project(
                 or not revision_manifest["shadow_fade"]["enabled"]
                 else "; Shadow fade ON"
             )
+        if "spatial_fade" in revision_manifest:
+            record["spatial_fade"] = revision_manifest["spatial_fade"]
+            record["label"] += (
+                "; Fade into background ON; diagnostics retain the selected background target"
+                if spatial is not None
+                else "; Fade into background OFF"
+            )
+            if (
+                revision_manifest["spatial_fade"]["enabled"]
+                and revision_manifest["spatial_fade"]["stale"]
+            ):
+                stale.append("spatial_fade_stale")
         if effects_stale(revision_manifest):
             record["label"] += (
                 "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need independent rebuild or disable"
@@ -301,6 +374,11 @@ def review_project(
                 "shadow_fade": f"{prefix}/effects/shadow-fade/settings.json"
                 if "shadow_fade" in revision_manifest
                 else None,
+                **(
+                    {"spatial_fade": f"{prefix}/effects/spatial-fade/settings.json"}
+                    if "spatial_fade" in revision_manifest
+                    else {}
+                ),
                 "foreground_selection": "base, optional cleanup, local exposure once, Shadow fade once; shading at render",
                 "base_foreground_rgb16": f"{prefix}/foreground_rgb16.tif",
                 "alpha16": f"{prefix}/base_alpha16.png",
@@ -315,6 +393,11 @@ def review_project(
                 "available": True,
                 "shadow_fade": revision_manifest.get(
                     "shadow_fade", {"enabled": False, "stale": False}
+                ),
+                **(
+                    {"spatial_fade": revision_manifest["spatial_fade"]}
+                    if "spatial_fade" in revision_manifest
+                    else {}
                 ),
                 "color_cleanup": revision_manifest.get(
                     "color_cleanup", {"enabled": False, "stale": False}

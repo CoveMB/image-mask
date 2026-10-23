@@ -19,6 +19,27 @@ unrelated existing effects and drafts. RAW still needs its recorded RGB conversi
 never silently choose a different rendering or claim an optional review happened.
 See [source appearance](workflow.md#source-appearance).
 
+## Fade into background assistance
+
+Follow the [manual feature guide](workflow.md#fade-into-background) through the
+same project controls. Use an oval, directed arcs or both only for the requested
+appearance change. Preserve source detail, alpha, explicit protection and unrelated
+settings, including independent Shadow fade. Check complete source/result paths,
+soft endpoints and overlapping branches; selected, combined and effective saved
+maps explain different parts of the result. Pending outlines do not preview saved
+pixels. A flattened reference cannot establish source-detail preservation.
+
+For CLI use, `blackmask run PROJECT --request FILE` accepts the exclusive
+`spatial_fade` effects operation documented in the
+[file contract](file-contract.md#optional-fade-into-background). Supply a complete
+settings snapshot and current identities, never merge arcs by list index. Protection
+is additive and cannot be removed by omitting its file. Rebuild after alpha changes
+or explicitly disable; do not silently bypass stale or accepted-base guards. Do not
+change exposure, white balance or other effects to improve this comparison unless
+the user separately requests it. Keep photographic evaluation local, preserve both
+export folders, and label any assistant-selected result a draft until explicit
+human photographic acceptance.
+
 ## Inspect and classify
 
 Read the project's current recipe, guides, state, user keep/remove request and

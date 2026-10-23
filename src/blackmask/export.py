@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from .project import (
     read_project,
     read_revision,
 )
+from .spatial_fade import SpatialFadeOperands, blend_background_float, spatial_fade_amount
 
 
 def shading_factor(
@@ -43,12 +45,7 @@ def shading_factor(
     return 1 - opacity * (weight16.astype(np.float64) / 65535)
 
 
-def _foreground_contribution(
-    foreground: np.ndarray,
-    alpha16: np.ndarray,
-    weight16: np.ndarray | None = None,
-    opacity: float = 0,
-) -> np.ndarray:
+def _validate_render_inputs(foreground: np.ndarray, alpha16: np.ndarray) -> None:
     if (
         foreground.dtype != np.uint16
         or foreground.ndim != 3
@@ -57,10 +54,54 @@ def _foreground_contribution(
         or alpha16.shape != foreground.shape[:2]
     ):
         raise ValueError("Renderer requires aligned saved RGB16 and scalar alpha16")
+
+
+def _spatial_appearance(
+    foreground: np.ndarray,
+    alpha16: np.ndarray,
+    spatial_fade: SpatialFadeOperands,
+    fade_background16: np.ndarray | None,
+) -> np.ndarray:
+    if fade_background16 is None:
+        raise ValueError("Active spatial fade requires its aligned selected background target")
+    if fade_background16.dtype != np.uint16 or fade_background16.shape != foreground.shape:
+        raise ValueError("Spatial fade target must be aligned RGB16")
+    result = np.empty(foreground.shape, np.float64)
+    for start in range(0, alpha16.shape[0], 64):
+        rows = slice(start, start + 64)
+        operands = SpatialFadeOperands(
+            spatial_fade.weight16[rows], spatial_fade.protection[rows], spatial_fade.record
+        )
+        amount = spatial_fade_amount(foreground[rows], alpha16[rows], operands)
+        result[rows] = blend_background_float(foreground[rows], fade_background16[rows], amount)
+    return result
+
+
+def _foreground_contribution(
+    foreground: np.ndarray,
+    alpha16: np.ndarray,
+    weight16: np.ndarray | None = None,
+    opacity: float = 0,
+    *,
+    spatial_fade: SpatialFadeOperands | None = None,
+    fade_background16: np.ndarray | None = None,
+) -> np.ndarray:
+    _validate_render_inputs(foreground, alpha16)
+    factor = shading_factor(alpha16.shape, weight16, opacity)
+    if (
+        spatial_fade is not None
+        and spatial_fade.record["enabled"]
+        and not spatial_fade.record["stale"]
+    ):
+        if opacity != 0:
+            raise ValueError("Spatial fade and inward shading are mutually exclusive")
+        appearance = _spatial_appearance(foreground, alpha16, spatial_fade, fade_background16)
+        appearance *= (alpha16.astype(np.float64) / 65535)[..., None]
+        return appearance
     return (
         foreground.astype(np.float64)
         * (alpha16.astype(np.float64) / 65535)[..., None]
-        * shading_factor(alpha16.shape, weight16, opacity)[..., None]
+        * factor[..., None]
     )
 
 
@@ -69,10 +110,20 @@ def render_black(
     alpha16: np.ndarray,
     weight16: np.ndarray | None = None,
     opacity: float = 0,
+    *,
+    spatial_fade: SpatialFadeOperands | None = None,
+    fade_background16: np.ndarray | None = None,
 ) -> np.ndarray:
-    return np.rint(_foreground_contribution(foreground, alpha16, weight16, opacity)).astype(
-        np.uint16
-    )
+    return np.rint(
+        _foreground_contribution(
+            foreground,
+            alpha16,
+            weight16,
+            opacity,
+            spatial_fade=spatial_fade,
+            fade_background16=fade_background16,
+        )
+    ).astype(np.uint16)
 
 
 def render_background(
@@ -81,8 +132,18 @@ def render_background(
     background16: np.ndarray,
     weight16: np.ndarray | None = None,
     opacity: float = 0,
+    *,
+    spatial_fade: SpatialFadeOperands | None = None,
+    fade_background16: np.ndarray | None = None,
 ) -> np.ndarray:
-    contribution = _foreground_contribution(foreground, alpha16, weight16, opacity)
+    contribution = _foreground_contribution(
+        foreground,
+        alpha16,
+        weight16,
+        opacity,
+        spatial_fade=spatial_fade,
+        fade_background16=fade_background16,
+    )
     if background16.dtype != np.uint16 or background16.shape != foreground.shape:
         raise ValueError("Background requires aligned saved RGB16")
     return np.rint(
@@ -96,15 +157,25 @@ def view_rgba(
     alpha16: np.ndarray,
     weight16: np.ndarray | None = None,
     opacity: float = 0,
+    *,
+    spatial_fade: SpatialFadeOperands | None = None,
+    fade_background16: np.ndarray | None = None,
 ) -> np.ndarray:
-    render_black(foreground, alpha16)  # Shared input contract, no flattened foreground reuse.
+    _validate_render_inputs(foreground, alpha16)
+    factor = shading_factor(alpha16.shape, weight16, opacity)
+    if (
+        spatial_fade is not None
+        and spatial_fade.record["enabled"]
+        and not spatial_fade.record["stale"]
+    ):
+        if opacity != 0:
+            raise ValueError("Spatial fade and inward shading are mutually exclusive")
+        appearance = _spatial_appearance(foreground, alpha16, spatial_fade, fade_background16)
+    else:
+        appearance = foreground.astype(np.float64) * factor[..., None]
     return np.dstack(
         (
-            np.rint(
-                foreground.astype(np.float64)
-                * shading_factor(alpha16.shape, weight16, opacity)[..., None]
-                / 257
-            ).astype(np.uint8),
+            np.rint(appearance / 257).astype(np.uint8),
             np.rint(alpha16.astype(np.float64) / 257).astype(np.uint8),
         )
     )
@@ -279,178 +350,266 @@ def export_project(
         if revision != state["accepted_revision"] and not draft:
             raise ProjectError("Unaccepted revision requires explicit --draft")
         foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
-        from .effects import effects_stale, saved_shading
-
-        if effects_stale(manifest):
-            raise ProjectError(
-                "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before export"
-            )
-        weight, opacity = saved_shading(project, revision, alpha, manifest)
-        before = _asset(project, "state.json").read_bytes()
-        manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
-        check_space(project, foreground.nbytes * (22 if "background" in manifest else 18) + 1024**2)
-        exports = _asset(project, "exports")
-        exports.mkdir(exist_ok=True)
-        label = f"{revision}-DRAFT" if draft else revision
-        stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
-        from .background import read_background
-
-        background = read_background(_asset(project, f"revisions/{revision}"), manifest)
-        if background is not None:
-            result_pixels = render_background(foreground, alpha, background, weight, opacity)
-            write_master(stage / "result_rgb16.tif", result_pixels)
-            Image.fromarray(np.rint(result_pixels.astype(np.float64) / 257).astype(np.uint8)).save(
-                stage / "result_RGB8_VIEW.png"
-            )
-            for saved, delivered in (
-                ("background/background_rgb16.tif", "background_rgb16.tif"),
-                ("background/settings.json", "background_settings.json"),
-            ):
-                (stage / delivered).write_bytes(
-                    _asset(project, f"revisions/{revision}/{saved}").read_bytes()
-                )
-            if not np.array_equal(read_rgb16(stage / "result_rgb16.tif"), result_pixels):
-                raise ProjectError("Result RGB16 export round trip failed")
-        black = render_black(foreground, alpha, weight, opacity)
-        write_master(stage / "black_rgb16.tif", black)
-        Image.fromarray(alpha).save(stage / "alpha16.png")
-        Image.fromarray(np.rint(black.astype(np.float64) / 257).astype(np.uint8)).save(
-            stage / "black_RGB8_VIEW.png"
+        return _export_native_locked(
+            project,
+            revision=revision,
+            draft=draft,
+            state=state,
+            foreground=foreground,
+            alpha=alpha,
+            manifest=manifest,
         )
-        Image.fromarray(view_rgba(foreground, alpha, weight, opacity)).save(
-            stage / "transparent_RGBA8_VIEW.png"
+
+
+def _export_native_locked(
+    project: Path,
+    *,
+    revision: str,
+    draft: bool,
+    state: dict[str, Any],
+    foreground: np.ndarray,
+    alpha: np.ndarray,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the canonical native delivery using arrays validated under the caller's lock."""
+    from .effects import effects_stale, saved_shading, saved_spatial_fade
+
+    if effects_stale(manifest):
+        raise ProjectError(
+            "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before export"
         )
-        if not np.array_equal(tifffile.imread(stage / "black_rgb16.tif"), black):
-            raise ProjectError("RGB16 export round trip failed")
-        with Image.open(stage / "alpha16.png") as image:
-            if (
-                not np.array_equal(np.array(image), alpha)
-                or "icc_profile" in image.info
-                or "gamma" in image.info
-            ):
-                raise ProjectError("Scalar16 export round trip/profile failed")
-        write_master(stage / "foreground_rgb16.tif", foreground)
-        if "local_exposure" in manifest:
-            unexposed, _, _ = saved_layers(
-                project, revision, state["master_id"], exposure_off=True, shadow_fade_off=True
-            )
-            write_master(stage / "unexposed_foreground_rgb16.tif", unexposed)
-            base = _asset(project, f"revisions/{revision}/foreground_rgb16.tif")
-            (stage / "base_foreground_rgb16.tif").write_bytes(base.read_bytes())
-            for name in (
-                "support16.png",
-                "protection16.png",
-                "alpha16.png",
-                "settings.json",
-                "area.json",
-            ):
-                asset = f"effects/exposure/{name}"
-                if asset in manifest["files"]:
-                    (stage / ("exposure_" + name)).write_bytes(
-                        _asset(project, f"revisions/{revision}/{asset}").read_bytes()
-                    )
-        if "shadow_fade" in manifest:
-            unfaded, _, _ = saved_layers(
-                project, revision, state["master_id"], shadow_fade_off=True
-            )
-            write_master(stage / "unfaded_foreground_rgb16.tif", unfaded)
-            if "local_exposure" not in manifest:
-                write_master(stage / "unexposed_foreground_rgb16.tif", unfaded)
-                (stage / "base_foreground_rgb16.tif").write_bytes(
-                    _asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
-                )
-            for name in (
-                "support16.png",
-                "protection16.png",
-                "alpha16.png",
-                "settings.json",
-                "area.json",
-            ):
-                asset = f"effects/shadow-fade/{name}"
-                if asset in manifest["files"]:
-                    (stage / ("shadow_fade_" + name)).write_bytes(
-                        _asset(project, f"revisions/{revision}/{asset}").read_bytes()
-                    )
-        write_master(stage / "source_rgb16.tif", load_master(project, state["master_id"])[0])
-        for name in ("shadow_weight16.png", "corrected_rgb16.tif", "recipe.toml"):
-            if name in manifest["files"]:
-                (stage / name).write_bytes(
-                    _asset(project, f"revisions/{revision}/{name}").read_bytes()
-                )
-        for effect, name in (
-            ("color_cleanup", "effects/settings.json"),
-            ("shading", "effects/shading/settings.json"),
+    weight, opacity = saved_shading(project, revision, alpha, manifest)
+    spatial = saved_spatial_fade(project, revision, alpha, manifest)
+    before = _asset(project, "state.json").read_bytes()
+    manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+    check_space(
+        project,
+        foreground.nbytes * (22 if "background" in manifest else 18)
+        + (
+            alpha.nbytes * 3 + len(_json_bytes(manifest["spatial_fade"]))
+            if "spatial_fade" in manifest
+            else 0
+        )
+        + 1024**2,
+    )
+    exports = _asset(project, "exports")
+    exports.mkdir(exist_ok=True)
+    label = f"{revision}-DRAFT" if draft else revision
+    stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
+    from .background import read_background
+
+    background = read_background(_asset(project, f"revisions/{revision}"), manifest)
+    target = (
+        background
+        if background is not None
+        else np.zeros_like(foreground)
+        if spatial is not None
+        else None
+    )
+    if background is not None:
+        result_pixels = render_background(
+            foreground,
+            alpha,
+            background,
+            weight,
+            opacity,
+            spatial_fade=spatial,
+            fade_background16=target,
+        )
+        write_master(stage / "result_rgb16.tif", result_pixels)
+        Image.fromarray(np.rint(result_pixels.astype(np.float64) / 257).astype(np.uint8)).save(
+            stage / "result_RGB8_VIEW.png"
+        )
+        for saved, delivered in (
+            ("background/background_rgb16.tif", "background_rgb16.tif"),
+            ("background/settings.json", "background_settings.json"),
         ):
-            if effect in manifest:
-                (stage / (effect + "_settings.json")).write_bytes(_json_bytes(manifest[effect]))
-        record = {
-            "schema_version": 1,
-            "revision": revision,
-            "master_id": state["master_id"],
-            "draft": draft,
-            "label": "DRAFT - unaccepted explicit export"
-            if draft
-            else "Human-accepted saved revision",
-            "revision_manifest_sha256": digest(manifest_bytes),
-            "compositing": manifest["compositing"],
-            "color_cleanup": manifest.get("color_cleanup", {"enabled": False}),
-            "shading": manifest.get("shading", {"enabled": False}),
-            **(
-                {"local_exposure": manifest["local_exposure"]}
-                if "local_exposure" in manifest
-                else {}
-            ),
-            **({"shadow_fade": manifest["shadow_fade"]} if "shadow_fade" in manifest else {}),
-            **({"background": manifest["background"]} if "background" in manifest else {}),
-            "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; baked shading at saved p; editable W16 plus p retained separately"
-            + (
-                "; selected foreground includes linear-sRGB local exposure once; unexposed foreground and independent support/protection/alpha/settings retained"
-                if "local_exposure" in manifest
-                else ""
+            (stage / delivered).write_bytes(
+                _asset(project, f"revisions/{revision}/{saved}").read_bytes()
             )
-            + (
-                "; replay unexposed -> exposure once -> unfaded -> linear-sRGB Shadow fade once -> selected foreground -> encoded-sRGB shading and alpha once; selected foreground is already faded; independent fade operands retained"
-                if "shadow_fade" in manifest
-                else ""
-            ),
-            **(
-                {
-                    "result_compositing": "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-opacity*W16/65535, A=alpha16/65535; selected foreground already includes exposure/fade; B is saved background RGB16; processed sRGB TIFF, not sensor RAW"
-                }
-                if "background" in manifest
-                else {}
-            ),
-            "files": {p.name: digest(p.read_bytes()) for p in stage.iterdir() if p.is_file()},
-        }
-        (stage / "manifest.json").write_bytes(_json_bytes(record))
-        (stage / "README.txt").write_text(
-            record["label"]
-            + "\nRGB16 black TIFF and scalar alpha16 are lossless. "
-            + record["views"]
-            + (
-                "\nResult RGB16 TIFF uses the saved chosen background; black TIFF stays pure black. Background RGB16/settings are independent editable operands; foreground RGB16 is pre-shading, already exposed/faded. Reconstruct: "
-                + record["result_compositing"]
-                + ". All RGB16 TIFFs carry sRGB profiles. Algorithm: "
-                + manifest["background"]["algorithm"]
-                if "background" in manifest
-                else ""
-            )
-            + "\n"
+        if not np.array_equal(read_rgb16(stage / "result_rgb16.tif"), result_pixels):
+            raise ProjectError("Result RGB16 export round trip failed")
+    black = render_black(
+        foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
+    )
+    write_master(stage / "black_rgb16.tif", black)
+    Image.fromarray(alpha).save(stage / "alpha16.png")
+    Image.fromarray(np.rint(black.astype(np.float64) / 257).astype(np.uint8)).save(
+        stage / "black_RGB8_VIEW.png"
+    )
+    Image.fromarray(
+        view_rgba(
+            foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
         )
+    ).save(stage / "transparent_RGBA8_VIEW.png")
+    if not np.array_equal(tifffile.imread(stage / "black_rgb16.tif"), black):
+        raise ProjectError("RGB16 export round trip failed")
+    with Image.open(stage / "alpha16.png") as image:
         if (
-            before != _asset(project, "state.json").read_bytes()
-            or manifest_bytes != _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+            not np.array_equal(np.array(image), alpha)
+            or "icc_profile" in image.info
+            or "gamma" in image.info
         ):
-            raise ProjectError("Stale export state or saved inputs")
-        saved_layers(project, revision, state["master_id"])
-        destination = _asset(project, f"exports/{label}")
+            raise ProjectError("Scalar16 export round trip/profile failed")
+    write_master(stage / "foreground_rgb16.tif", foreground)
+    if "local_exposure" in manifest:
+        unexposed, _, _ = saved_layers(
+            project, revision, state["master_id"], exposure_off=True, shadow_fade_off=True
+        )
+        write_master(stage / "unexposed_foreground_rgb16.tif", unexposed)
+        base = _asset(project, f"revisions/{revision}/foreground_rgb16.tif")
+        (stage / "base_foreground_rgb16.tif").write_bytes(base.read_bytes())
+        for name in (
+            "support16.png",
+            "protection16.png",
+            "alpha16.png",
+            "settings.json",
+            "area.json",
+        ):
+            asset = f"effects/exposure/{name}"
+            if asset in manifest["files"]:
+                (stage / ("exposure_" + name)).write_bytes(
+                    _asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                )
+    if "shadow_fade" in manifest:
+        unfaded, _, _ = saved_layers(project, revision, state["master_id"], shadow_fade_off=True)
+        write_master(stage / "unfaded_foreground_rgb16.tif", unfaded)
+        if "local_exposure" not in manifest:
+            write_master(stage / "unexposed_foreground_rgb16.tif", unfaded)
+            (stage / "base_foreground_rgb16.tif").write_bytes(
+                _asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
+            )
+        for name in (
+            "support16.png",
+            "protection16.png",
+            "alpha16.png",
+            "settings.json",
+            "area.json",
+        ):
+            asset = f"effects/shadow-fade/{name}"
+            if asset in manifest["files"]:
+                (stage / ("shadow_fade_" + name)).write_bytes(
+                    _asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                )
+    write_master(stage / "source_rgb16.tif", load_master(project, state["master_id"])[0])
+    if "spatial_fade" in manifest:
+        from .spatial_fade import SPATIAL_FADE_FILES
+
+        for name in SPATIAL_FADE_FILES:
+            (stage / ("spatial_fade_" + name)).write_bytes(
+                _asset(project, f"revisions/{revision}/effects/spatial-fade/{name}").read_bytes()
+            )
+    for name in ("shadow_weight16.png", "corrected_rgb16.tif", "recipe.toml"):
+        if name in manifest["files"]:
+            (stage / name).write_bytes(_asset(project, f"revisions/{revision}/{name}").read_bytes())
+    for effect, name in (
+        ("color_cleanup", "effects/settings.json"),
+        ("shading", "effects/shading/settings.json"),
+    ):
+        if effect in manifest:
+            (stage / (effect + "_settings.json")).write_bytes(_json_bytes(manifest[effect]))
+    record = {
+        "schema_version": 1,
+        "revision": revision,
+        "master_id": state["master_id"],
+        "draft": draft,
+        "label": "DRAFT - unaccepted explicit export" if draft else "Human-accepted saved revision",
+        "revision_manifest_sha256": digest(manifest_bytes),
+        "compositing": manifest["compositing"],
+        "color_cleanup": manifest.get("color_cleanup", {"enabled": False}),
+        "shading": manifest.get("shading", {"enabled": False}),
+        **({"local_exposure": manifest["local_exposure"]} if "local_exposure" in manifest else {}),
+        **({"shadow_fade": manifest["shadow_fade"]} if "shadow_fade" in manifest else {}),
+        **({"spatial_fade": manifest["spatial_fade"]} if "spatial_fade" in manifest else {}),
+        **({"background": manifest["background"]} if "background" in manifest else {}),
+        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; baked shading at saved p; editable W16 plus p retained separately"
+        + (
+            "; selected foreground includes linear-sRGB local exposure once; unexposed foreground and independent support/protection/alpha/settings retained"
+            if "local_exposure" in manifest
+            else ""
+        )
+        + (
+            "; replay unexposed -> exposure once -> unfaded -> linear-sRGB Shadow fade once -> selected foreground -> encoded-sRGB shading and alpha once; selected foreground is already faded; independent fade operands retained"
+            if "shadow_fade" in manifest
+            else ""
+        ),
+        **(
+            {
+                "result_compositing": "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-opacity*W16/65535, A=alpha16/65535; selected foreground already includes exposure/fade; B is saved background RGB16; processed sRGB TIFF, not sensor RAW"
+            }
+            if "background" in manifest
+            else {}
+        ),
+        "files": {p.name: digest(p.read_bytes()) for p in stage.iterdir() if p.is_file()},
+    }
+    if "spatial_fade" in manifest:
+        record["views"] += (
+            "; When enabled, Fade into background blends selected pre-spatial foreground toward the selected background in linear sRGB before encoded alpha compositing; transparent RGB retains that tint and alpha is unchanged. When disabled, the active inward-shading setting still applies. foreground_rgb16.tif remains pre-spatial and pre-shading; spatial_fade_* operands include inactive vectors."
+        )
+        if manifest["spatial_fade"]["enabled"] and "result_compositing" in record:
+            record["result_compositing"] = (
+                "round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints"
+            )
+    (stage / "manifest.json").write_bytes(_json_bytes(record))
+    (stage / "README.txt").write_text(
+        record["label"]
+        + "\nRGB16 black TIFF and scalar alpha16 are lossless. "
+        + record["views"]
+        + (
+            "\nResult RGB16 TIFF uses the saved chosen background; black TIFF stays pure black. Background RGB16/settings are independent editable operands; foreground RGB16 is pre-shading, already exposed/faded. Reconstruct: "
+            + record["result_compositing"]
+            + ". All RGB16 TIFFs carry sRGB profiles. Algorithm: "
+            + manifest["background"]["algorithm"]
+            if "background" in manifest
+            else ""
+        )
+        + "\n"
+    )
+    if (
+        before != _asset(project, "state.json").read_bytes()
+        or manifest_bytes != _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+    ):
+        raise ProjectError("Stale export state or saved inputs")
+    read_revision(project, revision, state["master_id"])
+    destination = _asset(project, f"exports/{label}")
+    if "spatial_fade" in manifest:
+        expected = {p.name: _file_digest(p) for p in stage.iterdir()}
+        reused = destination.exists() or destination.is_symlink()
+        if reused:
+            _check_flat_delivery(destination, set(expected))
+        try:
+            publish_artifacts(stage, destination)
+            if reused:
+                _sync_directory(destination.parent)
+        except OSError as error:
+            if destination.exists():
+                raise ProjectError(
+                    f"Native editable delivery visible at {destination}, but durability is unconfirmed; preserve it and retry identical export: {error}"
+                ) from error
+            raise
+        _check_flat_delivery(destination, set(expected))
+        if any(_file_digest(destination / name) != checksum for name, checksum in expected.items()):
+            raise ProjectError(
+                f"Native editable delivery changed during publication at {destination}"
+            )
+        if reused:
+            # The current attempt's byte-verified duplicate is disposable only
+            # after the native delivery and its parent directory are durable.
+            try:
+                shutil.rmtree(stage)
+            except OSError as error:
+                raise ProjectError(
+                    f"Native editable delivery is durably published at {destination}, but duplicate "
+                    f"stage cleanup failed at {stage}; inspect remaining stage files: {error}"
+                ) from error
+    else:
         publish_artifacts(stage, destination)
-        return {
-            "revision": revision,
-            "draft": draft,
-            "directory": str(destination),
-            "manifest_file": str(destination / "manifest.json"),
-        }
+    return {
+        "revision": revision,
+        "draft": draft,
+        "directory": str(destination),
+        "manifest_file": str(destination / "manifest.json"),
+    }
 
 
 def _pixel_digest(pixels: np.ndarray) -> str:
@@ -505,6 +664,43 @@ def _check_flat_delivery(directory: Path, names: set[str]) -> None:
         raise ProjectError("Output collision: unexpected delivery members preserved")
 
 
+def _editable_companion_binding(
+    directory: Path,
+    manifest: dict[str, Any],
+    revision_manifest_sha256: str,
+    draft: bool,
+) -> dict[str, Any]:
+    """Verify portable native bytes and bind the full inventory, including its notes."""
+    if directory.name != f"{manifest['revision']}{'-DRAFT' if draft else ''}":
+        raise ProjectError("Invalid native editable companion directory identity")
+    if directory.is_symlink() or (directory / "manifest.json").is_symlink():
+        raise ProjectError("Output collision: symlinked native editable companion")
+    raw = (directory / "manifest.json").read_bytes()
+    native = json.loads(raw)
+    if any(
+        native.get(key) != value
+        for key, value in (
+            ("revision", manifest["revision"]),
+            ("master_id", manifest["master_id"]),
+            ("draft", draft),
+            ("revision_manifest_sha256", revision_manifest_sha256),
+            ("spatial_fade", manifest["spatial_fade"]),
+            ("background", manifest.get("background")),
+        )
+    ):
+        raise ProjectError("Native editable companion identity differs from presentation")
+    names = set(native["files"]) | {"README.txt", "manifest.json"}
+    _check_flat_delivery(directory, names)
+    hashes = {name: _file_digest(directory / name) for name in names - {"manifest.json"}}
+    if any(hashes[name] != value for name, value in native["files"].items()):
+        raise ProjectError("Native editable companion file hash mismatch")
+    return {
+        "directory_name": directory.name,
+        "manifest_sha256": digest(raw),
+        "files_sha256": hashes,
+    }
+
+
 def _export_framed(
     project: Path,
     revision: str | None,
@@ -518,7 +714,7 @@ def _export_framed(
 ) -> dict[str, Any]:
     """Publish one compact presentation while holding the canonical project lock."""
     from .background import read_background
-    from .effects import effects_stale, saved_shading
+    from .effects import effects_stale, saved_shading, saved_spatial_fade
     from .framing import frame_result, frame_transparent, framed_geometry, validate_margins
 
     # Capture before validation, then bind the actual returned objects to these bytes.
@@ -582,18 +778,38 @@ def _export_framed(
     check_space(
         project,
         foreground.nbytes * (22 if "background" in manifest else 18)
+        + (
+            alpha.nbytes * 3 + len(_json_bytes(manifest["spatial_fade"]))
+            if "spatial_fade" in manifest
+            else 0
+        )
         + 16 * width * height
         + 2 * 1024**2,
     )
     weight, opacity = saved_shading(project, revision, alpha, manifest)
+    spatial = saved_spatial_fade(project, revision, alpha, manifest)
     background = read_background(_asset(project, f"revisions/{revision}"), manifest)
+    # Native layer conversion/readback and framed rendering run sequentially. This
+    # conservative native envelope includes retained layers, float conversion and
+    # allocator scratch; it is an admission estimate, not measured resident memory.
+    native_peak = foreground.nbytes * 28 + alpha.nbytes * 8 if "spatial_fade" in manifest else 0
+    if (
+        native_peak
+        and max(native_peak, foreground.nbytes * 8 + alpha.nbytes * 8 + 16 * width * height)
+        > sys.maxsize
+    ):
+        raise ProjectError("Paired export memory estimate exceeds allocation bounds")
     if sampling is not None:
         estimate_series_resources(
             sampling,
             retained_native_bytes=foreground.nbytes
             + alpha.nbytes
-            + (0 if weight is None else weight.nbytes),
+            + (0 if weight is None else weight.nbytes)
+            + (0 if background is None else background.nbytes)
+            + (0 if spatial is None else spatial.weight16.nbytes + spatial.protection.nbytes),
             transparent=transparent,
+            **({"spatial_fade_pixels": alpha.size} if spatial is not None else {}),
+            **({"native_export_peak_bytes": native_peak} if native_peak else {}),
         )
     variants = ["result_rgb16.tif", "result_RGB8_VIEW.png"]
     if transparent:
@@ -647,7 +863,13 @@ def _export_framed(
                 "enabled": manifest.get(name, {}).get("enabled", False),
                 "record_sha256": digest(_json_bytes(manifest[name])) if name in manifest else None,
             }
-            for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade")
+            for name in (
+                "color_cleanup",
+                "shading",
+                "local_exposure",
+                "shadow_fade",
+                *(("spatial_fade",) if "spatial_fade" in manifest else ()),
+            )
         },
         "background": {
             "record_sha256": digest(_json_bytes(manifest["background"])),
@@ -706,153 +928,244 @@ def _export_framed(
                 },
             }
         )
-    identity = digest(_json_bytes(record))
-    label = f"{revision}-DRAFT" if draft else revision
-    delivery_mode = "series-framed" if sampling is not None else "framed"
-    destination = _asset(project, f"exports/{label}-{delivery_mode}-{identity}")
-    names = {*variants, "README.txt", "manifest.json"}
-    reused = destination.exists() or destination.is_symlink()
-    if reused:
-        _check_flat_delivery(destination, names)
-    exports = _asset(project, "exports")
-    exports.mkdir(exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
-    if sampling is not None:
-        from .series_framing import render_series
+    companion = None
+    companion_binding = None
+    if "spatial_fade" in manifest:
+        companion_directory = _asset(project, f"exports/{revision}{'-DRAFT' if draft else ''}")
+        try:
+            companion = _export_native_locked(
+                project,
+                revision=revision,
+                draft=draft,
+                state=state,
+                foreground=foreground,
+                alpha=alpha,
+                manifest=manifest,
+            )
+            companion_binding = _editable_companion_binding(
+                companion_directory, manifest, digest(captured[manifest_name]), draft
+            )
+        except (OSError, ValueError, MemoryError) as error:
+            if companion_directory.exists():
+                raise ProjectError(
+                    f"Incomplete framed delivery pair. Native folder is visible at {companion_directory}; inspect or retry identical export. {error}"
+                ) from error
+            raise
+        record["editable_companion"] = companion_binding
+    try:
+        identity = digest(_json_bytes(record))
+        label = f"{revision}-DRAFT" if draft else revision
+        delivery_mode = "series-framed" if sampling is not None else "framed"
+        destination = _asset(project, f"exports/{label}-{delivery_mode}-{identity}")
+        names = {*variants, "README.txt", "manifest.json"}
+        reused = destination.exists() or destination.is_symlink()
+        if reused:
+            _check_flat_delivery(destination, names)
+        exports = _asset(project, "exports")
+        exports.mkdir(exist_ok=True)
+        stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
+        if sampling is not None:
+            from .series_framing import render_series
 
-        del background
-        result = render_series(
-            foreground,
-            alpha,
-            sampling,
-            weight16=weight,
-            opacity=opacity,
-            background_settings=manifest.get("background", {}).get("settings"),
-        )
-    else:
-        native = (
-            render_black(foreground, alpha, weight, opacity)
-            if background is None
-            else render_background(foreground, alpha, background, weight, opacity)
-        )
-        result = frame_result(native, background, settings)
-        del native, background
-    result_digest = _pixel_digest(result)
-    write_master(stage / "result_rgb16.tif", result)
-    view_digest = _write_framed_rgb8(stage / "result_RGB8_VIEW.png", result)
-    del result
-    # Release the expanded render before any expanded readback or next variant.
-    restored = read_rgb16(stage / "result_rgb16.tif")
-    if restored.shape != (height, width, 3) or _pixel_digest(restored) != result_digest:
-        raise ProjectError("Framed RGB16 export round trip failed")
-    del restored
-    _verify_framed_png(stage / "result_RGB8_VIEW.png", "RGB", (width, height), view_digest)
-    if transparent:
-        rgba = (
-            render_series(
+            del background
+            result = render_series(
                 foreground,
                 alpha,
                 sampling,
                 weight16=weight,
                 opacity=opacity,
                 background_settings=manifest.get("background", {}).get("settings"),
-                transparent=True,
+                spatial_fade=spatial,
             )
+        else:
+            native = (
+                render_black(
+                    foreground,
+                    alpha,
+                    weight,
+                    opacity,
+                    spatial_fade=spatial,
+                    fade_background16=background
+                    if background is not None
+                    else np.zeros_like(foreground)
+                    if spatial is not None
+                    else None,
+                )
+                if background is None
+                else render_background(
+                    foreground,
+                    alpha,
+                    background,
+                    weight,
+                    opacity,
+                    spatial_fade=spatial,
+                    fade_background16=background,
+                )
+            )
+            result = frame_result(native, background, settings)
+            del native
+        result_digest = _pixel_digest(result)
+        write_master(stage / "result_rgb16.tif", result)
+        view_digest = _write_framed_rgb8(stage / "result_RGB8_VIEW.png", result)
+        del result
+        # Release the expanded render before any expanded readback or next variant.
+        restored = read_rgb16(stage / "result_rgb16.tif")
+        if restored.shape != (height, width, 3) or _pixel_digest(restored) != result_digest:
+            raise ProjectError("Framed RGB16 export round trip failed")
+        del restored
+        _verify_framed_png(stage / "result_RGB8_VIEW.png", "RGB", (width, height), view_digest)
+        if transparent:
+            rgba = (
+                render_series(
+                    foreground,
+                    alpha,
+                    sampling,
+                    weight16=weight,
+                    opacity=opacity,
+                    background_settings=manifest.get("background", {}).get("settings"),
+                    transparent=True,
+                    spatial_fade=spatial,
+                )
+                if sampling is not None
+                else frame_transparent(
+                    view_rgba(
+                        foreground,
+                        alpha,
+                        weight,
+                        opacity,
+                        spatial_fade=spatial,
+                        fade_background16=background
+                        if background is not None
+                        else np.zeros_like(foreground)
+                        if spatial is not None
+                        else None,
+                    ),
+                    settings,
+                )
+            )
+            rgba_digest = _pixel_digest(rgba)
+            image = Image.fromarray(rgba)
+            try:
+                image.save(stage / "transparent_RGBA8_VIEW.png", icc_profile=srgb_profile())
+            finally:
+                # RGBA images map the NumPy buffer; the context manager does not close it.
+                image.close()
+                del rgba
+            _verify_framed_png(
+                stage / "transparent_RGBA8_VIEW.png", "RGBA", (width, height), rgba_digest
+            )
+        notes = (
+            "\nThis is a resized presentation using existing photographed detail. "
+            "The saved backdrop recipe is regenerated at final output dimensions, including beneath partial-alpha edges. "
+            "Enlargement adds no captured detail; reduction can hide fine features. "
+            "RGB16 TIFF retains processed precision; PNGs are reduced-precision views. "
+            "The native editable project remains authoritative and unchanged; retain it for editing. "
+            "Series framing confers no photographic acceptance.\n"
             if sampling is not None
-            else frame_transparent(view_rgba(foreground, alpha, weight, opacity), settings)
+            else "\nThe native image is copied without resampling at the manifest's source rectangle. "
+            "Margins extend saved backdrop edge pixels (black for legacy projects); visible bands "
+            "are possible. RGB16 TIFF retains processed sRGB precision. PNGs are reduced-precision "
+            "views; optional RGBA is straight and has zero RGBA margins. Framing does not alter "
+            "native editing coordinates or confer photographic acceptance. Editable source layers "
+            "remain in the local project at the manifest's relative native asset paths.\n"
         )
-        rgba_digest = _pixel_digest(rgba)
-        image = Image.fromarray(rgba)
-        try:
-            image.save(stage / "transparent_RGBA8_VIEW.png", icc_profile=srgb_profile())
-        finally:
-            # RGBA images map the NumPy buffer; the context manager does not close it.
-            image.close()
-            del rgba
-        _verify_framed_png(
-            stage / "transparent_RGBA8_VIEW.png", "RGBA", (width, height), rgba_digest
-        )
-    notes = (
-        "\nThis is a resized presentation using existing photographed detail. "
-        "The saved backdrop recipe is regenerated at final output dimensions, including beneath partial-alpha edges. "
-        "Enlargement adds no captured detail; reduction can hide fine features. "
-        "RGB16 TIFF retains processed precision; PNGs are reduced-precision views. "
-        "The native editable project remains authoritative and unchanged; retain it for editing. "
-        "Series framing confers no photographic acceptance.\n"
-        if sampling is not None
-        else "\nThe native image is copied without resampling at the manifest's source rectangle. "
-        "Margins extend saved backdrop edge pixels (black for legacy projects); visible bands "
-        "are possible. RGB16 TIFF retains processed sRGB precision. PNGs are reduced-precision "
-        "views; optional RGBA is straight and has zero RGBA margins. Framing does not alter "
-        "native editing coordinates or confer photographic acceptance. Editable source layers "
-        "remain in the local project at the manifest's relative native asset paths.\n"
-    )
-    (stage / "README.txt").write_text(str(record["label"]) + notes)
-    record["files"] = {
-        name: {
-            "sha256": _file_digest(stage / name),
-            **(
-                {
-                    "dimensions_wh": [width, height],
-                    "precision_bits": 16 if name.endswith(".tif") else 8,
-                }
-                if name in variants
-                else {}
-            ),
+        if companion_binding is not None:
+            notes += f"\nKeep and copy BOTH this presentation folder and its native editable sibling {companion_binding['directory_name']}. The sibling contains unfaded editable layers and complete spatial operands; no original project is needed for layer/render reconstruction.\n"
+        (stage / "README.txt").write_text(str(record["label"]) + notes)
+        record["files"] = {
+            name: {
+                "sha256": _file_digest(stage / name),
+                **(
+                    {
+                        "dimensions_wh": [width, height],
+                        "precision_bits": 16 if name.endswith(".tif") else 8,
+                    }
+                    if name in variants
+                    else {}
+                ),
+            }
+            for name in sorted(names - {"manifest.json"})
         }
-        for name in sorted(names - {"manifest.json"})
-    }
-    (stage / "manifest.json").write_bytes(_json_bytes(record))
-    _check_flat_delivery(stage, names)
-    if any(_asset(project, name).read_bytes() != value for name, value in captured.items()):
-        raise ProjectError("Stale framed export state or saved inputs")
-    final_state = read_project(project)
-    _, _, final_manifest = saved_layers(project, revision, state["master_id"])
-    if (
-        final_state != state
-        or final_manifest != manifest
-        or any(_asset(project, name).read_bytes() != value for name, value in captured.items())
-    ):
-        raise ProjectError("Stale framed export state or saved inputs")
-    if destination.exists() or destination.is_symlink():
-        _check_flat_delivery(destination, names)
-        if any(
-            (destination / name).stat().st_size != (stage / name).stat().st_size for name in names
+        (stage / "manifest.json").write_bytes(_json_bytes(record))
+        _check_flat_delivery(stage, names)
+        if any(_asset(project, name).read_bytes() != value for name, value in captured.items()):
+            raise ProjectError("Stale framed export state or saved inputs")
+        final_state = read_project(project)
+        final_manifest = read_revision(project, revision, state["master_id"])
+        if (
+            final_state != state
+            or final_manifest != manifest
+            or any(_asset(project, name).read_bytes() != value for name, value in captured.items())
         ):
-            raise ProjectError("Output collision: differing existing file sizes preserved")
-    try:
-        publish_artifacts(stage, destination)
+            raise ProjectError("Stale framed export state or saved inputs")
+        if destination.exists() or destination.is_symlink():
+            _check_flat_delivery(destination, names)
+            if any(
+                (destination / name).stat().st_size != (stage / name).stat().st_size
+                for name in names
+            ):
+                raise ProjectError("Output collision: differing existing file sizes preserved")
+        try:
+            publish_artifacts(stage, destination)
+            if reused:
+                # A prior exclusive rename may have succeeded before its parent sync
+                # failed. Identical retry also confirms that directory publication.
+                _sync_directory(destination.parent)
+        except OSError as error:
+            if not stage.exists() or reused:
+                raise ProjectError(
+                    f"Framed delivery is visible at {destination}, but publication durability "
+                    f"is unconfirmed; preserve it and retry identical export: {error}"
+                ) from error
+            raise
         if reused:
-            # A prior exclusive rename may have succeeded before its parent sync
-            # failed. Identical retry also confirms that directory publication.
-            _sync_directory(destination.parent)
-    except OSError as error:
-        if not stage.exists() or reused:
+            # Only this verified duplicate is disposable, after publication is durable.
+            try:
+                shutil.rmtree(stage)
+            except OSError as error:
+                raise ProjectError(
+                    f"Framed delivery is durably published at {destination}, but duplicate stage "
+                    f"cleanup failed at {stage}; inspect remaining stage files: {error}"
+                ) from error
+        response = {
+            "revision": revision,
+            "draft": draft,
+            "directory": str(destination),
+            "manifest_file": str(destination / "manifest.json"),
+            "framing": settings_record,
+            "output_dimensions_wh": [width, height],
+            "source_rect_xyxy": list(source_rect),
+        }
+        if sampling is not None:
+            response.pop("framing")
+            response.pop("source_rect_xyxy")
+            response.update({"settings": settings_record, "layout": sampling.layout.to_dict()})
+        if companion is not None:
+            _check_flat_delivery(destination, names)
+            if (destination / "manifest.json").read_bytes() != _json_bytes(record) or any(
+                _file_digest(destination / name) != value["sha256"]
+                for name, value in record["files"].items()
+            ):
+                raise ProjectError(f"Presentation changed after publication at {destination}")
+            verified = _editable_companion_binding(
+                Path(companion["directory"]), manifest, digest(captured[manifest_name]), draft
+            )
+            if verified != companion_binding:
+                raise ProjectError(
+                    f"Native editable companion changed after presentation publication at {companion['directory']}"
+                )
+            response["editable_companion"] = {
+                "directory": companion["directory"],
+                "manifest_file": companion["manifest_file"],
+                "manifest_sha256": verified["manifest_sha256"],
+            }
+        return response
+    except (OSError, ValueError, MemoryError) as error:
+        if companion is not None:
+            presentation = (
+                f" Presentation path: {destination}." if "destination" in locals() else ""
+            )
             raise ProjectError(
-                f"Framed delivery is visible at {destination}, but publication durability "
-                f"is unconfirmed; preserve it and retry identical export: {error}"
+                f"Incomplete framed delivery pair. Native editable folder {companion['directory']} is retained.{presentation} Inspect and retry identical export; {error}"
             ) from error
         raise
-    if reused:
-        # Only this verified duplicate is disposable, after publication is durable.
-        try:
-            shutil.rmtree(stage)
-        except OSError as error:
-            raise ProjectError(
-                f"Framed delivery is durably published at {destination}, but duplicate stage "
-                f"cleanup failed at {stage}; inspect remaining stage files: {error}"
-            ) from error
-    response = {
-        "revision": revision,
-        "draft": draft,
-        "directory": str(destination),
-        "manifest_file": str(destination / "manifest.json"),
-        "framing": settings_record,
-        "output_dimensions_wh": [width, height],
-        "source_rect_xyxy": list(source_rect),
-    }
-    if sampling is not None:
-        response.pop("framing")
-        response.pop("source_rect_xyxy")
-        response.update({"settings": settings_record, "layout": sampling.layout.to_dict()})
-    return response
