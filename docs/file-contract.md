@@ -441,6 +441,130 @@ baked overlay or GIF is generated. If a downstream editor bakes p into overlay
 alpha, label that strength and use 100% layer opacity.
 
 
+## Optional Fade into background
+
+Optional recipe `spatial_fade` has exactly `enabled` (boolean),
+`preserve_highlights` ([0,1]), `oval`, `arcs_enabled` (boolean), `arcs` (0–32).
+Absence preserves legacy rendering, saved bytes and export members without migration.
+Unknown fields, nonfinite numbers, numeric booleans and invalid inactive shapes fail.
+Oval fields are exactly `enabled`, `center_xy`, `inner_radii_xy`,
+`rotation_degrees`, `transition_width`, `amount`. Arc fields are exactly `id`,
+`enabled`, `center_xy`, `rotation_degrees`, `half_span`, `bend`, `fade_side`,
+`transition_width`, `end_softness`, `amount`. Arc IDs are unique lowercase UUID-v4.
+Centres are continuous native coordinates in `[0,width] × [0,height]`; pixel centres
+are `(x+.5,y+.5)`. Rotation is clockwise `[0,360)` on x-right/y-down axes.
+Radii, half-span and transition width are `[.5,2*max(width,height)]`; bend is
+`[-half_span,half_span]`, end softness `[.5,half_span]`, amount `[0,1]`.
+Direction is `positive` or `negative`. UI full width/height/span are twice saved
+radii/half-span. Inactive vectors remain validated and independently recoverable.
+
+An exclusive schema-1 `effects` request contains exactly the common
+`schema_version`, `kind`, `master_id`, `base_revision`, `inputs_digest`,
+`scope_xyxy`, `candidate_comparison`, plus complete `spatial_fade` and optionally
+`spatial_fade_protection_file` when enabled. Scope is the full native rectangle.
+No other effect/background fields are permitted. Enable requires an accepted base
+or explicit candidate comparison, even for zero/empty geometry. Disable needs only
+a valid working revision. The optional project-relative file is aligned categorical
+PNG8 (0/255) or PNG16 (0/65535). Old/new explicit protection and saved locks are
+unioned; omission/disable cannot remove them. Full settings replacement removes
+old arc footprints. Enabling spatial fade disables inward shading and retains its
+settings/W; enabling inward shading disables spatial fade and retains its operands.
+OFF never revives the other mode. Shadow fade is independent.
+
+Four revision-hashed assets live under `effects/spatial-fade/`: `weight16.png`,
+`protection16.png`, `alpha16.png`, `settings.json`. These hold combined strength
+W16, categorical P16, alpha dependency and the complete manifest record respectively.
+The exact record fields are `schema_version:1`, `enabled`, `settings`, `stale`,
+`source_id`, `algorithm:"linear-srgb-oval-arcs-background-fade-v1"`,
+`alpha_sha256`, `weight_sha256`, `protection_sha256`, `candidate_comparison`,
+`scope_xyxy`. Identity, closed inventory, hashes, dimensions, categorical values,
+switches and replayed W are checked even OFF and before successful cache reuse.
+Prepare/matte/repair retain operands. Changed alpha makes an enabled record stale;
+any stale enabled effect gives labelled all-effects-OFF BASE review and blocks
+acceptance/export until explicit rebuild or disable. Corruption fails rather than
+silently becoming OFF. Revision publication retains state-last recovery.
+
+Geometry uses cubic `S(t)=clamp(t,0,1)^2*(3-2*clamp(t,0,1))`. Each oval ray
+transitions between ellipses with radii `(a,b)` and `(a+w,b+w)`, then stays at 1.
+Each ray is monotonic; arbitrary paths across rays need not be. Arc local boundary
+is `bend*(1-(u/L)^2)`, signed distance `d=±(v-boundary)`, contribution
+`S(d/w)*(1-S((abs(u)-(L-end_softness))/end_softness))`, zero at/beyond `abs(u)>=L`.
+Soft ends are lateral; there is no trailing taper. Combine enabled/group-enabled
+shapes as `C=max(amount*G)` and quantize once, `W16=round(65535*C)` ties-to-even.
+Master OFF does not erase W. Generation holds one W16 plus 64-row geometry scratch,
+not full-frame fields for each arc. A weaker arc cannot subtract from an oval.
+
+Selected foreground F includes applicable cleanup, exposure and independent Shadow
+fade. For alpha-positive, unprotected pixels, `q=W16/65535*(1-p*h(F))`: p is this
+feature's highlight setting, h is cubic linear-sRGB luminance weighting using
+.2126/.7152/.0722 and thresholds .10/.75. Alpha gates eligibility only. Master OFF,
+stale or protection gives q=0. Decode F and selected background B, blend
+`(1-q)*F+q*B` in linear sRGB, encode, then compose encoded-sRGB alpha ONCE.
+Exact q=0/q=1 preserves F/B. Alpha never changes; the effect may tint or brighten.
+Black/gray/white diagnostics still use selected B as fade target. Transparent
+straight RGB retains that tint; RGBA8 is reduced precision. Match-series RGBA8
+zeros hidden RGB where quantized alpha is zero. Native RGBA8 retains its existing
+straight RGB at zero alpha; Add margins preserves that native rectangle and adds
+zero RGBA outside it.
+
+With spatial fade enabled (inward shading OFF), Match series samples
+`P=R(A*F)`, `A'=R(A)`, `Q=R(A*q)` with the same transform
+and kernel. Clamp Q into `[0,A']`; where A'>0 use `q'=Q/A'`, `F'=P/A'`, blend
+toward the background generated on the OUTPUT grid, then compose once. There is
+no per-arc resampling/blending or scaled native backdrop. Zero fields preserve the
+original series contribution exactly. When spatial fade is OFF, q is zero; active
+inward shading instead uses the existing `P=R(A*F*H)` path with its saved H factor.
+
+Native deliveries add exactly `spatial_fade_weight16.png`,
+`spatial_fade_protection16.png`, `spatial_fade_alpha16.png`,
+`spatial_fade_settings.json` to the existing conditional inventory.
+`foreground_rgb16.tif` stays pre-spatial, already including selected earlier effects.
+Alpha, source, background RGB16/settings and other effect operands remain separate.
+To reconstruct without the project/models: validate the delivered records and
+select the active rendering mode. With spatial fade enabled, calculate q from
+foreground/W/protection/settings, blend toward delivered B and compose alpha once.
+With spatial fade OFF, q is zero; if inward shading is enabled, use delivered
+`shadow_weight16.png` and its opacity to calculate `H=1-opacity*W16/65535` and
+`round(F*A*H+B*(1-A))`. Otherwise H is 1. The native manifest/README formula
+describes the active mode even when inactive spatial operands are retained.
+Do not apply exposure/Shadow fade again to selected foreground. For series, use
+compact layout/sampling/background metadata and the applicable premultiplied
+procedure above; include native H in P before sampling when inward shading is active.
+Native recipe and README are editable-handoff material, distinct from compact notes.
+
+Every Add margins or Match series export with a spatial record, including OFF/zero,
+publishes/reuses a real native sibling `exports/<revision[-DRAFT]>/` FIRST. Compact
+member sets remain unchanged. Its manifest adds `editable_companion` with exactly
+`directory_name`, `manifest_sha256`, `files_sha256`: all native members except
+manifest.json, INCLUDING README.txt (the historical native `files` map omits notes).
+The binding checks master/revision/draft/raw revision-manifest/settings/background
+identities and participates in compact directory identity. Return JSON adds
+`editable_companion` with exactly `directory`, `manifest_file`, `manifest_sha256`.
+Keep both siblings with their names. Without a spatial record there is no new
+companion/response field and legacy file sets remain exact.
+
+Both phases use one writer lock and validated shared source/foreground/alpha.
+They publish sequentially, not atomically as a pair, with exclusive directories,
+readback validation, file/directory sync and exact no-overwrite reuse. Native
+failure blocks compact publication; later failure may leave valid native-only
+output. Errors name visible paths/uncertain durability. Retain evidence and retry
+identical inputs; differing/tampered deliveries fail. A partial pair is not success.
+Resource admission covers both phases and the maximum estimated allocation envelope;
+this is not an available-RAM reservation.
+After durable success, only that invocation's byte-verified duplicate stage is
+removed. Failed, uncertain and earlier stages remain preserved. A cleanup error
+identifies the durably published output and any remaining duplicate-stage files.
+
+Authenticated `POST /api/spatial-preview` takes exactly `master_id`, `revision`,
+raw `revision_manifest_sha256`, native `crop_xyxy`, `view`. Views are `off`,
+`combined`, `effective`, `selected`; selected adds `shape_id` (`oval` or an ID in
+THAT revision). OFF optionally adds diagnostic `panel`. Unknown/removed IDs and
+stale raw identities fail. Responses echo identity and contain labelled PNG8 base64.
+Crops keep native geometry. Requests share the nonblocking preview guard and
+existing origin/session restrictions. Viewer Apply checks raw identity inside the
+writer lock. Pending vectors stay local until Apply; delayed responses cannot
+replace newer drafts or display stale decoded maps. Map opacity is display-only.
+
 ## Optional local exposure
 
 `local_exposure` is an optional schema-1 recipe section with exactly `enabled`
@@ -483,7 +607,8 @@ Request, draft, source, parent, area and protection inputs are rechecked before
 atomic publication under the canonical writer lock. Accepted state is unchanged.
 
 Selection order is original saved foreground, optional saved cleanup, local
-exposure, optional Shadow fade, existing encoded-sRGB shading, alpha composition. For eligible pixels,
+exposure, optional Shadow fade, then either inward shading or
+[Fade into background](#optional-fade-into-background), and alpha composition. For eligible pixels,
 decode sRGB to linear RGB, multiply by `2 ** (ev * support16 / 65535)`, clamp to
 [0,1], encode to sRGB and quantize once with float64/ties-to-even RGB16.
 The sRGB thresholds are .04045 (decode) and .0031308 (encode). Alpha does not
@@ -694,7 +819,8 @@ project-relative native-asset hashes. Its `files` records hash every delivered
 member except the manifest itself, with raster dimensions and precision.
 The directory identity hashes the canonical manifest inputs before delivered-file
 records are added. The bundle excludes capture paths, model configuration and
-editable native rasters; keep the local project for further editing.
+editable native rasters; keep the local project for further editing. With a spatial
+record, also keep the mandatory [native companion](#optional-fade-into-background).
 
 The accepted-source label is “Framed presentation of accepted revision; framing
 has not been separately accepted”. Explicit `--revision ... --draft` produces

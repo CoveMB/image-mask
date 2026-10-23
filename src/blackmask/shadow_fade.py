@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from .exposure import linear_to_rgb16, rasterize_effect_area, srgb_to_linear
+from .exposure import highlight_weight, linear_to_rgb16, rasterize_effect_area, srgb_to_linear
 from .project import ProjectError, digest
 from .repair import scalar16
 
@@ -56,9 +56,7 @@ def apply_shadow_fade(
     if not settings["enabled"] or settings["amount"] == 0 or not eligible.any():
         return result
     linear = srgb_to_linear(foreground[eligible].astype(np.float64) / 65535)
-    luminance = linear @ np.array([0.2126, 0.7152, 0.0722])
-    transition = np.clip((luminance - 0.10) / 0.65, 0, 1)
-    highlights = transition * transition * (3 - 2 * transition)
+    highlights = highlight_weight(linear)
     weight = (
         support[eligible].astype(np.float64)
         / 65535

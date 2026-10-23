@@ -223,7 +223,7 @@
         <canvas
           id="canvas"
           tabindex="0"
-          aria-label="Source and result; native-coordinate guide, Local exposure or Shadow fade authoring. Numeric alternatives in each section."
+          aria-label="Source and result; native-coordinate guides, Local exposure, Shadow fade or Fade shapes authoring. Numeric alternatives in each section."
         ></canvas>
       </div>
     </section>
@@ -361,13 +361,13 @@
         <label><input id="cleanupCandidate" type="checkbox" /> Explicitly compare cleanup on an unaccepted complete candidate</label>
         <button id="cleanupApply">Enable / rebuild within declared support</button>
         <button id="cleanupDisable">Explicitly disable cleanup</button>
-        <label><input id="cleanupBase" type="checkbox" /> Compare BASE with cleanup, local exposure, Shadow fade and shading OFF (same alpha)</label>
+        <label><input id="cleanupBase" type="checkbox" /> Compare BASE with all optional foreground effects OFF (same alpha)</label>
         <p id="cleanupStatus" class="small" role="status"></p>
       </fieldset>
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -427,6 +427,43 @@
         <p id="fadeStatus" role="status" class="small"></p>
         <p id="fadeDraftStatus" role="status" class="small"></p>
         <p class="small">Choose Shadow fade area in Canvas authoring mode above. Amount/reset use the saved area and keep pending area edits unsaved. Replacement includes removal of the old area. Reload discards unsaved area edits and loads saved geometry. Exposure remains independently editable. No model or internet needed.</p>
+      </fieldset>
+      <fieldset id="spatialControls">
+        <legend>Fade into background</legend>
+        <label><input id="spatialMaster" type="checkbox" /> Fade ON</label>
+        <label><input id="spatialUseOval" type="checkbox" checked /> Use oval</label>
+        <label><input id="spatialUseArcs" type="checkbox" /> Use arcs</label>
+        <p class="small">Use the oval, separate arcs, or both. Enabling this mode disables inward shading; turning it OFF keeps inward shading OFF. Shadow fade stays independent.</p>
+        <label>Selected shape <select id="spatialSelect" size="4"><option value="oval">Oval</option></select></label>
+        <div class="row"><button id="spatialAdd">Add arc</button><button id="spatialDuplicate">Duplicate arc</button><button id="spatialRemove">Remove arc</button></div>
+        <p class="small">Click Add arc, then click the image; keyboard Add places it at image centre. Choose Fade shapes in Canvas authoring to drag selected handles. Shift-drag pans. Numeric fields provide every adjustment without dragging.</p>
+        <label>Centre X (native pixels) <input id="spatialCenterX" type="number" step="0.5" /></label>
+        <label>Centre Y (native pixels) <input id="spatialCenterY" type="number" step="0.5" /></label>
+        <label>Rotation (clockwise degrees) <input id="spatialRotation" type="number" step="1" /></label>
+        <div id="spatialOvalControls">
+          <label>Unfaded centre width (native pixels) <input id="spatialWidth" type="number" min="1" step="0.5" /></label>
+          <label>Unfaded centre height (native pixels) <input id="spatialHeight" type="number" min="1" step="0.5" /></label>
+        </div>
+        <div id="spatialArcControls" hidden>
+          <label><input id="spatialArcEnabled" type="checkbox" /> Selected arc ON</label>
+          <label>Span (endpoint to endpoint, native pixels) <input id="spatialSpan" type="number" min="1" step="0.5" /></label>
+          <label>Bend (native pixels) <input id="spatialBend" type="number" step="0.5" /></label>
+          <label>Fade direction <select id="spatialSide"><option value="positive">Along positive arrow</option><option value="negative">Along reversed arrow</option></select></label>
+          <button id="spatialFlip">Flip arrow</button>
+          <label>End softness (lateral native pixels) <input id="spatialEndSoftness" type="number" min="0.5" step="0.5" /></label>
+        </div>
+        <label>Transition width (native pixels) <input id="spatialTransition" type="number" min="0.5" step="0.5" /></label>
+        <label>Fade strength (%) <input id="spatialStrength" type="number" min="0" max="100" step="1" /></label>
+        <label>Preserve highlights (%) <input id="spatialPreserve" type="number" min="0" max="100" step="1" /></label>
+        <p class="small">Shapes combine by their strongest fade. An arc cannot weaken a stronger oval. An arc stays faded along its arrow after the transition; soft ends reduce influence sideways, so keep a desired tip inside its core span. Highlights or explicit protection can retain bright tips. Arbitrary combinations and photographic brightness have no single monotonic profile.</p>
+        <label>Optional aligned categorical protection file (project-relative) <input id="spatialProtection" class="wide" /></label>
+        <label><input id="spatialCandidate" type="checkbox" /> Explicitly compare an unaccepted candidate</label>
+        <div class="row"><button id="spatialApply">Apply fade shapes</button><button id="spatialDisable">Disable fade</button><button id="spatialCancel">Cancel / reload saved fade shapes</button></div>
+        <label><input id="spatialCompare" type="checkbox" /> Compare Fade OFF (keep other effects and selected background)</label>
+        <label>Saved strength map <select id="spatialMap"><option value="none">None</option><option value="selected">Selected shape</option><option value="combined">Combined geometry</option><option value="effective">Effective after protection / highlights</option></select></label>
+        <label>Map display opacity <input id="spatialOpacity" type="range" min="0" max="1" step="0.05" value="0.45" /></label>
+        <p class="small">Outlines can show unapplied edits; images and strength maps show the bound saved revision until Apply. The selected background remains the fade target on black/gray/white diagnostic views. Blending can tint or brighten RGB; transparent views retain that tint and unchanged alpha. Keep both exported folders for portable editing.</p>
+        <p id="spatialDraftStatus" role="status" class="small"></p><p id="spatialStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>Optional protected inward shading</legend>
@@ -535,6 +572,9 @@
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let exposureControlsIdentity = null, exposureControlsSubmitted = null;
     let fadeControlsIdentity = null, fadeControlsSubmitted = null;
+    let spatialDraft = null, spatialDirty = false, spatialDraftIdentity = "", spatialDraftVersion = 0;
+    let selectedSpatialId = "oval", spatialSubmitted = null, spatialAdding = false, spatialOverlayLoaded = false;
+    const spatialControlIds = ["spatialMaster","spatialUseOval","spatialUseArcs","spatialSelect","spatialArcEnabled","spatialCenterX","spatialCenterY","spatialRotation","spatialWidth","spatialHeight","spatialSpan","spatialBend","spatialSide","spatialEndSoftness","spatialTransition","spatialStrength","spatialPreserve","spatialCandidate","spatialProtection","spatialApply","spatialDisable","spatialCancel","spatialAdd","spatialDuplicate","spatialRemove","spatialFlip"];
     const framingFields = {left_px:"framingLeft",right_px:"framingRight",top_px:"framingTop",bottom_px:"framingBottom"};
     let framingDirty = false, framingSource = null, framingDigest = null;
     let framingNeedsReload = false, framingSubmitted = null;
@@ -750,6 +790,155 @@
       );
       draw();
     }
+    function spatialDefaultSettings() {
+      const [width,height] = state.dimensions_wh;
+      return {enabled:false,preserve_highlights:0,oval:{enabled:true,center_xy:[width/2,height/2],inner_radii_xy:[Math.max(.5,width/4),Math.max(.5,height/4)],rotation_degrees:0,transition_width:Math.max(.5,Math.min(width,height)/4),amount:0},arcs_enabled:false,arcs:[]};
+    }
+    function spatialCurrentIdentity() {
+      const current = state?.revisions.find(r=>r.revision===state.working_revision);
+      return JSON.stringify([state?.master_id,state?.working_revision,state?.inputs_digest,current?.revision_manifest_sha256]);
+    }
+    function selectedSpatialShape() {
+      return selectedSpatialId === "oval" ? spatialDraft?.oval : spatialDraft?.arcs.find(arc=>arc.id===selectedSpatialId);
+    }
+    function validateSpatialSettings(settings = spatialDraft) {
+      const [width,height] = state.dimensions_wh, limit = 2*Math.max(width,height);
+      const range = (value,min,max) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+      if (!settings || typeof settings.enabled !== "boolean" || typeof settings.arcs_enabled !== "boolean" || !range(settings.preserve_highlights,0,1) || settings.arcs.length>32) throw Error("Use at most 32 arcs and finite highlight preservation in [0,100]%");
+      const ids = new Set();
+      for (const [index,shape] of [settings.oval,...settings.arcs].entries()) {
+        if (typeof shape.enabled !== "boolean" || !range(shape.center_xy[0],0,width) || !range(shape.center_xy[1],0,height) || !range(shape.rotation_degrees,0,360) || shape.rotation_degrees===360 || !range(shape.transition_width,.5,limit) || !range(shape.amount,0,1)) throw Error("Use finite in-image centres, rotation, transition width and Fade strength within their bounds");
+        if (index===0) {
+          if (!shape.inner_radii_xy.every(value=>range(value,.5,limit))) throw Error("Use finite unfaded centre width/height from 1 to "+4*Math.max(width,height)+" native pixels");
+        } else {
+          if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(shape.id) || ids.has(shape.id)) throw Error("Arc IDs must be unique UUIDs");
+          ids.add(shape.id);
+          if (!range(shape.half_span,.5,limit) || !range(shape.bend,-shape.half_span,shape.half_span) || !range(shape.end_softness,.5,shape.half_span) || !["positive","negative"].includes(shape.fade_side)) throw Error("Keep bend within half-span, end softness within [.5, half-span], and choose a fade direction");
+        }
+      }
+    }
+    function spatialDraftStatus() {
+      if (!spatialDraft) return;
+      const stale = spatialDirty && spatialDraftIdentity !== spatialCurrentIdentity();
+      let invalid = ""; try { validateSpatialSettings(); } catch(error) { invalid = " · "+error.message; }
+      $("spatialDraftStatus").textContent = (stale ? "Stale unapplied fade shapes · Cancel / reload saved fade shapes before Apply" : spatialDirty ? "Unapplied fade shapes · outlines only; images/maps still show saved settings" : "Saved fade shapes · images/maps use the selected saved revision") + invalid + (spatialAdding ? " · Click the image to place a new arc; Escape cancels" : "");
+      const current = state.revisions.find(r=>r.revision===state.working_revision)?.spatial_fade;
+      $("spatialStatus").textContent = current?.stale ? "Saved Fade into background STALE · rebuild with Apply or Disable fade before acceptance/export" : "Saved Fade into background "+(current?.enabled ? "ON" : "OFF");
+    }
+    function renderSpatialControls() {
+      if (!spatialDraft) return;
+      if (!selectedSpatialShape()) selectedSpatialId="oval";
+      select("spatialSelect", [["oval","Oval · "+(spatialDraft.oval.enabled ? "ON" : "OFF")],...spatialDraft.arcs.map((arc,index)=>[arc.id,"Arc "+(index+1)+" · "+(arc.enabled ? "ON" : "OFF")+" · "+arc.id.slice(0,8)])],selectedSpatialId);
+      const shape = selectedSpatialShape(), oval = selectedSpatialId === "oval";
+      $("spatialMaster").checked=spatialDraft.enabled;$("spatialUseOval").checked=spatialDraft.oval.enabled;$("spatialUseArcs").checked=spatialDraft.arcs_enabled;
+      $("spatialOvalControls").hidden=!oval;$("spatialArcControls").hidden=oval;
+      const fields={spatialCenterX:shape.center_xy[0],spatialCenterY:shape.center_xy[1],spatialRotation:shape.rotation_degrees,spatialTransition:shape.transition_width,spatialStrength:shape.amount*100,spatialPreserve:spatialDraft.preserve_highlights*100};
+      if(oval) Object.assign(fields,{spatialWidth:shape.inner_radii_xy[0]*2,spatialHeight:shape.inner_radii_xy[1]*2});
+      else {Object.assign(fields,{spatialSpan:shape.half_span*2,spatialBend:shape.bend,spatialEndSoftness:shape.end_softness});$("spatialSide").value=shape.fade_side;$("spatialArcEnabled").checked=shape.enabled;}
+      for(const [id,value] of Object.entries(fields)) $(id).value=Number.isFinite(value) ? String(value) : "";
+      $("spatialDuplicate").disabled=authoringBusy() || oval || spatialDraft.arcs.length>=32;
+      $("spatialRemove").disabled=authoringBusy() || oval;$("spatialFlip").disabled=authoringBusy() || oval;
+      $("spatialAdd").disabled=authoringBusy() || spatialDraft.arcs.length>=32;
+      spatialDraftStatus();
+    }
+    function refreshSpatialSelectionMap() {
+      if($("spatialMap").value==="selected") loadImage().catch(error=>message(error.message));
+    }
+    function resetSpatialFromSaved() {
+      if(!state) return;
+      const current=state.revisions.find(r=>r.revision===state.working_revision);
+      spatialDraft=structuredClone(current?.spatial_fade?.settings || spatialDefaultSettings());
+      spatialDirty=false;spatialDraftIdentity=spatialCurrentIdentity();spatialDraftVersion++;spatialSubmitted=null;spatialAdding=false;
+      $("spatialCandidate").checked=false;$("spatialProtection").value="";
+      renderSpatialControls();draw();refreshSpatialSelectionMap();
+    }
+    function markSpatialDirty() {
+      spatialDirty=true;spatialDraftVersion++;$("authorMode").value="spatial";
+      spatialDraftStatus();draw();
+    }
+    function addSpatialArc(position) {
+      if(!spatialDraft) resetSpatialFromSaved();
+      if(spatialDraft.arcs.length>=32) throw Error("At most 32 arcs; remove an arc before adding or duplicating");
+      const [width,height]=state.dimensions_wh, length=Math.min(width,height), half=Math.max(.5,length/5);
+      const arc={id:crypto.randomUUID(),enabled:true,center_xy:position ? [...position] : [width/2,height/2],rotation_degrees:0,half_span:half,bend:half/4,fade_side:"positive",transition_width:Math.max(.5,length/10),end_softness:Math.max(.5,half/5),amount:0};
+      spatialDraft.arcs.push(arc);spatialDraft.arcs_enabled=true;selectedSpatialId=arc.id;spatialAdding=false;
+      markSpatialDirty();renderSpatialControls();refreshSpatialSelectionMap();
+    }
+    function updateSpatialNumber(id) {
+      const shape=selectedSpatialShape();if(!shape) return;
+      const text=String($(id).value).trim(),value=text==="" ? NaN : Number(text);
+      const targets={spatialCenterX:()=>shape.center_xy[0]=value,spatialCenterY:()=>shape.center_xy[1]=value,spatialRotation:()=>shape.rotation_degrees=((value%360)+360)%360,spatialTransition:()=>shape.transition_width=value,spatialStrength:()=>shape.amount=value/100,spatialPreserve:()=>spatialDraft.preserve_highlights=value/100,spatialWidth:()=>shape.inner_radii_xy[0]=value/2,spatialHeight:()=>shape.inner_radii_xy[1]=value/2,spatialSpan:()=>shape.half_span=value/2,spatialBend:()=>shape.bend=value,spatialEndSoftness:()=>shape.end_softness=value};
+      targets[id]();if(id==="spatialRotation" && Number.isFinite(value)) $(id).value=String(shape.rotation_degrees);
+      markSpatialDirty();
+    }
+    async function applySpatial(enabled = spatialDraft?.enabled, savedSettings = null) {
+      if(!identity || !spatialDraft) throw Error("Load a complete saved working revision first");
+      if(!savedSettings && spatialDraftIdentity!==spatialCurrentIdentity()) throw Error("Stale fade shapes; Cancel / reload saved fade shapes before Apply");
+      if(enabled && (imageLoading || !image || !transform || $("viewRevision").value!==state.working_revision)) throw Error("Load the matching working native view before applying fade shapes");
+      const settings=structuredClone(savedSettings || spatialDraft);settings.enabled=enabled;validateSpatialSettings(settings);
+      if(enabled && state.working_revision!==state.accepted_revision && !$("spatialCandidate").checked) throw Error("Use an accepted base or explicitly choose candidate comparison");
+      const revision=state.revisions.find(r=>r.revision===state.working_revision);
+      if(!revision?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
+      const fields={scope_xyxy:[0,0,...state.dimensions_wh],spatial_fade:settings,candidate_comparison:$("spatialCandidate").checked,revision_manifest_sha256:revision.revision_manifest_sha256};
+      if(enabled && $("spatialProtection").value.trim()) fields.spatial_fade_protection_file=$("spatialProtection").value.trim();
+      const preserveDraft=!!savedSettings && spatialDirty;
+      spatialDirty=true;spatialDraftStatus();
+      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,master_id:state.master_id,preserve_draft:preserveDraft};
+      try {await action("effects",fields);} catch(error) {spatialSubmitted=null;throw error;}
+    }
+    function drawSpatialShapes(scale) {
+      if(!spatialDraft || $("authorMode").value!=="spatial" || $("viewRevision").value!==state.working_revision) return;
+      try {validateSpatialSettings();} catch {return;}
+      ctx.save();ctx.beginPath();ctx.rect(0,0,image.width,image.height);ctx.clip();
+      const pathPoint=(shape,point)=>{const p=spatialToNative(point,shape);return [p[0]-crop[0],p[1]-crop[1]];};
+      for(const [id,shape,group] of [["oval",spatialDraft.oval,true],...spatialDraft.arcs.map(arc=>[arc.id,arc,spatialDraft.arcs_enabled])]) {
+        ctx.strokeStyle=id===selectedSpatialId ? "#55ffff" : "#f2be64";ctx.lineWidth=(id===selectedSpatialId ? 2 : 1)/scale;
+        ctx.setLineDash(shape.enabled && group ? [] : [5/scale,4/scale]);
+        if(id==="oval") for(const d of [0,shape.transition_width]) {ctx.beginPath();ctx.ellipse(shape.center_xy[0]-crop[0],shape.center_xy[1]-crop[1],shape.inner_radii_xy[0]+d,shape.inner_radii_xy[1]+d,shape.rotation_degrees*Math.PI/180,0,Math.PI*2);ctx.stroke();}
+        else {
+          const L=shape.half_span,sigma=shape.fade_side==="positive" ? 1 : -1;
+          for(const offset of [0,sigma*shape.transition_width]) {ctx.beginPath();for(let i=0;i<=64;i++){const u=-L+2*L*i/64,p=pathPoint(shape,[u,shape.bend*(1-(u/L)**2)+offset]);i ? ctx.lineTo(...p) : ctx.moveTo(...p);}ctx.stroke();}
+          for(const u of [-L,-L+shape.end_softness,L-shape.end_softness,L]) {const v=shape.bend*(1-(u/L)**2),a=pathPoint(shape,[u,v]),b=pathPoint(shape,[u,v+sigma*4*Math.max(...state.dimensions_wh)]);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();}
+          const a=pathPoint(shape,[0,shape.bend]),b=pathPoint(shape,[0,shape.bend+sigma*shape.transition_width]);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();
+          for(const offset of [-1,1]){const tip=pathPoint(shape,[offset*6/scale,shape.bend+sigma*(shape.transition_width-10/scale)]);ctx.beginPath();ctx.moveTo(...b);ctx.lineTo(...tip);ctx.stroke();}
+        }
+      }
+      ctx.setLineDash([]);ctx.fillStyle="#55ffff";
+      for(const handle of spatialHandles(selectedSpatialShape(),selectedSpatialId==="oval")){ctx.beginPath();ctx.arc(handle.point[0]-crop[0],handle.point[1]-crop[1],4/scale,0,Math.PI*2);ctx.fill();}
+      ctx.restore();
+    }
+    function dragSpatialHandle(gesture, point) {
+      const shape=selectedSpatialShape();if(!shape || gesture.spatialId!==selectedSpatialId) return;
+      const initial=gesture.spatialInitial,[u,v]=spatialToLocal(point,initial),limit=2*Math.max(...state.dimensions_wh);
+      const bounded=(value,min=.5,max=limit)=>Math.max(min,Math.min(max,value));
+      if(gesture.spatialHandle==="center") shape.center_xy=point.map((value,index)=>bounded(initial.center_xy[index]+value-gesture.points[0][index],0,state.dimensions_wh[index]));
+      else if(gesture.spatialHandle==="rotation") shape.rotation_degrees=(Math.atan2(point[1]-shape.center_xy[1],point[0]-shape.center_xy[0])*180/Math.PI+360)%360;
+      else if(gesture.spatialHandle==="radius-x") shape.inner_radii_xy[0]=bounded(Math.abs(u));
+      else if(gesture.spatialHandle==="radius-y") shape.inner_radii_xy[1]=bounded(Math.abs(v));
+      else if(gesture.spatialHandle.startsWith("span-")) shape.half_span=bounded(Math.abs(u),Math.max(.5,Math.abs(shape.bend),shape.end_softness));
+      else if(gesture.spatialHandle==="bend") shape.bend=bounded(v,-shape.half_span,shape.half_span);
+      else if(gesture.spatialHandle.startsWith("soft-")) shape.end_softness=bounded(shape.half_span-Math.abs(u),.5,shape.half_span);
+      else if(gesture.spatialHandle==="width") shape.transition_width=selectedSpatialId==="oval" ? bounded(u-shape.inner_radii_xy[0]) : bounded((v-shape.bend)*(shape.fade_side==="positive" ? 1 : -1));
+      markSpatialDirty();renderSpatialControls();
+    }
+    for(const id of ["spatialCenterX","spatialCenterY","spatialRotation","spatialTransition","spatialStrength","spatialPreserve","spatialWidth","spatialHeight","spatialSpan","spatialBend","spatialEndSoftness"]) $(id).oninput=()=>updateSpatialNumber(id);
+    for(const [id,update] of [["spatialMaster",()=>spatialDraft.enabled=$("spatialMaster").checked],["spatialUseOval",()=>spatialDraft.oval.enabled=$("spatialUseOval").checked],["spatialUseArcs",()=>spatialDraft.arcs_enabled=$("spatialUseArcs").checked],["spatialArcEnabled",()=>selectedSpatialShape().enabled=$("spatialArcEnabled").checked],["spatialSide",()=>selectedSpatialShape().fade_side=$("spatialSide").value]]) $(id).oninput=()=>{update();markSpatialDirty();renderSpatialControls();};
+    $("spatialSelect").onchange=()=>{selectedSpatialId=$("spatialSelect").value;renderSpatialControls();draw();if($("spatialMap").value==="selected")loadImage().catch(error=>message(error.message));};
+    $("spatialAdd").onclick=event=>guarded(()=>{if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");if(event?.detail){spatialAdding=true;$("authorMode").value="spatial";spatialDraftStatus();draw();}else addSpatialArc();})();
+    $("spatialDuplicate").onclick=guarded(()=>{if(selectedSpatialId==="oval")throw Error("Select an arc to duplicate");if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");const arc=structuredClone(selectedSpatialShape());arc.id=crypto.randomUUID();spatialDraft.arcs.push(arc);selectedSpatialId=arc.id;markSpatialDirty();renderSpatialControls();refreshSpatialSelectionMap();});
+    $("spatialRemove").onclick=guarded(()=>{if(selectedSpatialId==="oval")throw Error("Use the oval switch to disable its contribution");spatialDraft.arcs=spatialDraft.arcs.filter(arc=>arc.id!==selectedSpatialId);selectedSpatialId="oval";markSpatialDirty();renderSpatialControls();refreshSpatialSelectionMap();});
+    $("spatialFlip").onclick=guarded(()=>{const arc=selectedSpatialShape();if(selectedSpatialId==="oval")throw Error("Select an arc to flip");arc.fade_side=arc.fade_side==="positive" ? "negative" : "positive";markSpatialDirty();renderSpatialControls();});
+    $("spatialApply").onclick=guarded(()=>applySpatial());
+    $("spatialDisable").onclick=guarded(()=>{
+      const saved=state.revisions.find(r=>r.revision===state.working_revision)?.spatial_fade?.settings;
+      if(!saved){spatialDraft.enabled=false;markSpatialDirty();renderSpatialControls();}
+      return applySpatial(false,saved);
+    });
+    $("spatialCancel").onclick=guarded(()=>{resetSpatialFromSaved();return loadImage();});
+    $("spatialMap").onchange=guarded(()=>loadImage());$("spatialOpacity").oninput=draw;
+    $("spatialCandidate").oninput=markSpatialDirty;$("spatialProtection").oninput=markSpatialDirty;
+    $("spatialControls").onkeydown=event=>{if(event.key==="Escape"){event.preventDefault();gesture=null;resetSpatialFromSaved();}};
+
     function loadAuthoring(preserveSubjectDrafts = false) {
       const subjectControls = [
         "cleanupSupport", "cleanupCandidate",
@@ -773,6 +962,7 @@
       $("shadingDirection").value = shadingSettings?.direction_degrees ?? "";
       $("shadingOpacity").value = shadingSettings?.opacity ?? 0;
       const currentExposure = state.revisions.find(r => r.revision === state.working_revision);
+      if(!spatialDraft || !spatialDirty && !spatialSubmitted) resetSpatialFromSaved();
       if (!exposureDirty) {
         exposureArea = structuredClone(currentExposure?.exposure_area || {regions: [], protection: []});
       }
@@ -892,7 +1082,9 @@
         $("result").textContent = [
           r.revision ? "Revision: " + r.revision : "",
           r.status ? "Status: " + r.status : "",
-          r.directory ? "Export saved: " + r.directory : "",
+          r.directory ? (a.error ? "Visible output requiring recovery: " : "Export saved: ") + r.directory : "",
+          r.editable_companion?.directory ? "Native editable folder: " + r.editable_companion.directory : "",
+          r.editable_companion && !a.error ? "Keep both folders together for portable editing." : "",
           r.operation_id ? "Operation: " + r.operation_id : "",
           r.candidates ? "Generated candidates: " + r.candidates.length : "",
           r.record_file ? "Authoring saved; prepare to apply" : "",
@@ -901,6 +1093,10 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
+      const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && a.result?.parent===spatialSubmitted.base_revision && state.master_id===spatialSubmitted.master_id;
+      if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
+      if(reload || completed) spatialSubmitted=null;
+      if(reload) resetSpatialFromSaved();
       if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;
       const appliedExposure = a.result?.local_exposure?.settings;
       if (reload || (completed && !a.error && exposureControlsSubmitted &&
@@ -922,8 +1118,9 @@
         fadeAreaPublished = false;
         fadeControlsSubmitted = null;
       }
-      const preserveSubjectDrafts = completed && backgroundPublished && !a.error;
-      if (reload || preserveSubjectDrafts) backgroundDirty = false;
+      const backgroundCompleted = completed && backgroundPublished && !a.error;
+      const preserveSubjectDrafts = backgroundCompleted || !!spatialCompleted;
+      if (reload || backgroundCompleted) backgroundDirty = false;
       if (completed) backgroundPublished = false;
       const savedBackground = current?.background?.settings || {color_srgb: "#000000", variation: 0};
       $("backgroundStatus").textContent = "Saved background · " + (current?.revision || "no complete result") + " · " + savedBackground.color_srgb + " · variation " + Math.round(savedBackground.variation * 100) + "%" + (current && !current.final_acceptable ? " · prepared only" : "");
@@ -942,6 +1139,8 @@
             : "clipping unavailable · complete matte review pending")
         : "Saved local exposure OFF · 0 applied EV";
       renderExposureArea();
+      if(!spatialDraft || !spatialDirty && !spatialSubmitted) resetSpatialFromSaved();
+      else spatialDraftStatus();
       if (!actionSubmitting) actionWasRunning = a.running;
       const authoringPublished = ["save", "prepare", "restore"].includes(
         a.name,
@@ -1072,6 +1271,8 @@
       $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
         $(id).disabled = authoringBusy();
+      for(const id of spatialControlIds) $(id).disabled=authoringBusy();
+      if(spatialDraft) renderSpatialControls();
       $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.master_id || !!state?.series_error;
       const selected = state?.revisions.find(record=>record.revision === $("viewRevision").value);
       $("seriesExportAccepted").disabled = authoringBusy() || !selected?.final_acceptable || selected.revision !== state?.accepted_revision;
@@ -1081,17 +1282,30 @@
       const blob = await (await api(path)).blob();
       return createImageBitmap(blob);
     }
+    async function spatialBitmap(view, revision, requestedCrop, panel = "result") {
+      const record=state.revisions.find(r=>r.revision===revision);
+      if(!record?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
+      const request={master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,crop_xyxy:[...requestedCrop],view};
+      if(view==="selected") request.shape_id=selectedSpatialId;
+      if(view==="off") request.panel=panel;
+      const response=await (await api("/api/spatial-preview",request)).json();
+      if(!response || Object.entries(request).some(([key,value])=>JSON.stringify(response[key])!==JSON.stringify(value)) || typeof response.png_base64!=="string" || !response.png_base64.length || response.png_base64.length%4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(response.png_base64)) throw Error("Spatial preview response does not match the saved revision, crop and shape");
+      const bytes=Uint8Array.from(atob(response.png_base64),character=>character.charCodeAt(0));
+      const decoded=await createImageBitmap(new Blob([bytes],{type:"image/png"}));
+      if(decoded.width!==requestedCrop[2]-requestedCrop[0] || decoded.height!==requestedCrop[3]-requestedCrop[1]) {decoded.close();throw Error("Spatial preview dimensions differ from the bound native crop");}
+      return decoded;
+    }
     function previewLabel(panel, revision, base, comparison) {
       if (panel === "source") return "Source RGB8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       if (panel === "alpha") return "Alpha8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       const viewed = state.revisions.find(r => r.revision === revision),
         working = state.revisions.find(r => r.revision === state.working_revision);
-      const stale = record => ["color_cleanup", "shading", "local_exposure", "shadow_fade"].some(name => record?.[name]?.enabled && record[name].stale);
+      const stale = record => ["color_cleanup", "shading", "local_exposure", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
       const isStale = stale(viewed) || stale(working);
       if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · local exposure OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
-      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · local exposure " + exposure + " · Shadow fade " + fade + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
+      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · local exposure " + exposure + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
       if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF";
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
@@ -1103,9 +1317,11 @@
       syncSeries();
       const panel = $("panel").value,
         revision = $("viewRevision").value;
+      const spatialMap=$("spatialMap").value || "none", viewed=state.revisions.find(r=>r.revision===revision);
+      const selectedSaved=selectedSpatialId==="oval" || viewed?.spatial_fade?.settings?.arcs.some(arc=>arc.id===selectedSpatialId);
       const requestedCrop = [...crop],
         workingRevision = state.working_revision,
-        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value);
+        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "");
       const mask =
         $("candidate").value ||
         (!["guides", "none"].includes($("overlay").value)
@@ -1114,6 +1330,10 @@
       const key = [
         $("exposureCompare").checked,
         $("fadeCompare").checked,
+        $("spatialCompare").checked,
+        spatialMap,
+        spatialMap==="selected" ? selectedSpatialId : "",
+        viewed?.revision_manifest_sha256,
         panel,
         revision,
         requestedCrop.join(","),
@@ -1133,14 +1353,18 @@
       draw();
       let next = null,
         nextOverlay = null;
+      let nextSpatialOverlay=false;
       try {
         const path =
           panel === "source"
             ? `/image/source/${state.master_id}/${requestedCrop.join(",")}`
             : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
-        next = await bitmap(path);
+        next = $("spatialCompare").checked && !["source","alpha"].includes(panel)
+          ? await spatialBitmap("off",revision,requestedCrop,panel) : await bitmap(path);
         if (imageKey !== key) return;
-        if (mask && workingRevision)
+        if(spatialMap!=="none" && revision && (spatialMap!=="selected" || selectedSaved)) {
+          nextOverlay=await spatialBitmap(spatialMap,revision,requestedCrop);nextSpatialOverlay=true;
+        } else if (mask && workingRevision)
           nextOverlay = await bitmap(`/mask/${workingRevision}/${mask}`);
         if (imageKey !== key) return;
         // Publish a matching image/overlay/crop together; never author against a transitional frame.
@@ -1148,6 +1372,7 @@
         overlayImage?.close();
         image = next;
         overlayImage = nextOverlay;
+        spatialOverlayLoaded=nextSpatialOverlay;
         next = null;
         nextOverlay = null;
         imageLoading = false;
@@ -1186,8 +1411,9 @@
       ctx.scale(scale, scale);
       ctx.drawImage(image, 0, 0);
       if (overlayImage) {
-        ctx.globalAlpha = 0.45;
-        ctx.drawImage(
+        ctx.globalAlpha = spatialOverlayLoaded ? (String($("spatialOpacity").value).trim()==="" ? .45 : Number($("spatialOpacity").value)) : 0.45;
+        if(spatialOverlayLoaded) ctx.drawImage(overlayImage,0,0);
+        else ctx.drawImage(
           overlayImage,
           crop[0],
           crop[1],
@@ -1252,6 +1478,7 @@
           }
         }
       }
+      drawSpatialShapes(scale);
       ctx.restore();
     }
     function nativePosition(event, edge = false) {
@@ -1442,11 +1669,12 @@
     $("fadePreserve").oninput = () => { $("fadePreserveRange").value = $("fadePreserve").value; markFadeControlsDirty(); };
     $("fadeCandidate").onchange = markFadeControlsDirty;
     function compareChanged(id) {
-      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare"]) if (other !== id) $(other).checked = false;
+      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "spatialCompare"]) if (other !== id) $(other).checked = false;
       if (id !== "shadingPreview") $("shadingPreview").value = "";
       imageKey = ""; return loadImage();
     }
     $("fadeCompare").onchange = guarded(() => compareChanged("fadeCompare"));
+    $("spatialCompare").onchange = guarded(() => compareChanged("spatialCompare"));
     $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
     $("exposureRemove").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
@@ -1991,9 +2219,10 @@
       return loadImage();
     });
     canvas.onpointerdown = (event) => {
+      const spatialMode=$("authorMode").value==="spatial";
       const effectMode = ["exposure", "fade"].includes($("authorMode").value) ? $("authorMode").value : null;
-      const panMode = event.shiftKey || (!effectMode && $("shape").value === "pan");
-      const point = nativePosition(event);
+      const panMode = event.shiftKey || (!effectMode && !spatialMode && $("shape").value === "pan");
+      const point = nativePosition(event,spatialMode);
       if (!panMode && (authoringBusy() || imageLoading)) {
         message(
           "Guide not started while a writer is active or the native view is loading",
@@ -2001,6 +2230,17 @@
         return;
       }
       if (!panMode && !point) return;
+      if(spatialMode && !panMode) {
+        if($("viewRevision").value!==state.working_revision){message("Choose the working revision before editing fade shapes");return;}
+        try {
+          if(spatialAdding){addSpatialArc(point);return;}
+          validateSpatialSettings();
+          const handle=hitSpatialHandle(point,spatialHandles(selectedSpatialShape(),selectedSpatialId==="oval"),9/transform.scale);
+          if(!handle)return;
+          gesture={panMode:false,spatialId:selectedSpatialId,spatialHandle:handle.name,spatialInitial:structuredClone(selectedSpatialShape()),points:[point]};
+          canvas.setPointerCapture(event.pointerId);return;
+        } catch(error){message(error.message);return;}
+      }
       gesture = {
         panMode, effectMode, shape: effectMode ? $(effectMode + "Shape").value : $("shape").value,
         start: [event.clientX, event.clientY],
@@ -2010,7 +2250,7 @@
       canvas.setPointerCapture(event.pointerId);
     };
     canvas.onpointermove = (event) => {
-      const point = nativePosition(event);
+      const point = nativePosition(event,!!gesture?.spatialId);
       $("coordinate").textContent = point
         ? "Native " + point.map(Math.floor).join(", ")
         : "Outside image";
@@ -2021,7 +2261,8 @@
           gesture.pan[1] + event.clientY - gesture.start[1],
         ];
         draw();
-      } else if (point && gesture.shape === "stroke")
+      } else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
+      else if (point && gesture.shape === "stroke")
         gesture.points.push(point);
     };
     canvas.onpointerup = (event) => {
@@ -2029,6 +2270,7 @@
       const g = gesture;
       gesture = null;
       if (g.panMode) return;
+      if(g.spatialId) return;
       if (authoringBusy() || imageLoading) {
         message(
           "Guide cancelled because a writer or native view changed; nothing saved",
@@ -2057,6 +2299,7 @@
     };
     canvas.onpointercancel = () => (gesture = null);
     canvas.onkeydown = (event) => {
+      if(event.key==="Escape" && $("authorMode").value==="spatial") {event.preventDefault();gesture=null;if(spatialAdding){spatialAdding=false;spatialDraftStatus();draw();}else resetSpatialFromSaved();return;}
       if (
         [
           "+",

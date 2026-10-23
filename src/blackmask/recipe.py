@@ -22,6 +22,7 @@ class Recipe:
         default_factory=lambda: {"enabled": False, "amount": 0.0, "preserve_highlights": 1.0}
     )
     background: dict[str, Any] | None = None
+    spatial_fade: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -36,16 +37,22 @@ class Recipe:
             "local_exposure": self.local_exposure,
             "shadow_fade": self.shadow_fade,
             **({"background": self.background} if self.background is not None else {}),
+            **({"spatial_fade": self.spatial_fade} if self.spatial_fade is not None else {}),
         }
 
     @classmethod
     def from_dict(
-        cls, value: dict[str, Any], master_id: str, *, max_margin_px: int | None = None
+        cls,
+        value: dict[str, Any],
+        master_id: str,
+        *,
+        max_margin_px: int | None = None,
+        dimensions_wh: tuple[int, int] | None = None,
     ) -> "Recipe":
         expected = cls(master_id).to_dict()
         if (
-            set(value) - {"local_exposure", "shadow_fade", "background"}
-            != set(expected) - {"local_exposure", "shadow_fade", "background"}
+            set(value) - {"local_exposure", "shadow_fade", "background", "spatial_fade"}
+            != set(expected) - {"local_exposure", "shadow_fade", "background", "spatial_fade"}
             or type(value.get("schema_version")) is not int
             or value["schema_version"] != 1
             or value["master_id"] != master_id
@@ -65,6 +72,14 @@ class Recipe:
         validate_exposure(value.get("local_exposure", {"enabled": False, "ev": 0.0}))
         validate_cleanup(value["color_cleanup"])
         validate_shading(value["shading"])
+        if "spatial_fade" in value:
+            from .spatial_fade import validate_spatial_fade
+
+            if dimensions_wh is None:
+                raise ValueError("Native dimensions required to validate spatial fade recipe")
+            validate_spatial_fade(value["spatial_fade"], *dimensions_wh)
+            if value["spatial_fade"]["enabled"] and value["shading"]["enabled"]:
+                raise ValueError("Inward shading and spatial fade cannot both be enabled")
         for section in ("matting",):
             current = value[section]
             reference = expected[section]
@@ -128,4 +143,5 @@ class Recipe:
             dict(value.get("local_exposure", {"enabled": False, "ev": 0.0})),
             dict(value.get("shadow_fade", cls(master_id).shadow_fade)),
             dict(value["background"]) if "background" in value else None,
+            dict(value["spatial_fade"]) if "spatial_fade" in value else None,
         )

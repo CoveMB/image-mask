@@ -39,6 +39,109 @@ The fallback preserves the existing LibRaw rendering backend; it does not claim
 complete DNG 1.6 colour/profile processing or matching the phone's JPEG/HDR image.
 Human colour and photographic review remain pending.
 
+## Fade into background — implementation evidence
+
+The feature uses canonical oval/arc geometry, complete saved settings and one
+background-targeted colour blend. Tests exercise strict inactive settings, stable
+UUIDs, full replacement, additive protection/partial locks, exclusive legacy mode,
+alpha staleness, publication recovery, legacy file sets, authenticated saved maps,
+delayed responses and independent UI drafts. Task completion suites passed 180,
+296, 281, 219 and 123 checks respectively; these overlap and are not additive.
+Three further multi-head branching fixtures passed for oval, arcs and both, including
+opposing arcs, lateral influence on a neighbouring stem, protected partial alpha,
+burgundy target and series alpha/hidden-RGB preservation.
+
+After review fixes and current-main integration: **923 passed, 3 skipped**,
+exit 0 (189.76 s), with no
+warnings. Skips require explicitly installed SAM/ViTMatte caches and match the
+baseline optional inference checks. Ruff lint/format and mypy (22 source files)
+passed. Commands were Ruff `check src tests --no-cache`, `format --check src tests
+--no-cache`, mypy `src`, and pytest `-q -p no:cacheprovider`, using the existing
+environment described below; full raw output is retained locally.
+
+Two different fresh read-only implementation reviews completed in sequence:
+explicit Ponytail, then regular engineering review after owner repairs. The owner
+fixed stale comparison policy and successful duplicate-stage retention, then the
+regular review's active-mode export reconstruction instructions. Its targeted
+independent recheck found no remaining material improvement. The last metadata
+repair had 3 failing portable replay regressions before correction and 3 passing
+after; the affected export/reconstruction suite passed **280 tests**, exit 0
+(46.88 s), with no warnings. Rendering was unchanged by that last repair. See the
+[implementation review record](superpowers/plans/2026-10-22-fade-into-background-reviews.md#implementation-execution).
+
+Hosted CodeRabbit reviewed all 28 feature files on MR #25. Its two findings were
+verified and fixed: Disable now submits saved geometry with only the master
+switch OFF while preserving unapplied drafts; the native/series transparent
+hidden-RGB contract is clarified without changing pixels. Four new page-handler
+cases failed before repair. After repair, all **82 page checks** and **47 connected
+viewer/coordinate checks** passed (6.90 s / 28.79 s, both exit 0). A targeted
+independent recheck found no material improvement. The final Disable repair was
+checked through the shipped-page Node harness and source review; the earlier
+actual browser walkthrough below was not repeated for this delta.
+
+Native and active-series delivery tests copy BOTH folders and make the original
+project unavailable before reconstructing from delivered files. Independent scalar
+P/A/Q tests cover identity, enlargement, reduction and strong aspect changes.
+Native-first failure, visible uncertain durability, identical retry, tampering and
+collision checks preserve prior usable output. These are synthetic deterministic
+checks, without new inference or model downloads.
+
+A frozen local 3072×4080 flower project was cloned for evaluation. Four operand
+hashes and three complete 1101-sample paths reproduced the old light→dark→light
+shading defect. Six project-control drafts covered oval-only, arcs-only and both,
+each with highlight preservation OFF/ON; independent Shadow fade stayed at 38%
+with its highlight setting unchanged, and saved alpha hashes stayed exact.
+With this feature's highlights OFF, all three adjacent paths decrease from opaque
+tip strength about 90% (oval) or 95% (arcs/both) to zero at the centre, without
+reversals. Highlight-ON paths show source-dependent local variation, as intended.
+The implementation owner inspected full colour/OFF, selected/combined/effective
+maps, native tip crops and endpoints/junctions. No new visible band or seam was
+found in these placements. This is assistant photographic evaluation of drafts,
+not human acceptance or a universal brightness guarantee.
+
+The supplied flattened branching reference was inspected for intent only. No
+suitable editable branching source was established; actual branching-photo
+validation remains pending. Synthetic branches do not close that evidence gap.
+Private photographs, settings, hashes, full traces and viewing sheets remain local
+under ignored evaluation storage and are excluded from distributions.
+
+Fresh-process measurements at 3072×4080 (one observation each):
+
+| Arcs | Geometry | Combined PNG conversion/encoding | Peak process RSS |
+| --- | ---: | ---: | ---: |
+| 1 | 0.166 s | 0.069 s | 346,882,048 bytes |
+| 32 | 3.955 s | 0.096 s | 366,755,840 bytes |
+
+These measure geometry plus combined-map encoding in a fresh Python process;
+they exclude full HTTP, saved-layer validation/rendering, exports and concurrent
+viewer activity. They are neither a calibrated benchmark nor a supported RAM limit.
+The 64-row implementation avoids per-arc full-frame buffers; admission estimates
+are separate from measured resident memory and available RAM.
+
+Actual loopback-browser observations are distinct from the Node DOM harness:
+oval centre and arc transition handles moved with registered native coordinates;
+keyboard fields, negative bend, direction flip, zoom/pan, selection, keyboard Add,
+duplicate/remove/cancel and explicit candidate rejection were exercised. Applying
+oval/arcs settings round-tripped saved values while retaining unrelated background
+draft values and independent Shadow fade 38%. Numeric alternatives and focus were
+observed; this is not a screen-reader/accessibility certification.
+Selected, combined and effective saved maps, display-only opacity, Fade OFF,
+disable without candidate opt-in, re-enable of retained oval/arcs and invalid-value
+recovery were observed. A real framed draft export completed with both presentation
+and native editable folders and the keep-both instruction visible in the browser.
+
+The manual walkthrough and CLI `run --help` / `export --help` were checked against
+the delivered controls and arguments. Actual integrated sdist (80 members) and
+wheel (29 members) were inspected: feature Python/UI files present; development
+plans, local photo/evaluation assets, VCS metadata and personal absolute paths absent.
+No installation or dependency download was performed.
+
+Verification used the user's existing Python 3.12.14 environment with Pillow
+12.3.0, while the repository pins Pillow 13.0.0. Exact pinned-environment
+certification remains unperformed. Browser, photographic, automated and human
+acceptance claims above are deliberately separate; human photographic acceptance
+and a representative editable branching-photo evaluation remain pending.
+
 ## Fixed-size series framing
 
 Current local implementation evidence is synthetic and bound to frozen application

@@ -30,6 +30,7 @@ from .project import (
     _atomic_json,
     _json_bytes,
     _root,
+    _validate_revision_directory,
     check_space,
     digest,
     load_master,
@@ -42,6 +43,14 @@ from .shadow_fade import (
     read_shadow_fade,
     selected_shadow_fade,
     validate_shadow_fade,
+)
+from .spatial_fade import (
+    SPATIAL_FADE_ALGORITHM,
+    SPATIAL_FADE_FILES,
+    SpatialFadeOperands,
+    make_spatial_weight,
+    read_spatial_fade,
+    validate_spatial_fade,
 )
 
 
@@ -219,7 +228,7 @@ SHADING_FILES = (
 def effects_stale(manifest: dict[str, Any]) -> bool:
     return any(
         manifest.get(name, {}).get("enabled") and manifest[name].get("stale")
-        for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade")
+        for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade", "spatial_fade")
     )
 
 
@@ -337,6 +346,59 @@ def inherit_shadow_fade(
         record["protection_sha256"] = digest((directory / "protection16.png").read_bytes())
     (directory / "settings.json").write_bytes(_json_bytes(record))
     return record
+
+
+def inherit_spatial_fade(
+    project: Path,
+    parent: str,
+    stage: Path,
+    master_id: str,
+    alpha: np.ndarray | None = None,
+    rgb_protection: np.ndarray | None = None,
+) -> dict[str, Any] | None:
+    manifest = read_revision(project, parent, master_id)
+    previous = manifest.get("spatial_fade")
+    if previous is None:
+        return None
+    record = dict(previous)
+    directory = stage / "effects/spatial-fade"
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in SPATIAL_FADE_FILES:
+        (directory / name).write_bytes(
+            _asset(project, f"revisions/{parent}/effects/spatial-fade/{name}").read_bytes()
+        )
+    if alpha is not None:
+        record["stale"] = bool(
+            record["enabled"] and not np.array_equal(scalar16(directory / "alpha16.png"), alpha)
+        )
+    if rgb_protection is not None:
+        protection = scalar16(directory / "protection16.png")
+        protection[rgb_protection] = 65535
+        Image.fromarray(protection).save(directory / "protection16.png")
+        record["protection_sha256"] = digest((directory / "protection16.png").read_bytes())
+    (directory / "settings.json").write_bytes(_json_bytes(record))
+    return record
+
+
+def saved_spatial_fade(
+    project: Path,
+    revision: str,
+    alpha: np.ndarray,
+    manifest: dict[str, Any],
+    *,
+    effects_off: bool = False,
+    spatial_fade_off: bool = False,
+) -> SpatialFadeOperands | None:
+    saved = read_spatial_fade(_asset(project, f"revisions/{revision}"), manifest, alpha)
+    if (
+        saved is None
+        or effects_off
+        or spatial_fade_off
+        or effects_stale(manifest)
+        or not saved.record["enabled"]
+    ):
+        return None
+    return saved
 
 
 def inherit_cleanup(
@@ -458,6 +520,12 @@ def saved_effect_lock_layers(project: Path, revision: str, master_id: str):
             if name.startswith("effects/shadow-fade/") or name == "base_alpha16.png"
         ):
             raise ProjectError("Prepared lock must retain inherited Shadow fade and alpha")
+        if manifest.get("spatial_fade") != parent.get("spatial_fade") or any(
+            manifest["files"].get(name) != parent["files"].get(name)
+            for name in parent["files"]
+            if name.startswith("effects/spatial-fade/")
+        ):
+            raise ProjectError("Prepared lock must retain inherited spatial fade")
         revision = parent["revision"]
     return saved_layers(project, revision, master_id)
 
@@ -498,6 +566,8 @@ def run_effects(
             "shadow_fade_area",
             "shadow_fade_protection_file",
             "shadow_fade_amount_only",
+            "spatial_fade",
+            "spatial_fade_protection_file",
         }
         or type(operation["schema_version"]) is not int
         or operation["schema_version"] != 1
@@ -505,6 +575,12 @@ def run_effects(
         or type(operation["candidate_comparison"]) is not bool
     ):
         raise ProjectError("Invalid schema-1 effects request")
+    spatial_changed = "spatial_fade" in operation
+    if spatial_changed:
+        if set(operation) - required - {"spatial_fade", "spatial_fade_protection_file"}:
+            raise ProjectError("Spatial fade must be an exclusive effects operation")
+    elif "spatial_fade_protection_file" in operation:
+        raise ProjectError("Spatial protection requires spatial fade settings")
     background_changed = "background" in operation
     if background_changed:
         from .background import validate_background
@@ -551,6 +627,7 @@ def run_effects(
         set(operation) & exposure_fields
         or not fade_changed
         and not background_changed
+        and not spatial_changed
         and "support_file" not in operation
     ):
         raise ProjectError("Invalid effects support/exposure fields")
@@ -601,7 +678,11 @@ def run_effects(
         raise ProjectError("Stale effects master, base revision or draft identity")
     parent = state["working_revision"]
     cleanup_changed = "color_cleanup" in operation or not (
-        "shading" in operation or exposure_changed or fade_changed or background_changed
+        "shading" in operation
+        or exposure_changed
+        or fade_changed
+        or background_changed
+        or spatial_changed
     )
     settings = operation.get(
         "color_cleanup", tomllib.loads(_asset(project, "recipe.toml").read_text())["color_cleanup"]
@@ -621,6 +702,17 @@ def run_effects(
     source, _ = load_master(project, state["master_id"])
     height, width = alpha.shape
     scope = coordinates(operation["scope_xyxy"], width, height, box=True)
+    if spatial_changed:
+        validate_spatial_fade(operation["spatial_fade"], width, height)
+        if scope != [0, 0, width, height]:
+            raise ProjectError("Spatial fade scope must cover the full native image")
+        if operation["spatial_fade"]["enabled"]:
+            if parent != state["accepted_revision"] and not operation["candidate_comparison"]:
+                raise ProjectError(
+                    "Spatial fade requires accepted base or explicit candidate comparison"
+                )
+        elif "spatial_fade_protection_file" in operation:
+            raise ProjectError("Spatial fade disable cannot replace protection")
     if background_changed and scope != [0, 0, width, height]:
         raise ProjectError("Background scope must cover the full native image")
     if (
@@ -656,7 +748,15 @@ def run_effects(
         current_recipe[name] != parent_recipe.get(name)
         for name in current_recipe
         if name
-        not in {"color_cleanup", "shading", "local_exposure", "shadow_fade", "background", "notes"}
+        not in {
+            "color_cleanup",
+            "shading",
+            "local_exposure",
+            "shadow_fade",
+            "spatial_fade",
+            "background",
+            "notes",
+        }
     ):
         raise ProjectError(
             "Changed guidance/base recipe requires prepare and complete matte before effects"
@@ -768,6 +868,10 @@ def run_effects(
         if type(operation.get("opacity_only", False)) is not bool:
             raise ProjectError("opacity_only must be boolean")
         if operation.get("opacity_only"):
+            if manifest.get("spatial_fade", {}).get("enabled") and shading_settings["enabled"]:
+                raise ProjectError(
+                    "Opacity-only cannot select inward shading; explicitly select that mode"
+                )
             if shading_record is None:
                 raise ProjectError("Opacity-only operation requires saved shading")
             if any(
@@ -925,6 +1029,47 @@ def run_effects(
             (fade_support != 0) & (alpha != 0) & ~fade_protection
         ):
             raise ProjectError("Enabled Shadow fade requires a nonempty eligible selection")
+    if not spatial_changed and current_recipe.get("spatial_fade") != parent_recipe.get(
+        "spatial_fade"
+    ):
+        raise ProjectError("Changed spatial fade recipe requires explicit spatial fade operation")
+    spatial_inputs = {}
+    if spatial_changed:
+        spatial_settings = operation["spatial_fade"]
+        previous_spatial = read_spatial_fade(
+            _asset(project, f"revisions/{parent}"), manifest, alpha
+        )
+        spatial_protection = protection.copy()
+        if previous_spatial is not None:
+            spatial_protection |= previous_spatial.protection
+        if shading_record is not None:
+            spatial_protection |= (
+                scalar16(_asset(project, f"revisions/{parent}/effects/shading/protection16.png"))
+                != 0
+            )
+        if "spatial_fade_protection_file" in operation:
+            path = _input_file(project, operation["spatial_fade_protection_file"])
+            spatial_inputs[path] = path.read_bytes()
+            explicit = read_shading_protection(path)
+            if explicit.shape != alpha.shape or not np.isin(explicit, [0, 65535]).all():
+                raise ProjectError("Spatial protection must be aligned categorical scalar16/8")
+            spatial_protection |= explicit != 0
+        geometric_keys = ("oval", "arcs_enabled", "arcs")
+        spatial_weight = (
+            previous_spatial.weight16
+            if previous_spatial is not None
+            and all(
+                spatial_settings[key] == previous_spatial.record["settings"][key]
+                for key in geometric_keys
+            )
+            else make_spatial_weight(alpha.shape, spatial_settings)
+        )
+        spatial_dependency = (
+            scalar16(_asset(project, f"revisions/{parent}/effects/spatial-fade/alpha16.png"))
+            if previous_spatial is not None and not spatial_settings["enabled"]
+            else alpha
+        )
+        current_recipe["spatial_fade"] = spatial_settings
     revisions = _asset(project, "revisions")
     existing = [
         int(p.name[4:]) for p in revisions.iterdir() if re.fullmatch(r"rev-[0-9]{3,}", p.name)
@@ -1018,6 +1163,55 @@ def run_effects(
         (directory / "settings.json").write_bytes(_json_bytes(shading_record))
         if not np.array_equal(scalar16(stage / "shadow_weight16.png"), weight):
             raise ProjectError("Shadow W16 round trip failed")
+    spatial_record = inherit_spatial_fade(project, parent, stage, state["master_id"])
+    if spatial_changed:
+        directory = stage / "effects/spatial-fade"
+        directory.mkdir(parents=True, exist_ok=True)
+        for name, value in (
+            ("weight16", spatial_weight),
+            ("protection16", spatial_protection.astype(np.uint16) * 65535),
+            ("alpha16", spatial_dependency),
+        ):
+            Image.fromarray(value).save(directory / (name + ".png"))
+        spatial_record = {
+            "schema_version": 1,
+            "enabled": spatial_settings["enabled"],
+            "settings": spatial_settings,
+            "stale": False,
+            "source_id": state["master_id"],
+            "algorithm": SPATIAL_FADE_ALGORITHM,
+            "scope_xyxy": [0, 0, width, height],
+            "candidate_comparison": operation["candidate_comparison"],
+            **{
+                key: digest((directory / name).read_bytes())
+                for name, key in (
+                    ("weight16.png", "weight_sha256"),
+                    ("protection16.png", "protection_sha256"),
+                    ("alpha16.png", "alpha_sha256"),
+                )
+            },
+        }
+        (directory / "settings.json").write_bytes(_json_bytes(spatial_record))
+        if spatial_settings["enabled"] and shading_record is not None:
+            shading_record = dict(
+                shading_record,
+                enabled=False,
+                stale=False,
+                settings=dict(shading_record["settings"], enabled=False),
+            )
+            (stage / "effects/shading/settings.json").write_bytes(_json_bytes(shading_record))
+            current_recipe["shading"] = shading_record["settings"]
+    if "shading" in operation and spatial_record is not None:
+        current_recipe["shading"] = shading_settings
+        if shading_settings["enabled"]:
+            spatial_record = dict(
+                spatial_record,
+                enabled=False,
+                stale=False,
+                settings=dict(spatial_record["settings"], enabled=False),
+            )
+            (stage / "effects/spatial-fade/settings.json").write_bytes(_json_bytes(spatial_record))
+            current_recipe["spatial_fade"] = spatial_record["settings"]
     exposure_record = inherit_exposure(project, parent, stage, state["master_id"])
     if exposure_changed:
         directory = stage / "effects/exposure"
@@ -1114,6 +1308,9 @@ def run_effects(
             (height, width),
             current_recipe.get("background"),
         )
+    if spatial_changed or "shading" in operation and spatial_record is not None:
+        published_recipe = tomli_w.dumps(current_recipe).encode()
+        (stage / "recipe.toml").write_bytes(published_recipe)
     effect_records = {}
     if background_record is not None:
         effect_records["background"] = background_record
@@ -1125,6 +1322,8 @@ def run_effects(
         effect_records["local_exposure"] = exposure_record
     if fade_record is not None:
         effect_records["shadow_fade"] = fade_record
+    if spatial_record is not None:
+        effect_records["spatial_fade"] = spatial_record
     stale = effects_stale(effect_records)
     appearance = corrected if enabled and not stale else foreground
     appearance, clipping = selected_exposure(
@@ -1146,6 +1345,20 @@ def run_effects(
         if shading_record and shading_record["enabled"] and not stale
         else (None, 0.0)
     )
+    spatial_operands = (
+        SpatialFadeOperands(
+            scalar16(stage / "effects/spatial-fade/weight16.png"),
+            scalar16(stage / "effects/spatial-fade/protection16.png") != 0,
+            spatial_record,
+        )
+        if spatial_record is not None and spatial_record["enabled"] and not stale
+        else None
+    )
+    review_background = (
+        read_rgb16(stage / "background/background_rgb16.tif")
+        if background_record is not None and not stale
+        else None
+    )
     review = write_review(
         stage / "review",
         source,
@@ -1153,8 +1366,12 @@ def run_effects(
         alpha,
         master_id=state["master_id"],
         revision=revision,
-        background16=read_rgb16(stage / "background/background_rgb16.tif")
-        if background_record is not None and not stale
+        background16=review_background,
+        spatial_fade=spatial_operands,
+        fade_background16=review_background
+        if review_background is not None
+        else np.zeros_like(appearance)
+        if spatial_operands is not None
         else None,
         weight16=review_weight,
         opacity=opacity,
@@ -1170,6 +1387,12 @@ def run_effects(
     if fade_record is not None:
         review["label"] += (
             "; Shadow fade ON" if fade_record["enabled"] and not stale else "; Shadow fade OFF"
+        )
+    if spatial_record is not None:
+        review["label"] += (
+            "; Fade into background ON; diagnostic backdrops retain its selected target"
+            if spatial_operands is not None
+            else "; Fade into background OFF"
         )
     review["label"] += "; cleanup ON" if enabled and not stale else "; cleanup OFF"
     review["label"] += (
@@ -1208,6 +1431,9 @@ def run_effects(
     (stage / "manifest.json").write_bytes(_json_bytes(new_manifest))
 
     def recheck():
+        for path, data in spatial_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale spatial fade protection input")
         for path, data in fade_inputs.items():
             if path.read_bytes() != data:
                 raise ProjectError("Stale Shadow fade input")
@@ -1237,15 +1463,28 @@ def run_effects(
 
     recheck()
     destination = revisions / revision
-    publish_artifacts(stage, destination)
-    read_revision(project, revision, state["master_id"])
-    if background_changed:
-        _atomic_bytes(
-            _asset(project, "recipe.toml"), published_recipe, validate_before_replace=recheck
+    if spatial_record is not None:
+        _validate_revision_directory(
+            project, revision, state["master_id"], str(stage.relative_to(project))
         )
-        snapshots["recipe.toml"] = published_recipe
-    state.update(working_revision=revision, status="review_needed")
-    _atomic_json(_asset(project, "state.json"), state, validate_before_replace=recheck)
+    try:
+        publish_artifacts(stage, destination)
+        read_revision(project, revision, state["master_id"])
+        if background_changed or published_recipe != snapshots["recipe.toml"]:
+            _atomic_bytes(
+                _asset(project, "recipe.toml"), published_recipe, validate_before_replace=recheck
+            )
+            snapshots["recipe.toml"] = published_recipe
+        state.update(working_revision=revision, status="review_needed")
+        _atomic_json(_asset(project, "state.json"), state, validate_before_replace=recheck)
+    except OSError as error:
+        if spatial_record is not None and destination.exists():
+            raise ProjectError(
+                f"Fade into background publication durability unconfirmed: visible revision {destination}. "
+                "Reload project status and inspect or explicitly restore this revision before retrying; "
+                "its files and earlier accepted work were retained."
+            ) from error
+        raise
     return dict(
         result,
         manifest_file=str(destination / "manifest.json"),

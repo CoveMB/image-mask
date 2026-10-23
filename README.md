@@ -38,6 +38,11 @@ and exposure-only comparison. Shadow fade independently darkens soft subject are
 in linear light, with Amount, Preserve highlights, explicit protection and a
 fade-only comparison.
 
+**Fade into background** blends subject colour toward the chosen background using
+an editable oval, independently directed arcs, or both. It preserves alpha and
+keeps Shadow fade independent. See the [offline walkthrough](docs/workflow.md#fade-into-background)
+for shape controls, saved strength maps, recovery and portable two-folder exports.
+
 Background appearance saves a tone and broad variation behind the matte. New
 projects start warm near-black (`#120708`, variation 55%); older projects stay
 black until explicitly changed. The [background instructions](docs/workflow.md#background-appearance)
@@ -155,6 +160,7 @@ for explicit model setup, typed preparation and human review.
 | Source cleanup, protected inward W16 and independent effect publication | `src/blackmask/effects.py` |
 | Independent native area and linear-sRGB local exposure | `src/blackmask/exposure.py` |
 | Independent linear-sRGB Shadow fade and saved operands | `src/blackmask/shadow_fade.py` |
+| Native oval/arc fields and background-targeted colour blend | `src/blackmask/spatial_fade.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | Presentation geometry, bounded sampling and source-bound preset | `src/blackmask/framing.py` |

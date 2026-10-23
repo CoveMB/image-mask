@@ -233,11 +233,26 @@ def apply_operation(
     *,
     model_cache: Path | None = None,
     request_file: Path | None = None,
+    expected_revision_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Validate a prepare request, process snapshots, return actual identities and review paths."""
     project = _root(project)
     with project_lock(project):
         try:
+            if expected_revision_manifest_sha256 is not None:
+                if (
+                    not isinstance(expected_revision_manifest_sha256, str)
+                    or re.fullmatch(r"[a-f0-9]{64}", expected_revision_manifest_sha256) is None
+                ):
+                    raise ProjectError("Invalid expected raw revision manifest identity")
+                state = read_project(project)
+                parent = state["working_revision"]
+                if (
+                    not parent
+                    or digest(_asset(project, f"revisions/{parent}/manifest.json").read_bytes())
+                    != expected_revision_manifest_sha256
+                ):
+                    raise ProjectError("Stale raw revision manifest; reload the selected result")
             if isinstance(operation, dict) and operation.get("kind") in {"matte", "repair"}:
                 return _run_matte(project, operation, model_cache, request_file)
             if isinstance(operation, dict) and operation.get("kind") == "effects":
@@ -308,6 +323,7 @@ def _prepare(
         tomllib.loads(snapshots["recipe.toml"].decode()),
         state["master_id"],
         max_margin_px=max(width, height),
+        dimensions_wh=(width, height),
     )
     guides = validate_guides(
         json.loads(snapshots["guides.json"]), state["master_id"], width, height
@@ -379,12 +395,19 @@ def _prepare(
                 (stage / name).write_bytes(
                     _asset(project, f"revisions/{parent}/{name}").read_bytes()
                 )
-    from .effects import inherit_cleanup, inherit_exposure, inherit_shading, inherit_shadow_fade
+    from .effects import (
+        inherit_cleanup,
+        inherit_exposure,
+        inherit_shading,
+        inherit_shadow_fade,
+        inherit_spatial_fade,
+    )
 
     cleanup = inherit_cleanup(project, parent, stage, state["master_id"]) if parent else None
     shading = inherit_shading(project, parent, stage, state["master_id"]) if parent else None
     exposure = inherit_exposure(project, parent, stage, state["master_id"]) if parent else None
     fade = inherit_shadow_fade(project, parent, stage, state["master_id"]) if parent else None
+    spatial = inherit_spatial_fade(project, parent, stage, state["master_id"]) if parent else None
     from .background import inherit_background
 
     background = inherit_background(
@@ -506,6 +529,7 @@ def _prepare(
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
         **({"shadow_fade": fade} if fade is not None else {}),
+        **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
@@ -967,6 +991,7 @@ def _matte(
         tomllib.loads(snapshots["recipe.toml"].decode()),
         state["master_id"],
         max_margin_px=max(width, height),
+        dimensions_wh=(width, height),
     )
     guides = json.loads(_asset(project, f"revisions/{parent}/guides.json").read_bytes())
     saved = {
@@ -1218,6 +1243,8 @@ def _matte(
         inherit_exposure,
         inherit_shading,
         inherit_shadow_fade,
+        inherit_spatial_fade,
+        saved_spatial_fade,
     )
 
     cleanup = inherit_cleanup(
@@ -1226,6 +1253,9 @@ def _matte(
     shading = inherit_shading(project, parent, stage, state["master_id"], alpha)
     exposure = inherit_exposure(project, parent, stage, state["master_id"], alpha, rgb_protection)
     fade = inherit_shadow_fade(project, parent, stage, state["master_id"], alpha, rgb_protection)
+    spatial = inherit_spatial_fade(
+        project, parent, stage, state["master_id"], alpha, rgb_protection
+    )
     from .background import inherit_background
 
     background = inherit_background(
@@ -1237,6 +1267,7 @@ def _matte(
             "shading": shading or {},
             "local_exposure": exposure or {},
             "shadow_fade": fade or {},
+            "spatial_fade": spatial or {},
         }
     )
     review_weight = (
@@ -1273,12 +1304,32 @@ def _matte(
         if background is not None and not stale_effects
         else None
     )
+    from .spatial_fade import SpatialFadeOperands
+
+    spatial_operands = (
+        SpatialFadeOperands(
+            scalar16(stage / "effects/spatial-fade/weight16.png"),
+            scalar16(stage / "effects/spatial-fade/protection16.png") != 0,
+            spatial,
+        )
+        if spatial is not None and spatial["enabled"] and not stale_effects
+        else None
+    )
+    fade_target = (
+        background_pixels
+        if background_pixels is not None
+        else np.zeros_like(review_foreground)
+        if spatial_operands is not None
+        else None
+    )
     write_review(
         stage / "review",
         pixels,
         review_foreground,
         alpha,
         background16=background_pixels,
+        spatial_fade=spatial_operands,
+        fade_background16=fade_target,
         master_id=state["master_id"],
         revision=revision,
         crops=[context] if repairing else None,
@@ -1309,6 +1360,10 @@ def _matte(
             before_foreground,
             parent_alpha,
             background16=background_pixels,
+            spatial_fade=saved_spatial_fade(
+                project, parent, parent_alpha, manifest, effects_off=stale_effects
+            ),
+            fade_background16=fade_target,
             master_id=state["master_id"],
             revision=parent,
             crops=[context],
@@ -1364,6 +1419,21 @@ def _matte(
                 else f"; Shadow fade {'ON' if fade['enabled'] else 'OFF'}"
             )
             path.write_bytes(_json_bytes(record))
+    if spatial:
+        for review_name in ("review", "review-before") if repairing else ("review",):
+            path = stage / review_name / "manifest.json"
+            record = json.loads(path.read_bytes())
+            record["spatial_fade"] = (
+                manifest["spatial_fade"] if review_name == "review-before" else spatial
+            )
+            record["label"] += (
+                "; spatial fade stale; BASE comparison"
+                if stale_effects
+                else "; Fade into background ON"
+                if spatial["enabled"]
+                else "; Fade into background OFF"
+            )
+            path.write_bytes(_json_bytes(record))
     (stage / "qa.json").write_bytes(
         _json_bytes(
             {
@@ -1388,6 +1458,7 @@ def _matte(
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
         **({"shadow_fade": fade} if fade is not None else {}),
+        **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
@@ -1552,7 +1623,10 @@ def restore_revision(
                 raise ProjectError("Invalid saved restore draft digest")
         pixels, _ = _validate_assets(project, state, validate_drafts=not replace_drafts)
         Recipe.from_dict(
-            tomllib.loads(recipe.decode()), state["master_id"], max_margin_px=max(pixels.shape[:2])
+            tomllib.loads(recipe.decode()),
+            state["master_id"],
+            max_margin_px=max(pixels.shape[:2]),
+            dimensions_wh=(pixels.shape[1], pixels.shape[0]),
         )
         validate_guides(json.loads(guides), state["master_id"], pixels.shape[1], pixels.shape[0])
         check_space(
@@ -1666,7 +1740,10 @@ def save_guidance_draft(
         recipe = tomllib.loads(snapshots["recipe.toml"].decode())
         recipe["groups"] = groups
         Recipe.from_dict(
-            recipe, state["master_id"], max_margin_px=max(guides["width"], guides["height"])
+            recipe,
+            state["master_id"],
+            max_margin_px=max(guides["width"], guides["height"]),
+            dimensions_wh=(guides["width"], guides["height"]),
         )
         check_space(project, len(_json_bytes(edits)) * 3 + 1024**2)
         # Retain exact prior recipe and every typed edit file for interruption/recovery.

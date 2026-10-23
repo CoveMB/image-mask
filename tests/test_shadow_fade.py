@@ -89,7 +89,7 @@ def test_shadow_fade_independent_gain_and_highlight_transition():
     )
     np.testing.assert_array_equal(sentinel[0, :2], [[48192] * 3] * 2)
     previous = rgb
-    for amount in (0.1, 0.4, 1):
+    for amount in (0.1, 0.38, 0.4, 1):
         result = apply_shadow_fade(rgb, alpha, alpha, protection, fade_settings(amount, 0.7))
         expected = [
             [
