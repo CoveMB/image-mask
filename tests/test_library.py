@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
-from test_ingest import ramp, tiff
+from test_ingest import FakeRaw, dng_white_point_metadata, ramp, tiff
 
 from blackmask import library as storage
-from blackmask.ingest import srgb_profile
+from blackmask.ingest import IngestError, srgb_profile
 from blackmask.project import ProjectError, load_developed, read_project
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src"
@@ -36,6 +36,229 @@ def configuration(tmp_path):
     path = folder / "storage.toml"
     path.write_text('[storage]\ndestination = "../photo library"\n')
     return path, tmp_path / "photo library"
+
+
+@pytest.mark.parametrize("development", [{}, {"white_balance": "daylight"}])
+def test_dng_import_resume_and_duplicate_keep_saved_white_balance_and_originals(
+    tmp_path, development
+):
+    _, destination = configuration(tmp_path)
+    config = storage.StorageConfig(destination)
+    storage.ensure_library(config)
+    source = destination / "Inbox/capture.dng"
+    source.write_bytes(dng_white_point_metadata())
+    source.chmod(0o640)
+    sidecar = source.with_suffix(".xmp")
+    sidecar.write_bytes(b"synthetic sidecar; do not apply its settings")
+    sidecar.chmod(0o604)
+    originals = {
+        path.name: (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
+        for path in (source, sidecar)
+    }
+    source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    raw = FakeRaw()
+    with patch("blackmask.ingest.rawpy.imread", return_value=raw):
+        project = storage.import_photo(
+            config, source, subject="dng", development=development, sidecars=(sidecar,)
+        )
+    assert not source.exists() and not sidecar.exists()
+    for name, (data, mode) in originals.items():
+        moved = project.parent / "original" / name
+        assert moved.read_bytes() == data and stat.S_IMODE(moved.stat().st_mode) == mode
+    record = json.loads((project / "source.json").read_bytes())
+    assert record["original_path"] == "../original/capture.dng"
+    assert record["source_sha256"] == source_hash
+    assert record["metadata"]["development_options"] == development
+    assert record["library"]["photo_id"] == "P" + source_hash[:12]
+    state = read_project(project)
+    assert state["development_approved"] is False
+    assert (
+        state["working_revision"]
+        is state["accepted_revision"]
+        is state["latest_result_revision"]
+        is None
+    )
+    pixels, metadata = load_developed(project, state["developed_id"])
+    np.testing.assert_array_equal(pixels, ramp())
+    if development:
+        assert metadata["development"]["white_balance"] == "daylight"
+        assert "as_shot_white_balance" not in metadata and "user_wb" not in raw.settings
+    else:
+        assert metadata["as_shot_white_balance"]["source"] == "DNG AsShotWhiteXY"
+        assert metadata["as_shot_white_balance"]["multipliers"] == [2, 1, 2, 1]
+        np.testing.assert_allclose(raw.settings["user_wb"], [2, 1, 2, 1], rtol=0, atol=1e-12)
+    duplicate = destination / "Inbox/duplicate.dng"
+    duplicate.write_bytes(originals[source.name][0])
+    pending = next((destination / "Inbox/.imports").glob("*/import.json"))
+    before = inventory(project.parent)
+    different = {} if development else {"white_balance": "daylight"}
+    with patch("blackmask.ingest.rawpy.imread", side_effect=AssertionError("must not redevelop")):
+        assert (
+            storage.import_photo(config, duplicate, subject="other", development=different)
+            == project
+        )
+        assert storage.resume_import(config, pending) == project
+        assert read_project(project) == state
+        np.testing.assert_array_equal(load_developed(project, state["developed_id"])[0], ramp())
+    assert inventory(project.parent) == before
+    assert duplicate.read_bytes() == originals[source.name][0]
+    assert len(list((destination / "Photos").iterdir())) == 1
+    assert not list((destination / "Results Preview").iterdir())
+    assert not list((destination / "Comparisons").iterdir())
+
+
+def test_invalid_dng_import_and_retry_preserve_originals_and_failed_preparation(tmp_path):
+    _, destination = configuration(tmp_path)
+    config = storage.StorageConfig(destination)
+    storage.ensure_library(config)
+    source = destination / "Inbox/invalid.dng"
+    source.write_bytes(dng_white_point_metadata(overrides={50721: None}))
+    sidecar = source.with_suffix(".xmp")
+    sidecar.write_bytes(b"unchanged synthetic sidecar")
+    before = {
+        path.name: (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
+        for path in (source, sidecar)
+    }
+    with patch("blackmask.ingest.rawpy.imread", return_value=FakeRaw()):
+        with pytest.raises(IngestError):
+            storage.import_photo(
+                config, source, subject="invalid", development={}, sidecars=(sidecar,)
+            )
+        pending = next((destination / "Inbox/.imports").glob("*/import.json"))
+        attempt = next(pending.parent.glob(".prepare-*"))
+        failed = inventory(attempt)
+        with pytest.raises(IngestError):
+            storage.resume_import(config, pending)
+    assert inventory(attempt) == failed
+    assert len(list(pending.parent.glob(".prepare-*"))) == 2
+    journal = json.loads(pending.read_bytes())
+    assert journal["phase"] == "preparing"
+    assert journal["source_sha256"] == hashlib.sha256(before[source.name][0]).hexdigest()
+    assert not list((destination / "Photos").iterdir())
+    assert not list((destination / "Results Preview").iterdir())
+    for path in (source, sidecar):
+        assert (path.read_bytes(), stat.S_IMODE(path.stat().st_mode)) == before[path.name]
+
+
+def imported_spatial_project(tmp_path, *, enabled=True):
+    from PIL import Image
+    from test_background import background_request
+    from test_matte_operations import approve, run_matte
+    from test_operations import edits, request
+    from test_spatial_fade import spatial_request, spatial_settings
+
+    from blackmask import operations
+
+    _, destination = configuration(tmp_path)
+    config = storage.StorageConfig(destination)
+    storage.ensure_library(config)
+    source = np.tile(ramp(), (2, 2, 1))
+    incoming = tiff(destination / "Inbox/spatial.tif", source, profile=srgb_profile())
+    original = incoming.read_bytes()
+    project = storage.import_photo(config, incoming, subject="spatial", development={})
+    filename = edits(
+        project,
+        [
+            {"id": "empty", "role": "background", "shape": "rectangle", "xyxy": [0, 0, 1, 4]},
+            {"id": "solid", "role": "foreground", "shape": "rectangle", "xyxy": [5, 0, 6, 4]},
+        ],
+    )
+    prepared = operations.apply_operation(project, request(project, guide_edits_file=filename))
+    approve(project, prepared)  # Synthetic fixture approval, not human photographic evidence.
+    parent = run_matte(project)
+    operations.accept_revision(project, parent["revision"])
+    operations.apply_operation(project, background_request(project, color="#000000", variation=0.0))
+    protection = np.zeros((4, 6), dtype=np.uint16)
+    protection[:, 5] = 65535
+    protection[1, 3] = 65535
+    Image.fromarray(protection).save(project / "spatial-protection.png")
+    settings = spatial_settings(6, 4)
+    settings["oval"].update(center_xy=[0, 0], inner_radii_xy=[0.5, 0.5], transition_width=0.5)
+    result = operations.apply_operation(
+        project,
+        spatial_request(
+            project,
+            settings,
+            candidate=True,
+            spatial_fade_protection_file="spatial-protection.png",
+        ),
+    )
+    if not enabled:
+        result = operations.apply_operation(
+            project, spatial_request(project, dict(settings, enabled=False))
+        )
+    return project, source, original, parent, result, protection != 0
+
+
+def test_imported_spatial_project_cold_export_preserves_precise_layers_and_protected_partial_pixels(
+    tmp_path,
+):
+    import tifffile
+
+    from blackmask.export import export_project, saved_layers
+    from blackmask.repair import scalar16
+
+    project, source, original, parent, result, protection = imported_spatial_project(tmp_path)
+    state = read_project(project)
+    assert state["development_approved"] is False
+    assert state["accepted_revision"] == parent["revision"]
+    assert state["latest_result_revision"] == result["revision"]
+    foreground, alpha, manifest = saved_layers(project, result["revision"], state["developed_id"])
+    expected_alpha = np.full((4, 6), 16384, dtype=np.uint16)
+    expected_alpha[:, 0] = 0
+    expected_alpha[:, 5] = 65535
+    np.testing.assert_array_equal(foreground, source)
+    np.testing.assert_array_equal(alpha, expected_alpha)
+    assert np.any(protection & (alpha > 0) & (alpha < 65535))
+    assert "effects/spatial-fade/weight16.png" in manifest["assets"]
+    # Nontransparent pixel centres lie outside radius1: q=.6 except explicit protection.
+    encoded = source.astype(np.float64) / 65535
+    linear = np.where(encoded <= 0.04045, encoded / 12.92, ((encoded + 0.055) / 1.055) ** 2.4)
+    linear *= np.where(protection, 1.0, 0.4)[..., None]
+    faded = np.where(linear <= 0.0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - 0.055)
+    expected = np.rint(faded * alpha[..., None]).astype(np.uint16)
+    first = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+    np.testing.assert_array_equal(tifffile.imread(first / "result_rgb16.tif"), expected)
+    retained = tmp_path / "retained-first-export"
+    first.rename(retained)
+    original_path = project.parent / "original/spatial.tif"
+    original_path.rename(tmp_path / "retained-original.tif")
+    if (project / "cache").exists():
+        (project / "cache").rename(tmp_path / "retained-cache")
+    with patch(
+        "blackmask.operations.VitMatteSession", side_effect=AssertionError("must not infer")
+    ):
+        assert read_project(project) == state
+        second = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+    assert retained.is_dir() and second.is_dir() and retained != second
+    assert (tmp_path / "retained-original.tif").read_bytes() == original
+    np.testing.assert_array_equal(tifffile.imread(second / "result_rgb16.tif"), expected)
+    np.testing.assert_array_equal(tifffile.imread(second / "source_rgb16.tif"), source)
+    np.testing.assert_array_equal(tifffile.imread(second / "foreground_rgb16.tif"), source)
+    np.testing.assert_array_equal(scalar16(second / "alpha16.png"), expected_alpha)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("warmed", [False, True])
+def test_imported_spatial_shared_operand_corruption_fails_closed_even_off_and_warm(
+    tmp_path, enabled, warmed
+):
+    from blackmask.assets import revision_asset
+    from blackmask.project import _validation_scope
+
+    project, _, original, _, result, _ = imported_spatial_project(tmp_path, enabled=enabled)
+    directory = project / "revisions" / result["revision"]
+    manifest = json.loads((directory / "manifest.json").read_bytes())
+    target = revision_asset(project, directory, manifest, "effects/spatial-fade/weight16.png")
+    before_state = (project / "state.json").read_bytes()
+    with _validation_scope():
+        if warmed:
+            read_project(project)
+        target.write_bytes(b"synthetic corrupted shared spatial operand")
+        with pytest.raises(ProjectError, match="shared asset.*hash|changed while reading"):
+            read_project(project)
+    assert (project / "state.json").read_bytes() == before_state
+    assert (project.parent / "original/spatial.tif").read_bytes() == original
 
 
 def test_explicit_config_initializes_same_private_library_from_two_working_directories(tmp_path):
