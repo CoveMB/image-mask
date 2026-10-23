@@ -132,11 +132,18 @@ def main() -> int:
         "--crops", type=Path, help="JSON list of native half-open crop rectangles"
     )
     exported = commands.add_parser(
-        "export", help="Export accepted RGB16 black/alpha16 and labelled viewing PNGs"
+        "export", help="Export full-size selected Result RGB16 TIFF/PNG8 with recipe and manifest"
     )
     exported.add_argument("project", type=Path)
     exported.add_argument("--revision")
     exported.add_argument("--draft", action="store_true")
+    exported.add_argument(
+        "--variant",
+        action="append",
+        default=[],
+        choices=("black", "transparent", "editable"),
+        help="Add an independent output; editable includes full native layers or a native editable companion for presentation exports",
+    )
     presentation = exported.add_mutually_exclusive_group()
     presentation.add_argument(
         "--margins",
@@ -313,6 +320,7 @@ def main() -> int:
                 if arguments.margins is not None
                 else None,
                 framed_transparent=arguments.framed_transparent,
+                variants=tuple(arguments.variant),
                 series=read_series_preset_file(arguments.series_preset).to_dict()
                 if arguments.series_preset is not None
                 else None,

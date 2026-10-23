@@ -43,6 +43,13 @@ Draft/Accepted footer outside the photograph. It follows the latest generated Re
 after restoring older work. This reduced lossy viewing copy never replaces editable
 layers or native exports.
 
+Explicit export defaults to a full native-size Result RGB16 TIFF and same-size
+PNG8, with recipe, manifest and notes. Optional black/transparent views and the
+editable layers are separate choices. Native editable layers stay in the native
+folder; presentation exports can include a native editable companion. Export neither advances the
+gallery nor saves presentation presets; see the
+[delivery contract](file-contract.md#requested-result-deliveries).
+
 Use the same explicit config for imported-project run, resume, acceptance, restore,
 export and viewer actions. Read-only status/open without config reports missing
 context. Configured reopen or explicit repair rebuilds pending output from saved

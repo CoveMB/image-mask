@@ -350,7 +350,7 @@ def test_repair_failure_preserves_accepted_export_source_and_newer_draft(tmp_pat
     from blackmask.export import export_project
 
     source, project, parent = parent_project(tmp_path)
-    exported = export_project(project)
+    exported = export_project(project, variants=("black", "transparent", "editable"))
     export_path = Path(exported["directory"]) / "black_rgb16.tif"
     accepted_bytes = saved_raster(export_path).read_bytes()
     source_bytes = source.read_bytes()

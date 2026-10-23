@@ -34,7 +34,7 @@ const servedState={
  developed_id:'master',working_revision:'rev-001',accepted_revision:'rev-001',
  inputs_digest:'draft',authoring_digest:'author',dimensions_wh:[100,100],
  recipe:{groups:[]},guides:{regions:[]},
- revisions:[{revision:'rev-001',kind:'matte',draft_digest:'draft',final_acceptable:true,candidates:[]}],
+ revisions:[{revision:'rev-001',kind:'matte',draft_digest:'draft',final_acceptable:true,candidates:[],revision_manifest_sha256:'a'.repeat(64)}],
  operations:[],pending:null,action:{running:false,error:null,result:{directory:'exports/rev-001'}}
 };
 const posts=[], imageResolvers=[];
@@ -452,7 +452,9 @@ def test_series_buttons_export_the_named_selection_and_visible_settings():
  assert.equal($('seriesExportAccepted').disabled,true);const count=posts.length;await $('seriesExportAccepted').onclick();assert.equal(posts.length,count);
  $('viewRevision').value='rev-001';await $('viewRevision').onchange();
  servedState.action={running:true,name:'series-export',error:null,result:null};
+ $('seriesEditable').checked=true;
  await $('seriesExportAccepted').onclick();assert.equal(posts.at(-1).revision,'rev-001');assert.equal(posts.at(-1).draft,false);
+ assert.deepEqual(posts.at(-1).variants,['editable']);
  assert.equal($('cleanupSupport').value,'keep');
  """)
 
@@ -481,6 +483,24 @@ def test_export_keeps_complete_unsaved_guides_and_groups():
  assert.equal(dirty,true,'Export discarded unsaved authoring');
  assert.equal(JSON.stringify({groups,regions}),before);
  assert.equal(posts.at(-1).action,'export');
+ """)
+
+
+def test_requested_exports_send_variants_and_preserve_independent_forms():
+    run_page(r"""
+ await ready();
+ $('exportEditable').checked=true;$('exportBlack').checked=true;
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ const before=JSON.stringify({exposureControlsIdentity,ev:$('exposureEV').value});
+ await $('exportAccepted').onclick();
+ assert.deepEqual(posts.at(-1).variants,['black','editable']);
+ assert.equal(posts.at(-1).revision_manifest_sha256,'a'.repeat(64));
+ servedState.action={name:'export',running:false,error:null,result:{directory:'exports/new',reused:false}};
+ await refresh();
+ assert.equal(JSON.stringify({exposureControlsIdentity,ev:$('exposureEV').value}),before);
+ $('framingBlack').checked=true;$('framingEditable').checked=true;await $('framingExportAccepted').onclick();
+ assert.deepEqual(posts.at(-1).variants,['black','editable']);
+ assert.equal(posts.at(-1).revision_manifest_sha256,'a'.repeat(64));
  """)
 
 

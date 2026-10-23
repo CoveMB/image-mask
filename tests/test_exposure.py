@@ -211,7 +211,12 @@ def test_saved_exposure_noncompounding_disable_compare_and_export(tmp_path):
         )[0]
         np.testing.assert_array_equal(off_rgb, base)
         exported = Path(
-            export_project(project, revision=first["revision"], draft=True)["directory"]
+            export_project(
+                project,
+                revision=first["revision"],
+                draft=True,
+                variants=("black", "transparent", "editable"),
+            )["directory"]
         )
         np.testing.assert_array_equal(
             tifffile.imread(saved_raster(exported / "foreground_rgb16.tif")), rgb
@@ -413,7 +418,12 @@ def test_exposure_inherits_through_partial_alpha_lock_and_matte_or_repair(
     assert alpha[1, 3] == before_alpha[1, 3]
     if change_alpha:
         with pytest.raises(ProjectError, match="Stale"):
-            export_project(project, revision=repaired["revision"], draft=True)
+            export_project(
+                project,
+                revision=repaired["revision"],
+                draft=True,
+                variants=("black", "transparent", "editable"),
+            )
         with pytest.raises(ProjectError, match="Stale"):
             operations.apply_operation(project, exposure_request(project, amount_only=True))
         disabled = operations.apply_operation(

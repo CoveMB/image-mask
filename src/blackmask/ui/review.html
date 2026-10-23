@@ -503,7 +503,11 @@
           result at native scale on black/gray/white, including fine detail,
           transparency and seams</label
         ><button id="accept">Accept current photograph</button
-        ><button id="exportAccepted">Export accepted result</button
+        ><p class="small">Full native pixel dimensions: Result RGB16 TIFF and PNG8 view, recipe and manifest. PNG retains dimensions with reduced colour precision.</p>
+        <label><input id="exportBlack" type="checkbox" /> Include black TIFF/PNG alternative</label>
+        <label><input id="exportTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
+        <label><input id="exportEditable" type="checkbox" /> Include complete editable layers at original size</label>
+        <button id="exportAccepted">Export accepted result</button
         ><button id="exportDraft">Export labelled current draft</button>
         <p id="result" class="small" style="white-space: pre-wrap"></p>
       </fieldset>
@@ -527,6 +531,9 @@
         <p id="framingPreviewStatus" role="status" class="small"></p>
         <canvas id="framingCanvas" width="1" height="1" style="max-width:100%;height:auto" aria-label="RGB8 framing layout preview; display only, no guide authoring"></canvas>
         <label><input id="framingTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
+        <label><input id="framingBlack" type="checkbox" /> Include black TIFF/PNG alternative</label>
+        <label><input id="framingEditable" type="checkbox" /> Include native editable companion; keep both folders</label>
+        <p class="small">Result TIFF/PNG and recipe/manifest included. Editable layers stay at original size in the companion folder.</p>
         <button id="framingExportAccepted">Export framed accepted result</button>
         <button id="framingExportDraft">Export framed draft</button>
         <p class="small">Framed exports use these visible margins, including unsaved changes. Saving or exporting margins does not accept a photograph or composition. Centre image balances existing padding; it does not locate the subject.</p>
@@ -550,6 +557,9 @@
           <input id="seriesFile" type="file" accept="application/json,.json" hidden aria-label="Portable series preset JSON file" />
           <button id="seriesDownload">Download preset file</button>
           <label><input id="seriesTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
+          <label><input id="seriesBlack" type="checkbox" /> Include black TIFF/PNG alternative</label>
+          <label><input id="seriesEditable" type="checkbox" /> Include native editable companion; keep both folders</label>
+          <p class="small">Result TIFF/PNG and recipe/manifest included. Editable layers stay at original size in the companion folder.</p>
           <button id="seriesExportAccepted">Export selected accepted result</button>
           <button id="seriesExportDraft">Export selected revision as draft</button>
           <p class="small">These actions use the named selection and visible settings, including unsaved edits. Preset files contain settings only. Loading a file does not save this photo. The saved backdrop recipe is regenerated at output size, including beneath partial-alpha edges. Enlargement adds no captured detail; reduction can hide fine detail. Inspect the exported TIFF and retain the native project. No composition acceptance is recorded.</p>
@@ -1091,7 +1101,7 @@
           r.revision ? "Revision: " + r.revision : "",
           r.reused === true ? "Reused current result; no new revision" : "",
           r.status ? "Status: " + r.status : "",
-          r.directory ? (a.error ? "Visible output requiring recovery: " : "Export saved: ") + r.directory : "",
+          r.directory ? (a.error ? "Visible output requiring recovery: " : r.reused ? "Existing delivery: " : "Export saved: ") + r.directory : "",
           r.editable_companion?.directory ? "Native editable folder: " + r.editable_companion.directory : "",
           r.editable_companion && !a.error ? "Keep both folders together for portable editing." : "",
           r.operation_id ? "Operation: " + r.operation_id : "",
@@ -1177,7 +1187,7 @@
       if (
         reload ||
         !identity ||
-        (completed && !a.error && a.result?.reused !== true && !["framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
+        (completed && !a.error && a.result?.reused !== true && !["export","framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
       ) {
         loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";
@@ -1899,8 +1909,9 @@
     async function exportFraming(draft) {
       const framing = framingMargins();
       if (!draft && !state.accepted_revision) throw Error("No accepted result to export");
-      await framingAction("export",{revision:draft ? state.working_revision : state.accepted_revision,draft,
-        framing,framed_transparent:$("framingTransparent").checked});
+      const revision=draft ? state.working_revision : state.accepted_revision;
+      await framingAction("export",{revision,draft,...exportRevisionIdentity(revision),
+        framing,framed_transparent:$("framingTransparent").checked,variants:exportVariants("framing")});
     }
     $("framingExportAccepted").onclick = guarded(()=>exportFraming(false));
     $("framingExportDraft").onclick = guarded(()=>exportFraming(true));
@@ -2007,7 +2018,7 @@
     });
     async function exportSeries(draft) {
       const request=seriesRequest();if(!draft && request.revision!==state.accepted_revision)throw Error("Select the currently accepted revision for accepted series export");
-      await seriesAction("series-export",{revision:request.revision,draft,revision_manifest_sha256:request.revision_manifest_sha256,settings:request.settings,transparent:$("seriesTransparent").checked});
+      await seriesAction("series-export",{revision:request.revision,draft,revision_manifest_sha256:request.revision_manifest_sha256,settings:request.settings,transparent:$("seriesTransparent").checked,variants:exportVariants("series")});
     }
     $("seriesExportAccepted").onclick=guarded(()=>exportSeries(false));$("seriesExportDraft").onclick=guarded(()=>exportSeries(true));
     $("framingMode").onchange=guarded(()=>{
@@ -2166,15 +2177,27 @@
         throw Error("Explicit photographic review is required");
       return action("accept", { revision: state.working_revision });
     });
+    function exportVariants(prefix) {
+      return (prefix === "export" ? ["black","transparent","editable"] : ["black","editable"])
+        .filter(name=>$(prefix+name[0].toUpperCase()+name.slice(1)).checked);
+    }
+    function exportRevisionIdentity(revision) {
+      const record=state.revisions.find(item=>item.revision===revision);
+      if (!record?.final_acceptable || !record.revision_manifest_sha256)
+        throw Error("Reload the complete selected revision before exporting");
+      return {revision_manifest_sha256:record.revision_manifest_sha256};
+    }
     $("exportAccepted").onclick = guarded(() => {
       if (!state.accepted_revision) throw Error("No accepted photograph");
       return action("export", {
         revision: state.accepted_revision,
         draft: false,
+        ...exportRevisionIdentity(state.accepted_revision), variants:exportVariants("export"),
       });
     });
     $("exportDraft").onclick = guarded(() =>
-      action("export", { revision: state.working_revision, draft: true }),
+      action("export", { revision: state.working_revision, draft: true,
+        ...exportRevisionIdentity(state.working_revision),variants:exportVariants("export") }),
     );
     $("recoverPending").onclick = guarded(() => {
       if (authoringBusy())

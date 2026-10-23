@@ -1289,7 +1289,9 @@ def test_spatial_switch_back_exports_declare_and_replay_active_shading(tmp_path,
         options["framing"] = margins
     elif delivery == "series":
         options["series"] = SeriesSettings(output_width_px=17, output_height_px=19).to_dict()
-    response = export_project(project, revision=result["revision"], draft=True, **options)
+    response = export_project(
+        project, revision=result["revision"], draft=True, variants=("editable",), **options
+    )
     native_path = Path(response.get("editable_companion", response)["directory"])
     portable = tmp_path / "portable"
     portable.mkdir()
@@ -1356,7 +1358,11 @@ def test_spatial_native_export_reconstructs_from_actual_delivered_layers(tmp_pat
     )
     result = operations.apply_operation(project, spatial_request(project, settings))
     foreground, alpha, _ = saved_layers(project, result["revision"], result["developed_id"])
-    exported = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+    exported = Path(
+        export_project(
+            project, revision=result["revision"], draft=True, variants=("editable", "transparent")
+        )["directory"]
+    )
     manifest = json.loads((exported / "manifest.json").read_bytes())
     saved = delivered_spatial(exported, manifest["spatial_fade"])
     np.testing.assert_array_equal(tifffile.imread(exported / "foreground_rgb16.tif"), foreground)
@@ -1376,7 +1382,7 @@ def test_spatial_native_export_reconstructs_from_actual_delivered_layers(tmp_pat
         )
     for name in ("weight16.png", "protection16.png", "alpha16.png", "settings.json"):
         member = "spatial_fade_" + name
-        assert manifest["files"][member] == digest((exported / member).read_bytes())
+        assert manifest["files"][member]["sha256"] == digest((exported / member).read_bytes())
     assert manifest["spatial_fade"]["settings"] == settings
 
 
@@ -1409,15 +1415,26 @@ def test_spatial_framed_pair_delivers_portable_native_companion(
     if series:
         options["series"].update(output_width_px=16, output_height_px=16)
     response = export_project(
-        project, revision=result["revision"], draft=True, framed_transparent=transparent, **options
+        project,
+        revision=result["revision"],
+        draft=True,
+        framed_transparent=transparent,
+        variants=("editable",),
+        **options,
     )
     frame = Path(response["directory"])
     native = Path(response["editable_companion"]["directory"])
-    expected_names = {"result_rgb16.tif", "result_RGB8_VIEW.png", "README.txt", "manifest.json"}
+    expected_names = {
+        "result_rgb16.tif",
+        "result_RGB8_VIEW.png",
+        "recipe.toml",
+        "README.txt",
+        "manifest.json",
+    }
     if transparent:
         expected_names.add("transparent_RGBA8_VIEW.png")
     assert {p.name for p in frame.iterdir()} == expected_names
-    assert native.name == result["revision"] + "-DRAFT"
+    assert native.name.startswith(result["revision"] + "-DRAFT-native-")
     frame_manifest = json.loads((frame / "manifest.json").read_bytes())
     native_manifest = json.loads((native / "manifest.json").read_bytes())
     binding = frame_manifest["editable_companion"]
@@ -1470,9 +1487,9 @@ def test_spatial_pair_failures_keep_outputs_and_identical_retry_completes(tmp_pa
     options = {
         "revision": result["revision"],
         "draft": True,
+        "variants": ("editable",),
         "framing": {"left_px": 1, "right_px": 1, "top_px": 1, "bottom_px": 1},
     }
-    native = project / "exports" / (result["revision"] + "-DRAFT")
     original_sync = export._sync_directory
     count = 0
 
@@ -1493,6 +1510,9 @@ def test_spatial_pair_failures_keep_outputs_and_identical_retry_completes(tmp_pa
         context = patch.object(export, "_sync_directory", fail_sync)
     with context, pytest.raises(ProjectError) as error:
         export.export_project(project, **options)
+    candidates = list((project / "exports").glob(result["revision"] + "-DRAFT-native-*"))
+    assert len(candidates) == 1
+    native = candidates[0]
     assert native.is_dir() and str(native) in str(error.value)
     before = {p.name: p.read_bytes() for p in native.iterdir()}
     response = export.export_project(project, **options)
@@ -1501,8 +1521,8 @@ def test_spatial_pair_failures_keep_outputs_and_identical_retry_completes(tmp_pa
     assert Path(response["directory"]).is_dir()
 
 
-@pytest.mark.parametrize("failure", [None, "sync", "cleanup"])
-def test_spatial_companion_reuse_discards_only_current_durable_duplicate(tmp_path, failure):
+@pytest.mark.parametrize("failure", [None, "sync"])
+def test_spatial_companion_reuse_creates_no_duplicate_and_preserves_evidence(tmp_path, failure):
     from test_effects import fixture_project
 
     from blackmask import export, operations
@@ -1512,6 +1532,7 @@ def test_spatial_companion_reuse_discards_only_current_durable_duplicate(tmp_pat
     options = {
         "revision": result["revision"],
         "draft": True,
+        "variants": ("editable",),
         "framing": {"left_px": 1, "right_px": 1, "top_px": 1, "bottom_px": 1},
     }
     first = export.export_project(project, **options)
@@ -1529,21 +1550,14 @@ def test_spatial_companion_reuse_discards_only_current_durable_duplicate(tmp_pat
                 raise OSError("retry parent sync failed")
             return original_sync(path)
 
-        context = (
-            patch.object(export, "_sync_directory", side_effect=fail_parent_sync)
-            if failure == "sync"
-            else patch.object(
-                export.shutil, "rmtree", side_effect=OSError("duplicate cleanup failed")
-            )
-        )
+        context = patch.object(export, "_sync_directory", side_effect=fail_parent_sync)
         with context, pytest.raises(ProjectError):
             export.export_project(project, **options)
     preserved = {
         p: {f.name: f.read_bytes() for f in p.iterdir()} for p in exports.glob(".export-*")
     }
     assert retained in preserved
-    if failure is not None:
-        assert len(preserved) >= 2
+    assert set(preserved) == {retained}, "Fast reuse must not stage a duplicate"
     for left in (1, 1, 2):
         options["framing"]["left_px"] = left
         response = export.export_project(project, **options)
@@ -1566,6 +1580,7 @@ def test_spatial_companion_reuse_rejects_tampering_without_overwrite(tmp_path, t
     options = {
         "revision": result["revision"],
         "draft": True,
+        "variants": ("editable",),
         "framing": {"left_px": 1, "right_px": 1, "top_px": 1, "bottom_px": 1},
     }
     first = export_project(project, **options)
@@ -1641,6 +1656,7 @@ def test_spatial_pair_admission_precedes_both_publications_and_native_arrays_are
     options = {
         "revision": result["revision"],
         "draft": True,
+        "variants": ("editable",),
         "framing": {"left_px": 1, "right_px": 1, "top_px": 1, "bottom_px": 1},
     }
     with (
@@ -1649,25 +1665,29 @@ def test_spatial_pair_admission_precedes_both_publications_and_native_arrays_are
     ):
         export.export_project(project, **options)
     assert not (project / "exports").exists()
-    real_layers, real_native = export.saved_layers, export._export_native_locked
+    from blackmask import effects
+
+    real_selected, real_writer = effects.selected_foreground, export._write_delivery
     consumed = []
+    writes = []
 
-    def layers(*args, **kwargs):
-        values = real_layers(*args, **kwargs)
-        consumed.append(values[:2])
-        return values
+    def selected(project, revision, base, alpha, manifest, **kwargs):
+        foreground = real_selected(project, revision, base, alpha, manifest, **kwargs)
+        consumed.append((foreground, alpha))
+        return foreground
 
-    def native(*args, **kwargs):
+    def writer(*args, **kwargs):
         assert kwargs["foreground"] is consumed[0][0]
         assert kwargs["alpha"] is consumed[0][1]
-        return real_native(*args, **kwargs)
+        writes.append(kwargs["record"]["mode"])
+        return real_writer(*args, **kwargs)
 
     with (
-        patch.object(export, "saved_layers", layers),
-        patch.object(export, "_export_native_locked", native),
+        patch.object(effects, "selected_foreground", selected),
+        patch.object(export, "_write_delivery", writer),
     ):
         first = export.export_project(project, **options)
-    assert len(consumed) == 1
+    assert len(consumed) == 1 and writes == ["native", "add-margins"]
     native_directory = Path(first["editable_companion"]["directory"])
     original = {p.name: p.read_bytes() for p in native_directory.iterdir()}
     options["framing"]["left_px"] = 2

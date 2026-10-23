@@ -522,7 +522,14 @@ class ReviewServer(ThreadingHTTPServer):
             },
         }
         if action == "export":
-            fields["export"] |= set(data) & {"framing", "framed_transparent"}
+            fields["export"] |= set(data) & {
+                "framing",
+                "framed_transparent",
+                "variants",
+                "revision_manifest_sha256",
+            }
+        if action == "series-export":
+            fields["series-export"] |= set(data) & {"variants"}
         if action == "effects":
             optional = {
                 "support_file",
@@ -572,6 +579,12 @@ class ReviewServer(ThreadingHTTPServer):
 
     def execute(self, data: dict[str, Any]) -> dict[str, Any]:
         action = data["action"]
+        if (
+            action in {"export", "series-export"}
+            and "variants" in data
+            and type(data["variants"]) is not list
+        ):
+            raise ProjectError("Export variants must be a list of distinct variant tokens")
         validate_library_project(self.project, self.storage_config)
         # Canonical processing owners recheck identities while holding their writer lock.
         if action == "save":
@@ -639,6 +652,11 @@ class ReviewServer(ThreadingHTTPServer):
                 draft=data["draft"],
                 framing=data.get("framing"),
                 framed_transparent=data.get("framed_transparent", False),
+                variants=data.get("variants", ()),
+                expected_developed_id=data["developed_id"]
+                if "revision_manifest_sha256" in data
+                else None,
+                expected_revision_manifest_sha256=data.get("revision_manifest_sha256"),
             )
         if action == "framing-save":
             return save_framing_preset(
@@ -670,6 +688,7 @@ class ReviewServer(ThreadingHTTPServer):
                 draft=data["draft"],
                 series=data["settings"],
                 framed_transparent=data["transparent"],
+                variants=data.get("variants", ()),
                 expected_developed_id=data["developed_id"],
                 expected_revision_manifest_sha256=data["revision_manifest_sha256"],
             )

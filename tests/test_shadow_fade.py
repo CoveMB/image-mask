@@ -634,7 +634,14 @@ def test_fade_export_distinct_layers_exact_replay_and_fresh_process(tmp_path):
     cleanup_only = saved_layers(project, exposed["revision"], master, exposure_off=True)[0]
     result = operations.apply_operation(project, fade_request(project, amount=1 / 6, preserve=0))
     selected, alpha, _manifest = saved_layers(project, result["revision"], master)
-    exported = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+    exported = Path(
+        export_project(
+            project,
+            revision=result["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )["directory"]
+    )
     np.testing.assert_array_equal(
         tifffile.imread(saved_raster(exported / "foreground_rgb16.tif")), selected
     )
@@ -679,7 +686,7 @@ with patch('socket.socket', side_effect=AssertionError('offline')), patch('black
     settings=json.loads((exported/'shadow_fade_settings.json').read_bytes())['settings']
     replay=apply_shadow_fade(tifffile.imread(exported/'unfaded_foreground_rgb16.tif'), scalar16(exported/'shadow_fade_alpha16.png'), scalar16(exported/'shadow_fade_support16.png'), scalar16(exported/'shadow_fade_protection16.png') != 0, settings)
     np.testing.assert_array_equal(replay, selected)
-    assert export_project(project, revision=revision, draft=True)['directory'] == str(exported)
+    assert export_project(project, revision=revision, draft=True, variants=('black','transparent','editable'))['directory'] == str(exported)
 print('saved-only replay and export exact')
 """
     completed = subprocess.run(
@@ -693,7 +700,12 @@ print('saved-only replay and export exact')
     assert "saved-only replay and export exact" in completed.stdout
     (exported / "README.txt").write_text("different output")
     with pytest.raises(ProjectError, match="collision"):
-        export_project(project, revision=result["revision"], draft=True)
+        export_project(
+            project,
+            revision=result["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )
 
 
 def test_viewer_does_not_report_completion_with_pre_action_state(tmp_path):
@@ -845,7 +857,14 @@ def test_fade_recomputes_after_upstream_changes_and_comparisons_retain_other_eff
         assert np.any(actual != upstream)
     weight, opacity = saved_shading(project, result["revision"], alpha, manifest)
     assert weight is not None and opacity == 0.12
-    exported = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+    exported = Path(
+        export_project(
+            project,
+            revision=result["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )["directory"]
+    )
     independent_black = np.rint(
         rgb.astype(float)
         * (alpha.astype(float) / 65535)[..., None]

@@ -107,14 +107,23 @@ An explicit unaccepted export requires both flags:
 .venv/bin/blackmask export /path/to/project --revision ACTUAL_MATTE_REVISION --draft
 ```
 
-`exports/rev-NNN/` (or visibly labelled `rev-NNN-DRAFT/`) contains uncompressed
-sRGB RGB16 black TIFF, scalar alpha16 lossless PNG and RGB8/RGBA8 viewing PNGs.
-The single renderer computes `round(F * (alpha16/65535))` in float64, encoded
+The default delivery contains uncompressed sRGB `result_rgb16.tif`, a same-size
+`result_RGB8_VIEW.png`, the frozen revision recipe, manifest and notes. Native
+export keeps every original pixel; PNG8 reduces colour precision, not dimensions.
+Result uses the saved backdrop, including black when no backdrop is recorded.
+Use repeatable `--variant black`, `--variant transparent` or `--variant editable`
+to request alternatives. Editable does not imply black or transparent views.
+In native mode it adds the complete independent native layers to the export folder.
+With Add margins or Match series, it adds a native editable sibling. Keep the
+presentation and native folders together.
+For black without shading, the single renderer computes `round(F * (alpha16/65535))` in float64, encoded
 sRGB, ties-to-even, applying alpha once. Transparent viewing RGB stays straight,
 never alpha-multiplied. Optional cleanup and shading are selected only by explicit saved settings; RGBA8 shading is baked into straight RGB, while editable W16 and p remain separate. Masks receive no ICC/gamma
-transform. Existing identical deliveries can be reused; differing/incomplete
-ones fail without overwrite. Retain saved foreground/master and alpha for editable
-handoff; the flattened black image never becomes foreground.
+transform. Intact matching deliveries reuse before rendering; corrupt matching
+deliveries fail without overwrite. Earlier formats remain preserved at their old
+paths and are not searched or migrated. Keep the project or request a separate
+native editable handoff; the flattened Result never becomes foreground. See the
+[delivery contract](file-contract.md#requested-result-deliveries).
 
 ## Recovery and limits
 

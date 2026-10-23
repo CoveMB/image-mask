@@ -142,6 +142,28 @@ certification remains unperformed. Browser, photographic, automated and human
 acceptance claims above are deliberately separate; human photographic acceptance
 and a representative editable branching-photo evaluation remain pending.
 
+## Requested Result exports — original component evidence
+
+Requested-export tests exercise the default five-file Result delivery, independent
+black/transparent alternatives in all three geometry modes, and separate native
+editable recovery. They check exact uint16 samples and partial-value protection,
+same-size PNG8 conversion/profile, explicit accepted/draft selection, strict file
+membership/headers and current source/revision/operand authorization before reuse.
+Fault cases include corrupt/nonregular members, raw input changes during hashing
+or final sync, exclusive publication, late identical races and retained failed stages.
+Real subprocess checks exercise project-lock contention and repeat reuse separately
+from forced fresh rendering using saved assets in a clean target. A standalone
+subprocess reconstructs native Result from delivered independent F/A/W/opacity/B.
+
+Native synthetic browser observations exercised unchecked defaults, separate
+alternatives, native-only editable controls, unsaved margins/series dimensions,
+keyboard export/retry, visible reuse and corrupt-member errors. Unsaved guidance
+and exposure fields remained visible. A configured 6×4 synthetic library export
+left its gallery JPEG hash and all existing project files unchanged. Packaged page
+tests and native browser observations remain distinct evidence. These checks do
+not establish full-photo performance, installed activation, real model inference,
+print calibration or human photographic/composition/accessibility acceptance.
+
 ## Unchanged effects requests
 
 The deterministic checks exercise repeated cleanup, shading rebuild/opacity,
@@ -1341,3 +1363,53 @@ real-model inference or direct browser session was run for this workflow change.
 Reopen an existing review server to load the updated Python behavior, preserving
 pending edits first. New mattes without an approval receipt require this updated
 application; existing saved projects remain readable without migration.
+
+## Requested Result v3 integrated with Fade into background
+
+The settled current-main integration passed **1,552 tests**, with **3 optional
+real-model checks skipped** for their explicit installed SAM/ViTMatte cache
+prerequisites. The complete run exited 0 in 1,619.09 seconds with every candidate
+input unchanged. Ruff lint and formatting passed (52 Python files); mypy passed
+(25 source files). Earlier failed runs and their exact candidate bytes remain
+separate evidence, including two symlink expectation failures and a library test
+that needed an explicit editable selection. Those failures were corrected without
+weakening the canonical symlink rejection or precision assertions.
+
+Coverage includes compact manual defaults and independent variants in all three
+modes; explicit final-assisted editable selection; complete native recovery
+operands for active and OFF spatial records; effective opacity zero for absent or
+disabled inward shading; old-version preservation; strict source/member/profile
+validation; request-derived pair lookup before producers; absent or damaged child
+refusal without repair; native-only retry; and intact pair reuse without rendering
+or staging. Independent scalar series oracles retain the selected Fade target
+behind the black diagnostic backdrop across differing output geometries. Six
+fresh-process cases force rendering from saved assets after removing access to
+the original project, original capture and earlier deliveries; separate copied
+pair cases reconstruct from delivered native operands without the project.
+
+All **31 profile-observed actual CLI children** were joined to their executable,
+command, return code, raw outputs and actual loaded application paths. Each
+reported all 41 locked metadata versions and actually loaded Pillow/core 13.0.0
+with the expected native binary hash. Ten copied delivery manifests recorded the
+required encoding pins. The same validators rejected four in-memory wrong
+loaded-version, source-path, metadata-pin and manifest-pin copies. Three additional
+mode-000 trace files were preserved unread: their command/parent/output identities
+remain unknown, and they are outside those 31 joined PIDs. This is complete
+evidence for the observed CLI scope, not uniform attestation of every Python
+subprocess. Historical Pillow 12.3 evidence does not establish this runtime result.
+
+One bounded synthetic in-app browser exercise covered keyboard export/reuse,
+manual native/margins/series variants, both-folder status, retained unsaved effect
+controls, accepted versus labelled draft output, and spatial ON/OFF defaults.
+The renewed missing-child error names both recovery paths and refuses repair.
+All 143 synthetic project files were restored unchanged after that fault; owned
+browser tabs and loopback servers were closed. This does not establish human
+usability or photographic acceptance.
+
+A single 512 × 384 to 960 × 1,200 black-plus-spatial series observation measured
+0.141919 seconds for rendering and 138,739,712 bytes whole-process peak RSS.
+The separate processing estimate was 55,693,952 bytes, including a 6,912,000-byte
+selected-target canvas. These scopes differ: the timing excludes imports and
+geometry, RSS includes them, and the estimate is neither measured RSS nor a memory
+reservation. Input hashes were unchanged. No general performance, photographic,
+print, real-inference, installed-activation or publication acceptance is implied.

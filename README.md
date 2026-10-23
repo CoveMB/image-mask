@@ -20,7 +20,7 @@ candidates, selected membership groups and categorical trimap/support/protection
 assets. Optional morphology proposals use native-pixel margins and require separate
 review against the source. ViTMatte runs at native resolution, with optional trimap
 confirmation and separate final-photo acceptance, matching native-crop review assets,
-accepted RGB16 black/alpha16 exports and labelled PNG8 viewing copies. Run matting
+accepted full-size Result RGB16 TIFF exports and same-size PNG8 viewing copies. Run matting
 directly after preparation to review the actual masked photograph.
 
 New projects use storage schema 2 and developed-image identities. Immutable masks,
@@ -39,6 +39,13 @@ Draft/Accepted footer and explicit pending recovery. It follows the latest gener
 Result independently of restore/export; see the [gallery contract](docs/file-contract.md#current-result-gallery).
 Repeating a fully validated equivalent effects Apply reuses the current result,
 preserving pending drafts and acceptance; [reuse rules](docs/file-contract.md#unchanged-effects-results) describe conservative misses.
+
+Explicit export includes the selected Result pair, recipe, manifest and notes.
+Black and transparent alternatives are independent opt-ins. Complete editable
+layers are optional: native exports include them in the same folder; presentation
+exports add a native editable companion and retain
+their selected geometry. An intact matching delivery is validated and reused
+before rendering. See the [delivery contract](docs/file-contract.md#requested-result-deliveries).
 
 Scoped repairs save quantized operands for replay without models. Restore selects
 saved working inputs without changing final acceptance. `status` and `resume`
