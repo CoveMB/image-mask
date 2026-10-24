@@ -23,6 +23,7 @@ from .project import (
     _filename_component,
     _private_temporary_directory,
     _read_json,
+    _root,
     _sync_directory,
     _validate_imported_source,
     check_space,
@@ -38,6 +39,54 @@ class StorageConfig:
     destination: Path
     sam_cache: Path | None = None
     vitmatte_cache: Path | None = None
+
+
+class ResultPreviewNameTooLong(ProjectError):
+    """An exact frozen gallery name cannot fit its selected filesystem."""
+
+    def __init__(self, required_bytes: int, component_limit: int):
+        self.required_bytes = required_bytes
+        self.component_limit = component_limit
+        super().__init__(
+            f"Result preview name requires {required_bytes} bytes; filesystem component limit "
+            f"is {component_limit}; frozen photo name preserved without rename or alias"
+        )
+
+
+def _component_limit(path: Path) -> int:
+    try:
+        with _directory(path) as descriptor:
+            return os.fpathconf(descriptor, "PC_NAME_MAX")
+    except FileNotFoundError:
+        if path.parent == path:
+            raise
+        return _component_limit(path.parent)
+
+
+def _check_result_preview_capacity(config: StorageConfig, folder_name_bytes: int) -> None:
+    required = folder_name_bytes + len(os.fsencode(".jpg"))
+    limit = _component_limit(config.destination / "Results Preview")
+    if limit <= 0:
+        raise ProjectError("Result preview filesystem component limit is unavailable")
+    if required > limit:
+        raise ResultPreviewNameTooLong(required, limit)
+
+
+def validate_library_project(project: Path, config: StorageConfig | None) -> Path | None:
+    """Bind managed writes to explicit library context without requiring the original."""
+    project = _root(project)
+    source = _read_json(project, "source.json")
+    _validate_imported_source(source)
+    if "library" not in source:
+        return None
+    if config is None:
+        raise ProjectError("Imported project writes require matching explicit --config FILE")
+    _validate_config_paths(config)
+    bundle = config.destination / "Photos" / source["library"]["folder_basename"]
+    if project != bundle / "project":
+        raise ProjectError("Project does not match the configured library and frozen photo name")
+    _inspect_directory(bundle, missing=False)
+    return bundle
 
 
 def _inspect_directory(path: Path, *, missing: bool = True, writable: bool = False) -> None:
@@ -359,6 +408,10 @@ def import_photo(
         # P plus twelve hexadecimal characters precede this frozen readable suffix.
         if 13 + len(os.fsencode(name_suffix)) > os.fpathconf(inbox_descriptor, "PC_NAME_MAX"):
             raise ProjectError("Photo folder name exceeds the filesystem component limit")
+    proposed_bytes = 13 + len(os.fsencode(name_suffix))
+    if proposed_bytes > _component_limit(config.destination / "Photos"):
+        raise ProjectError("Photo folder name exceeds the Photos filesystem component limit")
+    _check_result_preview_capacity(config, proposed_bytes)
     # Invalid selected paths must fail before creating even a lock or empty folders.
     for path in selected:
         with _original_file(inbox, path.name):
@@ -367,6 +420,7 @@ def import_photo(
     # Hashing/decoding/ownership decisions are serialized, including retries after process death.
     with _file_lock(config.destination / ".import.lock", "Library import"):
         ensure_library(config)
+        _check_result_preview_capacity(config, proposed_bytes)
         details = [_file_details(inbox, path.name) for path in selected]
         if len({(item["device"], item["inode"]) for item in details}) != len(details):
             raise ProjectError("Original and sidecars must be distinct regular files")

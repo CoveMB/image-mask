@@ -483,6 +483,8 @@
       </fieldset>
       <fieldset>
         <legend>6 · Recovery and photographic acceptance</legend>
+        <p id="previewStatus" role="status" aria-live="polite" class="small"></p>
+        <button id="previewRepair">Repair latest Result preview</button>
         <label
           >Interrupted operation
           <select id="operation"></select></label
@@ -1041,6 +1043,12 @@
         current = state.revisions.find(
           (r) => r.revision === state.working_revision,
         );
+      const preview = state.preview;
+      $("previewStatus").textContent = !preview || preview.status === "not_applicable"
+        ? "Standalone project · no library gallery"
+        : "Native Result gallery · " + preview.status + " · latest " + (preview.latest_result_revision || preview.revision || "none") +
+          (preview.label ? " · " + preview.label : "") +
+          (preview.error ? " · " + preview.error : preview.reason ? " · " + preview.reason : "");
       $("cleanupStatus").textContent = current?.color_cleanup?.enabled
         ? current.color_cleanup.stale
           ? "STALE cleanup: BASE-to-BASE views, cleanup OFF on both sides. Appearance acceptance/export blocked; rebuild every changed-alpha dependency within declared support or explicitly disable. Prior accepted complete result remains saved."
@@ -1148,7 +1156,7 @@
       if (
         reload ||
         !identity ||
-        (completed && !a.error && !["framing-save","series-save","series-export"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
+        (completed && !a.error && !["framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
       ) {
         loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";
@@ -1232,6 +1240,7 @@
         "restore",
         "resume",
         "accept",
+        "previewRepair",
         "exportAccepted",
         "exportDraft",
         "shadingApply",
@@ -1269,6 +1278,7 @@
       ])
         $(id).disabled = authoringBusy();
       $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
+      $("previewRepair").disabled = authoringBusy() || !state?.preview || ["not_applicable","no_result"].includes(state.preview.status) || state.preview.reason === "configuration_required";
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
         $(id).disabled = authoringBusy();
       for(const id of spatialControlIds) $(id).disabled=authoringBusy();
@@ -2173,6 +2183,7 @@
         return;
       return refresh(true);
     });
+    $("previewRepair").onclick = guarded(() => action("preview-repair", {}));
     for (const id of ["panel", "viewRevision"])
       $(id).onchange = guarded(loadImage);
     $("overlay").onchange = guarded(() => {

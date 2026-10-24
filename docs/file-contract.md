@@ -173,6 +173,59 @@ by sync/record failure can leave a complete published photo with uncertain
 durability. Resume rechecks actual state and reports it; no rollback is promised.
 Originals and recovery records require independent backups. See [library usage](library.md).
 
+## Current Result gallery
+
+Each imported photo has one replaceable `Results Preview/<frozen-basename>.jpg`,
+bound to `latest_result_revision`, independently of working selection and acceptance.
+Complete non-stale native generation/resume publishes after native state. Configured
+reopen or `preview repair PROJECT` repairs pending output; intact output is reused
+without writing. Status and viewer polling never repair. Preparation, drafts, restore,
+review, presentation presets/previews and exports do not advance the gallery.
+Standalone projects have no library gallery.
+
+The gallery uses the canonical saved native Result composition, including saved
+spatial fade, its protection and the selected backdrop target. It does not flatten
+those appearance settings into source pixels or change native alpha.
+
+The photograph retains native aspect, with integer thumbnail rounding, long edge
+at most 1600 and no upscale. Explicit RGB16-to-RGB8 conversion and quality85/optimize
+JPEG are lossy; canonical sRGB ICC is included without copied EXIF/GPS/XMP. An 18px
+Draft/Accepted revision footer sits outside the photograph. Tiny/narrow photographs
+are centred on a canvas at least 360px wide without photographic enlargement.
+
+Project-local `preview.json` uses independent schema1, kind `result-preview` and
+encoding `native-result-jpeg-v1`. It binds photo/folder/source/developed identities,
+revision/raw manifest hash, label, dimensions, photo rectangle and JPEG hash. A JPEG
+comment repeats ownership/layout except its own hash, allowing recovery after JPEG
+publication without a receipt. Neither record selects pointers or grants acceptance.
+Inspection is bounded to 16KiB records/16MiB JPEG, without native rendering. Foreign,
+malformed, symlink/nonregular or multiply-linked JPEG collisions remain preserved.
+A missing/stale receipt is recoverable from validated ownership and saved assets.
+
+Writers require the matching configured destination/Photos/frozen-folder/project and
+hold the existing project lock; they never acquire the import lock inside it. An
+exclusive0600 gallery temporary, file sync, identity/target recheck, atomic replacement
+and parent sync precede receipt publication. First creation is exclusive; failed
+temporaries remain. JPEG/receipt failure after native completion returns actual
+pointers with `preview_pending`; it does not roll back native work.
+
+Before acceptance changes, latest's JPEG must durably become Draft. Failure leaves
+acceptance unchanged. Only successful state commit permits promotion, only when
+latest equals accepted. State replacement followed by sync failure requires actual
+state reread and no promotion or guessed rollback. Promotion/receipt failure leaves
+actual acceptance with pending output. Generate/accept B, restore A, then accept A
+keeps B's photograph labelled Draft. Conservative Draft is allowed; false Accepted
+is forbidden. Native assets, schemas and revision snapshots remain unchanged.
+
+New import proposals reserve `.jpg` within the actual gallery parent's filesystem
+component-byte limit before lock/state creation, source moves or duplicate lookup.
+Existing longer names and pending imports remain valid and frozen. Native generation
+works with pending `name_too_long` and required/available byte counts; repair writes
+nothing and acceptance changes stop because Draft demotion cannot publish. No alias,
+truncation, rename or migration is performed. A valid duplicate proposal returns its
+existing overlong owner; an overlong proposal rejects before lookup. Camera and
+sidecar names remain unchanged. See [library usage](library.md).
+
 ## Shared raster operands and effective recipes
 
 `manifest.files` maps revision-local text and the small overview to file hashes.
@@ -212,7 +265,8 @@ Native before/after evidence uses matching selected or BASE effect settings on b
 sides, including when a stale enabled effect requires BASE comparison.
 Use explicit `review` output under
 `reviews/` for native PNG evidence; reduced overview pixels do not authorize
-native assisted corrections. No gallery is implemented by this storage change.
+native assisted corrections. The separate [current Result gallery](#current-result-gallery)
+does not replace revision overviews or native evidence.
 
 ## Prepared revisions
 

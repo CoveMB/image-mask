@@ -6,6 +6,12 @@ same explicit `--config FILE`. This selects shared existing model locations and
 leaves the manual masking controls below unchanged. Standalone projects use the
 commands below without library configuration.
 
+For an imported photo, the recovery panel reports the latest Result gallery's
+Draft/Accepted or pending status. Repair latest Result preview explicitly repairs pending
+output from saved layers; polling and restore do not publish it. Keep the matching
+library config when opening the viewer. See the [gallery contract](file-contract.md#current-result-gallery)
+and [recovery guidance](troubleshooting.md#native-matte-and-export-recovery).
+
 After [explicit environment/model setup](../README.md) and [model cache setup](guidance.md),
 open one source/project. From the repository root, use the environment executable
 shown below; shell activation is unnecessary. Use your own paths and select guides

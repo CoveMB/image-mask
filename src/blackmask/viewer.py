@@ -28,6 +28,7 @@ from .framing import (
     validate_margins,
 )
 from .guidance import coordinates
+from .library import StorageConfig, validate_library_project
 from .project import (
     ProjectError,
     _json_bytes,
@@ -61,10 +62,18 @@ class ReviewServer(ThreadingHTTPServer):
     block_on_close = False
 
     def __init__(
-        self, project: Path, model_cache: Path | None = None, sam_cache: Path | None = None
+        self,
+        project: Path,
+        model_cache: Path | None = None,
+        sam_cache: Path | None = None,
+        *,
+        storage_config: StorageConfig | None = None,
     ):
         self.project = _root(project)
         read_project(self.project, validate_drafts=False)
+        self.storage_config = storage_config
+        if storage_config is not None:
+            validate_library_project(self.project, storage_config)
         self.model_cache = model_cache
         self.sam_cache = sam_cache
         self.token = secrets.token_urlsafe(32)
@@ -82,7 +91,7 @@ class ReviewServer(ThreadingHTTPServer):
         # State pointers may advance during an active writer. Keep the established
         # action-first polling contract; only bind immutable source/revision bytes.
         captured = {"source.json": saved_asset(self.project, "source.json").read_bytes()}
-        state = operations.operation_status(self.project)
+        state = operations.operation_status(self.project, storage_config=self.storage_config)
         master, _ = _validate_assets(self.project, state, validate_drafts=False)
         height, width = master.shape[:2]
         state.update(
@@ -500,6 +509,7 @@ class ReviewServer(ThreadingHTTPServer):
             "repair": {"context_xyxy", "scope_xyxy", "reason", "merge_policy"},
             "restore": {"revision", "replace_drafts"},
             "resume": {"operation_id"},
+            "preview-repair": set(),
             "export": {"revision", "draft"},
             "framing-save": {"margins", "expected_digest"},
             "series-save": {"settings", "expected_digest"},
@@ -562,6 +572,7 @@ class ReviewServer(ThreadingHTTPServer):
 
     def execute(self, data: dict[str, Any]) -> dict[str, Any]:
         action = data["action"]
+        validate_library_project(self.project, self.storage_config)
         # Canonical processing owners recheck identities while holding their writer lock.
         if action == "save":
             return operations.save_guidance_draft(
@@ -593,7 +604,15 @@ class ReviewServer(ThreadingHTTPServer):
                 self.project, data["revision"], data["developed_id"], data["inputs_digest"]
             )
         if action == "accept":
-            return operations.accept_revision(self.project, data["revision"])
+            return operations.accept_revision(
+                self.project, data["revision"], storage_config=self.storage_config
+            )
+        if action == "preview-repair":
+            from .previews import refresh_result_preview
+
+            if self.storage_config is None:
+                raise ProjectError("Preview repair requires explicit library configuration")
+            return refresh_result_preview(self.project, self.storage_config, expected_identity=data)
         if action == "restore":
             if type(data["replace_drafts"]) is not bool:
                 raise ProjectError("replace_drafts must be a boolean")
@@ -602,10 +621,14 @@ class ReviewServer(ThreadingHTTPServer):
                 data["revision"],
                 replace_drafts=data["replace_drafts"],
                 expected_identity=data,
+                storage_config=self.storage_config,
             )
         if action == "resume":
             return operations.resume_operation(
-                self.project, data["operation_id"], model_cache=self.model_cache
+                self.project,
+                data["operation_id"],
+                model_cache=self.model_cache,
+                storage_config=self.storage_config,
             )
         if action == "export":
             if type(data["draft"]) is not bool:
@@ -703,8 +726,11 @@ class ReviewServer(ThreadingHTTPServer):
                 request,
                 model_cache=self.model_cache,
                 expected_revision_manifest_sha256=expected_manifest,
+                storage_config=self.storage_config,
             )
-        return operations.apply_operation(self.project, request, model_cache=self.model_cache)
+        return operations.apply_operation(
+            self.project, request, model_cache=self.model_cache, storage_config=self.storage_config
+        )
 
     @_validation_scope()
     def image(self, path: str) -> bytes:
@@ -976,9 +1002,15 @@ class ReviewHandler(BaseHTTPRequestHandler):
 
 
 def open_viewer(
-    project: Path, model_cache: Path | None = None, sam_cache: Path | None = None
+    project: Path,
+    model_cache: Path | None = None,
+    sam_cache: Path | None = None,
+    *,
+    storage_config: StorageConfig | None = None,
 ) -> None:
-    with ReviewServer(project, model_cache, sam_cache) as server:
+    if storage_config is not None:
+        operations.reopen_project_status(project, storage_config=storage_config)
+    with ReviewServer(project, model_cache, sam_cache, storage_config=storage_config) as server:
         url = server.origin + "/#" + server.token
         print("Local review window: " + url, flush=True)
         webbrowser.open(url)

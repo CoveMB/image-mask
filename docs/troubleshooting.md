@@ -69,6 +69,19 @@ A publication collision means another tool/editor created a project asset while 
 
 ## Native matte and export recovery
 
+- **Result gallery pending:** read `--config FILE status PROJECT`, resolve the reported
+  storage/collision problem, then use `--config FILE preview repair PROJECT` or the
+  viewer's Repair latest Result preview button. Repair uses saved layers without models or
+  the original. Unknown files and failed temporaries remain preserved. Native work
+  and actual acceptance survive a later JPEG failure.
+- **Gallery name too long:** existing names/pending imports remain frozen and usable.
+  Status reports required/available bytes; exact-name JPEG publication and acceptance
+  changes are blocked. No rename/alias/migration command exists. See the
+  [gallery contract](file-contract.md#current-result-gallery).
+- **Gallery acceptance warning:** conservative Draft can remain after uncertain state
+  sync or failed promotion. Inspect actual pointers and repair explicitly; a receipt
+  or filename never grants photographic acceptance.
+
 - **Trimap approval missing/stale:** a missing approval does not block matting or
   repair. A supplied stale/corrupt record is rejected rather than silently used.
   Preserve it, finish typed edits and prepare a new revision; confirmation of the
