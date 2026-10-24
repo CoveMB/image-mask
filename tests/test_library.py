@@ -143,7 +143,7 @@ def test_invalid_dng_import_and_retry_preserve_originals_and_failed_preparation(
 def imported_spatial_project(tmp_path, *, enabled=True):
     from PIL import Image
     from test_background import background_request
-    from test_matte_operations import approve, run_matte
+    from test_matte_operations import StubSession, approve
     from test_operations import edits, request
     from test_spatial_fade import spatial_request, spatial_settings
 
@@ -163,11 +163,21 @@ def imported_spatial_project(tmp_path, *, enabled=True):
             {"id": "solid", "role": "foreground", "shape": "rectangle", "xyxy": [5, 0, 6, 4]},
         ],
     )
-    prepared = operations.apply_operation(project, request(project, guide_edits_file=filename))
+    prepared = operations.apply_operation(
+        project, request(project, guide_edits_file=filename), storage_config=config
+    )
     approve(project, prepared)  # Synthetic fixture approval, not human photographic evidence.
-    parent = run_matte(project)
-    operations.accept_revision(project, parent["revision"])
-    operations.apply_operation(project, background_request(project, color="#000000", variation=0.0))
+    with patch("blackmask.operations.VitMatteSession", StubSession):
+        parent = operations.apply_operation(
+            project,
+            request(project, kind="matte"),
+            model_cache=Path("unused-explicit-test-cache"),
+            storage_config=config,
+        )
+    operations.accept_revision(project, parent["revision"], storage_config=config)
+    operations.apply_operation(
+        project, background_request(project, color="#000000", variation=0.0), storage_config=config
+    )
     protection = np.zeros((4, 6), dtype=np.uint16)
     protection[:, 5] = 65535
     protection[1, 3] = 65535
@@ -182,10 +192,11 @@ def imported_spatial_project(tmp_path, *, enabled=True):
             candidate=True,
             spatial_fade_protection_file="spatial-protection.png",
         ),
+        storage_config=config,
     )
     if not enabled:
         result = operations.apply_operation(
-            project, spatial_request(project, dict(settings, enabled=False))
+            project, spatial_request(project, dict(settings, enabled=False)), storage_config=config
         )
     return project, source, original, parent, result, protection != 0
 

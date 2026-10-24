@@ -183,6 +183,10 @@ without writing. Status and viewer polling never repair. Preparation, drafts, re
 review, presentation presets/previews and exports do not advance the gallery.
 Standalone projects have no library gallery.
 
+The gallery uses the canonical saved native Result composition, including saved
+spatial fade, its protection and the selected backdrop target. It does not flatten
+those appearance settings into source pixels or change native alpha.
+
 The photograph retains native aspect, with integer thumbnail rounding, long edge
 at most 1600 and no upscale. Explicit RGB16-to-RGB8 conversion and quality85/optimize
 JPEG are lossy; canonical sRGB ICC is included without copied EXIF/GPS/XMP. An 18px

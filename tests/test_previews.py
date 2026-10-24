@@ -1131,3 +1131,173 @@ def test_headless_reopen_preserves_visible_receipt_sync_uncertainty(
     }
     assert reported["preview"]["status"] == "pending"
     assert reported["preview"]["error"] == diagnostic
+
+
+@pytest.mark.parametrize("background", [False, True])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_gallery_renders_saved_spatial_fade_with_protected_partial_pixels(
+    tmp_path, background, enabled
+):
+    from test_background import background_request
+    from test_spatial_fade import spatial_request, spatial_settings
+
+    from blackmask import previews
+    from blackmask.export import saved_layers
+
+    _, config, project = managed(tmp_path)
+    generated = generate(project, config)
+    operations.accept_revision(project, generated["revision"], storage_config=config)
+    operations.apply_operation(
+        project,
+        background_request(project, color="#120708" if background else "#000000", variation=0.0),
+        storage_config=config,
+    )
+    protection = np.zeros((4, 6), np.uint16)
+    protection[:, 5] = 65535
+    protection[1, 3] = 65535
+    Image.fromarray(protection).save(project / "spatial-protection.png")
+    settings = spatial_settings(6, 4)
+    settings["oval"].update(
+        center_xy=[0, 0], inner_radii_xy=[0.5, 0.5], transition_width=0.5, amount=1.0
+    )
+    preserved = {
+        "source": (project / "source.json").read_bytes(),
+        "assets": inventory(project / "assets"),
+        "revisions": inventory(project / "revisions"),
+    }
+    result = operations.apply_operation(
+        project,
+        spatial_request(
+            project,
+            settings,
+            candidate=True,
+            spatial_fade_protection_file="spatial-protection.png",
+        ),
+        storage_config=config,
+    )
+    if not enabled:
+        result = operations.apply_operation(
+            project,
+            spatial_request(project, dict(settings, enabled=False)),
+            storage_config=config,
+        )
+    state = read_project(project)
+    foreground, alpha, _ = saved_layers(project, result["revision"], state["developed_id"])
+    expected_alpha = np.full((4, 6), 16384, np.uint16)
+    expected_alpha[:, 0] = 0
+    expected_alpha[:, 5] = 65535
+    np.testing.assert_array_equal(alpha, expected_alpha)
+    np.testing.assert_array_equal(foreground, np.full((4, 6, 3), [20001, 30002, 40003]))
+    target = np.broadcast_to([4626, 1799, 2056] if background else [0, 0, 0], (4, 6, 3))
+    # Fully faded pixels converge to the literal target. Protected pixels retain
+    # the hand-derived alpha composite, including the nonempty partial region.
+    composite = np.rint(
+        foreground.astype(np.float64) * (expected_alpha.astype(np.float64) / 65535)[..., None]
+        + target * (1 - expected_alpha.astype(np.float64) / 65535)[..., None]
+    ).astype(np.uint16)
+    expected = target.astype(np.uint16).copy() if enabled else composite
+    if enabled:
+        expected[protection != 0] = composite[protection != 0]
+    assert np.any((protection != 0) & (alpha > 0) & (alpha < 65535))
+    assert np.any(foreground % 257)
+    assert state["accepted_revision"] == generated["revision"]
+    assert state["latest_result_revision"] == result["revision"]
+    assert (project / "source.json").read_bytes() == preserved["source"]
+    for directory in ("assets", "revisions"):
+        after = inventory(project / directory)
+        assert all(after[name] == value for name, value in preserved[directory].items())
+    np.testing.assert_array_equal(previews._render_latest(project, state), expected)
+    assert result["preview_pending"] is False
+    record = marker(jpeg(config, project))
+    assert record["revision"] == result["revision"] and record["status"] == "Draft"
+    receipt = json.loads((project / "preview.json").read_bytes())
+    assert receipt == dict(
+        record, jpeg_sha256=hashlib.sha256(jpeg(config, project).read_bytes()).hexdigest()
+    )
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("warmed", [False, True])
+def test_gallery_revalidates_saved_spatial_operands_even_off_and_warm(tmp_path, enabled, warmed):
+    from test_library import imported_spatial_project
+
+    from blackmask import previews
+    from blackmask.assets import saved_asset
+
+    project, _, _, _, result, _ = imported_spatial_project(tmp_path, enabled=enabled)
+    state = read_project(project)
+    if warmed:
+        previews._render_latest(project, state)
+    operand = saved_asset(
+        project, f"revisions/{result['revision']}/effects/spatial-fade/weight16.png"
+    )
+    (tmp_path / "retained-weight.png").write_bytes(operand.read_bytes())
+    operand.write_bytes(b"damaged synthetic weight")
+    before = inventory(project)
+    with pytest.raises(ProjectError):
+        previews._render_latest(project, state)
+    assert inventory(project) == before
+
+
+def test_configured_viewer_actions_keep_gallery_context_and_spatial_manifest_binding(tmp_path):
+    import threading
+
+    from test_spatial_fade import spatial_settings
+    from test_viewer import http
+
+    from blackmask.viewer import ReviewServer
+
+    _, config, project = managed(tmp_path)
+    generated = generate(project, config)
+    operations.accept_revision(project, generated["revision"], storage_config=config)
+    with ReviewServer(project, storage_config=config) as server:
+        worker = threading.Thread(target=server.serve_forever)
+        worker.start()
+        try:
+
+            def payload(**changes):
+                state = server.snapshot()
+                selected = next(
+                    item
+                    for item in state["revisions"]
+                    if item["revision"] == state["working_revision"]
+                )
+                data = {
+                    "action": "effects",
+                    "developed_id": state["developed_id"],
+                    "base_revision": state["working_revision"],
+                    "inputs_digest": state["inputs_digest"],
+                    "authoring_digest": state["authoring_digest"],
+                    "scope_xyxy": [0, 0, 6, 4],
+                    "candidate_comparison": True,
+                    **changes,
+                }
+                if "spatial_fade" in changes:
+                    data["revision_manifest_sha256"] = selected["revision_manifest_sha256"]
+                return data
+
+            for changes in (
+                {"spatial_fade": spatial_settings(6, 4)},
+                {"background": {"color_srgb": "#000000", "variation": 0.0}},
+            ):
+                status, body, _ = http(server, "/api/action", "POST", payload(**changes))
+                assert status == 202, body
+                assert server.action_lock.acquire(timeout=10)
+                server.action_lock.release()
+                assert server.action["error"] is None, server.action
+                result = server.action["result"]
+                assert result["preview_pending"] is False
+                assert marker(jpeg(config, project))["revision"] == result["revision"]
+                assert server.snapshot()["accepted_revision"] == generated["revision"]
+            before = inventory(config.destination)
+            stale = payload(spatial_fade=spatial_settings(6, 4))
+            stale["revision_manifest_sha256"] = "0" * 64
+            assert http(server, "/api/action", "POST", stale)[0] == 202
+            assert server.action_lock.acquire(timeout=10)
+            server.action_lock.release()
+            assert "Stale raw revision manifest" in server.action["error"]
+            assert inventory(config.destination) == before
+        finally:
+            server.shutdown()
+            worker.join(timeout=10)
+            assert not worker.is_alive()
