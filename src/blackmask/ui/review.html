@@ -1089,6 +1089,7 @@
         const r = a.result;
         $("result").textContent = [
           r.revision ? "Revision: " + r.revision : "",
+          r.reused === true ? "Reused current result; no new revision" : "",
           r.status ? "Status: " + r.status : "",
           r.directory ? (a.error ? "Visible output requiring recovery: " : "Export saved: ") + r.directory : "",
           r.editable_companion?.directory ? "Native editable folder: " + r.editable_companion.directory : "",
@@ -1101,16 +1102,25 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
-      const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && a.result?.parent===spatialSubmitted.base_revision && state.developed_id===spatialSubmitted.developed_id;
+      const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && (a.result?.reused===true ? a.result.revision===spatialSubmitted.base_revision : a.result?.parent===spatialSubmitted.base_revision) && state.developed_id===spatialSubmitted.developed_id;
       if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
       if(reload || completed) spatialSubmitted=null;
       if(reload) resetSpatialFromSaved();
       if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;
       const appliedExposure = a.result?.local_exposure?.settings;
       if (reload || (completed && !a.error && exposureControlsSubmitted &&
-          a.name === "effects" && a.result?.parent === exposureControlsSubmitted.base_revision &&
+          a.name === "effects" && (a.result?.reused === true
+            ? a.result.revision === exposureControlsSubmitted.base_revision
+            : a.result?.parent === exposureControlsSubmitted.base_revision) &&
           appliedExposure?.enabled === exposureControlsSubmitted.enabled &&
-          appliedExposure?.ev === exposureControlsSubmitted.ev)) exposureControlsIdentity = null;
+          appliedExposure?.ev === exposureControlsSubmitted.ev)) {
+        exposureControlsIdentity = null;
+        if (!reload && completed && a.result?.reused === true) {
+          $("exposureEV").value = appliedExposure.ev;
+          $("exposureRange").value = appliedExposure.ev;
+          $("exposureCandidate").checked = false;
+        }
+      }
       if (completed) {
         exposureAreaPublished = false;
         exposureControlsSubmitted = null;
@@ -1118,10 +1128,21 @@
       if (reload || (completed && !a.error && fadeAreaPublished)) fadeDirty = false;
       const appliedFade = a.result?.shadow_fade?.settings;
       if (reload || (completed && !a.error && fadeControlsSubmitted &&
-          a.name === "effects" && a.result?.parent === fadeControlsSubmitted.base_revision &&
+          a.name === "effects" && (a.result?.reused === true
+            ? a.result.revision === fadeControlsSubmitted.base_revision
+            : a.result?.parent === fadeControlsSubmitted.base_revision) &&
           appliedFade?.enabled === fadeControlsSubmitted.enabled &&
           appliedFade?.amount === fadeControlsSubmitted.amount &&
-          appliedFade?.preserve_highlights === fadeControlsSubmitted.preserve_highlights)) fadeControlsIdentity = null;
+          appliedFade?.preserve_highlights === fadeControlsSubmitted.preserve_highlights)) {
+        fadeControlsIdentity = null;
+        if (!reload && completed && a.result?.reused === true) {
+          $("fadeAmount").value = appliedFade.amount * 100;
+          $("fadeRange").value = $("fadeAmount").value;
+          $("fadePreserve").value = appliedFade.preserve_highlights * 100;
+          $("fadePreserveRange").value = $("fadePreserve").value;
+          $("fadeCandidate").checked = false;
+        }
+      }
       if (completed) {
         fadeAreaPublished = false;
         fadeControlsSubmitted = null;
@@ -1156,7 +1177,7 @@
       if (
         reload ||
         !identity ||
-        (completed && !a.error && !["framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
+        (completed && !a.error && a.result?.reused !== true && !["framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
       ) {
         loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";

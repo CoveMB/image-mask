@@ -1,9 +1,11 @@
 """Source-only color cleanup and immutable effects publication; no model execution."""
 
 import json
+import platform
 import re
 import tempfile
 import tomllib
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +61,190 @@ from .spatial_fade import (
     read_spatial_fade,
     validate_spatial_fade,
 )
+
+# Bump when validation, request equivalence or effect arithmetic changes.
+EFFECTS_EXECUTION_VERSION = "validated-effects-v3"
+
+
+def _effects_execution_identity() -> dict[str, Any] | None:
+    from .background import ALGORITHM
+
+    try:
+        packages = {
+            name: version(name) for name in ("numpy", "scipy", "Pillow", "tifffile", "tomli-w")
+        }
+    except PackageNotFoundError:
+        return None
+    return {
+        "version": EFFECTS_EXECUTION_VERSION,
+        "python": [platform.python_implementation(), platform.python_version()],
+        "packages": packages,
+        "algorithms": {
+            "color_cleanup": "nearest-confirmed-empty-inverse-mixture-v1",
+            "shading": "inward-smoothstep-thickness-direction-highlight-v1",
+            "local_exposure": "linear-srgb-local-exposure-v1",
+            "shadow_fade": "linear-srgb-shadow-fade-v1",
+            "background": ALGORITHM,
+            "spatial_fade": SPATIAL_FADE_ALGORITHM,
+        },
+    }
+
+
+def _effective_shading_settings(
+    settings: dict[str, Any], saved: dict[str, Any] | None
+) -> dict[str, Any]:
+    """An explicit disable without geometry retains the validated saved geometry."""
+    if saved and not settings["enabled"] and "width_px" not in settings:
+        return dict(saved["settings"], **settings)
+    return settings
+
+
+def _effects_request_identity(
+    operation: dict[str, Any],
+    settings: dict[str, Any],
+    input_hashes: dict[str, str],
+    saved_shading: dict[str, Any] | None,
+) -> dict[str, Any]:
+    from .background import normalized_background
+
+    normalized = {
+        name: value
+        for name, value in operation.items()
+        if name not in {"base_revision", "inputs_digest"}
+    }
+    for name, checksum in input_hashes.items():
+        normalized[name] = {"sha256": checksum}
+    if "color_cleanup" in operation or not set(operation) & {
+        "shading",
+        "local_exposure",
+        "shadow_fade",
+        "background",
+        "spatial_fade",
+    }:
+        normalized["color_cleanup"] = settings
+    if "background" in normalized:
+        normalized["background"] = normalized_background(normalized["background"])
+    if "shading" in normalized:
+        normalized["shading"] = _effective_shading_settings(normalized["shading"], saved_shading)
+    if "spatial_fade" in normalized:
+        # Validation has already distinguished switches from numeric shape fields.
+        def normalized_shape(shape: dict[str, Any]) -> dict[str, Any]:
+            return {
+                name: [float(number) for number in value]
+                if isinstance(value, list)
+                else float(value)
+                if type(value) in {int, float}
+                else value
+                for name, value in shape.items()
+            }
+
+        spatial = normalized["spatial_fade"]
+        normalized["spatial_fade"] = dict(
+            spatial,
+            preserve_highlights=float(spatial["preserve_highlights"]),
+            oval=normalized_shape(spatial["oval"]),
+            arcs=[normalized_shape(shape) for shape in spatial["arcs"]],
+        )
+    for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade", "background"):
+        if name in normalized:
+            normalized[name] = {
+                key: float(value) if type(value) in {int, float} else value
+                for key, value in normalized[name].items()
+            }
+    return normalized
+
+
+def _spatial_reuse_binding(
+    record: dict[str, Any] | None, hashes: dict[str, str]
+) -> dict[str, Any] | None:
+    """Bind validated saved output, including OFF/inherited operands, not the old base."""
+    if record is None:
+        return None
+    return {
+        "record": record,
+        "files": {
+            f"effects/spatial-fade/{name}": hashes[f"effects/spatial-fade/{name}"]
+            for name in SPATIAL_FADE_FILES
+        },
+    }
+
+
+def _reused_effects_result(
+    project: Path, state: dict[str, Any], manifest: dict[str, Any], identity: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Prove only a repeat of this current complete effects request, never search history."""
+    if (
+        manifest.get("kind") != "effects"
+        or manifest.get("revision") != state["working_revision"]
+        or not isinstance(manifest.get("effects_reuse"), dict)
+        or identity["execution"] is None
+        or effects_stale(manifest)
+    ):
+        return None
+    revision = state["working_revision"]
+    directory = saved_asset(project, f"revisions/{revision}")
+    try:
+        # JSON comparison keeps booleans distinct from integer schema/permission fields.
+        if _json_bytes(manifest["effects_reuse"]) != _json_bytes(identity):
+            return None
+        result = json.loads((directory / "result.json").read_bytes())
+        request = json.loads((directory / "request.json").read_bytes())
+        if (
+            _json_bytes(result.get("effects_reuse")) != _json_bytes(identity)
+            or result.get("kind") != "effects"
+            or result.get("revision") != revision
+            or result.get("parent") != manifest.get("parent")
+            or request["base_revision"] != manifest.get("parent")
+            or request["inputs_digest"] != manifest.get("inputs_digest")
+            or _json_bytes({"spatial_fade": result.get("spatial_fade")})
+            != _json_bytes({"spatial_fade": manifest.get("spatial_fade")})
+            or _json_bytes(
+                _effects_request_identity(
+                    request,
+                    identity["request"].get("color_cleanup", {}),
+                    identity["inputs"]["request_files"],
+                    manifest.get("shading"),
+                )
+            )
+            != _json_bytes(identity["request"])
+        ):
+            return None
+        for name, algorithm in identity["execution"]["algorithms"].items():
+            if name in manifest and manifest[name].get("algorithm") != algorithm:
+                return None
+        for name in (
+            "color_cleanup",
+            "shading",
+            "local_exposure",
+            "shadow_fade",
+            "background",
+            "spatial_fade",
+        ):
+            if name not in identity["request"]:
+                continue
+            settings = identity["request"][name]
+            if name == "color_cleanup":
+                settings = dict(
+                    settings, enabled=bool(settings["enabled"] and settings["strength"])
+                )
+                actual = {key: manifest[name][key] for key in ("enabled", "strength")}
+            else:
+                actual = manifest[name]["settings"]
+            if settings != actual:
+                return None
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+    from .operations import draft_digest
+
+    return dict(
+        result,
+        reused=True,
+        status=state["status"],
+        inputs_digest=draft_digest(project),
+        revision_inputs_digest=manifest["draft_digest"],
+        manifest_file=str(directory / "manifest.json"),
+        review_manifest_file=str(directory / "review/manifest.json"),
+    )
 
 
 def validate_shading(settings: Any) -> None:
@@ -859,64 +1045,6 @@ def run_effects(
         lock_values[mask] = rgb[mask]
         locked |= mask
     protection |= locked
-    check_space(
-        project,
-        source.nbytes * (47 if background_changed or "background" in manifest else 45) + 1024**2,
-    )
-    record: dict[str, Any] | None
-    if cleanup_changed:
-        corrected = make_corrected_rgb(
-            source,
-            alpha,
-            support,
-            settings,
-            known_empty=(trimap == 0) & (alpha == 0),
-            protection=protection,
-        )
-        # Unaffected pixels start from the actual saved base (including its RGB locks).
-        # Correction math above always starts from source, never this saved output.
-        writable = (support != 0) & (alpha > 0) & (alpha < 65535) & ~protection
-        corrected[~writable] = foreground[~writable]
-        previous = manifest.get("color_cleanup")
-        dependency = alpha.copy()
-        cumulative_support = support.copy()
-        if (
-            enabled
-            and previous is not None
-            and previous["enabled"]
-            and "corrected_rgb16.tif" in revision_hashes(manifest)
-        ):
-            prior = tifffile.imread(saved_asset(project, f"revisions/{parent}/corrected_rgb16.tif"))
-            corrected[support == 0] = prior[support == 0]
-            dependency = scalar16(saved_asset(project, f"revisions/{parent}/effects/alpha16.png"))
-            dependency[support != 0] = alpha[support != 0]
-            cumulative_support = scalar16(
-                saved_asset(project, f"revisions/{parent}/effects/support16.png")
-            )
-            cumulative_support[support != 0] = support[support != 0]
-        corrected[protection & (support != 0)] = lock_values[protection & (support != 0)]
-        record = {
-            "enabled": bool(enabled),
-            "strength": settings["strength"],
-            "stale": bool(enabled and not np.array_equal(dependency, alpha)),
-            "developed_id": state["developed_id"],
-            "algorithm": "nearest-confirmed-empty-inverse-mixture-v1",
-            "scope_xyxy": scope,
-            "support_sha256": digest(support_bytes),
-            "alpha_sha256": revision_hashes(manifest)["base_alpha16.png"],
-            "parent_manifest_sha256": digest(parent_bytes),
-            "candidate_comparison": operation["candidate_comparison"],
-        }
-    else:
-        record = manifest.get("color_cleanup")
-        enabled = bool(record and record["enabled"])
-        corrected = (
-            tifffile.imread(saved_asset(project, f"revisions/{parent}/corrected_rgb16.tif"))
-            if record
-            else foreground.copy()
-        )
-        cumulative_support = support
-        dependency = alpha
     shading_record = manifest.get("shading")
     shading_inputs = {}
     if "shading" in operation:
@@ -953,6 +1081,7 @@ def run_effects(
                 raise ProjectError("Shading protection must be aligned categorical scalar16")
         if shading_record is None and not shading_settings["enabled"]:
             own_protection = np.zeros(alpha.shape, dtype=np.uint16)
+        shading_settings = _effective_shading_settings(shading_settings, shading_record)
     exposure_record = manifest.get("local_exposure")
     exposure_inputs = {}
     exposure_area_bytes = None
@@ -1106,6 +1235,139 @@ def run_effects(
             if explicit.shape != alpha.shape or not np.isin(explicit, [0, 65535]).all():
                 raise ProjectError("Spatial protection must be aligned categorical scalar16/8")
             spatial_protection |= explicit != 0
+        spatial_dependency = (
+            scalar16(saved_asset(project, f"revisions/{parent}/effects/spatial-fade/alpha16.png"))
+            if previous_spatial is not None and not spatial_settings["enabled"]
+            else alpha
+        )
+
+    def recheck():
+        for path, data in spatial_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale spatial fade protection input")
+        for path, data in fade_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale Shadow fade input")
+        for path, data in exposure_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale local exposure input")
+        for path, data in shading_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale shading protection input")
+        for name, captured in request_inputs.items():
+            if _input_file(project, operation[name]).read_bytes() != captured:
+                raise ProjectError("Stale effects referenced input")
+        for name, data in snapshots.items():
+            if saved_asset(project, name).read_bytes() != data:
+                raise ProjectError(f"Stale effects input: {name}")
+        if (
+            support_path is not None
+            and support_path.read_bytes() != support_bytes
+            or saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()
+            != parent_bytes
+            or request_file
+            and request_file.read_bytes() != request_bytes
+        ):
+            raise ProjectError("Stale effects support/request/parent")
+        read_revision(project, parent, state["developed_id"])
+        load_developed(project, state["developed_id"])
+        for saved_revision, data in lock_dependencies.items():
+            read_revision(project, saved_revision, state["developed_id"])
+            if (
+                saved_asset(project, f"revisions/{saved_revision}/manifest.json").read_bytes()
+                != data
+            ):
+                raise ProjectError("Stale cleanup saved RGB lock")
+
+    # saved_layers above validates all inherited effects, including disabled operands.
+    input_hashes: dict[str, str] = {}
+    request_inputs: dict[str, bytes] = {}
+    for name in (
+        "support_file",
+        "shading_protection_file",
+        "exposure_protection_file",
+        "shadow_fade_protection_file",
+        "spatial_fade_protection_file",
+    ):
+        if name in operation:
+            path = _input_file(project, operation[name])
+            captured = (
+                support_bytes
+                if name == "support_file"
+                else shading_inputs.get(
+                    path, exposure_inputs.get(path, fade_inputs.get(path, spatial_inputs.get(path)))
+                )
+            )
+            if captured is None:
+                captured = path.read_bytes()
+            request_inputs[name] = captured
+            input_hashes[name] = digest(captured)
+    identity = {
+        "schema_version": 1,
+        "execution": _effects_execution_identity(),
+        "request": _effects_request_identity(operation, settings, input_hashes, shading_record),
+        "inputs": {
+            "source": digest(snapshots["source.json"]),
+            "guides": digest(snapshots["guides.json"]),
+            "recipe": {
+                name: value
+                for name, value in current_recipe.items()
+                if name
+                not in {
+                    "color_cleanup",
+                    "shading",
+                    "local_exposure",
+                    "shadow_fade",
+                    "background",
+                    "spatial_fade",
+                    "notes",
+                }
+            },
+            "native": {
+                name: revision_hashes(manifest)[name]
+                for name in (
+                    "foreground_rgb16.tif",
+                    "base_alpha16.png",
+                    "trimap.png",
+                    "supports/support16.png",
+                    "supports/protection.png",
+                    "supports/lock_values16.png",
+                )
+            },
+            "locks": {name: digest(data) for name, data in lock_dependencies.items()},
+            "request_files": input_hashes,
+        },
+    }
+    reused_result = _reused_effects_result(
+        project,
+        state,
+        manifest,
+        dict(
+            identity,
+            spatial_fade=_spatial_reuse_binding(
+                manifest.get("spatial_fade"), revision_hashes(manifest)
+            ),
+        ),
+    )
+    if reused_result is not None:
+        recheck()
+        return reused_result
+    check_space(
+        project,
+        source.nbytes * (47 if background_changed or "background" in manifest else 45) + 1024**2,
+    )
+    revisions = saved_asset(project, "revisions")
+    existing = [
+        int(p.name[4:]) for p in revisions.iterdir() if re.fullmatch(r"rev-[0-9]{3,}", p.name)
+    ]
+    revision = f"rev-{max(existing, default=0) + 1:03d}"
+    stage = Path(tempfile.mkdtemp(prefix=".effects-", dir=revisions))
+    (stage / "request.json").write_bytes(request_bytes)
+    (stage / "inputs").mkdir()
+    for name, data in snapshots.items():
+        (stage / "inputs" / name).write_bytes(data)
+    (stage / "inputs/effects.json").write_bytes(_json_bytes(identity))
+    if spatial_changed:
         geometric_keys = ("oval", "arcs_enabled", "arcs")
         spatial_weight = (
             previous_spatial.weight16
@@ -1116,17 +1378,60 @@ def run_effects(
             )
             else make_spatial_weight(alpha.shape, spatial_settings)
         )
-        spatial_dependency = (
-            scalar16(saved_asset(project, f"revisions/{parent}/effects/spatial-fade/alpha16.png"))
-            if previous_spatial is not None and not spatial_settings["enabled"]
-            else alpha
+    record: dict[str, Any] | None
+    if cleanup_changed:
+        corrected = make_corrected_rgb(
+            source,
+            alpha,
+            support,
+            settings,
+            known_empty=(trimap == 0) & (alpha == 0),
+            protection=protection,
         )
-    revisions = saved_asset(project, "revisions")
-    existing = [
-        int(p.name[4:]) for p in revisions.iterdir() if re.fullmatch(r"rev-[0-9]{3,}", p.name)
-    ]
-    revision = f"rev-{max(existing, default=0) + 1:03d}"
-    stage = Path(tempfile.mkdtemp(prefix=".effects-", dir=revisions))
+        # Unaffected pixels start from the actual saved base (including its RGB locks).
+        # Correction math above always starts from source, never this saved output.
+        writable = (support != 0) & (alpha > 0) & (alpha < 65535) & ~protection
+        corrected[~writable] = foreground[~writable]
+        previous = manifest.get("color_cleanup")
+        dependency = alpha.copy()
+        cumulative_support = support.copy()
+        if (
+            enabled
+            and previous is not None
+            and previous["enabled"]
+            and "corrected_rgb16.tif" in revision_hashes(manifest)
+        ):
+            prior = tifffile.imread(saved_asset(project, f"revisions/{parent}/corrected_rgb16.tif"))
+            corrected[support == 0] = prior[support == 0]
+            dependency = scalar16(saved_asset(project, f"revisions/{parent}/effects/alpha16.png"))
+            dependency[support != 0] = alpha[support != 0]
+            cumulative_support = scalar16(
+                saved_asset(project, f"revisions/{parent}/effects/support16.png")
+            )
+            cumulative_support[support != 0] = support[support != 0]
+        corrected[protection & (support != 0)] = lock_values[protection & (support != 0)]
+        record = {
+            "enabled": bool(enabled),
+            "strength": settings["strength"],
+            "stale": bool(enabled and not np.array_equal(dependency, alpha)),
+            "developed_id": state["developed_id"],
+            "algorithm": "nearest-confirmed-empty-inverse-mixture-v1",
+            "scope_xyxy": scope,
+            "support_sha256": digest(support_bytes),
+            "alpha_sha256": revision_hashes(manifest)["base_alpha16.png"],
+            "parent_manifest_sha256": digest(parent_bytes),
+            "candidate_comparison": operation["candidate_comparison"],
+        }
+    else:
+        record = manifest.get("color_cleanup")
+        enabled = bool(record and record["enabled"])
+        corrected = (
+            tifffile.imread(saved_asset(project, f"revisions/{parent}/corrected_rgb16.tif"))
+            if record
+            else foreground.copy()
+        )
+        cumulative_support = support
+        dependency = alpha
     assets: dict[str, Any] = {}
     for name in (
         "recipe.toml",
@@ -1163,8 +1468,6 @@ def run_effects(
     shading_record = inherit_shading(project, parent, stage, state["developed_id"], assets=assets)
     if "shading" in operation:
         old = shading_record
-        if old and not shading_settings["enabled"] and "width_px" not in shading_settings:
-            shading_settings = dict(old["settings"], **shading_settings)
         if old is None:
             weight = np.zeros(alpha.shape, dtype=np.uint16)
             shading_dependency = alpha.copy()
@@ -1343,10 +1646,6 @@ def run_effects(
             },
         }
         (directory / "settings.json").write_bytes(_json_bytes(fade_record))
-    (stage / "request.json").write_bytes(request_bytes)
-    (stage / "inputs").mkdir()
-    for name, data in snapshots.items():
-        (stage / "inputs" / name).write_bytes(data)
     from .background import inherit_background, save_background
 
     background_record: dict[str, Any] | None
@@ -1507,12 +1806,27 @@ def run_effects(
             "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need scoped rebuild or explicit disable"
         )
     (stage / "review/manifest.json").write_bytes(_json_bytes(review))
+    # Input snapshots remain consumed-input evidence. Bind the new output only
+    # after its actual record and all four operands exist, so first repeats hit.
+    identity["spatial_fade"] = _spatial_reuse_binding(
+        spatial_record,
+        {
+            f"effects/spatial-fade/{name}": digest(
+                stage_asset(project, stage, assets, f"effects/spatial-fade/{name}").read_bytes()
+            )
+            for name in SPATIAL_FADE_FILES
+        }
+        if spatial_record is not None
+        else {},
+    )
     result = {
         "revision": revision,
         "parent": parent,
         "developed_id": state["developed_id"],
         "kind": "effects",
         "model": {"inference": "not invoked; saved base layers only"},
+        "effects_reuse": identity,
+        "reused": False,
         "status": "review_needed",
         "final_acceptable": True,
         "inputs_digest": operation["inputs_digest"],
@@ -1535,41 +1849,6 @@ def run_effects(
         foreground_asset="corrected_rgb16.tif" if enabled else "foreground_rgb16.tif",
     )
     (stage / "manifest.json").write_bytes(_json_bytes(new_manifest))
-
-    def recheck():
-        for path, data in spatial_inputs.items():
-            if path.read_bytes() != data:
-                raise ProjectError("Stale spatial fade protection input")
-        for path, data in fade_inputs.items():
-            if path.read_bytes() != data:
-                raise ProjectError("Stale Shadow fade input")
-        for path, data in exposure_inputs.items():
-            if path.read_bytes() != data:
-                raise ProjectError("Stale local exposure input")
-        for path, data in shading_inputs.items():
-            if path.read_bytes() != data:
-                raise ProjectError("Stale shading protection input")
-        for name, data in snapshots.items():
-            if saved_asset(project, name).read_bytes() != data:
-                raise ProjectError(f"Stale effects input: {name}")
-        if (
-            support_path is not None
-            and support_path.read_bytes() != support_bytes
-            or saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()
-            != parent_bytes
-            or request_file
-            and request_file.read_bytes() != request_bytes
-        ):
-            raise ProjectError("Stale effects support/request/parent")
-        read_revision(project, parent, state["developed_id"])
-        load_developed(project, state["developed_id"])
-        for saved_revision, data in lock_dependencies.items():
-            read_revision(project, saved_revision, state["developed_id"])
-            if (
-                saved_asset(project, f"revisions/{saved_revision}/manifest.json").read_bytes()
-                != data
-            ):
-                raise ProjectError("Stale cleanup saved RGB lock")
 
     recheck()
     destination = revisions / revision

@@ -463,6 +463,59 @@ Schema-2 manual processing requests remain compatible. Prepare/repair optionally
 Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; protected inward shading uses the additive contract below.
 
 
+## Unchanged effects results
+
+Effects run only on explicit submission. A fully validated repeat of the current
+complete effects request returns the same revision/assets with `reused=true`.
+New computation returns `reused=false`. The returned `parent` remains that saved
+revision's historical parent; `inputs_digest` identifies the current editable
+draft, and `revision_inputs_digest` identifies the saved effective recipe/guides.
+Reuse never changes working/latest/accepted state or rewrites drafts. Existing
+pending draft differences can still block acceptance. Restored working A can be
+reused while latest B remains the gallery result. A missing latest gallery may be
+repaired by the existing derivative owner, with failure reported as pending.
+
+The additive `effects_reuse` record in an effects manifest and its hash-bound
+`result.json` contains `schema_version=1`, `execution`, `request`, `inputs` and
+the current `spatial_fade` output binding (null when absent).
+It records the finite effects execution version, Python/package/algorithm versions,
+effective request settings/scope/mode/candidate semantics, captured input hashes,
+source/native/guides/base-recipe/lock identities. Locator names alone never prove
+equivalence. Fresh base/draft identities and all normal permissions, operand,
+protection, stale-effect and publication rechecks precede a hit. The original
+consumed request/result must bind to this revision and its parent, so inherited
+provenance cannot authorize another kind of operation.
+
+Missing, unknown or unsupported reuse provenance computes normally; existing
+revisions are not rewritten. Changed protection, scope, authored metadata or
+execution identity can create a meaningful small revision even if pixels agree.
+There is no historical request search, registry or new cache engine. The explicit
+effects execution version must change when equivalence, validation or arithmetic
+semantics change. Existing native model/tile cache invalidation stays independent.
+Current `validated-effects-v3` covers all six effects, including Fade into background's
+validated nested settings, algorithm, actual explicit protection bytes and all four
+saved spatial operands. Its output binding includes OFF and inherited spatial state;
+new output is bound only after generation, allowing the first equivalent repeat to
+reuse it. Native recipe identity excludes all six appearance sections. Mandatory cold
+saved-geometry validation may rasterize W; a hit performs no additional result/effect/W
+generation, while existing warm validation caches retain their fresh-hash safeguards.
+Omitted shading-disable geometry still resolves from validated saved settings before
+comparison and generation; the original request remains unchanged in diagnostics.
+Older v1/v2 proof computes normally once.
+Successful reused Reset synchronizes only its matching submitted effect controls
+to the returned settings; unrelated controls and independent area drafts remain.
+Matching reused spatial Apply clears only its submitted draft; Disable still uses
+saved geometry and preserves unrelated or subsequently edited shapes. Explicit Reload
+and Cancel retain their existing saved-state behavior.
+An actual computation miss captures its request, root input bytes and
+`inputs/effects.json` identities/hashes in the existing `.effects-*` stage before
+generation; failure retains diagnostics and prior accepted data. This diagnostic
+record identifies consumed inputs; the final reuse proof additionally binds generated
+spatial output. It is not a separate archive of every external
+file or a resumable execution checkpoint.
+This adds no effects-resume API. Early invalid submissions return errors without
+publishing a result or silently consuming drafts.
+
 ## Optional source-guided color cleanup
 
 Schema-2 `effects` requests extend the finite `run` operation. Common identity fields
