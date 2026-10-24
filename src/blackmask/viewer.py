@@ -19,13 +19,11 @@ from PIL import Image
 
 from . import operations
 from .assets import revision_hashes, saved_asset
-from .export import export_project, render_background, render_black, saved_layers
+from .export import export_project, saved_layers
 from .framing import (
     FramingSaveUncertain,
-    framing_preview,
     read_framing_preset,
     save_framing_preset,
-    validate_margins,
 )
 from .guidance import coordinates
 from .library import StorageConfig, validate_library_project
@@ -44,14 +42,10 @@ from .review import review_panels
 from .series_framing import (
     SeriesSaveUncertain,
     _unique_object,
-    compute_series_layout,
     parse_series_preset,
     portable_series_preset,
     read_series_settings,
-    render_series,
     save_series_settings,
-    series_sampling_plan,
-    validate_series_settings,
 )
 
 
@@ -233,88 +227,17 @@ class ReviewServer(ThreadingHTTPServer):
             if digest(raw) != data["revision_manifest_sha256"]:
                 raise ProjectError("Stale framing preview revision manifest")
             captured[f"revisions/{data['revision']}/manifest.json"] = raw
-            from .background import read_background
-            from .effects import effects_stale, saved_shading, saved_spatial_fade
+            from .review import render_presentation_preview
 
-            if effects_stale(manifest):
-                raise ProjectError("Stale enabled appearance; rebuild or disable before preview")
             source, _ = _validate_assets(self.project, state, validate_drafts=False)
-            settings_record: dict[str, object] = {}
-            if series_mode:
-                series_settings = validate_series_settings(data["settings"])
-                settings_record.update(series_settings.to_dict())
-            else:
-                margins = validate_margins(data["margins"], (source.shape[1], source.shape[0]))
-                settings_record.update(margins.to_dict())
             del source
-            foreground, alpha, loaded_manifest = saved_layers(
-                self.project, data["revision"], state["developed_id"]
-            )
-            if _json_bytes(loaded_manifest) != _json_bytes(manifest):
-                raise ProjectError("Stale framing preview saved layers")
-            weight, opacity = saved_shading(self.project, data["revision"], alpha, loaded_manifest)
-            spatial = saved_spatial_fade(self.project, data["revision"], alpha, loaded_manifest)
-            background = read_background(
+            pixels, preview_record = render_presentation_preview(
                 self.project,
-                saved_asset(self.project, f"revisions/{data['revision']}"),
-                loaded_manifest,
+                data["revision"],
+                state["developed_id"],
+                manifest,
+                {"mode": "match-series" if series_mode else "add-margins", **data},
             )
-            geometry: dict[str, object]
-            if series_mode:
-                layout = compute_series_layout(alpha, series_settings)
-                width, height = layout.output_dimensions_wh
-                longest = max(width, height)
-                display = (
-                    max(1, int(width * min(1600, longest) / longest)),
-                    max(1, int(height * min(1600, longest) / longest)),
-                )
-                sampling = series_sampling_plan(layout, display_dimensions_wh=display)
-                del background
-                rgb16 = render_series(
-                    foreground,
-                    alpha,
-                    sampling,
-                    weight16=weight,
-                    opacity=opacity,
-                    background_settings=loaded_manifest.get("background", {}).get("settings"),
-                    spatial_fade=spatial,
-                )
-                pixels = np.empty((*rgb16.shape[:2], 3), np.uint8)
-                for start in range(0, pixels.shape[0], 64):
-                    pixels[start : start + 64] = np.rint(
-                        rgb16[start : start + 64].astype(np.float64) / 257
-                    ).astype(np.uint8)
-                del rgb16
-                geometry = {
-                    "layout": layout.to_dict(),
-                    "output_dimensions_wh": [width, height],
-                    "display_dimensions_wh": list(display),
-                    "source_dimensions_wh": [foreground.shape[1], foreground.shape[0]],
-                }
-            else:
-                native = (
-                    render_black(
-                        foreground,
-                        alpha,
-                        weight,
-                        opacity,
-                        spatial_fade=spatial,
-                        fade_background16=np.zeros_like(foreground)
-                        if spatial is not None
-                        else None,
-                    )
-                    if background is None
-                    else render_background(
-                        foreground,
-                        alpha,
-                        background,
-                        weight,
-                        opacity,
-                        spatial_fade=spatial,
-                        fade_background16=background,
-                    )
-                )
-                pixels, geometry = framing_preview(native, background, margins)
             with io.BytesIO() as buffer:
                 image = Image.fromarray(pixels)
                 try:
@@ -332,14 +255,7 @@ class ReviewServer(ThreadingHTTPServer):
                 "developed_id": state["developed_id"],
                 "revision": data["revision"],
                 "revision_manifest_sha256": digest(raw),
-                "settings" if series_mode else "margins": settings_record,
-                **geometry,
-                "algorithm": "series-lanczos-premultiplied-v1"
-                if series_mode
-                else "saved-backdrop-edge-padding-v1",
-                "label": "RGB8 approximate resized series preview; reduced detail, inspect exported TIFF"
-                if series_mode
-                else "RGB8 sampled layout preview; reduced detail, not a native editing view",
+                **{key: value for key, value in preview_record.items() if key != "mode"},
                 "png_base64": png_base64,
             }
         finally:
@@ -511,6 +427,13 @@ class ReviewServer(ThreadingHTTPServer):
             "resume": {"operation_id"},
             "preview-repair": set(),
             "export": {"revision", "draft"},
+            "comparison": {
+                "revision",
+                "revision_manifest_sha256",
+                "crops",
+                "retain_native",
+                "presentation",
+            },
             "framing-save": {"margins", "expected_digest"},
             "series-save": {"settings", "expected_digest"},
             "series-export": {
@@ -612,6 +535,42 @@ class ReviewServer(ThreadingHTTPServer):
             raise ProjectError("Saved pending guidance requires preparation first")
         if action == "development":
             return accept_development(self.project, data["developed_id"])
+        if action == "comparison":
+            from .review import review_project
+
+            result = review_project(
+                self.project,
+                revision=data["revision"],
+                crops=data["crops"],
+                comparison=True,
+                retain_native=data["retain_native"],
+                presentation=data["presentation"],
+                storage_config=self.storage_config,
+                expected_identity=data,
+            )
+            # Return only this canonical action's bounded artifacts; never resolve a client path.
+            from .previews import _read_regular
+
+            path = Path(result["comparison_manifest_file"])
+            try:
+                raw = _read_regular(path.parent, "manifest.json", 16 * 1024**2)
+                record = json.loads(raw)
+                pixels = _read_regular(
+                    path.parent, "comparison_RGB8_VIEW.jpg", 16 * 1024**2, jpeg=True
+                )
+                if digest(pixels) != record["files"][
+                    "comparison_RGB8_VIEW.jpg"
+                ] or raw != _read_regular(path.parent, "manifest.json", 16 * 1024**2):
+                    raise ProjectError("Saved comparison changed before viewing")
+                result["view"] = {
+                    "jpeg_base64": base64.b64encode(pixels).decode("ascii"),
+                    "manifest_json": raw.decode("utf-8"),
+                }
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise ProjectError(
+                    f"Comparison saved at {path}, but its viewing copy is unavailable: {error}"
+                ) from error
+            return result
         if action == "trimap":
             return operations.accept_trimap(
                 self.project, data["revision"], data["developed_id"], data["inputs_digest"]

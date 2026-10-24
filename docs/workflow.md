@@ -142,6 +142,16 @@ or draft areas; switch back to the effect's authoring mode when drawing again.
 Inspect fragile detail, gaps, transparency and seams at native scale. Cached tile
 counts describe verified computation reuse, never visual quality. Previews are
 RGB8/alpha8 approximations; authoritative saved assets retain RGB16/alpha16 precision.
+To save the selected native crop, use **Focused comparison → Save comparison**.
+The default saves only a labelled JPEG and exact manifest. **Retain native
+inspection evidence** also saves separate PNG crops for correction work. Choose
+an optional presentation mode to include the current margin or series form for
+the same selected saved revision. These controls retain unsaved forms and do not
+accept the photograph or update the Result gallery. Status reports the actual
+saved paths or a recoverable failure. **Open saved comparison sheet** opens the
+actual JPEG; **Download exact manifest** saves its bound JSON. These links use
+only the completed action’s bounded files; see the [comparison contract](file-contract.md#focused-comparisons).
+
 Only after your photographic review, check its separate box and **Accept current
 photograph**. Preparation and computational success never imply this acceptance.
 

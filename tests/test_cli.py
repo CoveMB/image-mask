@@ -302,3 +302,63 @@ def test_doctor_missing_cache_hint_names_selected_model(tmp_path, model, label):
     assert completed.returncode == 0, completed.stderr
     report = json.loads(completed.stdout)
     assert report["models"] == f"pass --model-cache to verify pinned {label} assets"
+
+
+def test_comparison_cli_explicit_retention_presentation_reuse_and_missing_native(tmp_path):
+    from test_effects import fixture_project
+    from test_framing import margins
+
+    from blackmask.project import digest, read_project
+
+    project, _, revision = fixture_project(tmp_path)
+    before = (project / "state.json").read_bytes()
+    crops_file = tmp_path / "crops.json"
+    crops_file.write_text("[[1,0,6,4]]")
+    plain = run("review", project, "--crops", crops_file)
+    assert plain.returncode == 0, plain.stderr
+    assert "manifest_file" in json.loads(plain.stdout)
+    presentation = tmp_path / "presentation.json"
+    presentation.write_text(
+        json.dumps(
+            {
+                "mode": "add-margins",
+                "revision": revision["revision"],
+                "developed_id": read_project(project)["developed_id"],
+                "revision_manifest_sha256": digest(
+                    (project / "revisions" / revision["revision"] / "manifest.json").read_bytes()
+                ),
+                "margins": margins(),
+            }
+        )
+    )
+    arguments = (
+        "review",
+        project,
+        "--comparison",
+        "--retain-native",
+        "--presentation",
+        presentation,
+        "--crops",
+        crops_file,
+    )
+    first = run(*arguments)
+    assert first.returncode == 0, first.stderr
+    output = json.loads(first.stdout)
+    assert (
+        json.loads(Path(output["comparison_manifest_file"]).read_bytes())["presentation"]["mode"]
+        == "add-margins"
+    )
+    replay = run(*arguments)
+    assert replay.returncode == 0, replay.stderr
+    assert json.loads(replay.stdout) == {**output, "reused": True}
+    native = Path(output["native_manifest_file"]).parent
+    native.rename(tmp_path / "preserved-native")
+    failed = run(*arguments)
+    assert failed.returncode == 1
+    assert (
+        str(native) in failed.stderr
+        and output["comparison_manifest_file"].rsplit("/", 1)[0] in failed.stderr
+    )
+    assert not native.exists()
+    assert run("review", project, "--retain-native").returncode == 1
+    assert (project / "state.json").read_bytes() == before
