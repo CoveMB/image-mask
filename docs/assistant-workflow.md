@@ -19,6 +19,20 @@ unrelated existing effects and drafts. RAW still needs its recorded RGB conversi
 never silently choose a different rendering or claim an optional review happened.
 See [source appearance](workflow.md#source-appearance).
 
+## Final assisted exports
+
+For every final Codex-assisted export, explicitly include `--variant editable`
+(or API `variants=("editable",)`) in the chosen native, Add margins or Match series
+request. Include black/transparent alternatives only when requested. Native output
+retains full native RGB16 TIFF and same-dimension PNG8 view; the PNG is a reduced
+precision view. Presentation exports keep compact rendered files and return a
+native editable companion; provide both folders with their names and retain the
+project. The manifest freezes the presentation recipe and exact companion binding.
+Intermediate edits stay in the project. Saving/applying/exporting never supplies
+human photographic acceptance: use an explicit labelled draft for an unaccepted
+revision. Manual exports keep editable as an independent opt-in. See the
+[normative delivery contract](file-contract.md#requested-result-deliveries).
+
 ## Fade into background assistance
 
 Follow the [manual feature guide](workflow.md#fade-into-background) through the

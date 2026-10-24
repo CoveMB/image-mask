@@ -675,7 +675,12 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
         np.array(Image.open(saved_raster(assets / "crop-000-result_RGB8_VIEW.png"))),
         np.rint(expected[1:4, 2:6].astype(float) / 257).astype(np.uint8),
     )
-    exported = export_project(project, revision=result["revision"], draft=True)
+    exported = export_project(
+        project,
+        revision=result["revision"],
+        draft=True,
+        variants=("black", "transparent", "editable"),
+    )
     output = __import__("pathlib").Path(exported["directory"])
     np.testing.assert_array_equal(
         tifffile.imread(saved_raster(output / "result_rgb16.tif")), expected
@@ -696,7 +701,12 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
         json.loads((output / "background_settings.json").read_bytes())
         == manifest["background"]["settings"]
     )
-    assert export_project(project, revision=result["revision"], draft=True) == exported
+    assert export_project(
+        project,
+        revision=result["revision"],
+        draft=True,
+        variants=("black", "transparent", "editable"),
+    ) == {**exported, "reused": True}
     code = """import sys, pathlib, numpy as np, tifffile
 from PIL import Image
 p=pathlib.Path(sys.argv[1])
@@ -720,11 +730,16 @@ assert np.array_equal(np.rint(f*a[...,None]*h[...,None]+b*(1-a[...,None])).astyp
     from blackmask.project import ProjectError
 
     with pytest.raises(ProjectError, match="collision"):
-        export_project(project, revision=result["revision"], draft=True)
+        export_project(
+            project,
+            revision=result["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )
     assert (saved_raster(output / "result_rgb16.tif")).read_bytes() == b"preserved collision"
 
 
-def test_legacy_export_file_set_and_identical_reuse(tmp_path):
+def test_black_by_absence_default_compact_file_set_and_identical_reuse(tmp_path):
     from pathlib import Path
 
     from blackmask.export import export_project
@@ -734,19 +749,15 @@ def test_legacy_export_file_set_and_identical_reuse(tmp_path):
     result = export_project(project)
     output = Path(result["directory"])
     assert {p.name for p in output.iterdir()} == {
-        "black_rgb16.tif",
-        "alpha16.png",
-        "black_RGB8_VIEW.png",
-        "transparent_RGBA8_VIEW.png",
-        "foreground_rgb16.tif",
-        "source_rgb16.tif",
+        "result_rgb16.tif",
+        "result_RGB8_VIEW.png",
         "recipe.toml",
         "manifest.json",
         "README.txt",
     }
     manifest = (output / "manifest.json").read_bytes()
     assert "background" not in json.loads(manifest)
-    assert export_project(project) == result
+    assert export_project(project) == {**result, "reused": True}
     assert (output / "manifest.json").read_bytes() == manifest
     assert (project / "recipe.toml").read_bytes() == before
 

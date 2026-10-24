@@ -26,6 +26,21 @@ def margins(left=1, right=2, top=1, bottom=0):
     return {"left_px": left, "right_px": right, "top_px": top, "bottom_px": bottom}
 
 
+def restore_delivery_after_staging(monkeypatch, destination, retained):
+    """Make a byte-identical destination appear only after the initial reuse check."""
+    export = importlib.import_module("blackmask.export")
+    saved_raster(destination).rename(retained)
+    original = export.tempfile.mkdtemp
+
+    def create_stage(*args, **kwargs):
+        stage = original(*args, **kwargs)
+        assert not destination.exists()
+        saved_raster(retained).rename(destination)
+        return stage
+
+    monkeypatch.setattr(export.tempfile, "mkdtemp", create_stage)
+
+
 def test_preview_samples_literal_background_without_expanded_allocation(monkeypatch):
     from blackmask import framing
 
@@ -504,6 +519,7 @@ def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_
         "transparent_RGBA8_VIEW.png",
         "README.txt",
         "manifest.json",
+        "recipe.toml",
     }
     np.testing.assert_array_equal(
         tifffile.imread(saved_raster(delivery / "result_rgb16.tif")), expected
@@ -547,7 +563,10 @@ def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_
     assert str(tmp_path) not in (delivery / "manifest.json").read_text()
     assert "original_path" not in (delivery / "manifest.json").read_text()
     assert before == (hashes(project / "revisions"), (project / "state.json").read_bytes())
-    assert export_project(project, framing=margins(1, 2, 2, 1), framed_transparent=True) == output
+    assert export_project(project, framing=margins(1, 2, 2, 1), framed_transparent=True) == {
+        **output,
+        "reused": True,
+    }
 
 
 def test_legacy_omission_zero_margins_variants_and_manifest_raw_identity(tmp_path):
@@ -558,7 +577,7 @@ def test_legacy_omission_zero_margins_variants_and_manifest_raw_identity(tmp_pat
     assert framed["directory"] != original["directory"]
     np.testing.assert_array_equal(
         tifffile.imread(saved_raster(Path(framed["directory"]) / "result_rgb16.tif")),
-        tifffile.imread(saved_raster(Path(original["directory"]) / "black_rgb16.tif")),
+        tifffile.imread(saved_raster(Path(original["directory"]) / "result_rgb16.tif")),
     )
     assert not (saved_raster(Path(framed["directory"]) / "transparent_RGBA8_VIEW.png")).exists()
     variant = export_project(project, framing=margins(0, 0, 0, 0), framed_transparent=True)
@@ -570,7 +589,7 @@ def test_legacy_omission_zero_margins_variants_and_manifest_raw_identity(tmp_pat
     assert draft_record["draft"] is True
     assert draft_record["label"] == "DRAFT - explicit framed presentation"
     assert explicit_draft["directory"] not in {framed["directory"], variant["directory"]}
-    assert export_project(project) == original
+    assert export_project(project) == {**original, "reused": True}
     assert hashes(Path(original["directory"])) == original_hashes
     path = project / "revisions" / selected["revision"] / "manifest.json"
     path.write_text(json.dumps(json.loads(saved_raster(path).read_bytes()), indent=2) + "\n")
@@ -579,7 +598,7 @@ def test_legacy_omission_zero_margins_variants_and_manifest_raw_identity(tmp_pat
 
 
 @pytest.mark.parametrize("transparent", [False, True])
-def test_identical_framed_reuse_removes_only_its_verified_duplicate(tmp_path, transparent):
+def test_identical_framed_reuse_creates_no_duplicate_and_keeps_prior_failure(tmp_path, transparent):
     project, _, _ = fixture_project(tmp_path)
     output = export_project(project, framing=margins(), framed_transparent=transparent)
     exports = project / "exports"
@@ -588,17 +607,19 @@ def test_identical_framed_reuse_removes_only_its_verified_duplicate(tmp_path, tr
     (retained_stage / "evidence.txt").write_text("Preserve earlier failed work")
     before = hashes(project)
     for _ in range(2):
-        assert export_project(project, framing=margins(), framed_transparent=transparent) == output
+        assert export_project(project, framing=margins(), framed_transparent=transparent) == {
+            **output,
+            "reused": True,
+        }
         assert list(exports.glob(".export-*")) == [retained_stage]
         assert hashes(project) == before
 
 
 @pytest.mark.parametrize("failure", ["mismatch", "parent-sync"])
-def test_framed_reuse_failure_preserves_duplicate_and_prior_work(tmp_path, monkeypatch, failure):
+def test_framed_reuse_failure_preserves_prior_work_without_staging(tmp_path, monkeypatch, failure):
     project, _, _ = fixture_project(tmp_path)
     export = importlib.import_module("blackmask.export")
     output = Path(export_project(project, framing=margins())["directory"])
-    expected_stage = hashes(output)
     exports = project / "exports"
     retained_stage = exports / ".export-prior-failure"
     retained_stage.mkdir()
@@ -622,9 +643,7 @@ def test_framed_reuse_failure_preserves_duplicate_and_prior_work(tmp_path, monke
     with pytest.raises(ProjectError, match=message):
         export_project(project, framing=margins())
     stages = set(exports.glob(".export-*"))
-    assert retained_stage in stages and len(stages) == 2
-    new_stage = (stages - {retained_stage}).pop()
-    assert hashes(new_stage) == expected_stage
+    assert stages == {retained_stage}
     after = hashes(project)
     assert all(after[name] == value for name, value in before.items())
 
@@ -634,6 +653,7 @@ def test_framed_reuse_partial_cleanup_failure_reports_published_delivery(tmp_pat
     export = importlib.import_module("blackmask.export")
     output = Path(export_project(project, framing=margins())["directory"])
     before = hashes(project)
+    restore_delivery_after_staging(monkeypatch, output, tmp_path / "retained-complete-delivery")
     synced = []
     cleaned = []
     original_sync = export._sync_directory
@@ -762,8 +782,8 @@ def test_captured_bytes_must_correspond_to_canonical_validated_objects(
         name = "read_project"
     else:
         path = project / "revisions" / selected["revision"] / "manifest.json"
-        original = export.saved_layers
-        name = "saved_layers"
+        original = export.validated_layer_inputs
+        name = "validated_layer_inputs"
     captured = saved_raster(path).read_bytes()
     alternate = json.loads(captured)
     if changed == "state":

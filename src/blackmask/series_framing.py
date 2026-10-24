@@ -336,11 +336,13 @@ def estimate_series_resources(
     transparent: bool,
     spatial_fade_pixels: int = 0,
     native_export_peak_bytes: int = 0,
+    black_background: bool = False,
 ) -> dict[str, int]:
     if (
         type(retained_native_bytes) is not int
         or retained_native_bytes < 0
         or type(transparent) is not bool
+        or type(black_background) is not bool
         or type(spatial_fade_pixels) is not int
         or spatial_fade_pixels < 0
         or type(native_export_peak_bytes) is not int
@@ -374,6 +376,9 @@ def estimate_series_resources(
             filtered_spatial_amount_bytes=4 * x.output_length * y.output_length,
             spatial_blend_tile_bytes=64 * max(width, height) * 128,
             spatial_transparent_rgba_bytes=4 * width * height if transparent else 0,
+            spatial_target_rgb16_bytes=6 * width * height
+            if black_background and not transparent
+            else 0,
         )
     series_peak = sum(value for key, value in values.items() if key != "output_rgba8_bytes")
     if native_export_peak_bytes:
@@ -472,12 +477,14 @@ def render_series(
     background_settings: dict[str, Any] | None = None,
     transparent: bool = False,
     spatial_fade: SpatialFadeOperands | None = None,
+    black_background: bool = False,
 ) -> np.ndarray:
     from .background import LEGACY_BACKGROUND, make_background, sample_background
     from .export import _foreground_contribution
 
     if (
         type(transparent) is not bool
+        or type(black_background) is not bool
         or not isinstance(foreground, np.ndarray)
         or foreground.dtype != np.uint16
         or foreground.ndim != 3
@@ -521,6 +528,7 @@ def render_series(
             else 0
         ),
         transparent=transparent,
+        black_background=black_background,
         **({"spatial_fade_pixels": alpha16.size} if active_spatial else {}),
     )
     native_amount = (
@@ -534,6 +542,8 @@ def render_series(
     settings = LEGACY_BACKGROUND if background_settings is None else background_settings
     if transparent:
         result = np.zeros((height, width, 4), np.uint8)
+    elif black_background:
+        result = np.zeros((height, width, 3), np.uint16)
     elif sampling.display_dimensions_wh == sampling.layout.output_dimensions_wh:
         result = make_background((height, width), settings)
     else:
@@ -541,7 +551,7 @@ def render_series(
         result = sample_background((output_height, output_width), settings, (width, height))
     target = None
     if native_amount is not None:
-        if not transparent:
+        if not transparent and not black_background:
             target = result
         elif sampling.display_dimensions_wh == sampling.layout.output_dimensions_wh:
             target = make_background((height, width), settings)

@@ -682,17 +682,14 @@ def inherit_cleanup(
     return record
 
 
-def selected_foreground(
+def read_cleanup(
     project: Path,
     revision: str,
     foreground: np.ndarray,
     alpha: np.ndarray,
     manifest: dict[str, Any],
-    *,
-    effects_off: bool = False,
-    exposure_off: bool = False,
-    shadow_fade_off: bool = False,
-) -> np.ndarray:
+) -> np.ndarray | None:
+    """Validate saved cleanup independently of appearance rendering, including OFF operands."""
     from .export import read_rgb16
 
     record = manifest.get("color_cleanup")
@@ -725,10 +722,30 @@ def selected_foreground(
             and record["stale"] != (not np.array_equal(dependency, alpha))
         ):
             raise ProjectError("Invalid saved cleanup dependency/status")
+    return corrected if record else None
+
+
+def selected_foreground(
+    project: Path,
+    revision: str,
+    foreground: np.ndarray,
+    alpha: np.ndarray,
+    manifest: dict[str, Any],
+    *,
+    effects_off: bool = False,
+    exposure_off: bool = False,
+    shadow_fade_off: bool = False,
+) -> np.ndarray:
+    record = manifest.get("color_cleanup")
+    corrected = read_cleanup(project, revision, foreground, alpha, manifest)
     unexposed = (
-        foreground
-        if not record or not record["enabled"] or effects_off or record["stale"]
-        else corrected
+        corrected
+        if corrected is not None
+        and record is not None
+        and record["enabled"]
+        and not effects_off
+        and not record["stale"]
+        else foreground
     )
     exposed = selected_exposure(
         project,

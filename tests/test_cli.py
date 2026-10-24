@@ -21,6 +21,22 @@ def run(*arguments):
     )
 
 
+def test_requested_delivery_cli_variants_and_presentation_editable(tmp_path):
+    from test_effects import fixture_project
+
+    project, _, _ = fixture_project(tmp_path)
+    result = run("export", project, "--variant", "editable")
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert (Path(output["directory"]) / "alpha16.png").is_file()
+    assert not (Path(output["directory"]) / "transparent_RGBA8_VIEW.png").exists()
+    framed = run("export", project, "--margins", 0, 0, 0, 0, "--variant", "editable")
+    assert framed.returncode == 0, framed.stderr
+    pair = json.loads(framed.stdout)
+    assert pair["editable_companion"]["directory"] == output["directory"]
+    assert not (Path(pair["directory"]) / "alpha16.png").exists()
+
+
 def test_series_cli_saved_only_replay_and_exclusive_modes(tmp_path):
     from test_effects import fixture_project
 
@@ -39,7 +55,7 @@ def test_series_cli_saved_only_replay_and_exclusive_modes(tmp_path):
     saved_raster(preset).write_bytes(saved_raster(preset).read_bytes() + b"\n")
     replay = run("export", project, "--series-preset", preset, "--framed-transparent")
     assert replay.returncode == 0, replay.stderr
-    assert json.loads(replay.stdout) == output
+    assert json.loads(replay.stdout) == {**output, "reused": True}
     conflict = run("export", project, "--series-preset", preset, "--margins", 0, 0, 0, 0)
     assert conflict.returncode == 2
     assert not (project / "series-framing.json").exists()
@@ -86,7 +102,7 @@ def test_framed_cli_saved_only_replay_variants_draft_and_busy_lock(tmp_path, mon
     (saved_raster(tmp_path / "source.tif")).rename(tmp_path / "retained-original.tif")
     replay = run("export", project, "--margins", 2, 1, 3, 0, "--framed-transparent")
     assert replay.returncode == 0, replay.stderr
-    assert json.loads(replay.stdout) == result
+    assert json.loads(replay.stdout) == {**result, "reused": True}
     assert original_hashes == {
         path.name: hashlib.sha256(saved_raster(path).read_bytes()).hexdigest()
         for path in directory.iterdir()

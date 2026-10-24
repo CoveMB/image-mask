@@ -147,8 +147,16 @@ photograph**. Preparation and computational success never imply this acceptance.
 
 **Export accepted result** uses the accepted pointer even when another working
 candidate exists. **Export labelled current draft** is explicitly a draft. Both use
-the shared renderer and retain editable source/alpha assets; viewing RGBA PNG has
-8-bit alpha. Export directories and revision/status are displayed on success.
+the shared renderer. The default delivery contains Result RGB16 TIFF and PNG8 at
+full native pixel dimensions, plus the frozen recipe, manifest and notes. PNG8 has
+reduced colour precision. Unchecked independent controls opt into black TIFF/PNG,
+transparent RGBA8 (8-bit alpha), or complete editable layers at original size.
+Editable does not include the other alternatives automatically. Keep original
+captures and the editable project independently. Export directories and
+revision/status are displayed on success; an intact retry says **Existing delivery**.
+The CLI selects the same choices with repeatable `--variant black`,
+`--variant transparent`, `--variant editable`. See the
+[delivery contract](file-contract.md#requested-result-deliveries).
 Optional color cleanup is now available in the same review window. It starts OFF.
 Use the cleanup strength, declared native write scope and project-relative grayscale16
 support file. The default support is the current saved guide support. To change it,
@@ -361,7 +369,8 @@ or restore captured sharpness. Final photographic acceptance remains your decisi
    Reload reopens saved authored geometry; scalar-input areas remain available
    for amount changes. If alpha changed, rebuild the area or reset exposure
    before acceptance/export. Other stale effects require their own recovery.
-7. Export a labelled draft for comparison. Exposure exports include both selected
+7. Export a labelled draft for comparison. Native exports with **Include complete
+   editable layers at original size** include both selected
    and unexposed RGB16 plus editable support/protection/alpha/settings. Preserve
    them together; the selected foreground already includes exposure once.
 
@@ -451,13 +460,14 @@ accepted/candidate gate; it retains operands and protection. Invalid or corrupte
 saved assets must be recovered from a valid revision rather than silently repaired.
 Other stale effects require their own recovery. Earlier accepted work remains saved.
 
-Native export retains pre-spatial foreground, alpha, combined weight, protection,
+Native export with editable selected retains pre-spatial foreground, alpha, combined weight, protection,
 settings and background as separate editable operands. Transparent viewing RGB
 retains the tint toward the selected background; alpha is unchanged. Black/gray/
 white diagnostics change the backdrop but keep that same fade target.
 
-Every framed or Match series export with a saved spatial record, including OFF
-or zero strength, returns a presentation folder **and a native editable folder**.
+Select **Include native editable companion** for a framed or Match series export
+to receive a presentation folder **and a native editable folder**. This is opt-in,
+even for a saved spatial record that is ON, OFF or zero strength.
 Keep both siblings and their names for portable reconstruction. The presentation
 contains compact flattened results; its manifest binds all companion files. A
 native-only partial result or visible-but-durability-unconfirmed error is still an
@@ -502,7 +512,8 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 6. If alpha changed, rebuild fade or reset it. Each other stale effect needs its
    own rebuild/disable before accepting or exporting appearance. Prepared revisions
    still need completed matte; trimap confirmation is optional and acceptance is separate.
-7. Export a labelled draft and preserve selected, unfaded, unexposed, base and source
+7. Export a labelled draft. For recovery layers, select **Include complete editable
+   layers at original size** in a native export and preserve selected, unfaded, unexposed, base and source
    RGB16 plus alpha, independent settings/support/protection and any shading W16.
    The selected foreground already contains fade and exposure once. Follow the
    [saved-layer replay order](file-contract.md#optional-shadow-fade); never apply
@@ -535,8 +546,9 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 6. Use **Export labelled current draft** for a labelled unaccepted delivery, or accept the
    inspected photo and export the accepted result. `result_rgb16.tif` is the
    chosen-background image; `result_RGB8_VIEW.png` is a reduced-precision preview.
-   `black_rgb16.tif` and existing black viewing files always use pure black.
-   Retain `background_rgb16.tif`, `background_settings.json`, selected
+   Select the black alternative for `black_rgb16.tif` and its PNG view, which
+   always use pure black. Request a native editable export to retain
+   `background_rgb16.tif`, `background_settings.json`, selected
    `foreground_rgb16.tif`, `alpha16.png`, saved shading W16/opacity and the other
    editable operands. Straight transparent RGBA8 does not include the backdrop.
 7. To return to black, select **Pure black** and **Apply background**. To recover
@@ -576,8 +588,9 @@ creating a file. See recovery below for invalid, stale or uncertain saves.
 
 **Export framed accepted result** and **Export framed draft** use the visible
 validated margins, including unsaved edits. They do not silently use or save the
-preset. The transparent checkbox includes a separate RGBA8 viewing file. Existing
-native export buttons keep their editable export contract.
+preset. Black and transparent checkboxes independently add alternatives in the
+framed output geometry. **Include native editable companion** adds a separate
+folder with full native layers; keep both folders for portable editing.
 
 The CLI also creates a separate framed delivery from explicit margins:
 
@@ -595,8 +608,10 @@ The command reports the delivery directory, output dimensions and the native
 image's rectangle inside the canvas. `result_rgb16.tif` retains the native result's
 processed sRGB samples exactly. `result_RGB8_VIEW.png` is an 8-bit viewing copy;
 the optional `transparent_RGBA8_VIEW.png` has 8-bit alpha and transparent margins.
-The compact bundle includes a manifest and readable description. Keep the local
-project and native export for editable source layers.
+The compact bundle includes the frozen recipe, manifest and readable description.
+Keep the local project or add `--variant editable` to this same margins command
+for a native editable sibling. The presentation's manifest binds that sibling and
+freezes its margins; the editable operands retain native coordinates.
 
 Margins extend the saved backdrop's edge and corner colours. Wide margins may
 show bands; inspect the resulting composition in a suitable colour-managed viewer.
@@ -692,10 +707,16 @@ The flag is mutually exclusive with `--margins`. Without either flag, the existi
 native export behavior applies; project series settings are never loaded implicitly.
 The CLI accepts a bounded regular JSON file and rejects symlink aliases.
 
-Each compact delivery contains `result_rgb16.tif`, `result_RGB8_VIEW.png`, optional
-`transparent_RGBA8_VIEW.png`, `README.txt` and `manifest.json` beneath a distinct
+Each compact delivery contains `result_rgb16.tif`, `result_RGB8_VIEW.png`,
+`recipe.toml`, `README.txt` and `manifest.json`, with independent optional
+black TIFF/PNG and `transparent_RGBA8_VIEW.png`, beneath a distinct
 `exports/rev-NNN[-DRAFT]-series-framed-<identity>/` directory. TIFF is processed
 sRGB RGB16 with resampled samples; PNGs are reduced-precision views. Transparent
 RGB is straight, with zero RGB wherever quantized alpha is zero. Retain the native
 editable project, masks, original capture and accepted dependencies independently.
+For an editable handoff, add `--variant editable` to the Match series command or
+select **Include native editable companion**. Keep the native sibling and this
+presentation together; its manifest freezes the chosen settings and byte binding.
+Repeating an intact delivery validates its
+actual files and current source/revision authorization before returning without rendering.
 See [preservation and recovery](troubleshooting.md#series-framing-recovery).

@@ -86,12 +86,74 @@ def scalar_background_blend(foreground, background, amount):
     return 65535 * (12.92 * linear if linear <= 0.0031308 else 1.055 * linear ** (1 / 2.4) - 0.055)
 
 
+def test_black_series_keeps_selected_fade_target_at_partial_alpha():
+    from blackmask.spatial_fade import SpatialFadeOperands
+
+    foreground = np.full((4, 6, 3), 40000, np.uint16)
+    alpha = np.full((4, 6), 32768, np.uint16)
+    spatial = SpatialFadeOperands(
+        np.full(alpha.shape, 65535, np.uint16),
+        np.zeros(alpha.shape, bool),
+        {"enabled": True, "stale": False, "settings": {"preserve_highlights": 0}},
+    )
+    sampling = series_sampling_plan(
+        compute_series_layout(
+            alpha,
+            series_settings(
+                output_width_px=6,
+                output_height_px=4,
+                side_margin_tenths_percent=0,
+                minimum_vertical_margin_tenths_percent=0,
+            ),
+        )
+    )
+    assert sampling.identity
+    pixels = render_series(
+        foreground,
+        alpha,
+        sampling,
+        spatial_fade=spatial,
+        background_settings={"color_srgb": "#0a141e", "variation": 0.0},
+        black_background=True,
+    )
+    # q=1 targets 257*[10,20,30]; encoded alpha is applied exactly once.
+    np.testing.assert_array_equal(pixels, np.broadcast_to([1285, 2570, 3855], pixels.shape))
+
+
+def test_black_spatial_series_admits_separate_selected_target_canvas():
+    alpha = np.full((4, 6), 32768, np.uint16)
+    sampling = series_sampling_plan(
+        compute_series_layout(
+            alpha,
+            series_settings(
+                output_width_px=6,
+                output_height_px=4,
+                side_margin_tenths_percent=0,
+                minimum_vertical_margin_tenths_percent=0,
+            ),
+        )
+    )
+    normal = estimate_series_resources(
+        sampling, retained_native_bytes=192, transparent=False, spatial_fade_pixels=24
+    )
+    black = estimate_series_resources(
+        sampling,
+        retained_native_bytes=192,
+        transparent=False,
+        spatial_fade_pixels=24,
+        black_background=True,
+    )
+    assert black["spatial_target_rgb16_bytes"] == 144
+    assert black["estimated_peak_bytes"] == normal["estimated_peak_bytes"] + 144
+
+
+@pytest.mark.parametrize("black_background", [False, True])
 @pytest.mark.parametrize("configuration", ["oval", "arcs", "both"])
 @pytest.mark.parametrize(
     "shape,output", [((4, 6), (6, 4)), ((4, 6), (17, 19)), ((9, 12), (7, 11)), ((5, 31), (11, 23))]
 )
 def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
-    configuration, shape, output
+    configuration, shape, output, black_background
 ):
     from blackmask.background import make_background
 
@@ -113,7 +175,8 @@ def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
         )
     )
     background_settings = {"color_srgb": "#45202B", "variation": 0.8}
-    expected = make_background((output[1], output[0]), background_settings)
+    target = make_background((output[1], output[0]), background_settings)
+    expected = np.zeros_like(target) if black_background else target.copy()
     native_alpha = alpha.astype(np.float64) / 65535
     native_q = saved.weight16.astype(np.float64) / 65535
     native_q[saved.protection] = 0
@@ -130,14 +193,21 @@ def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
         for y in range(a.shape[0]):
             for x in range(a.shape[1]):
                 oy, ox = sampling.y.output_start + y, sampling.x.output_start + x
-                b = int(expected[oy, ox, channel])
+                b = int(target[oy, ox, channel])
                 faded = scalar_background_blend(straight[y, x], b, ratio[y, x])
                 contribution = p[y, x] if ratio[y, x] == 0 else faded * a[y, x]
-                expected[oy, ox, channel] = round(contribution + b * (1 - a[y, x]))
+                expected[oy, ox, channel] = round(
+                    contribution + (0 if black_background else b) * (1 - a[y, x])
+                )
     original = alpha.copy()
     with np.errstate(divide="raise", invalid="raise"):
         actual = render_series(
-            foreground, alpha, sampling, spatial_fade=saved, background_settings=background_settings
+            foreground,
+            alpha,
+            sampling,
+            spatial_fade=saved,
+            background_settings=background_settings,
+            black_background=black_background,
         )
         rgba = render_series(
             foreground,
@@ -155,9 +225,20 @@ def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
     saved.weight16[:] = 0
     np.testing.assert_array_equal(
         render_series(
-            foreground, alpha, sampling, spatial_fade=saved, background_settings=background_settings
+            foreground,
+            alpha,
+            sampling,
+            spatial_fade=saved,
+            background_settings=background_settings,
+            black_background=black_background,
         ),
-        render_series(foreground, alpha, sampling, background_settings=background_settings),
+        render_series(
+            foreground,
+            alpha,
+            sampling,
+            background_settings=background_settings,
+            black_background=black_background,
+        ),
     )
     np.testing.assert_array_equal(
         render_series(
@@ -288,7 +369,12 @@ def test_spatial_active_series_reconstructs_from_delivered_pair_with_project_una
     result = operations.apply_operation(project, spatial_request(project))
     values = series_settings(output_width_px=17, output_height_px=19).to_dict()
     exported = export_project(
-        project, revision=result["revision"], draft=True, series=values, framed_transparent=True
+        project,
+        revision=result["revision"],
+        draft=True,
+        series=values,
+        framed_transparent=True,
+        variants=("editable",),
     )
     portable = tmp_path / "portable"
     portable.mkdir()
@@ -666,7 +752,10 @@ def test_series_export_round_trip_identity_and_preservation(tmp_path):
     assert "resized presentation" in (directory / "README.txt").read_text()
     assert not any(text in json.dumps(record) for text in (str(tmp_path), "/Users/", "source.tif"))
     first = hashes(project)
-    assert export_project(project, series=settings, framed_transparent=True) == output
+    assert export_project(project, series=settings, framed_transparent=True) == {
+        **output,
+        "reused": True,
+    }
     assert hashes(project) == first
     assert not list((project / "exports").glob(".export-*"))
     assert all(hashes(project)[name] == value for name, value in before.items())
@@ -727,7 +816,7 @@ def test_series_export_selected_revision_expected_identity(tmp_path):
     "failure", ["mismatch", "sync", "cleanup", "readback", "disk", "estimate", "state-change"]
 )
 def test_series_export_failures_reuse_and_recovery(tmp_path, monkeypatch, failure):
-    from test_framing import hashes, protected_project
+    from test_framing import hashes, protected_project, restore_delivery_after_staging
 
     from blackmask.export import export_project
 
@@ -743,6 +832,11 @@ def test_series_export_failures_reuse_and_recovery(tmp_path, monkeypatch, failur
         raw = saved_raster(note).read_bytes()
         saved_raster(note).write_bytes(bytes([raw[0] ^ 1]) + raw[1:])
     before = hashes(project)
+    if failure == "cleanup":
+        restore_delivery_after_staging(monkeypatch, output, tmp_path / "retained-complete-delivery")
+    elif failure in {"readback", "disk", "estimate", "state-change"}:
+        # These faults must exercise fresh work, rather than the intact fast return.
+        settings = {**settings, "name": "New explicitly requested delivery"}
     if failure == "sync":
         original = export._sync_directory
 

@@ -76,11 +76,16 @@ def test_recorded_guides_matte_acceptance_and_saved_exports(tmp_path):
     assert read_project(project)["accepted_revision"] is None
     export = importlib.import_module("blackmask.export")
     with pytest.raises(ProjectError, match="accepted"):
-        export.export_project(project)
-    draft = export.export_project(project, revision=result["revision"], draft=True)
+        export.export_project(project, variants=("black", "transparent", "editable"))
+    draft = export.export_project(
+        project,
+        revision=result["revision"],
+        draft=True,
+        variants=("black", "transparent", "editable"),
+    )
     assert "DRAFT" in draft["directory"]
     operations.accept_revision(project, result["revision"])
-    output = export.export_project(project)
+    output = export.export_project(project, variants=("black", "transparent", "editable"))
     black = tifffile.imread(saved_raster(Path(output["directory"]) / "black_rgb16.tif"))
     expected = np.rint(
         master.astype(np.float64) * (alpha.astype(np.float64) / 65535)[..., None]
@@ -93,11 +98,14 @@ def test_recorded_guides_matte_acceptance_and_saved_exports(tmp_path):
         Image.open(saved_raster(Path(output["directory"]) / "transparent_RGBA8_VIEW.png"))
     )
     np.testing.assert_array_equal(rgba[..., :3], np.rint(master / 257).astype(np.uint8))
-    assert export.export_project(project) == output
+    assert export.export_project(project, variants=("black", "transparent", "editable")) == {
+        **output,
+        "reused": True,
+    }
     assert source.read_bytes() == capture
     (saved_raster(Path(output["directory"]) / "black_rgb16.tif")).write_bytes(b"different")
     with pytest.raises(ProjectError, match="collision|differ|hash"):
-        export.export_project(project)
+        export.export_project(project, variants=("black", "transparent", "editable"))
 
 
 @pytest.mark.parametrize("trimap_confirmed", [False, True])

@@ -143,7 +143,7 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
     from blackmask.review import review_project
 
     project, _source, _parent = fixture_project(tmp_path)
-    accepted = export_project(project)
+    accepted = export_project(project, variants=("black", "transparent", "editable"))
     accepted_bytes = {p.name: p.read_bytes() for p in Path(accepted["directory"]).iterdir()}
     first = operations.apply_operation(project, effect_request(project))
     operations.accept_revision(project, first["revision"])
@@ -195,7 +195,12 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
     with pytest.raises(ProjectError, match="Stale.*cleanup"):
         operations.accept_revision(project, repaired["revision"])
     with pytest.raises(ProjectError, match="Stale.*cleanup"):
-        export_project(project, revision=repaired["revision"], draft=True)
+        export_project(
+            project,
+            revision=repaired["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )
     rebuilt = operations.apply_operation(
         project, effect_request(project, scope=[1, 1, 4, 3], candidate_comparison=True)
     )
@@ -211,7 +216,7 @@ def test_cleanup_repair_stale_block_scoped_rebuild_and_exact_locks(tmp_path):
     np.testing.assert_array_equal(new_rgb[1, 2], old_rgb[1, 2])
     np.testing.assert_array_equal(new_alpha, alpha)
     operations.accept_revision(project, rebuilt["revision"])
-    exported = export_project(project)
+    exported = export_project(project, variants=("black", "transparent", "editable"))
     np.testing.assert_array_equal(
         tifffile.imread(saved_raster(Path(exported["directory"]) / "black_rgb16.tif")),
         np.rint(new_rgb.astype(np.float64) * (alpha.astype(np.float64) / 65535)[..., None]).astype(
@@ -535,7 +540,7 @@ def test_same_alpha_rgb_lock_survives_inherited_cleanup_and_export(tmp_path, rep
     unchanged[1, 2] = False
     np.testing.assert_array_equal(rgb[unchanged], before_rgb[unchanged])
     operations.accept_revision(project, result["revision"])
-    exported = export_project(project)
+    exported = export_project(project, variants=("black", "transparent", "editable"))
     np.testing.assert_array_equal(
         tifffile.imread(saved_raster(Path(exported["directory"]) / "black_rgb16.tif"))[1, 2],
         [5890, 8390, 10890],
@@ -576,7 +581,7 @@ def test_first_and_reenabled_cleanup_preserve_outside_support_rgb_lock(tmp_path)
         rgb, _, _ = saved_layers(project, result["revision"], read_project(project)["developed_id"])
         np.testing.assert_array_equal(rgb[outside], before_rgb[outside])
         operations.accept_revision(project, result["revision"])
-        exported = export_project(project)
+        exported = export_project(project, variants=("black", "transparent", "editable"))
         np.testing.assert_array_equal(
             tifffile.imread(saved_raster(Path(exported["directory"]) / "black_rgb16.tif"))[1, 2],
             [5890, 8390, 10890],
@@ -673,7 +678,7 @@ def test_current_appearance_rgb_lock_outside_repair_support_preserves_saved_laye
     project, _source, _base = fixture_project(tmp_path)
     first = operations.apply_operation(project, effect_request(project))
     operations.accept_revision(project, first["revision"])
-    accepted = export_project(project)
+    accepted = export_project(project, variants=("black", "transparent", "editable"))
     accepted_bytes = {p.name: p.read_bytes() for p in Path(accepted["directory"]).iterdir()}
     master_bytes = (
         saved_raster(project / "assets/developed" / f"{read_project(project)['developed_id']}.tif")
@@ -766,7 +771,7 @@ def test_current_appearance_rgb_lock_outside_repair_support_preserves_saved_laye
             project, effect_request(project, scope=[3, 1, 5, 3], candidate_comparison=True)
         )
     operations.accept_revision(project, repaired["revision"])
-    exported = export_project(project)
+    exported = export_project(project, variants=("black", "transparent", "editable"))
     np.testing.assert_array_equal(
         tifffile.imread(saved_raster(Path(exported["directory"]) / "black_rgb16.tif"))[1, 1],
         [5890, 8390, 10890],
@@ -1461,7 +1466,9 @@ def test_shading_saved_operation_independent_cleanup_global_opacity_and_export(t
         )
         assert np.any(weight) and weight[2, 3] == 0
         operations.accept_revision(project, shaded["revision"])
-        exported = Path(export_project(project)["directory"])
+        exported = Path(
+            export_project(project, variants=("black", "transparent", "editable"))["directory"]
+        )
         np.testing.assert_array_equal(
             tifffile.imread(saved_raster(exported / "black_rgb16.tif")),
             render_black(rgb, alpha, weight, 0.12),
@@ -1522,7 +1529,9 @@ def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path
     operations.apply_operation(project, effect_request(project))
     first = operations.apply_operation(project, shading_request(project))
     operations.accept_revision(project, first["revision"])
-    accepted = Path(export_project(project)["directory"])
+    accepted = Path(
+        export_project(project, variants=("black", "transparent", "editable"))["directory"]
+    )
     original = {p.name: p.read_bytes() for p in accepted.iterdir()}
     old_weight = scalar16(
         saved_raster(project / "revisions" / first["revision"] / "shadow_weight16.png")
@@ -1602,7 +1611,12 @@ def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path
     with pytest.raises(ProjectError, match="Stale"):
         operations.accept_revision(project, rebuilt_cleanup["revision"])
     with pytest.raises(ProjectError, match="Stale"):
-        export_project(project, revision=rebuilt_cleanup["revision"], draft=True)
+        export_project(
+            project,
+            revision=rebuilt_cleanup["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )
     partial_support = np.zeros((4, 6), dtype=np.uint16)
     partial_support[1, 1] = 65535
     partial = operations.apply_operation(project, shading_request(project, support=partial_support))
@@ -1631,7 +1645,7 @@ def test_both_effects_repair_independent_stale_rebuild_and_fresh_export(tmp_path
     operations.accept_revision(project, rebuilt["revision"])
     # New process uses only saved layers, no model/cache setup or original capture lookup.
     result = subprocess.run(
-        [sys.executable, "-m", "blackmask", "export", str(project)],
+        [sys.executable, "-m", "blackmask", "export", str(project), "--variant", "black"],
         capture_output=True,
         text=True,
         check=False,

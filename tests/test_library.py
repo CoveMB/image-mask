@@ -228,7 +228,11 @@ def test_imported_spatial_project_cold_export_preserves_precise_layers_and_prote
     linear *= np.where(protection, 1.0, 0.4)[..., None]
     faded = np.where(linear <= 0.0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - 0.055)
     expected = np.rint(faded * alpha[..., None]).astype(np.uint16)
-    first = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+    first = Path(
+        export_project(project, revision=result["revision"], draft=True, variants=("editable",))[
+            "directory"
+        ]
+    )
     np.testing.assert_array_equal(tifffile.imread(first / "result_rgb16.tif"), expected)
     retained = tmp_path / "retained-first-export"
     first.rename(retained)
@@ -240,7 +244,11 @@ def test_imported_spatial_project_cold_export_preserves_precise_layers_and_prote
         "blackmask.operations.VitMatteSession", side_effect=AssertionError("must not infer")
     ):
         assert read_project(project) == state
-        second = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+        second = Path(
+            export_project(
+                project, revision=result["revision"], draft=True, variants=("editable",)
+            )["directory"]
+        )
     assert retained.is_dir() and second.is_dir() and retained != second
     assert (tmp_path / "retained-original.tif").read_bytes() == original
     np.testing.assert_array_equal(tifffile.imread(second / "result_rgb16.tif"), expected)
