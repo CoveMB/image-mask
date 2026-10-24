@@ -280,8 +280,14 @@ of correction coordinates or photographic acceptance.
 Standalone output is `PROJECT/reviews/comparisons/<revision>-<request-sha256>/`.
 Configured imported projects use `Comparisons/<photo_id>/<revision>-<request-sha256>/`
 under the selected library. Only `comparison_RGB8_VIEW.jpg` and `manifest.json`
-are published there. Unique staging remains preserved after failure. Requests do
-not change working, accepted, latest Result, gallery or draft pointers/settings.
+are published there. After confirmed publication and the final input check, only
+the current call's unchanged reduced intermediates and empty staging directories
+are removed. Earlier stages are never collected, including on intact reuse.
+Publication or validation failures preserve staging. Cleanup refuses unfamiliar
+members, replaced files/directories and symlinks; a cleanup error reports the
+durably published comparison separately and retains remaining stage files for
+inspection. Requests do not change working, accepted, latest Result, gallery or
+draft pointers/settings.
 
 The schema-2 manifest has kind `comparison`, `native_authoring_allowed: false`,
 `identity_sha256`, `request`, `files`, `dimensions_wh`, `panel_order`, `crops`,
@@ -312,9 +318,9 @@ foreign evidence stop with the comparison and native locations; the existing
 comparison is preserved and the native evidence is not recreated. Restore the
 intact bound evidence before retrying. When native publication succeeds but the
 comparison publication fails, the reported native evidence remains usable; retry
-can finish that unchanged pair. A failure after the directory becomes visible
-reports completion as unconfirmed; an intact retry validates the pair and syncs
-each bound native directory's parent, then the comparison directory's parent,
+can finish that unchanged pair. A publication or validation failure after the
+directory becomes visible reports completion as unconfirmed; an intact retry
+validates the pair and syncs each bound native directory's parent, then the comparison directory's parent,
 before reporting success. A repeated sync failure retains that uncertainty and
 the visible files. Neither partial completion nor reuse implies human approval.
 

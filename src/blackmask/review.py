@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import re
 import tempfile
 import tomllib
@@ -1190,6 +1191,11 @@ def _comparison_project_locked(
         if effects_stale(manifest)
         else "Comparison",
     )
+    intermediate_directories = {path: path.lstat() for path in (stage, stage / "review")}
+    intermediate_files = {
+        path: (path.lstat(), digest(_read_regular(path.parent, path.name, 16 * 1024**2)))
+        for path in (stage / "preview.jpg", stage / "review/manifest.json")
+    }
     presentation_record = None
     with Image.open(stage / "preview.jpg") as native_sheet:
         sheet = native_sheet.copy()
@@ -1290,6 +1296,38 @@ def _comparison_project_locked(
         raise ProjectError(
             f"Comparison completion unconfirmed at {destination}; native evidence retained at {retained}; "
             f"staging preserved at {stage}: {error}"
+        ) from error
+    # Publication and its final input check succeeded. Only this call's unchanged
+    # reduced intermediates are expendable; never collect another attempt's stage.
+    try:
+        with (
+            _directory(root) as root_descriptor,
+            _directory(stage) as stage_descriptor,
+            _directory(stage / "review") as review_descriptor,
+        ):
+            if set(os.listdir(stage_descriptor)) != {"preview.jpg", "review"} or set(
+                os.listdir(review_descriptor)
+            ) != {"manifest.json"}:
+                raise ProjectError("Unexpected comparison stage contents; preserved for inspection")
+            for path, original in intermediate_directories.items():
+                if not os.path.samestat(path.lstat(), original):
+                    raise ProjectError("Comparison stage directory was replaced; preserved")
+            for path, (original, checksum) in intermediate_files.items():
+                current = path.lstat()
+                if (
+                    not os.path.samestat(current, original)
+                    or current.st_mode != original.st_mode
+                    or digest(_read_regular(path.parent, path.name, 16 * 1024**2)) != checksum
+                ):
+                    raise ProjectError("Comparison intermediate changed; preserved for inspection")
+            os.unlink("manifest.json", dir_fd=review_descriptor)
+            os.rmdir("review", dir_fd=stage_descriptor)
+            os.unlink("preview.jpg", dir_fd=stage_descriptor)
+            os.rmdir(stage.name, dir_fd=root_descriptor)
+    except (OSError, ProjectError) as error:
+        raise ProjectError(
+            f"Comparison is durably published at {destination}, but intermediate stage cleanup "
+            f"failed at {stage}; inspect remaining stage files: {error}"
         ) from error
     return response(record, reused=False)
 

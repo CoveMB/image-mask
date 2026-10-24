@@ -54,6 +54,160 @@ def test_explicit_comparison_retains_only_sheet_and_exact_manifest(tmp_path):
     assert (project / "state.json").read_bytes() == state
 
 
+@pytest.mark.parametrize("managed_library", [False, True])
+def test_comparison_success_removes_only_current_intermediates(tmp_path, managed_library):
+    from test_library import inventory
+    from test_previews import generate, managed
+
+    from blackmask.review import review_project
+
+    if managed_library:
+        _, config, project = managed(tmp_path)
+        generate(project, config)
+        photo_id = json.loads((project / "source.json").read_bytes())["library"]["photo_id"]
+        root = config.destination / "Comparisons" / photo_id
+    else:
+        _, project, prepared_result = prepared(tmp_path)
+        approve(project, prepared_result)
+        run_matte(project)
+        config = None
+        root = project / "reviews/comparisons"
+    prior_native = review_project(project, crops=[[0, 0, 1, 1]], storage_config=config)
+    assert Path(prior_native["manifest_file"]).is_file()
+    previous_stage = root / ".comparison-previous"
+    (previous_stage / "review").mkdir(parents=True)
+    (previous_stage / "review/manifest.json").write_bytes(b"previous recovery manifest")
+    (previous_stage / "preview.jpg").write_bytes(b"previous recovery preview")
+    (previous_stage / "unknown.txt").write_bytes(b"user stage notes")
+    previous_output = root / "unrelated-output"
+    previous_output.mkdir()
+    (previous_output / "manifest.json").write_bytes(b"preserve unrelated output")
+    (project / "user-notes.txt").write_bytes(b"preserve project notes")
+    protected = inventory(project)
+    prior_stage, prior_output = inventory(previous_stage), inventory(previous_output)
+
+    response = review_project(
+        project, crops=[[1, 0, 3, 2]], comparison=True, retain_native=True, storage_config=config
+    )
+    destination = Path(response["comparison_manifest_file"]).parent
+    assert inventory(previous_stage) == prior_stage and inventory(previous_output) == prior_output
+    current = inventory(project)
+    assert all(current[name] == value for name, value in protected.items())
+    assert {path.name for path in destination.iterdir()} == {
+        "manifest.json",
+        "comparison_RGB8_VIEW.jpg",
+    }
+    assert {path.name for path in root.iterdir()} == {
+        previous_stage.name,
+        previous_output.name,
+        destination.name,
+    }
+    complete_project, complete_outputs = inventory(project), inventory(root)
+    assert review_project(
+        project, crops=[[1, 0, 3, 2]], comparison=True, retain_native=True, storage_config=config
+    ) == {**response, "reused": True}
+    assert inventory(project) == complete_project and inventory(root) == complete_outputs
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "extra-root",
+        "extra-review",
+        "file-symlink",
+        "review-symlink",
+        "stage-symlink",
+        "replacement",
+        "changed",
+        "unlink-first",
+        "unlink-late",
+    ],
+)
+def test_comparison_cleanup_failure_preserves_published_and_unfamiliar_files(
+    tmp_path, monkeypatch, failure
+):
+    from test_library import inventory
+
+    from blackmask import review
+    from blackmask.project import ProjectError
+
+    _, project, prepared_result = prepared(tmp_path)
+    approve(project, prepared_result)
+    run_matte(project)
+    protected = inventory(project)
+    outside = tmp_path / "unrelated"
+    outside.mkdir()
+    (outside / "keep.txt").write_bytes(b"unrelated user data")
+    reached = {}
+    original_publish, original_unlink = review.publish_artifacts, review.os.unlink
+
+    def publish_then_inject(directory, destination):
+        comparison = (directory / "comparison_RGB8_VIEW.jpg").is_file()
+        result = original_publish(directory, destination)
+        if not comparison:
+            return result
+        stage = directory.parent
+        if failure.startswith("extra-"):
+            target = stage if failure == "extra-root" else stage / "review"
+            (target / "unknown.txt").write_bytes(b"preserve unfamiliar stage content")
+        elif failure in {"file-symlink", "replacement", "changed"}:
+            preview = stage / "preview.jpg"
+            if failure != "changed":
+                preview.rename(outside / "original-preview.jpg")
+            if failure == "file-symlink":
+                (outside / "foreign.jpg").write_bytes(b"unrelated image")
+                preview.symlink_to(outside / "foreign.jpg")
+            elif failure == "replacement":
+                preview.write_bytes((outside / "original-preview.jpg").read_bytes())
+            else:
+                preview.write_bytes(preview.read_bytes() + b"user change")
+        elif failure in {"review-symlink", "stage-symlink"}:
+            target = stage / "review" if failure == "review-symlink" else stage
+            target.rename(outside / "original-directory")
+            foreign = outside / "foreign-directory"
+            foreign.mkdir()
+            (foreign / "manifest.json").write_bytes(b"foreign manifest")
+            target.symlink_to(foreign, target_is_directory=True)
+        reached.update(
+            stage=stage,
+            destination=destination,
+            stage_files=inventory(stage),
+            outside=inventory(outside),
+            published=inventory(destination),
+            native={p.name: inventory(p) for p in (project / "reviews").glob("rev-*")},
+        )
+        return result
+
+    def fail_unlink(name, *args, **kwargs):
+        blocked = "manifest.json" if failure == "unlink-first" else "preview.jpg"
+        if reached and failure.startswith("unlink-") and name == blocked:
+            raise OSError("synthetic intermediate unlink failure")
+        return original_unlink(name, *args, **kwargs)
+
+    monkeypatch.setattr(review, "publish_artifacts", publish_then_inject)
+    monkeypatch.setattr(review.os, "unlink", fail_unlink)
+    with pytest.raises(ProjectError, match="durably published.*stage cleanup failed") as error:
+        review.review_project(project, comparison=True, retain_native=True, crops=[[1, 0, 3, 2]])
+    assert str(reached["destination"]) in str(error.value)
+    assert str(reached["stage"]) in str(error.value)
+    assert inventory(reached["destination"]) == reached["published"]
+    assert inventory(outside) == reached["outside"]
+    assert {p.name: inventory(p) for p in (project / "reviews").glob("rev-*")} == reached["native"]
+    current = inventory(project)
+    assert all(current[name] == value for name, value in protected.items())
+    remaining = inventory(reached["stage"])
+    if failure == "unlink-late":
+        assert remaining == {"preview.jpg": reached["stage_files"]["preview.jpg"]}
+    else:
+        assert remaining == reached["stage_files"]
+    recovered = review.review_project(
+        project, comparison=True, retain_native=True, crops=[[1, 0, 3, 2]]
+    )
+    assert recovered["reused"] is True
+    assert inventory(reached["stage"]) == remaining and inventory(outside) == reached["outside"]
+    assert inventory(reached["destination"]) == reached["published"]
+
+
 def test_saved_comparison_resized_spatial_markers_and_singleton_geometry(tmp_path):
     from test_ingest import srgb_profile, tiff
     from test_operations import edits, request
@@ -341,6 +495,8 @@ def test_comparison_direct_before_missing_and_intact_reuse(tmp_path, monkeypatch
 def test_comparison_partial_native_publication_can_finish_without_replacing_evidence(
     tmp_path, monkeypatch
 ):
+    from test_library import inventory
+
     from blackmask import review
     from blackmask.project import ProjectError
 
@@ -362,10 +518,14 @@ def test_comparison_partial_native_publication_can_finish_without_replacing_evid
     assert str(native) in str(error.value)
     kept = {p.name: (p.read_bytes(), p.stat().st_ino) for p in native.parent.iterdir()}
     assert not list((project / "reviews/comparisons").glob("rev-*/manifest.json"))
+    stage = next((project / "reviews/comparisons").glob(".comparison-*"))
+    retained_stage = inventory(stage)
+    assert {"preview.jpg", "review/manifest.json", "bundle/manifest.json"} <= retained_stage.keys()
     monkeypatch.setattr(review, "publish_artifacts", original)
     result = review.review_project(project, comparison=True, retain_native=True)
     assert result["native_manifest_file"] == str(native)
     assert {p.name: (p.read_bytes(), p.stat().st_ino) for p in native.parent.iterdir()} == kept
+    assert inventory(stage) == retained_stage
     assert (project / "state.json").read_bytes() == state
 
 
@@ -632,6 +792,8 @@ def test_comparison_late_publication_failure_preserves_output_and_reports_uncert
 ):
     import importlib
 
+    from test_library import inventory
+
     export = importlib.import_module("blackmask.export")
     from blackmask.project import ProjectError
     from blackmask.review import review_project
@@ -659,8 +821,12 @@ def test_comparison_late_publication_failure_preserves_output_and_reports_uncert
     manifest = next((project / "reviews/comparisons").glob("rev-*/manifest.json"))
     kept = {p.name: p.read_bytes() for p in manifest.parent.iterdir()}
     assert set(kept) == {"manifest.json", "comparison_RGB8_VIEW.jpg"}
+    stage = next((project / "reviews/comparisons").glob(".comparison-*"))
+    retained_stage = inventory(stage)
+    assert {"preview.jpg", "review/manifest.json"} <= retained_stage.keys()
     monkeypatch.setattr(export, "_sync_directory", original)
     source.write_bytes(source_bytes)
     recovered = review_project(project, comparison=True, crops=[[1, 0, 3, 2]])
     assert recovered["reused"] is True and recovered["comparison_manifest_file"] == str(manifest)
     assert {p.name: p.read_bytes() for p in manifest.parent.iterdir()} == kept
+    assert inventory(stage) == retained_stage
