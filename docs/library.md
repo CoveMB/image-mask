@@ -23,6 +23,7 @@ Use the installed `blackmask` command, or `.venv/bin/blackmask` from the reposit
 | Open the returned project | `--config FILE open --project PROJECT` |
 | Read existing project status | `--config FILE status PROJECT` |
 | Repair the latest Result gallery image | `--config FILE preview repair PROJECT` |
+| Save a focused comparison | `--config FILE review PROJECT --comparison --crops CROPS.json` |
 
 Initialize first, then place the selected regular capture and optional sidecars
 directly inside `Inbox`. No neighboring files are selected automatically. Sidecars
@@ -37,7 +38,8 @@ Use one readable subject component, with no surrounding whitespace, path separat
 or control characters. Unicode and internal spaces are supported. The folder name
 is frozen at import; the camera filename stays unchanged. Its `original/` holds the
 capture and declared sidecars; `project/` holds the editable project. Import creates
-no Result, gallery image or acceptance event. The comparison folder can remain empty.
+no Result, gallery image or acceptance event. Explicit [focused comparisons](file-contract.md#focused-comparisons)
+use `Comparisons/<photo_id>/`; this folder remains empty until requested.
 Complete native generation maintains one `<frozen-folder-name>.jpg` with a
 Draft/Accepted footer outside the photograph. It follows the latest generated Result
 after restoring older work. This reduced lossy viewing copy never replaces editable

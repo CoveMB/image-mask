@@ -132,6 +132,12 @@ absolute `manifest_file`. Set `review_manifest_file` to that path relative to th
 project root: for project `/path/to/photo-project`,
 `/path/to/photo-project/reviews/rev-NNN/<hash>/manifest.json` becomes
 `reviews/rev-NNN/<hash>/manifest.json`. Keep the returned revision and hash unchanged.
+An explicitly requested focused comparison can include `--retain-native`; use its
+returned `native_manifest_file` in the same project-relative way. Its
+`comparison_manifest_file` and presentation pixels are viewing aids only and are
+rejected as native correction authority. Keep both bound native manifests for a
+repair comparison; do not regenerate a missing dependency behind an existing
+comparison. See the [comparison contract](file-contract.md#focused-comparisons).
 Its identity, crop transforms and image hashes are validated; modified or stale
 evidence is rejected. Unknown keys/operations,
 off-image coordinates, stale draft/parent/master and contradictory/lock-conflicting

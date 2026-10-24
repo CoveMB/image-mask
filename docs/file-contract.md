@@ -268,6 +268,64 @@ Use explicit `review` output under
 native assisted corrections. The separate [current Result gallery](#current-result-gallery)
 does not replace revision overviews or native evidence.
 
+## Focused comparisons
+
+`review PROJECT --comparison` explicitly saves a focused RGB8 JPEG sheet and
+`manifest.json`. Ordinary `review` and assisted cycle requests still produce native
+inspection evidence. Generation never starts a comparison automatically.
+The comparison has a maximum 1600-pixel long edge, labelled native-crop rows and
+optional separate presentation panel. It is a lossy approximation, never a source
+of correction coordinates or photographic acceptance.
+
+Standalone output is `PROJECT/reviews/comparisons/<revision>-<request-sha256>/`.
+Configured imported projects use `Comparisons/<photo_id>/<revision>-<request-sha256>/`
+under the selected library. Only `comparison_RGB8_VIEW.jpg` and `manifest.json`
+are published there. Unique staging remains preserved after failure. Requests do
+not change working, accepted, latest Result, gallery or draft pointers/settings.
+
+The schema-2 manifest has kind `comparison`, `native_authoring_allowed: false`,
+`identity_sha256`, `request`, `files`, `dimensions_wh`, `panel_order`, `crops`,
+`presentation` and `native_evidence`. The normalized request captures source and
+raw revision identities, draft/authoring digests, state/source manifest hashes,
+exact half-open native crop boxes and effective settings, including appearance
+staleness. Managed records retain the logical photo ID and frozen folder basename. Crop origins, source
+panel dimensions, scales and `panel_boxes_xyxy` describe the displayed sheet.
+Presentation records bind the selected revision's raw manifest hash, actual margin
+or series settings, algorithm, full output geometry and output-to-display scale.
+They do not change native crop coordinates. Both presentation modes use the same
+bounded rendering as the manual window.
+
+`--retain-native` additionally retains native PNG evidence in project-local
+`reviews/rev-NNN/<hash>/`. The comparison binds the exact after manifest and, for
+repairs, its direct before manifest, including their raw SHA-256 values. The
+response supplies `comparison_manifest_file`, `reused`, and, when requested,
+`native_manifest_file`. Native admission checks real PNG geometry, required views,
+unit scales, native origins and member hashes; a correctly rehashed reduced or
+presentation record cannot authorize native corrections. Native manifest references
+must be nonempty project-relative paths without `..`; admission rejects invalid
+references before reserving an assisted repair attempt.
+
+Comparison lookup depends on the captured request, independently of live native
+evidence. Reuse validates all bound native dependencies before any native
+publisher can run. Missing directories, symlinks, altered manifests/pixels or
+foreign evidence stop with the comparison and native locations; the existing
+comparison is preserved and the native evidence is not recreated. Restore the
+intact bound evidence before retrying. When native publication succeeds but the
+comparison publication fails, the reported native evidence remains usable; retry
+can finish that unchanged pair. A failure after the directory becomes visible
+reports completion as unconfirmed; an intact retry validates the pair and syncs
+each bound native directory's parent, then the comparison directory's parent,
+before reporting success. A repeated sync failure retains that uncertainty and
+the visible files. Neither partial completion nor reuse implies human approval.
+
+The optional `--presentation FILE` accepts one JSON object with exactly `mode`,
+`developed_id`, `revision`, `revision_manifest_sha256`, and either `margins`
+(for `add-margins`) or `settings` (for `match-series`). Copy identities from the
+current state and selected revision's raw manifest digest; settings use the
+existing [margin](#saved-framing-and-bounded-preview) or series contracts. Stale identities and
+stale enabled appearance are refused. This option and `--retain-native` require
+`--comparison` and cannot be combined with `--cycle-request`.
+
 ## Prepared revisions
 
 `revisions/rev-NNN/manifest.json` records parent, master, complete/kind, input/draft

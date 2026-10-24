@@ -1478,3 +1478,33 @@ await $('fadeAmountApply').onclick();await $('fadeApply').onclick();assert.equal
 assert.match($('message').textContent,/reload/i);
 """.replace("FIELD", repr(field)).replace("VALUE", repr(value))
     )
+
+
+def test_comparison_submission_preserves_drafts_binds_crop_and_reports_saved_paths():
+    run_page(r"""
+ await ready();
+ $('comparisonPresentation').value='native';$('comparisonNative').checked=false;
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ $('backgroundHex').value='#AB1234';$('backgroundHex').oninput();
+ const selectedCrop=[...crop];
+ await $('comparisonSave').onclick();
+ let sent=posts.at(-1);
+ assert.equal(sent.action,'comparison');assert.equal(sent.revision,'rev-001');
+ assert.equal(sent.revision_manifest_sha256,'a'.repeat(64));
+ assert.deepEqual(sent.crops,[selectedCrop]);assert.equal(sent.presentation,null);
+ assert.equal(sent.retain_native,false);
+ servedState.action={name:'comparison',running:false,error:null,result:{comparison_manifest_file:'/synthetic/comparison/manifest.json',reused:false,view:{jpeg_base64:'YWJj',manifest_json:'{}'}}};
+ await refresh();
+ assert($('comparisonStatus').textContent.includes('/synthetic/comparison/manifest.json'));
+ assert.equal($('comparisonOpen').hidden,false);assert($('comparisonOpen').href.startsWith('blob:'));
+ assert.equal($('comparisonManifest').hidden,false);
+ assert.equal($('exposureEV').value,'1.2');assert.equal($('backgroundHex').value,'#AB1234');
+ $('comparisonPresentation').value='add-margins';$('comparisonNative').checked=true;
+ await $('comparisonSave').onclick();sent=posts.at(-1);
+ assert.equal(sent.presentation.mode,'add-margins');assert.equal(sent.presentation.revision,'rev-001');
+ assert.equal(sent.retain_native,true);
+ servedState.action={name:'comparison',running:false,error:'Missing bound native evidence',result:null};
+ await refresh();assert($('comparisonStatus').textContent.includes('Missing bound native evidence'));
+ const count=posts.length;imageLoading=true;await $('comparisonSave').onclick();
+ assert.equal(posts.length,count);assert($('message').textContent.includes('Load the matching native crop'));
+ """)

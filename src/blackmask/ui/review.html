@@ -507,6 +507,14 @@
         <label><input id="exportBlack" type="checkbox" /> Include black TIFF/PNG alternative</label>
         <label><input id="exportTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
         <label><input id="exportEditable" type="checkbox" /> Include complete editable layers at original size</label>
+        <fieldset>
+          <legend>Save a focused comparison</legend>
+          <label>Presentation panel <select id="comparisonPresentation"><option value="native">Native views only</option><option value="add-margins">Add margins using visible settings</option><option value="match-series">Match series using visible settings</option></select></label>
+          <label><input id="comparisonNative" type="checkbox" /> Also retain this native crop as inspection evidence</label>
+          <button id="comparisonSave">Save comparison</button>
+          <p><a id="comparisonOpen" hidden target="_blank" rel="noopener">Open saved comparison sheet</a> <a id="comparisonManifest" hidden download="comparison-manifest.json">Download exact manifest</a></p>
+          <p id="comparisonStatus" role="status" class="small">Saves a small RGB8 comparison of the selected revision and native crop. Presentation pixels cannot authorize native edits. This does not accept the photograph.</p>
+        </fieldset>
         <button id="exportAccepted">Export accepted result</button
         ><button id="exportDraft">Export labelled current draft</button>
         <p id="result" class="small" style="white-space: pre-wrap"></p>
@@ -579,6 +587,7 @@
       originalRegions = [],
       dirty = false,
       pendingSaved = false;
+    let comparisonViewKey = "", comparisonViewUrls = [];
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
     let backgroundDirty = false, backgroundPublished = false;
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
@@ -1095,6 +1104,27 @@
           state.draft_error +
             " · Explicit restore can preserve and replace malformed drafts.",
         );
+      if (a.name === "comparison") {
+        const key = !a.running && !a.error && a.result?.view ? a.result.comparison_manifest_file : "";
+        if (key !== comparisonViewKey) {
+          for (const url of comparisonViewUrls) URL.revokeObjectURL(url);
+          comparisonViewUrls = [];
+          comparisonViewKey = key;
+          if (key) {
+            const view = a.result.view;
+            const jpeg = Uint8Array.from(atob(view.jpeg_base64), char => char.charCodeAt(0));
+            comparisonViewUrls = [URL.createObjectURL(new Blob([jpeg], {type:"image/jpeg"})), URL.createObjectURL(new Blob([view.manifest_json], {type:"application/json"}))];
+            $("comparisonOpen").href = comparisonViewUrls[0];
+            $("comparisonManifest").href = comparisonViewUrls[1];
+          }
+        }
+        $("comparisonOpen").hidden = $("comparisonManifest").hidden = !key;
+        $("comparisonStatus").textContent = a.running ? "Saving comparison…" : a.error
+          ? a.error + " · Saved work preserved; resolve the error before retrying"
+          : a.result ? (a.result.reused ? "Existing comparison: " : "Comparison saved: ") + a.result.comparison_manifest_file
+            + (a.result.native_manifest_file ? " · Native inspection evidence: " + a.result.native_manifest_file : " · No native evidence retained")
+            + " · Photographic acceptance unchanged" : "";
+      }
       if (a.result) {
         const r = a.result;
         $("result").textContent = [
@@ -1187,7 +1217,7 @@
       if (
         reload ||
         !identity ||
-        (completed && !a.error && a.result?.reused !== true && !["export","framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
+        (completed && !a.error && a.result?.reused !== true && !["export","comparison","framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
       ) {
         loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";
@@ -1274,6 +1304,7 @@
         "previewRepair",
         "exportAccepted",
         "exportDraft",
+        "comparisonSave", "comparisonNative", "comparisonPresentation",
         "shadingApply",
         "shadingOpacityApply",
         "shadingDisable",
@@ -2181,6 +2212,19 @@
       return (prefix === "export" ? ["black","transparent","editable"] : ["black","editable"])
         .filter(name=>$(prefix+name[0].toUpperCase()+name.slice(1)).checked);
     }
+    $("comparisonSave").onclick = guarded(async () => {
+      if (imageLoading || !image || !transform || !crop) throw Error("Load the matching native crop before saving a comparison");
+      const revision = $("viewRevision").value || state.working_revision;
+      const mode = $("comparisonPresentation").value;
+      const presentation = mode === "native" ? null : {mode, ...(mode === "add-margins" ? framingRequest() : seriesRequest())};
+      $("comparisonStatus").textContent = "Saving comparison…";
+      try {
+        await action("comparison", {revision, ...exportRevisionIdentity(revision), crops: [[...crop]], retain_native: $("comparisonNative").checked, presentation});
+      } catch (error) {
+        $("comparisonStatus").textContent = error.message + " · Saved work preserved; retry after resolving the error";
+        throw error;
+      }
+    });
     function exportRevisionIdentity(revision) {
       const record=state.revisions.find(item=>item.revision===revision);
       if (!record?.final_acceptable || !record.revision_manifest_sha256)

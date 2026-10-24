@@ -53,6 +53,9 @@ recover verified tiles or completed stages from interrupted matte/repair operati
 The offline loopback review window provides typed guide authoring, native
 comparisons and the same processing and recovery controls. Optional assisted
 review records bounded, source-based judgements through those same operations.
+Explicit [focused comparison sheets](docs/file-contract.md#focused-comparisons) save
+selected crops and optional presentation previews, with native evidence retained
+only when requested.
 
 The optional appearance effects start disabled. Source-guided color cleanup saves
 RGB16 layers with scoped stale/rebuild controls. Protected inward shading keeps
@@ -181,7 +184,7 @@ for explicit model setup, typed preparation and human review.
 | Pinned explicit setup and local-only SAM/ViTMatte sessions | `src/blackmask/models.py` |
 | Quantized scoped merge and saved operand replay | `src/blackmask/repair.py` |
 | Native tile geometry, blending and verified cache | `src/blackmask/matte.py` |
-| Same-native-crop review assets | `src/blackmask/review.py` |
+| Native review evidence and explicit focused comparison sheets | `src/blackmask/review.py` |
 | Canonical precision renderer and accepted/draft exports | `src/blackmask/export.py` |
 | Source cleanup, protected inward W16 and independent effect publication | `src/blackmask/effects.py` |
 | Independent native area and linear-sRGB local exposure | `src/blackmask/exposure.py` |

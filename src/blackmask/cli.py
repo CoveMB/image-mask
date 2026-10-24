@@ -131,6 +131,21 @@ def main() -> int:
     reviewed.add_argument(
         "--crops", type=Path, help="JSON list of native half-open crop rectangles"
     )
+    reviewed.add_argument(
+        "--comparison",
+        action="store_true",
+        help="Save a lightweight comparison sheet and exact manifest",
+    )
+    reviewed.add_argument(
+        "--retain-native",
+        action="store_true",
+        help="Also retain requested native inspection crops outside revisions",
+    )
+    reviewed.add_argument(
+        "--presentation",
+        type=Path,
+        help="Explicit bound Add margins or Match series preview request JSON",
+    )
     exported = commands.add_parser(
         "export", help="Export full-size selected Result RGB16 TIFF/PNG8 with recipe and manifest"
     )
@@ -296,13 +311,31 @@ def main() -> int:
         elif arguments.command == "review":
             crops = json.loads(arguments.crops.read_bytes()) if arguments.crops else None
             if arguments.cycle_request:
-                if arguments.revision or arguments.crops:
-                    raise ProjectError("Cycle requests cannot be combined with crop/revision flags")
+                if (
+                    arguments.revision
+                    or arguments.crops
+                    or arguments.comparison
+                    or arguments.retain_native
+                    or arguments.presentation
+                ):
+                    raise ProjectError(
+                        "Cycle requests cannot be combined with crop/revision/comparison flags"
+                    )
                 result = review_cycle(
                     arguments.project, json.loads(arguments.cycle_request.read_bytes())
                 )
             else:
-                result = review_project(arguments.project, revision=arguments.revision, crops=crops)
+                result = review_project(
+                    arguments.project,
+                    revision=arguments.revision,
+                    crops=crops,
+                    comparison=arguments.comparison,
+                    retain_native=arguments.retain_native,
+                    presentation=json.loads(arguments.presentation.read_bytes())
+                    if arguments.presentation
+                    else None,
+                    storage_config=config,
+                )
         elif arguments.command == "export":
             from .series_framing import read_series_preset_file
 

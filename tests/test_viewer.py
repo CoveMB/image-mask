@@ -453,11 +453,11 @@ def test_series_preview_busy_disconnect_and_identity_races(tmp_path, monkeypatch
     from test_framing import margins
     from test_series_framing import series_settings
 
-    from blackmask import viewer
+    from blackmask import series_framing
 
     project, _, parent = fixture_project(tmp_path)
     entered, release = threading.Event(), threading.Event()
-    original = viewer.render_series
+    original = series_framing.render_series
 
     def paused(*args, **kwargs):
         entered.set()
@@ -473,7 +473,7 @@ def test_series_preview_busy_disconnect_and_identity_races(tmp_path, monkeypatch
             "revision_manifest_sha256": revision["revision_manifest_sha256"],
             "settings": series_settings(output_width_px=40, output_height_px=50).to_dict(),
         }
-        monkeypatch.setattr(viewer, "render_series", paused)
+        monkeypatch.setattr(series_framing, "render_series", paused)
         with ThreadPoolExecutor() as executor:
             first = executor.submit(http, server, "/api/series-preview", "POST", data)
             assert entered.wait(5)
@@ -495,10 +495,10 @@ def test_series_preview_busy_disconnect_and_identity_races(tmp_path, monkeypatch
             saved_raster(path).write_bytes(raw + b"\n")
             return result
 
-        monkeypatch.setattr(viewer, "render_series", changed)
+        monkeypatch.setattr(series_framing, "render_series", changed)
         assert http(server, "/api/series-preview", "POST", data)[0] == 409
         saved_raster(path).write_bytes(raw)
-        monkeypatch.setattr(viewer, "render_series", original)
+        monkeypatch.setattr(series_framing, "render_series", original)
         connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
         connection.request(
             "POST",
@@ -637,11 +637,11 @@ def test_framing_http_guard_disconnect_errors_and_race(tmp_path, monkeypatch):
     from test_effects import fixture_project
     from test_framing import margins
 
-    from blackmask import viewer
+    from blackmask import framing
 
     project, _, parent = fixture_project(tmp_path)
     entered, release = threading.Event(), threading.Event()
-    original = viewer.framing_preview
+    original = framing.framing_preview
 
     def paused(*args, **kwargs):
         entered.set()
@@ -657,7 +657,7 @@ def test_framing_http_guard_disconnect_errors_and_race(tmp_path, monkeypatch):
             "revision_manifest_sha256": record["revision_manifest_sha256"],
             "margins": margins(),
         }
-        monkeypatch.setattr(viewer, "framing_preview", paused)
+        monkeypatch.setattr(framing, "framing_preview", paused)
         with ThreadPoolExecutor(max_workers=1) as executor:
             first = executor.submit(http, server, "/api/framing-preview", "POST", data)
             assert entered.wait(3)
@@ -685,7 +685,7 @@ def test_framing_http_guard_disconnect_errors_and_race(tmp_path, monkeypatch):
         release.set()
         assert server.framing_preview_lock.acquire(timeout=5)
         server.framing_preview_lock.release()
-        monkeypatch.setattr(viewer, "framing_preview", original)
+        monkeypatch.setattr(framing, "framing_preview", original)
         assert http(server, "/api/framing-preview", "POST", data)[0] == 200
         # A raw-byte edit during sampling must not be labelled with the old digest.
         path = project / "revisions" / record["revision"] / "manifest.json"
@@ -695,9 +695,9 @@ def test_framing_http_guard_disconnect_errors_and_race(tmp_path, monkeypatch):
             saved_raster(path).write_bytes(raw + b"\n")
             return original(*args, **kwargs)
 
-        monkeypatch.setattr(viewer, "framing_preview", changed)
+        monkeypatch.setattr(framing, "framing_preview", changed)
         assert http(server, "/api/framing-preview", "POST", data)[0] == 409
-        monkeypatch.setattr(viewer, "framing_preview", original)
+        monkeypatch.setattr(framing, "framing_preview", original)
         assert http(server, "/api/framing-preview", "POST", data)[0] == 409
         current = json.loads(http(server)[1])
         updated = next(
@@ -1427,3 +1427,53 @@ def test_background_action_base_exception_propagates_after_cleanup(tmp_path, mon
         server.action_lock.release()
         monkeypatch.setattr(server, "execute", execute)
         assert perform(server, "development")["development_approved"] is True
+
+
+def test_comparison_action_binds_selected_revision_crop_and_preserves_drafts(tmp_path):
+    from test_effects import fixture_project
+
+    project, _, revision = fixture_project(tmp_path)
+    before = {
+        name: (project / name).read_bytes() for name in ("state.json", "recipe.toml", "guides.json")
+    }
+    with running(project) as server:
+        snapshot = server.snapshot()
+        selected = next(r for r in snapshot["revisions"] if r["revision"] == revision["revision"])
+        output = perform(
+            server,
+            "comparison",
+            revision=revision["revision"],
+            revision_manifest_sha256=selected["revision_manifest_sha256"],
+            crops=[[1, 0, 6, 4]],
+            retain_native=False,
+            presentation=None,
+        )
+        record = json.loads(Path(output["comparison_manifest_file"]).read_bytes())
+        import base64
+
+        assert (
+            base64.b64decode(output["view"]["jpeg_base64"])
+            == (
+                Path(output["comparison_manifest_file"]).parent / "comparison_RGB8_VIEW.jpg"
+            ).read_bytes()
+        )
+        assert json.loads(output["view"]["manifest_json"]) == record
+        assert record["request"]["revision"] == revision["revision"]
+        assert record["request"]["crops"] == [[1, 0, 6, 4]]
+        assert record["native_evidence"] is None
+        assert all((project / name).read_bytes() == value for name, value in before.items())
+        with pytest.raises(ProjectError, match="Stale comparison"):
+            server.execute(
+                {
+                    "action": "comparison",
+                    "developed_id": snapshot["developed_id"],
+                    "base_revision": snapshot["working_revision"],
+                    "inputs_digest": snapshot["inputs_digest"],
+                    "authoring_digest": snapshot["authoring_digest"],
+                    "revision": revision["revision"],
+                    "revision_manifest_sha256": "0" * 64,
+                    "crops": [[1, 0, 6, 4]],
+                    "retain_native": False,
+                    "presentation": None,
+                }
+            )
