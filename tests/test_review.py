@@ -421,10 +421,12 @@ def test_repair_overview_is_one_bounded_jpeg_with_recoverable_panel_coordinates(
             )
 
 
-@pytest.mark.parametrize("damage", ["manifest", "pixel", "symlink", "foreign"])
+@pytest.mark.parametrize("damage", ["manifest", "pixel", "symlink", "foreign", "duplicate-views"])
 def test_comparison_native_dependencies_fail_closed_without_republication(
     tmp_path, monkeypatch, damage
 ):
+    from test_library import inventory
+
     from blackmask import review
     from blackmask.project import ProjectError
 
@@ -444,6 +446,29 @@ def test_comparison_native_dependencies_fail_closed_without_republication(
         original = native.parent
         original.rename(tmp_path / "retained-native")
         original.symlink_to(tmp_path / "retained-native", target_is_directory=True)
+    elif damage == "duplicate-views":
+        import shutil
+
+        from blackmask.project import _json_bytes, digest
+
+        native_record = json.loads(native.read_bytes())
+        files = native_record["crops"][0]["files"]
+        native_record["crops"][0]["files"] = dict.fromkeys(files, files["source_RGB8_VIEW"])
+        revision = (
+            project / "revisions" / native_record["revision"] / "manifest.json"
+        ).read_bytes()
+        key = digest(_json_bytes({"review": native_record, "manifest": digest(revision)}))
+        forged = native.parent.parent / key
+        shutil.copytree(native.parent, forged)
+        raw = _json_bytes(native_record)
+        (forged / "manifest.json").write_bytes(raw)
+        record = json.loads(comparison.read_bytes())
+        record["native_evidence"]["after"] = {
+            "manifest_file": str((forged / "manifest.json").relative_to(project)),
+            "sha256": digest(raw),
+        }
+        comparison.write_bytes(_json_bytes(record))
+        preserved["manifest.json"] = comparison.read_bytes()
     else:
         record = json.loads(comparison.read_bytes())
         record["native_evidence"]["after"]["manifest_file"] = "../foreign/manifest.json"
@@ -453,10 +478,12 @@ def test_comparison_native_dependencies_fail_closed_without_republication(
     def forbidden(*args, **kwargs):
         pytest.fail("Existing comparison must validate dependencies before any native publisher")
 
+    protected = inventory(project)
     monkeypatch.setattr(review, "_review_project_locked", forbidden)
     with pytest.raises(ProjectError):
         review.review_project(project, comparison=True, retain_native=True)
     assert {p.name: p.read_bytes() for p in comparison.parent.iterdir()} == preserved
+    assert inventory(project) == protected
 
 
 def test_comparison_direct_before_missing_and_intact_reuse(tmp_path, monkeypatch):

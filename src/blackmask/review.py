@@ -1390,6 +1390,7 @@ def _native_review_record(project: Path, manifest_name: str) -> dict[str, Any]:
             raise ProjectError(
                 "Native inspection requires matching original crop dimensions, views and scale"
             )
+        crop_filenames: set[str] = set()
         for name in crop["files"].values():
             if (
                 not isinstance(name, str)
@@ -1397,6 +1398,9 @@ def _native_review_record(project: Path, manifest_name: str) -> dict[str, Any]:
                 or name not in record["view_files"]
             ):
                 raise ProjectError("Invalid native crop file binding")
+            if name in crop_filenames:
+                raise ProjectError("Native crop views must use distinct files")
+            crop_filenames.add(name)
             pixels = _read_regular(path.parent, name, (x1 - x0) * (y1 - y0) * 4 + 1024**2)
             if digest(pixels) != record["view_files"][name]:
                 raise ProjectError("Stale inspected crop asset")

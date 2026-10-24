@@ -43,7 +43,8 @@ def start(project):
 
 
 @pytest.mark.parametrize(
-    "damage", ["overview", "scale", "origin", "dimensions", "missing-view", "wrong-png"]
+    "damage",
+    ["overview", "scale", "origin", "dimensions", "missing-view", "wrong-png", "duplicate-views"],
 )
 def test_rehashed_reduced_review_cannot_authorize_native_edits(tmp_path, damage):
     from blackmask.project import _json_bytes, digest
@@ -63,6 +64,9 @@ def test_rehashed_reduced_review_cannot_authorize_native_edits(tmp_path, damage)
         record["crops"][0]["displayed_dimensions_wh"] = [1, 1]
     elif damage == "missing-view":
         del record["crops"][0]["files"]["source_RGB8_VIEW"]
+    elif damage == "duplicate-views":
+        files = record["crops"][0]["files"]
+        record["crops"][0]["files"] = dict.fromkeys(files, files["source_RGB8_VIEW"])
     else:
         name = record["crops"][0]["files"]["source_RGB8_VIEW"]
         Image.new("RGB", (1, 1)).save(path.parent / name)
@@ -465,6 +469,53 @@ def test_absolute_native_review_rejected_before_repair_reservation(tmp_path):
         for path in project.rglob("*")
         if path.is_file()
     } == before_files
+    repaired = repair(project, operation)
+    after_cycle = review.review_cycle(project, status_request)
+    assert after_cycle["attempts"] == 1 and after_cycle["phase"] == "awaiting_assessment"
+    assert read_project(project)["working_revision"] == repaired["revision"]
+
+
+@pytest.mark.parametrize("retained_comparison", [False, True])
+def test_duplicate_native_views_rejected_before_repair_reservation(tmp_path, retained_comparison):
+    import shutil
+
+    from test_library import inventory
+
+    from blackmask.project import _json_bytes, digest
+
+    _, project, _, _ = baseline(tmp_path)
+    cycle = start(project)
+    envelope = proposal(project, cycle)
+    if retained_comparison:
+        saved = review.review_project(
+            project, crops=[[0, 0, 3, 2]], comparison=True, retain_native=True
+        )
+        assert saved["native_manifest_file"] == str(project / envelope["review_manifest_file"])
+    operation = prepare_repair(project, envelope)
+    original = project / envelope["review_manifest_file"]
+    record = json.loads(original.read_bytes())
+    files = record["crops"][0]["files"]
+    assert len(set(files.values())) == len(files)
+    record["crops"][0]["files"] = dict.fromkeys(files, files["source_RGB8_VIEW"])
+    revision = (project / "revisions" / record["revision"] / "manifest.json").read_bytes()
+    key = digest(_json_bytes({"review": record, "manifest": digest(revision)}))
+    forged = original.parent.parent / key
+    shutil.copytree(original.parent, forged)
+    (forged / "manifest.json").write_bytes(_json_bytes(record))
+    invalid = dict(
+        operation,
+        assisted_review=dict(
+            envelope, review_manifest_file=str((forged / "manifest.json").relative_to(project))
+        ),
+    )
+    status_request = {"schema_version": 2, "action": "status", "cycle_id": cycle["cycle_id"]}
+    before_cycle = review.review_cycle(project, status_request)
+    before_files = inventory(project)
+    with pytest.raises(ProjectError, match="Native crop views must use distinct files"):
+        repair(project, invalid)
+    assert review.review_cycle(project, status_request) == before_cycle
+    assert inventory(project) == before_files
+    # The original distinct views remain valid, including when a comparison binds them.
     repaired = repair(project, operation)
     after_cycle = review.review_cycle(project, status_request)
     assert after_cycle["attempts"] == 1 and after_cycle["phase"] == "awaiting_assessment"
