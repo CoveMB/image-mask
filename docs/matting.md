@@ -212,6 +212,15 @@ hashes, parent bindings, crop mapping, order and exact published pixels without
 loading either model or reading inference cache. Preserve saved operands and
 their revision dependencies; cache is never their only copy.
 
+To inspect rebuildable predictions, run `blackmask cache inspect PROJECT`.
+After reviewing the eligible set, `blackmask cache clear PROJECT --confirm DIGEST`
+clears exactly that set; imported projects require `--config FILE` before `cache`.
+Incomplete operations block clearing. Old aliases, malformed entries and failed
+temporaries remain protected. See the [cache contract](file-contract.md#inspecting-and-clearing-processing-cache)
+for read-only inspection, supported compression, partial results and preservation
+guarantees. An occupied unsupported or corrupt prediction is preserved; each rerun
+can repeat inference and retain another diagnostic temporary instead of replacing it.
+
 ## Restore working inputs
 
 ```sh

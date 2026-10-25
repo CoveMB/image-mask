@@ -263,6 +263,22 @@ def _publish_new_directory(source: Path, destination: Path) -> None:
     _exclusive_rename(source, destination)
 
 
+def _publish_new_cache_file(source: Path, destination: Path) -> None:
+    """Move a validated prediction once; preserve visible publication on sync failure."""
+    try:
+        _exclusive_rename(source, destination)
+    except (OSError, ProjectError) as error:
+        raise ProjectError(
+            f"Cache file publication failed: {destination.name}; temporary retained: {error}"
+        ) from error
+    try:
+        _sync_directory(destination.parent)
+    except OSError as error:
+        raise ProjectError(
+            f"Cache file published: {destination.name}; directory durability is uncertain"
+        ) from error
+
+
 def _exclusive_rename(
     source: Path,
     destination: Path,

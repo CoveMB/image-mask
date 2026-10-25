@@ -1413,3 +1413,43 @@ selected-target canvas. These scopes differ: the timing excludes imports and
 geometry, RSS includes them, and the estimate is neither measured RSS nor a memory
 reservation. Input hashes were unchanged. No general performance, photographic,
 print, real-inference, installed-activation or publication acceptance is implied.
+
+## Inspectable processing cache
+
+The cache contribution's full suite passed **1,682 tests**, with **3 optional
+real-model checks skipped**, exit 0, in 1,563.51 seconds. All 54 captured Python
+source and test inputs remained unchanged during that run. Self-review then found
+three malformed ZIP envelopes whose exceptions escaped the shared cache parser.
+The narrow correction rejects encrypted members and normalizes damaged deflate
+and unsupported-compression failures. Stored, deflated, bzip2 and LZMA caches remain
+readable. **109 affected tests passed** after that correction; unchanged full-suite
+evidence remains applicable to the other application scopes.
+Ruff lint and formatting passed for the final changes; mypy passed for all 25
+source files.
+
+Real-file cases cover exclusive single-name publication, corrupt-entry retention,
+arrival and durability failures, bounded array headers, old hard links, read-only
+inspection, exact confirmation, writer contention, historical completion and
+authoring, configured-library validation, and partial clearing after late context
+changes. Deliberate faults demonstrate sensitivity to clobbering publication,
+stale link metadata, current-only history validation, missing library context,
+blanket authoring rejection and omission of later context checks.
+
+The combined configured-library journey uses a 96 × 64 synthetic RGB16 image,
+protected partial alpha, successive inward-shading opacities, equivalent-result
+reuse, distinct selected/working/accepted revisions, native gallery and focused
+comparison, all three delivery modes and editable companions. It preserves the
+original, sidecar, synthetic shared-model placeholders, saved operands, presets,
+deliveries and failed stages through explicit cache clearing. A fresh child forces
+reconstruction of all three deliveries from saved assets and frozen settings,
+without a reachable original project or selected model path. Separate combined
+cases exercise import, completed-matte and gallery interruption/recovery.
+
+The full run recorded 434 child processes: 324 Python and 110 Node processes.
+Readable Python attestations matched the captured application paths and hashes,
+all 41 locked versions and loaded Pillow/core 13.0.0 where applicable. Six
+deliberately killed Python children have no final attestation; three mode-000
+attestations remain unread. Their commands and exits are retained, but their
+loaded modules are not inferred. Node commands and exits are separate JavaScript
+evidence. These checks do not establish real-model, photographic, print,
+accessibility or human usability acceptance.

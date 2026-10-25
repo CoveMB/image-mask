@@ -24,6 +24,8 @@ Use the installed `blackmask` command, or `.venv/bin/blackmask` from the reposit
 | Read existing project status | `--config FILE status PROJECT` |
 | Repair the latest Result gallery image | `--config FILE preview repair PROJECT` |
 | Save a focused comparison | `--config FILE review PROJECT --comparison --crops CROPS.json` |
+| Inspect expendable processing predictions | `cache inspect PROJECT` |
+| Clear the exact inspected eligible set | `--config FILE cache clear PROJECT --confirm DIGEST` |
 
 Initialize first, then place the selected regular capture and optional sidecars
 directly inside `Inbox`. No neighboring files are selected automatically. Sidecars
@@ -31,6 +33,14 @@ are preserved as provenance; their third-party edits are not applied. Existing
 [source format, profile and development rules](../README.md#setup-and-quick-start)
 apply, including explicit `--assume-srgb` or `--white-balance daylight` when needed.
 Source-development review is optional; import does not accept a final photograph.
+
+Cache inspection reports eligible logical bytes, protected entries and blockers.
+Review its result before using its exact confirmation digest. Clearing affects only
+verified single-link tile predictions; it preserves originals, models, editable
+assets, exports and recovery history. A changed project or cache requires another
+inspection. A partial-clear result reports the files actually removed and exits
+nonzero. See the [cache contract](file-contract.md#inspecting-and-clearing-processing-cache)
+for completion, preservation and durability limits.
 
 The library contains `Inbox`, `Photos`, `Results Preview` and `Comparisons`.
 An imported folder is named `P<12-source-hash-characters>_<date-or-undated>_<subject>`.

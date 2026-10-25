@@ -184,6 +184,7 @@ for explicit model setup, typed preparation and human review.
 | Pinned explicit setup and local-only SAM/ViTMatte sessions | `src/blackmask/models.py` |
 | Quantized scoped merge and saved operand replay | `src/blackmask/repair.py` |
 | Native tile geometry, blending and verified cache | `src/blackmask/matte.py` |
+| Read-only cache inventory and exact confirmed clearing | `src/blackmask/operations.py`; [cache contract](docs/file-contract.md#inspecting-and-clearing-processing-cache) |
 | Native review evidence and explicit focused comparison sheets | `src/blackmask/review.py` |
 | Canonical precision renderer and accepted/draft exports | `src/blackmask/export.py` |
 | Source cleanup, protected inward W16 and independent effect publication | `src/blackmask/effects.py` |

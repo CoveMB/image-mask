@@ -21,6 +21,125 @@ def run(*arguments):
     )
 
 
+def test_cache_cli_inspect_confirmation_and_busy_writer(tmp_path):
+    from test_cache_management import inventory, predictions
+    from test_project import create
+
+    from blackmask.project import project_lock
+
+    _, project = create(tmp_path)
+    predictions(project)
+    before = inventory(project)
+    inspected = run("cache", "inspect", project)
+    assert inspected.returncode == 0, inspected.stderr
+    report = json.loads(inspected.stdout)
+    assert report["candidates"] and report["writer_busy"] is False
+    assert inventory(project) == before
+    assert run("cache", "clear", project).returncode == 2
+    stale = run("cache", "clear", project, "--confirm", "0" * 64)
+    assert stale.returncode == 1 and "Stale" in stale.stderr
+    with project_lock(project):
+        busy = run("cache", "inspect", project)
+        assert busy.returncode == 0 and json.loads(busy.stdout)["writer_busy"] is True
+        refused = run("cache", "clear", project, "--confirm", report["candidate_digest"])
+        assert refused.returncode == 1 and "busy" in refused.stderr
+    assert inventory(project) == before
+    cleared = run("cache", "clear", project, "--confirm", report["candidate_digest"])
+    assert cleared.returncode == 0, cleared.stderr
+    result = json.loads(cleared.stdout)
+    assert result["status"] == "cleared"
+    assert result["removed"] == [entry["path"] for entry in report["candidates"]]
+    assert inventory(project) == {
+        name: value for name, value in before.items() if name not in result["removed"]
+    }
+
+
+def test_cache_cli_forwards_imported_storage_context(tmp_path):
+    from test_cache_management import predictions
+    from test_library import configuration
+
+    from blackmask import library
+
+    config_file, destination = configuration(tmp_path)
+    config = library.load_storage_config(config_file)
+    library.ensure_library(config)
+    source = tiff(destination / "Inbox/capture.tif", profile=srgb_profile())
+    project = library.import_photo(config, source, subject="synthetic", development={})
+    predictions(project)
+    inspected = run("cache", "inspect", project)
+    assert inspected.returncode == 0, inspected.stderr
+    report = json.loads(inspected.stdout)
+    refused = run("cache", "clear", project, "--confirm", report["candidate_digest"])
+    assert refused.returncode == 1 and "--config" in refused.stderr
+    cleared = run(
+        "--config", config_file, "cache", "clear", project, "--confirm", report["candidate_digest"]
+    )
+    assert cleared.returncode == 0, cleared.stderr
+    assert json.loads(cleared.stdout)["removed"]
+
+
+def test_cache_cli_real_lock_handshake_and_partial_exit(tmp_path):
+    from test_cache_management import inventory, predictions
+    from test_project import create
+
+    _, project = create(tmp_path)
+    entries = predictions(project)
+    report = json.loads(run("cache", "inspect", project).stdout)
+    before = inventory(project)
+    holder_program = """import sys
+from pathlib import Path
+from blackmask.project import project_lock
+with project_lock(Path(sys.argv[1])):
+    print('locked',flush=True)
+    sys.stdin.readline()
+"""
+    with subprocess.Popen(
+        [sys.executable, "-B", "-c", holder_program, str(project)],
+        env=dict(os.environ, PYTHONPATH=str(Path("src").resolve())),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as holder:
+        try:
+            assert holder.stdout.readline().strip() == "locked"
+            inspected = run("cache", "inspect", project)
+            assert inspected.returncode == 0 and json.loads(inspected.stdout)["writer_busy"] is True
+            refused = run("cache", "clear", project, "--confirm", report["candidate_digest"])
+            assert refused.returncode == 1 and "busy" in refused.stderr
+            assert inventory(project) == before
+        finally:
+            holder.stdin.write("release\n")
+            holder.stdin.flush()
+            assert holder.wait(timeout=20) == 0
+    partial_program = """import os,sys
+from blackmask.cli import main
+original=os.unlink
+removed=[]
+def unlink(path,**kwargs):
+    if removed: raise OSError('injected second unlink')
+    original(path,**kwargs)
+    removed.append(path)
+os.unlink=unlink
+sys.argv=['blackmask','cache','clear',sys.argv[1],'--confirm',sys.argv[2]]
+raise SystemExit(main())
+"""
+    partial = subprocess.run(
+        [sys.executable, "-B", "-c", partial_program, str(project), report["candidate_digest"]],
+        env=dict(os.environ, PYTHONPATH=str(Path("src").resolve())),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert partial.returncode == 1, partial.stderr
+    result = json.loads(partial.stdout)
+    assert result["status"] == "partial"
+    assert result["removed"] == [str(entries[0].relative_to(project))]
+    assert result["removed_logical_bytes"] == len(before[result["removed"][0]][0])
+    assert entries[1].read_bytes() == before[str(entries[1].relative_to(project))][0]
+
+
 def test_requested_delivery_cli_variants_and_presentation_editable(tmp_path):
     from test_effects import fixture_project
 

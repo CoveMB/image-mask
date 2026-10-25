@@ -1,11 +1,15 @@
 """Preparation transaction: immutable snapshots, role validation and sole state publication."""
 
+import fcntl
+import hashlib
 import json
 import os
 import re
+import stat
 import tempfile
 import tomllib
 import uuid
+import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -36,6 +40,7 @@ from .project import (
     ProjectError,
     _atomic_bytes,
     _atomic_json,
+    _directory,
     _json_bytes,
     _publish_new_directory,
     _root,
@@ -760,15 +765,16 @@ def retained_assisted_requests(project: Path, cycle_id: str) -> set[str]:
     return checksums
 
 
-def _verify_matte_request(
-    project: Path, directory: Path, *, completed_revision: str | None = None
-) -> dict[str, Any]:
+def _read_matte_snapshot(
+    project: Path, directory: Path
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, bytes]]:
     manifest = json.loads(
         saved_asset(project, f"requests/{directory.name}/manifest.json").read_bytes()
     )
     if (
         not isinstance(manifest, dict)
         or manifest.get("schema_version") != 2
+        or not isinstance(manifest.get("inputs"), dict)
         or set(manifest.get("inputs", {}))
         != {"state.json", "source.json", "recipe.toml", "guides.json"}
         or not isinstance(manifest.get("dependencies"), dict)
@@ -780,12 +786,24 @@ def _verify_matte_request(
     operation = json.loads(
         saved_asset(project, f"requests/{directory.name}/operation.json").read_bytes()
     )
+    if not isinstance(operation, dict):
+        raise ProjectError("Invalid recovery operation object")
+    snapshots = {}
     for name, checksum in manifest["inputs"].items():
         saved = saved_asset(project, f"requests/{directory.name}/inputs/{name}").read_bytes()
         if digest(saved) != checksum:
             raise ProjectError(
                 "Recovery snapshot hash mismatch; restart from current reviewed inputs"
             )
+        snapshots[name] = saved
+    return operation, manifest, snapshots
+
+
+def _verify_matte_request(
+    project: Path, directory: Path, *, completed_revision: str | None = None
+) -> dict[str, Any]:
+    operation, manifest, snapshots = _read_matte_snapshot(project, directory)
+    for name, saved in snapshots.items():
         if name == "state.json" and completed_revision is not None:
             continue
         if saved_asset(project, name).read_bytes() != saved:
@@ -2113,3 +2131,614 @@ def _reject_pending_guidance(project: Path) -> None:
     pending = pending_guidance(project)
     if pending and pending["current"] and pending["actions"]:
         raise ProjectError("Saved pending guidance requires preparation first")
+
+
+def _cache_context_fingerprint(project: Path) -> str:
+    """Bind retained state and directory membership without reading raster bodies again."""
+    from .matte import _cache_file_identity
+
+    records: dict[str, Any] = {}
+
+    def visit(path: Path) -> None:
+        value = path.lstat()
+        name = str(path.relative_to(project))
+        if stat.S_ISDIR(value.st_mode):
+            records[name] = {"device": value.st_dev, "inode": value.st_ino, "mode": value.st_mode}
+            with _directory(path) as descriptor:
+                children = sorted(os.listdir(descriptor))
+            for child in children:
+                visit(path / child)
+        elif stat.S_ISREG(value.st_mode):
+            record: dict[str, Any] = {"identity": _cache_file_identity(value)}
+            if path.suffix in {".json", ".toml", ".sha256"}:
+                with _directory(path.parent) as parent:
+                    descriptor = os.open(
+                        path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
+                    )
+                    with os.fdopen(descriptor, "rb") as stream:
+                        if _cache_file_identity(os.fstat(stream.fileno())) != record["identity"]:
+                            raise ProjectError(f"Retained processing context changed: {name}")
+                        record["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+                        if _cache_file_identity(os.fstat(stream.fileno())) != record["identity"]:
+                            raise ProjectError(f"Retained processing context changed: {name}")
+            records[name] = record
+        else:
+            raise ProjectError(f"Unsafe retained processing context: {name}")
+
+    # Cache and lock membership change during clearing; neither is permanent context.
+    for name in (
+        "state.json",
+        "source.json",
+        "recipe.toml",
+        "guides.json",
+        "viewer-draft.json",
+        "assets",
+        "revisions",
+        "requests",
+        "recovery",
+        "approvals",
+        "exports",
+        "framing.json",
+        "series-framing.json",
+    ):
+        path = project / name
+        if os.path.lexists(path):
+            visit(path)
+    return digest(_json_bytes(records))
+
+
+def _processing_dependency(project: Path, name: str) -> Path:
+    if not isinstance(name, str) or not Path(name).parts or Path(name).parts[0] == "cache":
+        raise ProjectError("Processing cache cannot be a permanent dependency")
+    path = _input_file(project, name)
+    if not stat.S_ISREG(path.lstat().st_mode):
+        raise ProjectError(f"Invalid permanent dependency: {name}")
+    return path
+
+
+def _completed_processing_request(project: Path, directory: Path, developed_id: str) -> None:
+    """Completion is saved history, independent of later drafts and original request paths."""
+    allowed = {"operation.json", "manifest.json", "inputs", "completion.json", "progress.json"}
+    if any(
+        path.name not in allowed and not re.fullmatch(r"\.state-[a-z0-9_]+\.tmp", path.name)
+        for path in directory.iterdir()
+    ):
+        raise ProjectError(f"Unrecognized processing recovery record: {directory.name}")
+    if any(
+        path.name not in {"state.json", "source.json", "recipe.toml", "guides.json"}
+        and not re.fullmatch(r"\.state-[a-z0-9_]+\.tmp", path.name)
+        for path in (directory / "inputs").iterdir()
+    ):
+        raise ProjectError(f"Unrecognized processing input snapshot: {directory.name}")
+    operation, manifest, snapshots = _read_matte_snapshot(project, directory)
+    completed = json.loads((directory / "completion.json").read_bytes())
+    progress = json.loads((directory / "progress.json").read_bytes())
+    revision = completed["revision"]
+    retained = read_revision(project, revision, developed_id)
+    saved_state = json.loads(snapshots["state.json"])
+    saved_source = json.loads(snapshots["source.json"])
+    if (
+        not isinstance(saved_state, dict)
+        or not isinstance(saved_source, dict)
+        or operation.get("kind") not in {"matte", "repair"}
+        or type(operation.get("schema_version")) is not int
+        or operation["schema_version"] != 2
+        or operation.get("developed_id") != developed_id
+        or saved_state.get("developed_id") != developed_id
+        or saved_source.get("developed_id") != developed_id
+        or saved_state.get("working_revision") != operation.get("base_revision")
+        or digest(snapshots["recipe.toml"] + b"\0" + snapshots["guides.json"])
+        != operation.get("inputs_digest")
+        or retained.get("kind") != operation["kind"]
+        or retained.get("parent") != operation.get("base_revision")
+        or retained.get("inputs_digest") != operation.get("inputs_digest")
+        or digest((project / "revisions" / revision / "manifest.json").read_bytes())
+        != completed["manifest_sha256"]
+        or json.loads((project / "revisions" / revision / "request.json").read_bytes()) != operation
+        or not isinstance(completed.get("stage"), str)
+        or re.fullmatch(r"\.matte-[a-z0-9_]+", completed["stage"]) is None
+        or progress != {"status": "review_needed", "phase": "complete", "revision": revision}
+    ):
+        raise ProjectError(f"Unresolved or contradictory processing completion: {directory.name}")
+    for name, checksum in manifest["dependencies"].items():
+        if digest(_processing_dependency(project, name).read_bytes()) != checksum:
+            raise ProjectError(f"Retained processing dependency hash mismatch: {name}")
+
+
+def _cache_restore_backups(project: Path, developed_id: str) -> list[dict[str, Any]]:
+    """Validate captured backup shape; never claim that a restore completed."""
+    pointers: list[dict[str, Any]] = []
+    recovery = project / "recovery"
+    if not recovery.exists():
+        return pointers
+    for directory in sorted(recovery.iterdir()):
+        if not directory.is_dir() or re.fullmatch(r"restore-[a-z0-9_]+", directory.name) is None:
+            raise ProjectError(
+                "Unknown recovery capture; preserve and inspect before clearing cache"
+            )
+        names = {path.name for path in directory.iterdir()}
+        required = {"state.json", "source.json", "recipe.toml", "guides.json", "request.json"}
+        if not required <= names or names - required - {"viewer-draft.json"}:
+            raise ProjectError(f"Incomplete recovery capture: {directory.name}")
+        target = json.loads((directory / "request.json").read_bytes())
+        if (
+            set(target) != {"revision", "developed_id", "replace_drafts", "target_manifest_sha256"}
+            or type(target["replace_drafts"]) is not bool
+            or target["developed_id"] != developed_id
+        ):
+            raise ProjectError("Invalid restore backup target")
+        read_revision(project, target["revision"], developed_id)
+        if (
+            digest((project / "revisions" / target["revision"] / "manifest.json").read_bytes())
+            != target["target_manifest_sha256"]
+        ):
+            raise ProjectError("Restore backup target manifest changed")
+        for name in ("state.json", "source.json"):
+            saved = json.loads((directory / name).read_bytes())
+            if not isinstance(saved, dict) or saved.get("developed_id") != developed_id:
+                raise ProjectError("Restore backup source identity differs")
+        if "viewer-draft.json" in names:
+            try:
+                pointer = json.loads((directory / "viewer-draft.json").read_bytes())
+                if isinstance(pointer, dict):
+                    pointers.append(pointer)
+            except ValueError:
+                pass  # Opaque invalid prior bytes are deliberately retained by explicit restore.
+    return pointers
+
+
+def _cache_authoring_history(
+    project: Path,
+    state: dict[str, Any],
+    revisions: dict[str, dict[str, Any]],
+    backups: list[dict[str, Any]],
+    entries: list[Path],
+) -> None:
+    """Resolve consumed edits or proven supersession, one author per edit batch."""
+    metadata = json.loads((project / "source.json").read_bytes())["metadata"]
+    width, height = metadata["width"], metadata["height"]
+    developed_id = state["developed_id"]
+    pointers = list(backups)
+    current_path = project / "viewer-draft.json"
+    current = json.loads(current_path.read_bytes()) if current_path.exists() else None
+    if current is not None:
+        if not isinstance(current, dict):
+            raise ProjectError("Invalid saved authoring pointer")
+        if current != {"superseded_by_restore": True, "unreadable": True}:
+            if "superseded_by_restore" in current and (
+                current["superseded_by_restore"] is not True
+                or {key: value for key, value in current.items() if key != "superseded_by_restore"}
+                not in backups
+            ):
+                raise ProjectError("Unproven authoring supersession")
+            pointers.append(current)
+    edits: dict[str, dict[str, Any]] = {}
+    authors: dict[str, dict[str, Any]] = {}
+    for path in entries:
+        name = str(path.relative_to(project))
+        value = json.loads(path.read_bytes())
+        if re.fullmatch(r"viewer-edits-[a-f0-9]{32}\.json", path.name):
+            if not isinstance(value, dict) or set(value) != {
+                "schema_version",
+                "developed_id",
+                "actions",
+            }:
+                raise ProjectError("Invalid retained typed viewer edits")
+            if not isinstance(value["actions"], list):
+                raise ProjectError("Invalid retained viewer actions")
+            # A removal's old region may no longer be current. Seed only those IDs so
+            # canonical typed validation checks every action, including remove fields.
+            removed_regions = [
+                {"id": action.get("id"), "role": "unknown", "shape": "point", "xy": [0, 0]}
+                for action in value["actions"]
+                if isinstance(action, dict) and action.get("action") == "remove"
+            ]
+            edit_guides(
+                {
+                    "schema_version": 2,
+                    "developed_id": developed_id,
+                    "width": width,
+                    "height": height,
+                    "regions": removed_regions,
+                },
+                value,
+            )
+            edits[name] = value
+        else:
+            if not isinstance(value, dict) or set(value) != {
+                "schema_version",
+                "developed_id",
+                "actions",
+                "groups",
+                "previous_recipe",
+            }:
+                raise ProjectError("Invalid retained viewer authoring record")
+            recipe = tomllib.loads(value["previous_recipe"])
+            recipe["groups"] = value["groups"]
+            Recipe.from_dict(
+                recipe,
+                developed_id,
+                max_margin_px=max(width, height),
+                dimensions_wh=(width, height),
+            )
+            authors[name] = value
+    resolved: set[str] = set()
+    unbound: list[list[str]] = []
+    for name, value in edits.items():
+        if value["developed_id"] != developed_id:
+            raise ProjectError("Retained authoring master differs")
+        checksum = digest((project / name).read_bytes())
+        consumed = False
+        for revision, manifest in revisions.items():
+            binding = manifest.get("external_inputs", {}).get(name)
+            if binding is not None:
+                if (
+                    not isinstance(binding, dict)
+                    or binding.get("sha256") != checksum
+                    or digest(
+                        _processing_dependency(
+                            project, f"revisions/{revision}/{binding['snapshot']}"
+                        ).read_bytes()
+                    )
+                    != checksum
+                ):
+                    raise ProjectError("Consumed viewer edit binding differs")
+                consumed = True
+        own_pointers = [pointer for pointer in pointers if pointer.get("guide_edits_file") == name]
+        # Restore captures its backup before replacing any draft. Only a published
+        # supersession pointer (possibly captured by a later restore) proves retirement.
+        retired = any(
+            pointer.get("superseded_by_restore") is True
+            and {key: item for key, item in pointer.items() if key != "superseded_by_restore"}
+            in backups
+            for pointer in own_pointers
+        )
+        if (
+            current is not None
+            and current.get("guide_edits_file") == name
+            and current.get("superseded_by_restore") is not True
+        ):
+            retired = False
+        if not consumed and not retired:
+            raise ProjectError(
+                "Unresolved viewer authoring; prepare or explicitly restore before clearing"
+            )
+        matching = [
+            author_name
+            for author_name, author in authors.items()
+            if {key: author[key] for key in ("schema_version", "developed_id", "actions")} == value
+        ]
+        if not matching:
+            raise ProjectError("Viewer edits have no matching retained authoring record")
+        for pointer in own_pointers:
+            if (
+                pointer.get("record_file") not in matching
+                or pointer.get("actions") != value["actions"]
+                or pointer.get("developed_id") != developed_id
+                or re.fullmatch(r"[a-f0-9]{64}", str(pointer.get("inputs_digest"))) is None
+                or (
+                    pointer.get("base_revision") is not None
+                    and pointer["base_revision"] not in revisions
+                )
+            ):
+                raise ProjectError("Invalid retained authoring pointer binding")
+        bound = {pointer["record_file"] for pointer in own_pointers}
+        if len(bound) > 1 or bound & resolved:
+            raise ProjectError("Conflicting retained authoring pointer bindings")
+        if bound:
+            resolved.update(bound)
+        else:
+            unbound.append(matching)
+    # Reserve exact pointer associations before accounting for consumed historical
+    # batches with identical actions. One completed batch cannot resolve two authors.
+    for matching in unbound:
+        remaining = set(matching) - resolved
+        if not remaining:
+            raise ProjectError("Viewer edit batches outnumber retained authoring records")
+        resolved.add(min(remaining))
+    if set(authors) != resolved or any(
+        pointer.get("guide_edits_file") not in edits
+        for pointer in pointers
+        if pointer != {"superseded_by_restore": True, "unreadable": True}
+    ):
+        raise ProjectError("Unrecognized retained viewer authoring history")
+
+
+def _validate_cache_context(project: Path) -> None:
+    state = read_project(project)
+    revisions = {}
+    for directory in (
+        sorted((project / "revisions").iterdir()) if (project / "revisions").exists() else ()
+    ):
+        if directory.name.startswith("."):
+            continue  # Preserved diagnostic stages never stand in for completion.
+        revisions[directory.name] = read_revision(project, directory.name, state["developed_id"])
+        external = revisions[directory.name].get("external_inputs", {})
+        if not isinstance(external, dict):
+            raise ProjectError("Invalid permanent external input table")
+        for name, binding in external.items():
+            if not isinstance(name, str) or Path(name).parts[:1] == ("cache",):
+                raise ProjectError("Invalid permanent external input reference")
+            if not isinstance(binding, dict) or set(binding) != {"sha256", "snapshot"}:
+                raise ProjectError("Invalid permanent external input binding")
+            snapshot = _processing_dependency(
+                project, f"revisions/{directory.name}/{binding['snapshot']}"
+            )
+            if digest(snapshot.read_bytes()) != binding["sha256"]:
+                raise ProjectError("Permanent external input snapshot differs")
+    backups = _cache_restore_backups(project, state["developed_id"])
+    authors = []
+    requests = project / "requests"
+    if requests.exists():
+        for entry in sorted(requests.iterdir()):
+            if re.fullmatch(r"\.state-[a-z0-9_]+\.tmp", entry.name):
+                continue  # Existing initial publication aliases and failed state diagnostics.
+            if re.fullmatch(r"matte-[a-z0-9_]+", entry.name) and entry.is_dir():
+                _completed_processing_request(project, entry, state["developed_id"])
+            elif re.fullmatch(r"review-[a-f0-9]{32}", entry.name) and entry.is_dir():
+                from .review import _cycle_record
+
+                record = _cycle_record(project, entry.name)
+                allowed = {"head.sha256", *(path.name for path in entry.glob("*.json"))}
+                if (
+                    record["phase"] != "stopped"
+                    or record["developed_id"] != state["developed_id"]
+                    or any(
+                        path.name not in allowed
+                        and not re.fullmatch(r"\.state-[a-z0-9_]+\.tmp", path.name)
+                        for path in entry.iterdir()
+                    )
+                ):
+                    raise ProjectError("Unresolved or unrecognized assisted review history")
+            elif (
+                re.fullmatch(r"viewer-(?:edits-)?[a-f0-9]{32}\.json", entry.name)
+                and entry.is_file()
+            ):
+                authors.append(entry)
+            else:
+                raise ProjectError(f"Unrecognized processing request: {entry.name}")
+    if authors or (project / "viewer-draft.json").exists() or backups:
+        _cache_authoring_history(project, state, revisions, backups, authors)
+    exports = project / "exports"
+    if exports.exists():
+        for directory in exports.iterdir():
+            if directory.name.startswith("."):
+                continue
+            if not directory.is_dir():
+                raise ProjectError("Unrecognized permanent delivery")
+            record = json.loads((directory / "manifest.json").read_bytes())
+            revision = record["revision"]
+            manifest = revisions[revision]
+            expected = {
+                f"assets/developed/{state['developed_id']}.tif": json.loads(
+                    (project / "source.json").read_bytes()
+                )["developed_file_sha256"],
+                **{
+                    reference["path"]: reference["sha256"]
+                    for reference in manifest["assets"].values()
+                },
+            }
+            if (
+                record.get("native_assets") != expected
+                or record.get("developed_id") != state["developed_id"]
+                or record.get("revision_manifest_sha256")
+                != digest((project / "revisions" / revision / "manifest.json").read_bytes())
+            ):
+                raise ProjectError("Invalid permanent delivery native asset references")
+            from .export import _delivery_members, _validate_delivery
+
+            request_record = {
+                key: value
+                for key, value in record.items()
+                if key not in {"files", "editable_companion"}
+            }
+            _validate_delivery(
+                directory,
+                request_record,
+                _delivery_members(request_record, manifest),
+                companion_binding=record.get("editable_companion"),
+            )
+
+
+def _cache_writer_busy(project: Path) -> bool:
+    """Probe only an existing stable lock; never create or repair it for inspection."""
+    try:
+        descriptor = os.open(project / ".writer.lock", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return False
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ProjectError("Invalid writer lock")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def _cache_prediction(descriptor: int, name: str) -> dict[str, Any]:
+    from .matte import _cache_file_identity, _read_tile_prediction
+
+    observed = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+    if not stat.S_ISREG(observed.st_mode) or observed.st_nlink != 1:
+        raise ProjectError("Nonregular or multiply linked prediction is protected")
+    opened = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
+    with os.fdopen(opened, "rb") as stream:
+        identity = _cache_file_identity(observed)
+        if _cache_file_identity(os.fstat(stream.fileno())) != identity:
+            raise ProjectError("Cache prediction changed during opening")
+        _read_tile_prediction(stream, name[:-4])
+        stream.seek(0)
+        checksum = hashlib.file_digest(stream, "sha256").hexdigest()
+        if (
+            _cache_file_identity(os.fstat(stream.fileno())) != identity
+            or _cache_file_identity(os.stat(name, dir_fd=descriptor, follow_symlinks=False))
+            != identity
+        ):
+            raise ProjectError("Cache prediction changed during inspection")
+    return {
+        "path": f"cache/matte/{name}",
+        "sha256": checksum,
+        "logical_bytes": observed.st_size,
+        "identity": identity,
+    }
+
+
+def _processing_cache_snapshot(project: Path) -> tuple[dict[str, Any], str]:
+    candidates, protected, blockers = [], [], []
+    context = ""
+    directories = []
+    try:
+        context = _cache_context_fingerprint(project)
+        _validate_cache_context(project)
+        if _cache_context_fingerprint(project) != context:
+            raise ProjectError("Processing context changed during inspection")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        blockers.append(f"Processing context blocks clearing: {error}")
+    cache = project / "cache/matte"
+    if os.path.lexists(project / "cache"):
+        try:
+            with _directory(project / "cache") as parent:
+                value = os.fstat(parent)
+                directories.append((value.st_dev, value.st_ino, value.st_mode))
+                if os.path.lexists(cache):
+                    with _directory(cache) as descriptor:
+                        value = os.fstat(descriptor)
+                        directories.append((value.st_dev, value.st_ino, value.st_mode))
+                        for name in sorted(os.listdir(descriptor)):
+                            observed = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                            try:
+                                if re.fullmatch(r"[a-f0-9]{64}\.npz", name) is None:
+                                    raise ProjectError(
+                                        "Unrecognized cache entry or retained diagnostic"
+                                    )
+                                candidates.append(_cache_prediction(descriptor, name))
+                            except (
+                                OSError,
+                                ValueError,
+                                KeyError,
+                                TypeError,
+                                EOFError,
+                                zipfile.BadZipFile,
+                            ) as error:
+                                protected.append(
+                                    {
+                                        "path": f"cache/matte/{name}",
+                                        "logical_bytes": observed.st_size,
+                                        "reason": str(error),
+                                    }
+                                )
+                        with _directory(cache) as current:
+                            current_stat = os.fstat(current)
+                            if (
+                                current_stat.st_dev,
+                                current_stat.st_ino,
+                                current_stat.st_mode,
+                            ) != directories[-1]:
+                                raise ProjectError("Cache directory changed during inspection")
+        except (OSError, ValueError) as error:
+            blockers.append(f"Unsafe cache directory: {error}")
+    try:
+        if context and _cache_context_fingerprint(project) != context:
+            blockers.append("Processing context changed while enumerating predictions")
+    except (OSError, ValueError) as error:
+        blockers.append(f"Processing context changed: {error}")
+    return {
+        "candidates": candidates,
+        "protected": protected,
+        "blockers": blockers,
+        "candidate_logical_bytes": sum(entry["logical_bytes"] for entry in candidates),
+        "candidate_digest": digest(
+            _json_bytes({"candidates": candidates, "context": context, "directories": directories})
+        ),
+    }, context
+
+
+def inspect_processing_cache(project: Path) -> dict[str, Any]:
+    """Read eligible single-link predictions and blockers without any project write."""
+    project = _root(project)
+    report, _ = _processing_cache_snapshot(project)
+    try:
+        report["writer_busy"] = _cache_writer_busy(project)
+    except (OSError, ProjectError) as error:
+        report["writer_busy"] = None
+        report["blockers"].append(f"Cannot inspect writer lock: {error}")
+    return report
+
+
+def _recheck_cache_context(project: Path, expected: str) -> None:
+    if _cache_context_fingerprint(project) != expected:
+        raise ProjectError(
+            "Processing context changed; inspect requests, recovery and permanent references"
+        )
+
+
+def clear_processing_cache(
+    project: Path, expected_digest: str, *, storage_config: StorageConfig | None = None
+) -> dict[str, Any]:
+    """Clear only the exact confirmed expendable set under the canonical writer lock."""
+    project = _root(project)
+    validate_library_project(project, storage_config)
+    if (
+        not isinstance(expected_digest, str)
+        or re.fullmatch(r"[a-f0-9]{64}", expected_digest) is None
+    ):
+        raise ProjectError("Cache clear requires the exact inspected confirmation digest")
+    with project_lock(project):
+        report, context = _processing_cache_snapshot(project)
+        if report["blockers"]:
+            raise ProjectError("; ".join(report["blockers"]))
+        if report["candidate_digest"] != expected_digest:
+            raise ProjectError("Stale cache confirmation digest; inspect again before clearing")
+        result: dict[str, Any] = {
+            "status": "cleared",
+            "removed": [],
+            "removed_logical_bytes": 0,
+            "failures": [],
+            "durability_uncertain": False,
+            "candidate_digest": expected_digest,
+        }
+        if not report["candidates"]:
+            return result
+        cache = project / "cache/matte"
+        with _directory(cache) as descriptor:
+            held = os.fstat(descriptor)
+            for entry in report["candidates"]:
+                try:
+                    _recheck_cache_context(project, context)
+                    with _directory(cache) as current:
+                        observed = os.fstat(current)
+                        if (observed.st_dev, observed.st_ino) != (held.st_dev, held.st_ino):
+                            raise ProjectError(
+                                "Cache directory changed; retained directory preserved"
+                            )
+                    name = Path(entry["path"]).name
+                    if _cache_prediction(descriptor, name) != entry:
+                        raise ProjectError("Cache prediction changed; remaining entries preserved")
+                    os.unlink(name, dir_fd=descriptor)
+                    result["removed"].append(entry["path"])
+                    result["removed_logical_bytes"] += entry["logical_bytes"]
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    EOFError,
+                    zipfile.BadZipFile,
+                ) as error:
+                    result["status"] = "partial"
+                    result["failures"].append({"path": entry["path"], "error": str(error)})
+                    break
+            if result["removed"]:
+                try:
+                    os.fsync(descriptor)
+                except OSError as error:
+                    result["status"] = "partial"
+                    result["durability_uncertain"] = True
+                    result["failures"].append(
+                        {"path": "cache/matte", "error": f"Directory durability uncertain: {error}"}
+                    )
+        return result

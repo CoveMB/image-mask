@@ -25,7 +25,9 @@ from .operations import (
     accept_revision,
     accept_trimap,
     apply_operation,
+    clear_processing_cache,
     draft_digest,
+    inspect_processing_cache,
     operation_status,
     reopen_project_status,
     resume_operation,
@@ -199,6 +201,13 @@ def main() -> int:
     )
     status = commands.add_parser("status", help="Read recovery status without waiting for a writer")
     status.add_argument("project", type=Path)
+    cache = commands.add_parser("cache", help="Inspect or explicitly clear expendable predictions")
+    cache_actions = cache.add_subparsers(dest="cache_action", required=True)
+    cache_inspect = cache_actions.add_parser("inspect", help="Read cache inventory without writes")
+    cache_inspect.add_argument("project", type=Path)
+    cache_clear = cache_actions.add_parser("clear", help="Clear the exact inspected eligible set")
+    cache_clear.add_argument("project", type=Path)
+    cache_clear.add_argument("--confirm", required=True, metavar="DIGEST")
     preview = commands.add_parser(
         "preview", help="Explicitly repair the latest native Result gallery"
     )
@@ -387,6 +396,14 @@ def main() -> int:
             )
         elif arguments.command == "status":
             result = operation_status(arguments.project, storage_config=config)
+        elif arguments.command == "cache":
+            result = (
+                inspect_processing_cache(arguments.project)
+                if arguments.cache_action == "inspect"
+                else clear_processing_cache(
+                    arguments.project, arguments.confirm, storage_config=config
+                )
+            )
         elif arguments.command == "preview":
             from .previews import refresh_result_preview
 
@@ -425,7 +442,16 @@ def main() -> int:
                 arguments.model,
             )
         print(json.dumps(result, indent=2, allow_nan=False))
-        return 1 if arguments.command == "preview" and result["status"] == "pending" else 0
+        return (
+            1
+            if (
+                arguments.command == "preview"
+                and result["status"] == "pending"
+                or arguments.command == "cache"
+                and result.get("status") == "partial"
+            )
+            else 0
+        )
     except (ProjectError, IngestError, OSError, ValueError, TypeError) as error:
         print(f"blackmask: {error}", file=sys.stderr)
         return 1

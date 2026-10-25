@@ -422,9 +422,96 @@ hostile external writers; finish text edits before processing.
 
 `cache/matte/` contains verified rebuildable tile predictions keyed by master,
 input/crop/trimap, model/config/package, backend/dtype/geometry/preprocessing.
-Malformed/unknown entries miss. A backend switch starts the whole fresh stage in
-its own namespace. Accepted layers are outside cache. Retained temporary hard links
-and failed-stage directories are diagnostic, not accepted or resume authority.
+An initially present corrupt regular entry is a recomputation miss. Its bytes and
+the new diagnostic temporary remain intact, and the tile reports
+`cache_publication="skipped_corrupt_existing"`. Symlinks and other nonregular
+destinations are errors. A backend switch starts the whole fresh stage in its own
+namespace. Accepted layers are outside cache.
+
+New successful predictions are serialized, file-synced and validated, then
+published with a same-filesystem exclusive rename and parent-directory sync.
+Success leaves one named NPZ with one link and no temporary alias from that attempt.
+An arriving destination or failed rename preserves existing names and the temporary.
+Failure after rename preserves the named prediction and reports uncertain durability;
+there is no rollback or overwrite fallback. Old temporary hard links, corrupt
+entries and failed stages remain diagnostic data, never accepted or resume authority.
+
+### Inspecting and clearing processing cache
+
+`cache inspect PROJECT` reads direct children of `cache/matte` and returns eligible
+`candidates`, `protected` entries with reasons, integrity `blockers`, `writer_busy`,
+`candidate_logical_bytes` and a deterministic `candidate_digest`. Inspection never
+creates a cache, backend marker, lock, request, receipt or preview.
+
+Only regular single-link files named `<64-lowercase-hex>.npz` with the canonical
+tile format are eligible. ZIP members must use stored (the native producer) or
+deflate compression; a mixture of these two methods is supported. Every member's
+compression method is checked before decoding any member. BZIP2/LZMA and other unsupported methods,
+including previously readable entries, remain protected and are recomputation
+misses. Their existing bytes are never converted, replaced or cleared automatically.
+Each rerun at an occupied unsupported or corrupt key can repeat inference and retain
+another validated `.tile-*` diagnostic with `cache_publication="skipped_corrupt_existing"`.
+
+Admission uses one bounded archive snapshot, checks exactly four physical directory
+records before public ZIP metadata allocation, and validates consistent footer,
+local-header, payload and descriptor extents. Public metadata reads a separate
+in-memory view of those unchanged directory records with a trusted fixed trailer;
+its offsets are rebased to the original archive, which still owns payload validation.
+This keeps metadata allocation bounded across supported Python 3.12 readers.
+Supported ZIP64, descriptor, comment
+and prefix forms retain those checks. The compressed archive ceiling is 11,574,336
+bytes; decoded NPY members are limited to 8,398,608 bytes for alpha and 1,058,576
+bytes for each text member. Actual output length, complete stream termination and
+CRC must match before any array allocation. Every deflate/drain call has a positive
+remaining-length-plus-one bound; excess output and trailing compressed data reject.
+
+All four NPY headers (versions 1 or 2, at most 10,000 bytes each) are checked before
+array allocation from the validated buffers, with pickle disabled. The four unique
+members must contain finite float32/float64 alpha,
+scalar JSON-object metadata, the matching key and content checksum. Alpha dimensions
+are bounded by the native tile size. Backend markers, `.tile-*`, unknown files,
+nonregular entries, unsupported compression, malformed arrays and every multiply linked
+file are protected.
+No recursive cache deletion, alias grouping or automatic cleanup occurs.
+
+`cache clear PROJECT --confirm DIGEST` requires the exact inspected digest and
+the canonical project writer lock. Imported projects also require their matching
+explicit `--config FILE`, enforced by the public operation as well as CLI.
+The digest binds candidate names, hashes, logical sizes, fresh file/link identities,
+cache-directory identities and retained project/recovery/permanent context.
+All retained published revisions and delivery dependencies must validate.
+
+A completed matte/repair requires intact saved operation/input/dependency hashes,
+a matching **published** revision and completion manifest hash, and matching
+`progress.json` with `phase="complete"`, `status="review_needed"` and revision.
+`completion.json` alone precedes publication and cannot establish completion.
+Later draft changes, restore, working-pointer changes or removal of the original
+external request file do not undo valid saved completion. Resume keeps its stricter
+current-input checks. Unresolved, malformed or unknown requests block clearing.
+Typed viewer history must have retained consumption or restore-supersession
+evidence. A restore backup alone does not retire pending edits: the published
+supersession pointer must match its retained prior pointer. Each resolved edit
+batch accounts for one authoring record, preserving exact pointer associations;
+identical actions cannot resolve an extra interrupted authoring save. Unprovable
+history blocks clearing. Assisted cycles must have a valid stopped hash chain and anchor.
+
+Known `recovery/restore-*` directories preserve prior bytes and a bound target
+request. A fully captured backup is protected without implying restore completion;
+incomplete or unrecognized captures block clearing. Prior invalid draft bytes remain
+opaque backup data. Clearing never repairs or removes any history.
+
+Before unlinking, clear rechecks context and the candidate's path, content, fresh
+identity and link count through held real directory descriptors. It repeats context
+checks before every later unlink and stops on the first change or failure.
+Results report `status`, actual `removed` paths, `removed_logical_bytes`, `failures`
+and `durability_uncertain`. Partial removal or parent-sync uncertainty returns a
+nonzero CLI exit and preserves the remainder. There is no rollback claim.
+Originals, models, shared assets, revisions, presets, deliveries and recovery
+diagnostics remain untouched. Logical bytes do not promise physical disk recovery
+on copy-on-write or snapshot filesystems.
+
+This is the cooperative local-writer boundary: advisory locks and fresh checks
+do not make compare-and-unlink atomic against arbitrary hostile writers.
 
 
 ## Saved scoped repairs and restore
