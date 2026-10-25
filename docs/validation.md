@@ -1416,16 +1416,25 @@ print, real-inference, installed-activation or publication acceptance is implied
 
 ## Inspectable processing cache
 
-The cache contribution's full suite passed **1,682 tests**, with **3 optional
+The original cache contribution's full suite passed **1,682 tests**, with **3 optional
 real-model checks skipped**, exit 0, in 1,563.51 seconds. All 54 captured Python
 source and test inputs remained unchanged during that run. Self-review then found
 three malformed ZIP envelopes whose exceptions escaped the shared cache parser.
-The narrow correction rejects encrypted members and normalizes damaged deflate
-and unsupported-compression failures. Stored, deflated, bzip2 and LZMA caches remain
-readable. **109 affected tests passed** after that correction; unchanged full-suite
-evidence remains applicable to the other application scopes.
-Ruff lint and formatting passed for the final changes; mypy passed for all 25
-source files.
+A narrow correction rejected encrypted members and normalized damaged deflate
+and unsupported-compression failures; **109 affected tests passed** afterward.
+These historical results predate the stored/deflate-only policy and subsequent
+bounded archive-reader corrections, so they do not establish current reader behavior.
+
+The current reader accepts stored and deflated caches, including mixed archives.
+BZIP2, LZMA and other unsupported methods remain protected recomputation misses,
+as specified in the [file contract](file-contract.md#inspecting-and-clearing-processing-cache).
+For the final reader inputs, **316 affected tests passed** in each of the source,
+extracted-wheel and extracted-sdist runs, with **1 real-model check explicitly
+deselected in each run**. These runs used Python 3.12.14. Earlier Python 3.12
+reader selection was checked through source-derived simulations; no older
+interpreter was executed. Ruff lint and formatting passed for all 54 Python files;
+mypy passed for all 25 source files. No new full-suite run is claimed for the later
+reader corrections.
 
 Real-file cases cover exclusive single-name publication, corrupt-entry retention,
 arrival and durability failures, bounded array headers, old hard links, read-only
@@ -1445,7 +1454,7 @@ reconstruction of all three deliveries from saved assets and frozen settings,
 without a reachable original project or selected model path. Separate combined
 cases exercise import, completed-matte and gallery interruption/recovery.
 
-The full run recorded 434 child processes: 324 Python and 110 Node processes.
+The original full run recorded 434 child processes: 324 Python and 110 Node processes.
 Readable Python attestations matched the captured application paths and hashes,
 all 41 locked versions and loaded Pillow/core 13.0.0 where applicable. Six
 deliberately killed Python children have no final attestation; three mode-000
