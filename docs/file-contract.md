@@ -519,9 +519,11 @@ do not make compare-and-unlink atomic against arbitrary hostile writers.
 Schema-2 repair revisions extend complete matte revisions; earlier saved matte
 and prepared revisions remain readable. Preparation carries parental
 `base_alpha16.png` and `foreground_rgb16.tif` unchanged. Repair requires a current
-human-reviewed prepared revision with a complete same-master parental matte,
+prepared revision with a complete same-master parental matte,
 verified immutable ancestry and exact current draft digest. No repeated guide
 edits are accepted on a repair request.
+Trimap confirmation is optional; any recorded approval is validated. Final
+photographic acceptance remains a separate human decision.
 
 Every repair contains `repair/parent_alpha16.png`,
 `repair/candidate_alpha16.png`, `repair/support16.png` and `repair/merge.json`.
@@ -612,6 +614,8 @@ viewing approximations, never replacements for authoritative precision layers.
 Schema-2 manual processing requests remain compatible. Prepare/repair optionally accept `assisted_review` as defined by [the assisted workflow](assistant-workflow.md). Immutable `requests/review-<identity>/000-<content-sha256>.json`, `001-<content-sha256>.json`, etc. record the original explicit cycle request, reservations and source comparisons with content-addressed filenames and predecessor hashes. Terminal-byte changes, missing/reordered predecessors, contradictory transitions and lost reservations referenced by retained recovery requests fail closed. A per-cycle `head.sha256` integrity anchor binds the latest event, detecting removal of a valid terminal suffix as well as altered bytes. Events publish before the atomic anchor update; any partial event/anchor publication fails closed and remains retained for inspection. The anchor owns no working/accepted pointers or separate attempt counter. The single project lock serializes writes. This history is advisory, not another working/accepted state authority. A repair reservation is durable before model execution and reused by the same resume request. Two attempts total are shared across all defects; judgement is required between attempts. Stop keeps the best valid revision identity without changing acceptance or restoring drafts. Original prepare/repair requests/results and recovery snapshots retain existing meanings.
 
 Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; protected inward shading uses the additive contract below.
+
+Each successful native review removes only its own unchanged duplicate staging files or empty outer staging directory after validating durable canonical evidence, required before evidence and current inputs. Canonical manifests and PNGs are rechecked after synchronization and final input checks, before any disposal. Earlier stages, unknown or changed members, replacements, links and failed or uncertain invocations remain for inspection. A late disposal failure may leave some validated duplicates removed; its error identifies the durable canonical evidence and remaining stage. Completed native evidence remains usable if a later comparison or assessment write fails. This lifecycle does not change review identities, rendering, acceptance or existing recovery retention.
 
 
 ## Unchanged effects results

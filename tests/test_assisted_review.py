@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -160,6 +161,114 @@ def assess(project, cycle, outcome="improved"):
             comparison="Matching synthetic source/before/after crops inspected; no human photographic acceptance",
         ),
     )
+
+
+def test_assessment_reuses_native_pair_without_residual_successful_stages(tmp_path):
+    from test_library import inventory
+
+    _, project, _, exported = baseline(tmp_path)
+    cycle = start(project)
+    result = repair(project, prepare_repair(project, proposal(project, cycle)))
+    current = review.review_project(project)
+    after = Path(current["manifest_file"])
+    before = project / json.loads(after.read_bytes())["assets"]["before_manifest"]
+    prior = after.parent.parent / ".review-earlier"
+    prior.mkdir()
+    (prior / "keep.txt").write_bytes(b"earlier recovery material")
+    protected, delivery = inventory(project), inventory(exported)
+    identities = {
+        str(p): p.stat().st_ino for root in (before.parent, after.parent) for p in root.iterdir()
+    }
+    history = project / "requests" / cycle["cycle_id"]
+    events = set(history.glob("*.json"))
+    pending = review._cycle_record(project, cycle["cycle_id"])
+    assessed = assess(project, cycle)
+    assert assessed["event"] == "assess" and assessed["attempts"] == pending["attempts"] == 1
+    assert assessed["event_index"] == pending["event_index"] + 1
+    assert len(set(history.glob("*.json")) - events) == 1
+    assert assessed["after_manifest"] == str(after.relative_to(project))
+    assert assessed["before_manifest"] == str(before.relative_to(project))
+    assert assessed["last_revision"] == result["revision"]
+    for path in (before, after):
+        review._native_review_record(project, str(path.relative_to(project)))
+    assert {
+        str(p): p.stat().st_ino for root in (before.parent, after.parent) for p in root.iterdir()
+    } == identities
+    prefix = str(history.relative_to(project)) + "/"
+    assert {n: v for n, v in inventory(project).items() if not n.startswith(prefix)} == {
+        n: v for n, v in protected.items() if not n.startswith(prefix)
+    }
+    assert inventory(exported) == delivery
+    assert list((project / "reviews").glob("rev-*/.review-*")) == [prior]
+
+
+@pytest.mark.parametrize(
+    "failure", ["generation", "before-publication", "cleanup", "assessment-event"]
+)
+def test_assessment_native_and_later_event_failures_preserve_boundary(
+    tmp_path, monkeypatch, failure
+):
+    from test_library import inventory
+
+    _, project, _, _ = baseline(tmp_path)
+    cycle = start(project)
+    repair(project, prepare_repair(project, proposal(project, cycle)))
+    after = Path(review.review_project(project)["manifest_file"])
+    before = project / json.loads(after.read_bytes())["assets"]["before_manifest"]
+    history = project / "requests" / cycle["cycle_id"]
+    pending, history_before = review._cycle_record(project, cycle["cycle_id"]), inventory(history)
+    native_before = {str(p): inventory(p.parent) for p in (before, after)}
+    reached: dict[str, Any] = {}
+    write, publish, unlink, atomic_json = (
+        review.write_review,
+        review.publish_artifacts,
+        review.os.unlink,
+        review._atomic_json,
+    )
+
+    def fail():
+        reached.update(inventory=inventory(tmp_path))
+        raise OSError("synthetic assessment boundary failure")
+
+    def failed_generation(directory, *args, **kwargs):
+        record = write(directory, *args, **kwargs)
+        if kwargs["revision"] == json.loads(after.read_bytes())["revision"]:
+            fail()
+        return record
+
+    def failed_before_publication(directory, destination):
+        if destination == before.parent:
+            fail()
+        return publish(directory, destination)
+
+    def failed_unlink(name, *args, **kwargs):
+        if kwargs.get("dir_fd") is not None:
+            fail()
+        return unlink(name, *args, **kwargs)
+
+    def failed_assessment_event(path, value, **kwargs):
+        if value.get("event") == "assess":
+            fail()
+        return atomic_json(path, value, **kwargs)
+
+    if failure == "generation":
+        monkeypatch.setattr(review, "write_review", failed_generation)
+    elif failure == "before-publication":
+        monkeypatch.setattr(review, "publish_artifacts", failed_before_publication)
+    elif failure == "cleanup":
+        monkeypatch.setattr(review.os, "unlink", failed_unlink)
+    else:
+        monkeypatch.setattr(review, "_atomic_json", failed_assessment_event)
+    with pytest.raises((ProjectError, OSError), match="synthetic assessment boundary failure"):
+        assess(project, cycle)
+    assert inventory(tmp_path) == reached["inventory"]
+    assert inventory(history) == history_before
+    assert review._cycle_record(project, cycle["cycle_id"]) == pending
+    assert {str(p): inventory(p.parent) for p in (before, after)} == native_before
+    stages = list((project / "reviews").glob("rev-*/.review-*"))
+    assert bool(stages) is (failure != "assessment-event")
+    for path in (before, after):
+        review._native_review_record(project, str(path.relative_to(project)))
 
 
 def test_shared_two_attempt_budget_and_preservation_reopen(tmp_path):

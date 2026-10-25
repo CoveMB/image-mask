@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import stat
 import tempfile
 import tomllib
 import uuid
@@ -474,6 +475,7 @@ def _review_project_locked(
     root.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".review-", dir=root))
     directory = stage / "assets"
+    directory_identities = {path: path.lstat() for path in (root, stage)}
     from .background import read_background
 
     background = (
@@ -507,6 +509,18 @@ def _review_project_locked(
         weight16=weight,
         opacity=opacity,
     )
+    directory_identities[directory] = directory.lstat()
+    filenames = {name for crop in record["crops"] for name in crop["files"].values()}
+    filenames.add("contact_RGB8_VIEW.png")
+    staged_files = {}
+    for name in sorted(filenames):
+        original = (directory / name).lstat()
+        if not stat.S_ISREG(original.st_mode) or original.st_nlink != 1:
+            raise ProjectError(f"Unexpected native review stage member; preserved at {stage}")
+        staged_files[name] = (
+            original,
+            digest(_read_regular(directory, name, original.st_size)),
+        )
     from .operations import draft_digest, pending_guidance
 
     current_digest = draft_digest(project)
@@ -591,6 +605,7 @@ def _review_project_locked(
             f"; encoded-sRGB; baked shading p={opacity}; width={revision_manifest['shading']['settings']['width_px']} native px; cleanup={revision_manifest.get('color_cleanup', {}).get('enabled', False)}"
         )
     before_manifest = None
+    before_manifest_bytes = None
     if include_before and revision_manifest["kind"] == "repair":
         from .repair import prepared_parent_layers
 
@@ -607,6 +622,8 @@ def _review_project_locked(
             base_comparison=base_comparison or effects_stale(revision_manifest),
         )
         before_manifest = str(Path(before_review["manifest_file"]).relative_to(project))
+        before_path = Path(before_review["manifest_file"])
+        before_manifest_bytes = _read_regular(before_path.parent, before_path.name, 16 * 1024**2)
     if base_comparison:
         record["label"] += "; BASE comparison: optional effects OFF on both sides"
     record.update(
@@ -664,21 +681,116 @@ def _review_project_locked(
             ),
         },
         status="review_needed",
-        view_files={p.name: digest(p.read_bytes()) for p in directory.glob("*.png")},
+        view_files={name: checksum for name, (_original, checksum) in staged_files.items()},
     )
-    (directory / "manifest.json").write_bytes(_json_bytes(record))
-    if (
-        current_digest != draft_digest(project)
-        or before != saved_asset(project, "state.json").read_bytes()
-        or manifest_bytes
-        != saved_asset(project, f"revisions/{revision}/manifest.json").read_bytes()
-    ):
-        raise ProjectError("Stale review inputs")
-    saved_layers(project, revision, state["developed_id"])
+    review_bytes = _json_bytes(record)
+    (directory / "manifest.json").write_bytes(review_bytes)
+    staged_files["manifest.json"] = ((directory / "manifest.json").lstat(), digest(review_bytes))
+    if {path.name for path in directory.iterdir()} != set(staged_files):
+        raise ProjectError(f"Unexpected native review stage contents; preserved at {stage}")
+
+    def recheck() -> None:
+        if (
+            current_digest != draft_digest(project)
+            or before != saved_asset(project, "state.json").read_bytes()
+            or manifest_bytes
+            != saved_asset(project, f"revisions/{revision}/manifest.json").read_bytes()
+        ):
+            raise ProjectError("Stale review inputs")
+        saved_layers(project, revision, state["developed_id"])
+
+    recheck()
     key = digest(_json_bytes({"review": record, "manifest": digest(manifest_bytes)}))
     destination = root / key
-    publish_artifacts(directory, destination)
+    expected_manifests = {str((destination / "manifest.json").relative_to(project)): review_bytes}
+    if before_manifest is not None and before_manifest_bytes is not None:
+        expected_manifests[before_manifest] = before_manifest_bytes
+
+    def validate_published() -> None:
+        for name, expected in expected_manifests.items():
+            _native_review_record(project, name)
+            path = saved_asset(project, name)
+            if _read_regular(path.parent, path.name, len(expected)) != expected:
+                raise ProjectError(f"Published native review manifest changed: {path}")
+
+    duplicate = destination.exists() or destination.is_symlink()
+    try:
+        publish_artifacts(directory, destination)
+        if not duplicate and not os.path.samestat(
+            destination.lstat(), directory_identities[directory]
+        ):
+            raise ProjectError("Native review destination appeared during generation")
+        validate_published()
+        for name in expected_manifests:
+            _sync_directory((project / name).parent.parent)
+        recheck()
+        # Sync and saved-layer validation can expose changed canonical dependencies.
+        # Revalidate them before allowing a good duplicate to become disposable.
+        validate_published()
+    except (OSError, ValueError, KeyError, TypeError, ProjectError) as error:
+        raise ProjectError(
+            f"Native review completion unconfirmed at {destination}; "
+            f"dependencies {list(expected_manifests)}; staging preserved at {stage}: {error}"
+        ) from error
+    try:
+        _dispose_native_review_stage(stage, directory_identities, staged_files, duplicate=duplicate)
+    except (OSError, ProjectError) as error:
+        raise ProjectError(
+            f"Native review is durably published at {destination}, but stage cleanup failed "
+            f"at {stage}; inspect remaining stage files: {error}"
+        ) from error
     return {"revision": revision, "manifest_file": str(destination / "manifest.json")}
+
+
+def _dispose_native_review_stage(
+    stage: Path,
+    directory_identities: dict[Path, os.stat_result],
+    files: dict[str, tuple[os.stat_result, str]],
+    *,
+    duplicate: bool,
+) -> None:
+    """Dispose only this completed invocation's exact unchanged generated members."""
+    directory = stage / "assets"
+    with _directory(stage.parent) as root_descriptor, _directory(stage) as stage_descriptor:
+        for path, descriptor in ((stage.parent, root_descriptor), (stage, stage_descriptor)):
+            original = directory_identities[path]
+            if (
+                not os.path.samestat(os.fstat(descriptor), original)
+                or not os.path.samestat(path.lstat(), original)
+                or path.lstat().st_mode != original.st_mode
+            ):
+                raise ProjectError("Native review stage directory changed; preserved")
+        if set(os.listdir(stage_descriptor)) != ({"assets"} if duplicate else set()):
+            raise ProjectError("Unexpected native review stage contents; preserved")
+        if duplicate:
+            with _directory(directory) as descriptor:
+                original_directory = directory_identities[directory]
+                if (
+                    not os.path.samestat(os.fstat(descriptor), original_directory)
+                    or not os.path.samestat(directory.lstat(), original_directory)
+                    or directory.lstat().st_mode != original_directory.st_mode
+                    or set(os.listdir(descriptor)) != set(files)
+                ):
+                    raise ProjectError("Native review assets directory changed; preserved")
+                for name, (original, checksum) in files.items():
+                    current = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                    if (
+                        not stat.S_ISREG(current.st_mode)
+                        or not os.path.samestat(current, original)
+                        or current.st_mode != original.st_mode
+                        or current.st_size != original.st_size
+                        or current.st_nlink != 1
+                        or current.st_mtime_ns != original.st_mtime_ns
+                        or current.st_ctime_ns != original.st_ctime_ns
+                        or digest(_read_regular(directory, name, original.st_size)) != checksum
+                    ):
+                        raise ProjectError("Native review stage member changed; preserved")
+                if set(os.listdir(descriptor)) != set(files):
+                    raise ProjectError("Native review assets changed before disposal; preserved")
+                for name in files:
+                    os.unlink(name, dir_fd=descriptor)
+            os.rmdir("assets", dir_fd=stage_descriptor)
+        os.rmdir(stage.name, dir_fd=root_descriptor)
 
 
 def render_presentation_preview(

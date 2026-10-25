@@ -1429,6 +1429,79 @@ def test_background_action_base_exception_propagates_after_cleanup(tmp_path, mon
         assert perform(server, "development")["development_approved"] is True
 
 
+@pytest.mark.parametrize("prepublished_native", [False, True])
+def test_comparison_http_retains_native_without_successful_duplicate_stages(
+    tmp_path, prepublished_native
+):
+    import base64
+
+    from test_effects import fixture_project
+    from test_library import inventory
+
+    from blackmask import review
+    from blackmask.project import digest
+
+    project, _, revision = fixture_project(tmp_path)
+    crops = [[1, 0, 6, 4]]
+    prior = project / "reviews" / revision["revision"] / ".review-earlier"
+    prior.mkdir(parents=True)
+    (prior / "keep.txt").write_bytes(b"earlier recovery material")
+    (project / "notes.txt").write_bytes(b"unrelated data")
+    canonical = None
+    if prepublished_native:
+        canonical = Path(review.review_project(project, crops=crops)["manifest_file"])
+        canonical_inodes = {p.name: p.stat().st_ino for p in canonical.parent.iterdir()}
+    protected = inventory(tmp_path)
+    with running(project) as server:
+        status, body, _ = http(server)
+        assert status == 200
+        snapshot = json.loads(body)
+        selected = next(r for r in snapshot["revisions"] if r["revision"] == revision["revision"])
+        fields = {
+            "revision": revision["revision"],
+            "revision_manifest_sha256": selected["revision_manifest_sha256"],
+            "crops": crops,
+            "retain_native": True,
+            "presentation": None,
+        }
+        output = perform(server, "comparison", **fields)
+        manifest = Path(output["comparison_manifest_file"])
+        record = json.loads(manifest.read_bytes())
+        native = Path(output["native_manifest_file"])
+        binding = record["native_evidence"]
+        assert binding["before"] is None
+        assert binding["after"]["manifest_file"] == str(native.relative_to(project))
+        assert binding["after"]["sha256"] == digest(native.read_bytes())
+        native_record = review._native_review_record(project, str(native.relative_to(project)))
+        assert [crop["crop_xyxy"] for crop in native_record["crops"]] == crops
+        assert (
+            base64.b64decode(output["view"]["jpeg_base64"])
+            == (manifest.parent / "comparison_RGB8_VIEW.jpg").read_bytes()
+        )
+        assert json.loads(output["view"]["manifest_json"]) == record
+        assert list(native.parent.parent.glob(".review-*")) == [prior]
+        assert {p.name for p in native.parent.parent.iterdir()} == {native.parent.name, prior.name}
+        if canonical is not None:
+            assert native == canonical
+            assert {p.name: p.stat().st_ino for p in native.parent.iterdir()} == canonical_inodes
+        complete = inventory(tmp_path)
+        assert all(complete[name] == value for name, value in protected.items())
+        added = set(complete) - set(protected)
+        allowed = {
+            str(p.relative_to(tmp_path))
+            for p in (
+                project / "reviews/comparisons",
+                manifest.parent,
+                native.parent,
+                *manifest.parent.iterdir(),
+                *native.parent.iterdir(),
+            )
+        }
+        assert added <= allowed
+        assert perform(server, "comparison", **fields) == {**output, "reused": True}
+        assert inventory(tmp_path) == complete
+
+
 def test_comparison_action_binds_selected_revision_crop_and_preserves_drafts(tmp_path):
     from test_effects import fixture_project
 

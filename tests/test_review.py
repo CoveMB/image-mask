@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -29,6 +30,312 @@ def test_same_native_crops_and_manifest_mapping(tmp_path):
         review_project(project, revision=matted["revision"], crops=[[1, 0, 3, 2], [0, 0, 1, 1]])
         == output
     )
+
+
+@pytest.mark.parametrize("managed_library", [False, True])
+def test_native_review_success_disposes_only_its_current_stage(tmp_path, managed_library):
+    from test_effects import fixture_project
+    from test_library import inventory
+    from test_previews import generate, managed
+
+    from blackmask import operations, review
+
+    if managed_library:
+        _, config, project = managed(tmp_path)
+        result = generate(project, config)
+        operations.accept_revision(project, result["revision"], storage_config=config)
+    else:
+        project, _, result = fixture_project(tmp_path)
+        config = None
+    previous = project / "reviews" / result["revision"] / ".review-preserved"
+    (previous / "assets").mkdir(parents=True)
+    (previous / "assets/notes.txt").write_bytes(b"earlier recovery material")
+    (project / "unrelated.txt").write_bytes(b"user notes")
+    protected = inventory(tmp_path)
+    crops = [[1, 0, 3, 2], [0, 0, 1, 1]]
+    first = review.review_project(project, crops=crops, storage_config=config)
+    manifest = Path(first["manifest_file"])
+    record = review._native_review_record(project, str(manifest.relative_to(project)))
+    assert [crop["crop_xyxy"] for crop in record["crops"]] == crops
+    complete = inventory(tmp_path)
+    assert all(complete[name] == value for name, value in protected.items())
+    assert review.review_project(project, crops=crops, storage_config=config) == first
+    assert inventory(tmp_path) == complete
+    assert {path.name for path in manifest.parent.parent.glob(".review-*")} == {previous.name}
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "extra-root",
+        "extra-assets",
+        "nested",
+        "file-directory",
+        "file-symlink",
+        "assets-symlink",
+        "stage-symlink",
+        "assets-replacement",
+        "stage-replacement",
+        "file-replacement",
+        "changed",
+        "hardlink",
+        "unlink-first",
+        "unlink-late",
+        "rmdir-assets",
+        "rmdir-stage",
+    ],
+)
+def test_native_cleanup_failure_preserves_canonical_and_unfamiliar_files(
+    tmp_path, monkeypatch, failure
+):
+    import os
+    import shutil
+
+    from test_effects import fixture_project
+    from test_library import inventory
+
+    from blackmask import review
+    from blackmask.project import ProjectError
+
+    project, _, revision = fixture_project(tmp_path)
+    crops = [[1, 0, 3, 2]]
+    first = review.review_project(project, crops=crops)
+    canonical = Path(first["manifest_file"]).parent
+    identities = {p.name: p.stat().st_ino for p in canonical.iterdir()}
+    previous = project / "reviews" / revision["revision"] / ".review-earlier"
+    previous.mkdir()
+    (previous / "keep.txt").write_bytes(b"earlier recovery material")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_bytes(b"unrelated data")
+    reached: dict[str, Any] = {}
+    removed: list[str] = []
+    publish, unlink, rmdir = review.publish_artifacts, os.unlink, os.rmdir
+
+    def publish_then_inject(directory, destination):
+        result = publish(directory, destination)
+        stage = directory.parent
+        member = next(directory.glob("*.png"))
+        if failure in {"extra-root", "extra-assets", "nested"}:
+            target = stage if failure == "extra-root" else directory
+            if failure == "nested":
+                target = target / "unknown"
+                target.mkdir()
+            (target / "keep.txt").write_bytes(b"unfamiliar data")
+        elif failure in {"file-directory", "file-symlink", "file-replacement", "hardlink"}:
+            member.rename(outside / "original.png")
+            if failure == "file-directory":
+                member.mkdir()
+                (member / "keep.txt").write_bytes(b"nested data")
+            elif failure == "file-symlink":
+                member.symlink_to(outside / "original.png")
+            elif failure == "hardlink":
+                os.link(outside / "original.png", member)
+            else:
+                member.write_bytes((outside / "original.png").read_bytes())
+        elif failure == "changed":
+            member.write_bytes(member.read_bytes() + b"changed")
+        elif failure in {
+            "assets-symlink",
+            "stage-symlink",
+            "assets-replacement",
+            "stage-replacement",
+        }:
+            target = directory if failure.startswith("assets-") else stage
+            target.rename(outside / "original-directory")
+            if failure.endswith("symlink"):
+                target.symlink_to(outside / "original-directory", target_is_directory=True)
+            else:
+                shutil.copytree(outside / "original-directory", target)
+        reached.update(stage=stage, inventory=inventory(tmp_path))
+        return result
+
+    def fail_unlink(name, *args, **kwargs):
+        if reached and kwargs.get("dir_fd") is not None:
+            if failure == "unlink-first" or (failure == "unlink-late" and removed):
+                raise OSError("synthetic native unlink failure")
+            result = unlink(name, *args, **kwargs)
+            removed.append(str((reached["stage"] / "assets" / name).relative_to(tmp_path)))
+            return result
+        return unlink(name, *args, **kwargs)
+
+    def fail_rmdir(name, *args, **kwargs):
+        if reached and kwargs.get("dir_fd") is not None:
+            if failure == "rmdir-assets" and name == "assets":
+                raise OSError("synthetic assets rmdir failure")
+            if failure == "rmdir-stage" and name == reached["stage"].name:
+                raise OSError("synthetic stage rmdir failure")
+            result = rmdir(name, *args, **kwargs)
+            path = reached["stage"] / "assets" if name == "assets" else reached["stage"]
+            removed.append(str(path.relative_to(tmp_path)))
+            return result
+        return rmdir(name, *args, **kwargs)
+
+    monkeypatch.setattr(review, "publish_artifacts", publish_then_inject)
+    monkeypatch.setattr(os, "unlink", fail_unlink)
+    monkeypatch.setattr(os, "rmdir", fail_rmdir)
+    with pytest.raises(ProjectError, match="durably published.*stage cleanup failed") as error:
+        review.review_project(project, crops=crops)
+    assert str(canonical) in str(error.value) and str(reached["stage"]) in str(error.value)
+    expected = {name: value for name, value in reached["inventory"].items() if name not in removed}
+    assert inventory(tmp_path) == expected
+    if failure == "unlink-late":
+        assert len(removed) == 1
+    elif failure.startswith("rmdir-"):
+        assert len(removed) >= 8
+    else:
+        assert not removed
+    assert {p.name: p.stat().st_ino for p in canonical.iterdir()} == identities
+    review._native_review_record(project, str((canonical / "manifest.json").relative_to(project)))
+    monkeypatch.setattr(review, "publish_artifacts", publish)
+    monkeypatch.setattr(os, "unlink", unlink)
+    monkeypatch.setattr(os, "rmdir", rmdir)
+    assert review.review_project(project, crops=crops) == first
+    assert inventory(tmp_path) == expected
+
+
+@pytest.mark.parametrize("failure", ["generation", "collision", "symlink", "late-destination"])
+def test_native_generation_and_publication_faults_preserve_all_present_files(
+    tmp_path, monkeypatch, failure
+):
+    import shutil
+
+    from test_effects import fixture_project
+    from test_library import inventory
+
+    from blackmask import review
+    from blackmask.project import ProjectError
+
+    project, _, _ = fixture_project(tmp_path)
+    crops = [[1, 0, 3, 2]]
+    if failure in {"collision", "symlink"}:
+        canonical = Path(review.review_project(project, crops=crops)["manifest_file"]).parent
+        if failure == "collision":
+            member = next(canonical.glob("*.png"))
+            member.write_bytes(member.read_bytes() + b"collision")
+        else:
+            canonical.rename(tmp_path / "retained-canonical")
+            canonical.symlink_to(tmp_path / "retained-canonical", target_is_directory=True)
+    reached: dict[str, Any] = {}
+    write, publish = review.write_review, review.publish_artifacts
+
+    def failed_generation(directory, *args, **kwargs):
+        write(directory, *args, **kwargs)
+        reached.update(stage=directory.parent, inventory=inventory(tmp_path))
+        raise ProjectError("synthetic native generation failure")
+
+    def failed_publication(directory, destination):
+        if failure == "late-destination":
+            shutil.copytree(directory, destination)
+        reached.update(
+            stage=directory.parent, destination=destination, inventory=inventory(tmp_path)
+        )
+        return publish(directory, destination)
+
+    monkeypatch.setattr(
+        review,
+        "write_review" if failure == "generation" else "publish_artifacts",
+        failed_generation if failure == "generation" else failed_publication,
+    )
+    with pytest.raises(ProjectError) as error:
+        review.review_project(project, crops=crops)
+    assert inventory(tmp_path) == reached["inventory"]
+    assert inventory(reached["stage"])
+    if failure != "generation":
+        assert "completion unconfirmed" in str(error.value)
+        assert str(reached["stage"]) in str(error.value)
+        assert str(reached["destination"]) in str(error.value)
+
+
+@pytest.mark.parametrize("prepublished", [False, True])
+@pytest.mark.parametrize("failure", ["sync", "draft", "state", "revision"])
+def test_native_post_publish_failure_preserves_stage_and_inputs(
+    tmp_path, monkeypatch, prepublished, failure
+):
+    from test_effects import fixture_project
+    from test_library import inventory
+
+    from blackmask import review
+    from blackmask.project import ProjectError
+
+    project, _, revision = fixture_project(tmp_path)
+    crops = [[1, 0, 3, 2]]
+    if prepublished:
+        review.review_project(project, crops=crops)
+    root = project / "reviews" / revision["revision"]
+    sync = review._sync_directory
+    reached: dict[str, Any] = {}
+
+    def failed_sync(path):
+        sync(path)
+        if path == root:
+            if failure != "sync":
+                target = (
+                    project
+                    / {
+                        "draft": "recipe.toml",
+                        "state": "state.json",
+                        "revision": f"revisions/{revision['revision']}/manifest.json",
+                    }[failure]
+                )
+                target.write_bytes(target.read_bytes() + b"\n")
+            reached.update(inventory=inventory(tmp_path), stages=list(root.glob(".review-*")))
+            if failure == "sync":
+                raise OSError("synthetic native parent sync failure")
+
+    monkeypatch.setattr(review, "_sync_directory", failed_sync)
+    with pytest.raises(ProjectError, match="completion unconfirmed") as error:
+        review.review_project(project, crops=crops)
+    assert reached["stages"] and all(str(p) in str(error.value) for p in reached["stages"])
+    assert inventory(tmp_path) == reached["inventory"]
+    if failure == "sync":
+        monkeypatch.setattr(review, "_sync_directory", sync)
+        review.review_project(project, crops=crops)
+        assert inventory(tmp_path) == reached["inventory"]
+
+
+@pytest.mark.parametrize("dependency", ["after", "before"])
+def test_native_post_sync_dependency_mutation_preserves_every_present_stage(
+    tmp_path, monkeypatch, dependency
+):
+    from test_assisted_review import baseline, prepare_repair, proposal, repair, start
+    from test_library import inventory
+
+    from blackmask import review
+    from blackmask.project import ProjectError
+
+    _, project, _, _ = baseline(tmp_path)
+    cycle = start(project)
+    repair(project, prepare_repair(project, proposal(project, cycle)))
+    after = Path(review.review_project(project)["manifest_file"])
+    before = project / json.loads(after.read_bytes())["assets"]["before_manifest"]
+    sentinel = after.parent.parent / ".review-earlier"
+    sentinel.mkdir()
+    (sentinel / "keep.txt").write_bytes(b"earlier recovery material")
+    (project / "notes.txt").write_bytes(b"unrelated data")
+    sync = review._sync_directory
+    reached: dict[str, Any] = {}
+
+    def mutate_after_initial_validation(path):
+        sync(path)
+        if path == after.parent.parent and not reached:
+            target = after if dependency == "after" else before
+            member = next(target.parent.glob("*.png"))
+            member.write_bytes(member.read_bytes() + b"deliberate canonical fault")
+            reached.update(
+                inventory=inventory(tmp_path),
+                stages=list((project / "reviews").glob("rev-*/.review-*")),
+            )
+
+    monkeypatch.setattr(review, "_sync_directory", mutate_after_initial_validation)
+    with pytest.raises(ProjectError, match="completion unconfirmed") as error:
+        review.review_project(project)
+    assert len(reached["stages"]) == 2
+    owned = next(p for p in reached["stages"] if p != sentinel)
+    assert len(list((owned / "assets").glob("*.png"))) >= 7
+    assert inventory(tmp_path) == reached["inventory"]
+    assert str(owned) in str(error.value) and str(after.parent) in str(error.value)
+    assert str(before.relative_to(project)) in str(error.value)
 
 
 def test_explicit_comparison_retains_only_sheet_and_exact_manifest(tmp_path):
