@@ -14,6 +14,146 @@ from blackmask import operations
 from blackmask.project import ProjectError, read_project
 
 
+def test_status_does_not_create_a_missing_writer_lock(tmp_path):
+    from test_project import create
+
+    _, project = create(tmp_path)
+    (project / ".writer.lock").rename(project / "retained-writer-lock")
+    before = {p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()}
+    assert operations.operation_status(project)["writer_busy"] is False
+    assert {
+        p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    } == before
+
+
+def test_status_preserves_accepted_data_and_same_process_writer_exclusion(tmp_path):
+    from test_effects import fixture_project
+
+    from blackmask.project import accept_development, project_lock
+
+    project, _, accepted = fixture_project(tmp_path)
+    before = {p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()}
+    with project_lock(project):
+        status = operations.operation_status(project)
+        assert status["writer_busy"] is True
+        assert status["accepted_revision"] == accepted["revision"]
+        assert operations.inspect_processing_cache(project)["writer_busy"] is True
+        with pytest.raises(ProjectError, match="busy"):
+            accept_development(project, status["developed_id"])
+    assert operations.operation_status(project)["writer_busy"] is False
+    assert {
+        p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    } == before
+
+
+def test_status_reports_interrupted_writer_after_process_death_without_writes(tmp_path):
+    import subprocess
+    import sys
+
+    from blackmask.project import project_lock
+
+    _, project, preparation = prepared(tmp_path)
+    approve(project, preparation)
+    operation_id = interrupted(project)
+    code = """
+import sys
+from pathlib import Path
+from blackmask.project import project_lock, _atomic_json
+project = Path(sys.argv[1])
+with project_lock(project):
+    _atomic_json(project / 'requests' / sys.argv[2] / 'progress.json',
+                 {'status': 'running', 'phase': 'tiles'})
+    print('locked', flush=True)
+    sys.stdin.readline()
+"""
+    worker = subprocess.Popen(
+        [sys.executable, "-c", code, str(project), operation_id],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert worker.stdout.readline().strip() == "locked"
+        before = {p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()}
+        active = operations.operation_status(project)
+        assert active["writer_busy"] is True
+        assert (
+            next(o for o in active["operations"] if o["operation_id"] == operation_id)["status"]
+            == "running"
+        )
+        with pytest.raises(ProjectError, match="busy"), project_lock(project):
+            pass
+    finally:
+        worker.kill()
+        _, errors = worker.communicate(timeout=10)
+    assert worker.returncode < 0 and not errors
+    stopped = operations.operation_status(project)
+    assert stopped["writer_busy"] is False
+    record = next(o for o in stopped["operations"] if o["operation_id"] == operation_id)
+    assert record["status"] == "failed" and "interrupted" in record["error"]
+    with project_lock(project):
+        assert operations.operation_status(project)["writer_busy"] is True
+    assert {
+        p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()
+    } == before
+
+
+@pytest.mark.parametrize("invalid", ["directory", "symlink", "fifo"])
+def test_status_rejects_invalid_writer_lock_without_mutation(tmp_path, invalid):
+    import os
+
+    from test_project import create
+
+    _, project = create(tmp_path)
+    lock = project / ".writer.lock"
+    retained = project / "retained-writer-lock"
+    lock.rename(retained)
+    if invalid == "directory":
+        lock.mkdir()
+    elif invalid == "symlink":
+        lock.symlink_to(retained)
+    else:
+        os.mkfifo(lock)
+    before = lock.lstat()
+    with pytest.raises(ProjectError, match="symlink|Invalid writer lock"):
+        operations.operation_status(project)
+    assert operations.inspect_processing_cache(project)["writer_busy"] is None
+    assert lock.lstat() == before
+    assert retained.read_bytes() == b""
+
+
+def test_status_query_failure_closes_reader_and_preserves_writer(tmp_path, monkeypatch):
+    import errno
+    import fcntl
+    import os
+
+    from test_project import create
+
+    from blackmask.project import project_lock
+
+    _, project = create(tmp_path)
+    before = (project / "state.json").read_bytes()
+    descriptors = []
+
+    def fail_query(descriptor, *_arguments):
+        descriptors.append(descriptor)
+        raise OSError(errno.EIO, "injected lock query failure")
+
+    monkeypatch.setattr(fcntl, "fcntl", fail_query)
+    with project_lock(project):
+        with pytest.raises(OSError, match="injected lock query failure"):
+            operations.operation_status(project)
+        with pytest.raises(OSError) as closed:
+            os.fstat(descriptors[-1])
+        assert closed.value.errno == errno.EBADF
+        with pytest.raises(ProjectError, match="busy"), project_lock(project):
+            pass
+    with project_lock(project):
+        pass
+    assert (project / "state.json").read_bytes() == before
+
+
 def recovery_id(project):
     return max(
         (project / "requests").glob("matte-*/manifest.json"), key=lambda p: p.stat().st_mtime_ns

@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import stat
+import struct
 import sys
 import tempfile
 import tomllib
@@ -161,6 +162,31 @@ def project_lock(project: Path) -> Iterator[None]:
     path = _asset(project, ".writer.lock")
     with _file_lock(path, "Project"):
         yield
+
+
+def project_writer_busy(project: Path) -> bool:
+    """Observe the existing writer flock without acquiring a lock or creating a file."""
+    project = _root(project)
+    if sys.platform != "darwin":
+        raise ProjectError("Writer lock inspection requires supported native macOS")
+    try:
+        descriptor = os.open(
+            _asset(project, ".writer.lock"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        )
+    except FileNotFoundError:
+        return False
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ProjectError("Invalid writer lock")
+        # Darwin F_GETLK sees flock locks, including this process's other open
+        # descriptions. struct flock: off_t start/length, pid_t, short type/whence.
+        # Neither a shared nor an exclusive flock probe is safe: both reject writers.
+        layout = struct.Struct("@qqihh")
+        query = layout.pack(0, 0, 0, fcntl.F_WRLCK, os.SEEK_SET)
+        observed = fcntl.fcntl(descriptor, fcntl.F_GETLK, query)
+        return layout.unpack(observed)[3] != fcntl.F_UNLCK
+    finally:
+        os.close(descriptor)
 
 
 @contextmanager

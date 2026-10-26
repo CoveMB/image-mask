@@ -1,6 +1,5 @@
 """Preparation transaction: immutable snapshots, role validation and sole state publication."""
 
-import fcntl
 import hashlib
 import json
 import os
@@ -51,6 +50,7 @@ from .project import (
     digest,
     load_developed,
     project_lock,
+    project_writer_busy,
     read_project,
     read_revision,
     record_generated_result,
@@ -1023,14 +1023,7 @@ def operation_status(
     """Read saved pointers and recovery records without waiting for a writer."""
     project = _root(project)
     state = read_project(project, validate_drafts=False)
-    busy = False
-    try:
-        with project_lock(project):
-            pass
-    except ProjectError as error:
-        if "busy" not in str(error):
-            raise
-        busy = True
+    busy = project_writer_busy(project)
     records: list[dict[str, Any]] = []
     for path in sorted(saved_asset(project, "requests").glob("matte-*/manifest.json")):
         directory = saved_asset(project, str(path.parent.relative_to(project)))
@@ -2579,25 +2572,6 @@ def _validate_cache_context(project: Path) -> None:
             )
 
 
-def _cache_writer_busy(project: Path) -> bool:
-    """Probe only an existing stable lock; never create or repair it for inspection."""
-    try:
-        descriptor = os.open(project / ".writer.lock", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except FileNotFoundError:
-        return False
-    try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            raise ProjectError("Invalid writer lock")
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return True
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        return False
-    finally:
-        os.close(descriptor)
-
-
 def _cache_prediction(descriptor: int, name: str) -> dict[str, Any]:
     from .matte import _cache_file_identity, _read_tile_prediction
 
@@ -2701,7 +2675,7 @@ def inspect_processing_cache(project: Path) -> dict[str, Any]:
     project = _root(project)
     report, _ = _processing_cache_snapshot(project)
     try:
-        report["writer_busy"] = _cache_writer_busy(project)
+        report["writer_busy"] = project_writer_busy(project)
     except (OSError, ProjectError) as error:
         report["writer_busy"] = None
         report["blockers"].append(f"Cannot inspect writer lock: {error}")
