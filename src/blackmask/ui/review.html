@@ -1796,9 +1796,11 @@
       requireSaved();
       if (enabled && sharpeningControlsStale()) throw Error("Local sharpening settings belong to older project inputs; reload before applying");
       if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing Local sharpening");
+      const saved = state.revisions.find(revision => revision.revision === state.working_revision)?.local_sharpening?.settings;
       const amount = enabled ? Number($("sharpeningAmount").value) / 100 : 0;
-      const radius_px = Number($("sharpeningDetail").value), noise_threshold = Number($("sharpeningNoise").value) / 100;
-      if ((enabled && String($("sharpeningAmount").value).trim() === "") || ["sharpeningDetail", "sharpeningNoise"].some(id => String($(id).value).trim() === "") || !Number.isFinite(amount) || amount < 0 || amount > 1 || !Number.isFinite(radius_px) || radius_px < .5 || radius_px > 8 || !Number.isFinite(noise_threshold) || noise_threshold < 0 || noise_threshold > .02) throw Error("Use Amount 0–100%, Detail size 0.5–8 native pixels and Noise guard 0–2%");
+      const radius_px = enabled ? Number($("sharpeningDetail").value) : saved?.radius_px ?? 1;
+      const noise_threshold = enabled ? Number($("sharpeningNoise").value) / 100 : saved?.noise_threshold ?? .001;
+      if (enabled && (["sharpeningAmount", "sharpeningDetail", "sharpeningNoise"].some(id => String($(id).value).trim() === "") || !Number.isFinite(amount) || amount < 0 || amount > 1 || !Number.isFinite(radius_px) || radius_px < .5 || radius_px > 8 || !Number.isFinite(noise_threshold) || noise_threshold < 0 || noise_threshold > .02)) throw Error("Use Amount 0–100%, Detail size 0.5–8 native pixels and Noise guard 0–2%");
       const fields = {scope_xyxy: [0,0,...state.dimensions_wh], local_sharpening: {enabled, amount, radius_px, noise_threshold}, candidate_comparison: $("sharpeningCandidate").checked};
       if (replaceArea) fields.sharpening_area = structuredClone(sharpeningArea);
       else if (enabled) fields.sharpening_amount_only = true;

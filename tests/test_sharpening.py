@@ -664,6 +664,70 @@ def test_sharpening_prepare_matte_repair_partial_rgb_locks_and_stale(
         np.testing.assert_array_equal(rgb, expected)
 
 
+@pytest.mark.parametrize("appearance", ["on", "disabled", "stale"])
+def test_repair_before_panel_inherits_sharpening_only_appearance(tmp_path, appearance):
+    from test_exposure import rectangle
+    from test_matte_operations import StubSession, approve
+    from test_operations import edits, request
+    from test_repair_operations import repair_request, run_repair
+
+    from blackmask import review
+    from blackmask.export import saved_layers
+
+    project, _, _ = sharpening_project(tmp_path)
+    parent = operations.apply_operation(project, sharpening_request(project))
+    if appearance == "disabled":
+        parent = operations.apply_operation(
+            project, sharpening_request(project, enabled=False, amount=0)
+        )
+    master = read_project(project)["developed_id"]
+    selected, parent_alpha, _ = saved_layers(project, parent["revision"], master)
+    base, _, _ = saved_layers(project, parent["revision"], master, sharpening_off=True)
+    if appearance != "disabled":
+        assert np.any(selected != base)
+    name = edits(project, [rectangle("repair", [1, 1, 5, 3])])
+    prepared = operations.apply_operation(project, request(project, guide_edits_file=name))
+    approve(project, prepared)
+    rendered = {}
+    original_overview = review.write_revision_overview
+
+    def observe_overview(directory, source, foreground, alpha, **kwargs):
+        rendered[directory.name] = (foreground.copy(), alpha.copy())
+        return original_overview(directory, source, foreground, alpha, **kwargs)
+
+    with (
+        patch.object(review, "write_revision_overview", side_effect=observe_overview),
+        patch.object(
+            StubSession,
+            "predict",
+            side_effect=lambda rgb, guide, device: (
+                np.full(guide.shape, 0.75 if appearance == "stale" else 0.25),
+                {},
+            ),
+        ),
+    ):
+        result = run_repair(project, repair_request(project, prepared, [0, 0, 6, 4], [1, 1, 5, 3]))
+    expected_before = base if appearance == "stale" else selected
+    np.testing.assert_array_equal(rendered["review-before"][0], expected_before)
+    np.testing.assert_array_equal(rendered["review-before"][1], parent_alpha)
+    after_rgb, after_alpha, manifest = saved_layers(project, result["revision"], master)
+    np.testing.assert_array_equal(rendered["review"][0], after_rgb)
+    np.testing.assert_array_equal(rendered["review"][1], after_alpha)
+    assert not manifest.get("local_exposure") and not manifest.get("shadow_fade")
+    assert manifest["local_sharpening"]["stale"] is (appearance == "stale")
+    outside = np.ones(parent_alpha.shape, bool)
+    outside[1:3, 1:5] = False
+    assert np.any(outside & (parent_alpha > 0) & (parent_alpha < 65535))
+    np.testing.assert_array_equal(after_alpha[outside], parent_alpha[outside])
+    np.testing.assert_array_equal(after_rgb[outside], expected_before[outside])
+    for directory in ("review-before", "review"):
+        record = json.loads(
+            (project / "revisions" / result["revision"] / directory / "manifest.json").read_bytes()
+        )
+        assert ("Local sharpening ON" in record["label"]) is (appearance == "on")
+        assert record["visual_review"] == "human photographic review pending"
+
+
 def test_sharpening_recomputes_cleanup_then_exposure_and_fade(tmp_path):
     from test_effects import effect_request
     from test_exposure import exposure_request

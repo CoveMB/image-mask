@@ -1244,10 +1244,10 @@ request-record hash identifies `exports/<revision[-DRAFT]>-native-<sha256>/`,
 actual bytes/hash and raster dimensions/precision/mode/profile. The frozen recipe
 comes from that revision, never the mutable root draft. Notes contain no timestamps
 or capture paths. Inference provenance stays bound through the raw revision hash.
-Version 3 retains the effective-opacity recovery rule and adds current spatial
-identity/operands and explicit optional sibling delivery. Unversioned, v1 and v2
-files remain preserved at their existing paths; no legacy lookup, recreation,
-migration or rewrite is performed.
+Version 4 retains the effective-opacity recovery rule, spatial identity/operands
+and explicit optional sibling delivery, and adds Local sharpening operands.
+Unversioned, v1, v2 and v3 files remain preserved at their existing paths; no legacy
+lookup, recreation, migration or rewrite is performed.
 
 For presentation+editable, the native child is a native requested delivery with
 `requested_variants=["editable"]`, independent of presentation geometry and its

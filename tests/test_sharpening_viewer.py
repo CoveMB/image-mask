@@ -122,6 +122,53 @@ await $('sharpeningAmountApply').onclick();assert.equal(posts.length,0);
 """)
 
 
+@pytest.mark.parametrize("saved", [False, True])
+@pytest.mark.parametrize(
+    "field,value", [("Detail", ""), ("Detail", "9"), ("Noise", ""), ("Noise", "NaN")]
+)
+def test_sharpening_reset_discards_invalid_numbers_using_saved_settings(saved, field, value):
+    run_page(
+        r"""
+if (SAVED) servedState.revisions[0].local_sharpening={
+ enabled:true,stale:false,settings:{enabled:true,amount:.4,radius_px:2.5,noise_threshold:.002}
+};
+await ready();
+$('exposureEV').value='1.2';$('exposureEV').oninput();
+$('sharpeningRole').value='regions';$('sharpeningFeather').value='2';
+$('sharpeningRectangle').value='10,20,70,80';await $('sharpeningAddRectangle').onclick();
+const pending=JSON.stringify(sharpeningArea);
+$('sharpeningAmount').value='80';$('sharpeningAmount').oninput();
+$('sharpening'+FIELD).value=VALUE;$('sharpening'+FIELD).oninput();
+await $('sharpeningAmountApply').onclick();await $('sharpeningApply').onclick();
+assert.equal(posts.length,0,'Enabled Apply must reject invalid draft numbers');
+await $('sharpeningReset').onclick();
+assert.equal(posts.length,1,'Reset must submit despite invalid draft numbers');
+assert.deepEqual(posts[0].local_sharpening,{
+ enabled:false,amount:0,radius_px:SAVED?2.5:1,noise_threshold:SAVED?.002:.001
+});
+assert(!('sharpening_area' in posts[0]));assert(!('sharpening_amount_only' in posts[0]));
+assert.equal(JSON.stringify(sharpeningArea),pending);assert.equal($('exposureEV').value,'1.2');
+""".replace("SAVED", "true" if saved else "false")
+        .replace("FIELD", repr(field))
+        .replace("VALUE", repr(value))
+    )
+
+
+@pytest.mark.parametrize("boundary", ["loading", "other-revision", "guides", "stale"])
+def test_sharpening_reset_preserves_load_and_saved_input_boundaries(boundary):
+    run_page(
+        r"""
+await ready();$('sharpeningDetail').value='';$('sharpeningDetail').oninput();
+if (BOUNDARY==='loading') imageLoading=true;
+if (BOUNDARY==='other-revision') $('viewRevision').value='rev-000';
+if (BOUNDARY==='guides') dirty=true;
+if (BOUNDARY==='stale') {servedState.inputs_digest='newer';await refresh();}
+await $('sharpeningAmountApply').onclick();assert.equal(posts.length,0);
+await $('sharpeningReset').onclick();assert.equal(posts.length,BOUNDARY==='stale'?1:0);
+""".replace("BOUNDARY", repr(boundary))
+    )
+
+
 def test_sharpening_brush_uses_native_crop_and_separate_protection():
     run_page(r"""
 await ready();$('authorMode').value='sharpening';$('sharpeningRole').value='regions';

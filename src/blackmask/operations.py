@@ -1630,7 +1630,7 @@ def _matte(
             before_foreground = read_rgb16(
                 saved_asset(project, f"revisions/{parent}/corrected_rgb16.tif")
             )
-        if (exposure or fade) and not stale_effects:
+        if (sharpening or exposure or fade) and not stale_effects:
             from .effects import saved_effect_lock_layers
 
             before_foreground, _, _ = saved_effect_lock_layers(

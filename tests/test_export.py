@@ -372,6 +372,91 @@ def test_corrected_notes_use_new_identity_preserving_prior_version(
     assert export_project(project, variants=("transparent",), **arguments)["reused"]
 
 
+@pytest.mark.parametrize("mode", ["native", "add-margins", "match-series"])
+@pytest.mark.parametrize("editable", [False, True])
+@pytest.mark.parametrize("appearance", ["legacy", "sharpening", "spatial"])
+def test_sharpening_notes_change_identity_without_rewriting_prior_v4(
+    tmp_path, monkeypatch, mode, editable, appearance
+):
+    from test_sharpening import sharpening_project, sharpening_request
+    from test_spatial_fade import spatial_request
+
+    from blackmask import operations
+    from blackmask.project import _json_bytes, digest
+
+    project, _, _ = sharpening_project(tmp_path)
+    if appearance != "legacy":
+        operations.apply_operation(project, sharpening_request(project))
+    if appearance == "spatial":
+        operations.apply_operation(project, spatial_request(project, candidate=True))
+    export = importlib.import_module("blackmask.export")
+    current_request = export._delivery_request_record
+    current_notes = export._delivery_notes
+    old_warning = (
+        "Selected foreground already includes local exposure and Shadow fade; apply neither again. "
+    )
+    new_warning = "Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. "
+
+    def previous_request(*args, **kwargs):
+        record = current_request(*args, **kwargs)
+        # Freeze the published v4 descriptions, including its spatial branch.
+        record["views"] = (
+            "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved foreground; baked shading at effective p (saved p when enabled, 0 when disabled or absent); editable W16 plus p retained separately only when requested"
+        )
+        if record["mode"] == "native":
+            record["result_compositing"] = (
+                "round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints"
+                if appearance == "spatial"
+                else "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-p*W16/65535, A=alpha16/65535; p is saved opacity only when shading is enabled, otherwise zero; B is saved background RGB16 or zero; F already includes local exposure and Shadow fade"
+            )
+        record.pop("identity_sha256")
+        record["identity_sha256"] = digest(_json_bytes(record))
+        return record
+
+    def previous_notes(record):
+        return current_notes(record).replace(new_warning.encode(), old_warning.encode())
+
+    arguments = dict(
+        revision=read_project(project)["working_revision"],
+        draft=True,
+        variants=("editable",) if editable else (),
+        **mode_arguments(mode),
+    )
+    with monkeypatch.context() as previous:
+        previous.setattr(export, "_delivery_request_record", previous_request)
+        previous.setattr(export, "_delivery_notes", previous_notes)
+        prior = export_project(project, **arguments)
+    preserved = hashes(project)
+    output = export_project(project, **arguments)
+    assert output["directory"] != prior["directory"] and not output["reused"]
+    current_hashes = hashes(project)
+    assert all(current_hashes[name] == value for name, value in preserved.items())
+    record = json.loads(Path(output["manifest_file"]).read_bytes())
+    old_record = json.loads(Path(prior["manifest_file"]).read_bytes())
+    assert record["export_version"] == old_record["export_version"] == "requested-result-v4"
+    notes = (Path(output["directory"]) / "README.txt").read_text()
+    assert new_warning in notes
+    if mode == "native":
+        assert (
+            "F already includes Local sharpening, local exposure and Shadow fade"
+            in record["result_compositing"]
+        )
+    np.testing.assert_array_equal(
+        tifffile.imread(Path(output["directory"]) / "result_rgb16.tif"),
+        tifffile.imread(Path(prior["directory"]) / "result_rgb16.tif"),
+    )
+    if editable and mode != "native":
+        assert output["editable_companion"]["directory"] != prior["editable_companion"]["directory"]
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A current intact delivery must reuse without staging/rendering")
+
+    monkeypatch.setattr(export, "check_space", forbidden)
+    monkeypatch.setattr(export.tempfile, "mkdtemp", forbidden)
+    repeated = export_project(project, **arguments)
+    assert repeated["reused"] and repeated["directory"] == output["directory"]
+
+
 @pytest.mark.parametrize("variants", ["black", ("black", "black"), ("unknown",), (True,), None])
 def test_invalid_variants_preserve_project(tmp_path, variants):
     project, _, _ = fixture_project(tmp_path)

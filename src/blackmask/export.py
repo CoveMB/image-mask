@@ -426,9 +426,7 @@ def _export_execution_identity() -> dict[str, Any]:
 def _delivery_notes(record: dict[str, Any]) -> bytes:
     mode = record["mode"]
     text = record["label"] + "\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. "
-    text += (
-        "Selected foreground already includes local exposure and Shadow fade; apply neither again. "
-    )
+    text += "Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. "
     text += "Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\n"
     if mode == "add-margins":
         text += "The native image is copied without resampling; margins extend saved backdrop edge pixels. Optional straight RGBA has zero RGBA margins.\n"
@@ -836,7 +834,7 @@ def _delivery_request_record(
                 "spatial_fade",
             )
         },
-        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved foreground; baked shading at effective p (saved p when enabled, 0 when disabled or absent); editable W16 plus p retained separately only when requested",
+        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved foreground already includes Local sharpening, local exposure and Shadow fade; apply none again; baked shading at effective p (saved p when enabled, 0 when disabled or absent); editable W16 plus p retained separately only when requested",
         **{
             name: (
                 _delivery_effect_record(manifest[name]) if name != "background" else manifest[name]
@@ -903,8 +901,8 @@ def _delivery_request_record(
         record["result_compositing"] = (
             "round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints"
             if manifest.get("spatial_fade", {}).get("enabled")
-            else "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-p*W16/65535, A=alpha16/65535; p is saved opacity only when shading is enabled, otherwise zero; B is saved background RGB16 or zero; F already includes local exposure and Shadow fade"
-        )
+            else "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-p*W16/65535, A=alpha16/65535; p is saved opacity only when shading is enabled, otherwise zero; B is saved background RGB16 or zero"
+        ) + "; F already includes Local sharpening, local exposure and Shadow fade"
     if companion_request is not None:
         record["editable_companion_request"] = companion_request
     record["identity_sha256"] = digest(_json_bytes(record))
