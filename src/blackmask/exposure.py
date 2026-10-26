@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 
+from .assets import revision_asset
 from .guidance import rasterize_regions, validate_guides
 from .project import ProjectError, digest
 from .repair import scalar16
@@ -85,14 +86,14 @@ def apply_exposure(
 
 
 def rasterize_exposure_area(
-    area: dict[str, Any], master_id: str, width: int, height: int
+    area: dict[str, Any], developed_id: str, width: int, height: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compatibility entry point for the shared registered area primitive."""
-    return rasterize_effect_area(area, master_id, width, height)
+    return rasterize_effect_area(area, developed_id, width, height)
 
 
 def rasterize_effect_area(
-    area: dict[str, Any], master_id: str, width: int, height: int
+    area: dict[str, Any], developed_id: str, width: int, height: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Reuse canonical native geometry without changing any matting guides."""
     if (
@@ -102,13 +103,13 @@ def rasterize_effect_area(
     ):
         raise ProjectError("Effect area requires regions and protection lists")
     guides = {
-        "schema_version": 1,
-        "master_id": master_id,
+        "schema_version": 2,
+        "developed_id": developed_id,
         "width": width,
         "height": height,
         "regions": area["regions"] + area["protection"],
     }
-    validate_guides(guides, master_id, width, height)
+    validate_guides(guides, developed_id, width, height)
     if any(region["role"] != "support" for region in guides["regions"]) or any(
         region["feather_px"] != 0 for region in area["protection"]
     ):
@@ -122,7 +123,7 @@ EXPOSURE_FILES = ("support16.png", "protection16.png", "alpha16.png", "settings.
 
 
 def read_exposure(
-    directory: Path, manifest: dict[str, Any], alpha: np.ndarray
+    project: Path, directory: Path, manifest: dict[str, Any], alpha: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]] | None:
     """Validate immutable operands even when disabled; absence is the legacy OFF state."""
     record = manifest.get("local_exposure")
@@ -133,7 +134,7 @@ def read_exposure(
         "enabled",
         "settings",
         "stale",
-        "source_id",
+        "developed_id",
         "algorithm",
         "alpha_sha256",
         "support_sha256",
@@ -146,11 +147,11 @@ def read_exposure(
         not isinstance(record, dict)
         or set(record) != keys
         or type(record["schema_version"]) is not int
-        or record["schema_version"] != 1
+        or record["schema_version"] != 2
         or type(record["enabled"]) is not bool
         or type(record["stale"]) is not bool
         or type(record["candidate_comparison"]) is not bool
-        or record["source_id"] != manifest["master_id"]
+        or record["developed_id"] != manifest["developed_id"]
         or record["algorithm"] != "linear-srgb-local-exposure-v1"
     ):
         raise ProjectError("Invalid saved local exposure identity/schema/status")
@@ -162,7 +163,14 @@ def read_exposure(
     height, width = alpha.shape
     coordinates(record["scope_xyxy"], width, height, box=True)
     saved = directory / "effects/exposure"
-    if json.loads((saved / "settings.json").read_bytes()) != record:
+    if (
+        json.loads(
+            revision_asset(
+                project, directory, manifest, "effects/exposure/settings.json"
+            ).read_bytes()
+        )
+        != record
+    ):
         raise ProjectError("Inconsistent saved local exposure settings record")
     arrays = []
     for name, key in (
@@ -170,7 +178,7 @@ def read_exposure(
         ("protection16.png", "protection_sha256"),
         ("alpha16.png", "alpha_sha256"),
     ):
-        path = saved / name
+        path = revision_asset(project, directory, manifest, "effects/exposure/" + name)
         if digest(path.read_bytes()) != record[key]:
             raise ProjectError("Saved local exposure dependency hash mismatch")
         value = scalar16(path)
@@ -183,11 +191,11 @@ def read_exposure(
     ):
         raise ProjectError("Invalid saved local exposure protection/dependency status")
     if record["area_sha256"] is not None:
-        path = saved / "area.json"
+        path = revision_asset(project, directory, manifest, "effects/exposure/area.json")
         if digest(path.read_bytes()) != record["area_sha256"]:
             raise ProjectError("Saved local exposure authored area hash mismatch")
         authored_support, authored_protection = rasterize_exposure_area(
-            json.loads(path.read_bytes()), manifest["master_id"], width, height
+            json.loads(path.read_bytes()), manifest["developed_id"], width, height
         )
         if not np.array_equal(authored_support, support) or np.any(
             authored_protection & (protection == 0)
@@ -199,6 +207,7 @@ def read_exposure(
 
 
 def selected_exposure(
+    project: Path,
     directory: Path,
     foreground: np.ndarray,
     alpha: np.ndarray,
@@ -206,7 +215,7 @@ def selected_exposure(
     *,
     exposure_off: bool = False,
 ) -> tuple[np.ndarray, dict[str, int]]:
-    saved = read_exposure(directory, manifest, alpha)
+    saved = read_exposure(project, directory, manifest, alpha)
     if saved is None:
         return foreground, {"clipped_pixels": 0, "eligible_pixels": 0}
     support, protection, record = saved

@@ -1,5 +1,17 @@
 # Offline manual review
 
+For managed original ownership, first follow the [configured library and safe
+import](library.md) instructions, then open the returned `project/` path with the
+same explicit `--config FILE`. This selects shared existing model locations and
+leaves the manual masking controls below unchanged. Standalone projects use the
+commands below without library configuration.
+
+For an imported photo, the recovery panel reports the latest Result gallery's
+Draft/Accepted or pending status. Repair latest Result preview explicitly repairs pending
+output from saved layers; polling and restore do not publish it. Keep the matching
+library config when opening the viewer. See the [gallery contract](file-contract.md#current-result-gallery)
+and [recovery guidance](troubleshooting.md#native-matte-and-export-recovery).
+
 After [explicit environment/model setup](../README.md) and [model cache setup](guidance.md),
 open one source/project. From the repository root, use the environment executable
 shown below; shell activation is unnecessary. Use your own paths and select guides
@@ -21,6 +33,11 @@ documented CLI commands can run in another terminal.
 
 ## Source appearance
 
+For a supported SDR-base gain-map JPEG, add `--jpeg-sdr-primary` when creating
+the project with `open`, or importing with `import`. This selects the ordinary
+SDR image and omits HDR brightness while preserving the complete original.
+See the [supported inputs and saved decision](file-contract.md#explicit-sdr-primary-jpeg-import).
+
 Source-development approval is not required. Open a project and start authoring
 mask guides. Choose **View → Source** to inspect its RGB8 viewing approximation;
 a new project has no Result yet. The saved RGB16 master remains authoritative.
@@ -40,7 +57,7 @@ supported RGB DNGs use their recorded white point and calibration profiles as
 described in the [saved contract](file-contract.md#raw-as-shot-white-balance). Otherwise, explicitly
 choose a supported rendering or supply a developed TIFF. A different development
 requires a separate project, preserving the previous one. The legacy CLI development
-review remains optional and does not gate masking; old projects open without migration.
+review remains optional and does not gate masking; schema-2 projects open without migration; schema-1 projects are refused without writes.
 
 ## Author guides and select subjects
 
@@ -130,13 +147,31 @@ or draft areas; switch back to the effect's authoring mode when drawing again.
 Inspect fragile detail, gaps, transparency and seams at native scale. Cached tile
 counts describe verified computation reuse, never visual quality. Previews are
 RGB8/alpha8 approximations; authoritative saved assets retain RGB16/alpha16 precision.
+To save the selected native crop, use **Focused comparison → Save comparison**.
+The default saves only a labelled JPEG and exact manifest. **Retain native
+inspection evidence** also saves separate PNG crops for correction work. Choose
+an optional presentation mode to include the current margin or series form for
+the same selected saved revision. These controls retain unsaved forms and do not
+accept the photograph or update the Result gallery. Status reports the actual
+saved paths or a recoverable failure. **Open saved comparison sheet** opens the
+actual JPEG; **Download exact manifest** saves its bound JSON. These links use
+only the completed action’s bounded files; see the [comparison contract](file-contract.md#focused-comparisons).
+
 Only after your photographic review, check its separate box and **Accept current
 photograph**. Preparation and computational success never imply this acceptance.
 
 **Export accepted result** uses the accepted pointer even when another working
 candidate exists. **Export labelled current draft** is explicitly a draft. Both use
-the shared renderer and retain editable source/alpha assets; viewing RGBA PNG has
-8-bit alpha. Export directories and revision/status are displayed on success.
+the shared renderer. The default delivery contains Result RGB16 TIFF and PNG8 at
+full native pixel dimensions, plus the frozen recipe, manifest and notes. PNG8 has
+reduced colour precision. Unchecked independent controls opt into black TIFF/PNG,
+transparent RGBA8 (8-bit alpha), or complete editable layers at original size.
+Editable does not include the other alternatives automatically. Keep original
+captures and the editable project independently. Export directories and
+revision/status are displayed on success; an intact retry says **Existing delivery**.
+The CLI selects the same choices with repeatable `--variant black`,
+`--variant transparent`, `--variant editable`. See the
+[delivery contract](file-contract.md#requested-result-deliveries).
 Optional color cleanup is now available in the same review window. It starts OFF.
 Use the cleanup strength, declared native write scope and project-relative grayscale16
 support file. The default support is the current saved guide support. To change it,
@@ -158,13 +193,24 @@ Rebuild using separately declared support covering the changed alpha, preserving
 corrected RGB outside it and exact saved RGB locks inside. Any changed alpha left
 outside the rebuild keeps cleanup stale. Broader work needs explicit broader scope.
 
-CLI uses `.venv/bin/blackmask run PROJECT --request FILE` with schema_version=1, kind="effects",
-master_id, base_revision and inputs_digest copied from current review/state, explicit
+CLI uses `.venv/bin/blackmask run PROJECT --request FILE` with schema_version=2, kind="effects",
+developed_id, base_revision and inputs_digest copied from current review/state, explicit
 scope_xyxy, project-relative support_file and candidate_comparison boolean. Optional
 color_cleanup={"enabled":true,"strength":0.35} records an explicit override; omitting
 it consumes the current recipe section. Editing the recipe alone does not change saved
 appearance. The viewer records actual settings in the effects request without rewriting
 editable recipe defaults. Both routes save the same revision/effect contracts.
+
+### Repeat an unchanged adjustment
+
+Apply remains explicit. If the current effects request is fully equivalent after
+validation, the viewer reports **Reused current result; no new revision**. Acceptance
+and pending unrelated settings/areas stay as they were. Changed safety metadata or
+unproven equivalence computes normally. A reused result can still have pending
+gallery recovery or drafts that block acceptance. See the
+[saved reuse contract](file-contract.md#unchanged-effects-results).
+Saved-layer integrity checks still run before reuse, including Fade into background's
+cold geometry checks. Repeated spatial Disable uses saved shapes and keeps pending edits.
 
 ## Restore, resume and continue without an assistant
 
@@ -220,11 +266,11 @@ correction is warranted, record that limitation rather than changing good detail
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
    success in computation alone does not mean the photograph improved.
-7. If cleanup, shading, Local exposure or Shadow fade was enabled, changed alpha can make it
+7. If cleanup, shading, Local sharpening, Local exposure or Shadow fade was enabled, changed alpha can make it
    **STALE** and switch comparisons to labelled BASE views. Before accepting or
    exporting the current appearance, rebuild each stale effect from its reviewed
    support/protection or explicitly disable it: **Explicitly disable cleanup**,
-   **Explicitly disable shading**, **Reset exposure**, or **Reset Shadow fade**. Follow the existing
+   **Explicitly disable shading**, **Reset Local sharpening**, **Reset exposure**, or **Reset Shadow fade**. Follow the existing
    [cleanup recovery](#compare-accept-and-export),
    [shading recovery](#protected-inward-shading) and
    [exposure recovery](#local-exposure) and [fade recovery](#shadow-fade) instructions; an amount/opacity change alone
@@ -278,7 +324,7 @@ Compare the same native crop at 0%, 12% and 24% with the preview selector. Label
 show the displayed revision, effective opacity, encoded sRGB, width, cleanup
 and baked RGB8 preview precision. BASE and stale views label all optional effects OFF. These are
 comparison strengths, not defaults or photographic approval. The BASE checkbox
-turns cleanup, local exposure, Shadow fade and shading off. The global opacity button reuses saved W
+turns all optional effects off. The global opacity button reuses saved W
 without a model or mask rebuild; it does not change geometry/protection. Explicit
 disable preserves saved layers. Rebuilding one effect never rebuilds the other.
 
@@ -338,7 +384,8 @@ or restore captured sharpness. Final photographic acceptance remains your decisi
    Reload reopens saved authored geometry; scalar-input areas remain available
    for amount changes. If alpha changed, rebuild the area or reset exposure
    before acceptance/export. Other stale effects require their own recovery.
-7. Export a labelled draft for comparison. Exposure exports include both selected
+7. Export a labelled draft for comparison. Native exports with **Include complete
+   editable layers at original size** include both selected
    and unexposed RGB16 plus editable support/protection/alpha/settings. Preserve
    them together; the selected foreground already includes exposure once.
 
@@ -428,13 +475,14 @@ accepted/candidate gate; it retains operands and protection. Invalid or corrupte
 saved assets must be recovered from a valid revision rather than silently repaired.
 Other stale effects require their own recovery. Earlier accepted work remains saved.
 
-Native export retains pre-spatial foreground, alpha, combined weight, protection,
+Native export with editable selected retains pre-spatial foreground, alpha, combined weight, protection,
 settings and background as separate editable operands. Transparent viewing RGB
 retains the tint toward the selected background; alpha is unchanged. Black/gray/
 white diagnostics change the backdrop but keep that same fade target.
 
-Every framed or Match series export with a saved spatial record, including OFF
-or zero strength, returns a presentation folder **and a native editable folder**.
+Select **Include native editable companion** for a framed or Match series export
+to receive a presentation folder **and a native editable folder**. This is opt-in,
+even for a saved spatial record that is ON, OFF or zero strength.
 Keep both siblings and their names for portable reconstruction. The presentation
 contains compact flattened results; its manifest binds all companion files. A
 native-only partial result or visible-but-durability-unconfirmed error is still an
@@ -468,7 +516,7 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
    successful application/reset or explicit reload clears the settings draft.
    These controls are frozen during writers; area/protection drafts remain separate.
    Settings apply afresh without compounding.
-4. **Compare Shadow fade OFF** retains cleanup, exposure and shading. **Compare
+4. **Compare Shadow fade OFF** retains cleanup, sharpening, exposure and shading. **Compare
    exposure OFF** retains fade, recalculated from exposure-OFF RGB. BASE disables
    every optional effect; selecting a comparison clears the others. [Hide authoring
    marks](#compare-accept-and-export), then inspect the
@@ -479,7 +527,8 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 6. If alpha changed, rebuild fade or reset it. Each other stale effect needs its
    own rebuild/disable before accepting or exporting appearance. Prepared revisions
    still need completed matte; trimap confirmation is optional and acceptance is separate.
-7. Export a labelled draft and preserve selected, unfaded, unexposed, base and source
+7. Export a labelled draft. For recovery layers, select **Include complete editable
+   layers at original size** in a native export and preserve selected, unfaded, unexposed, base and source
    RGB16 plus alpha, independent settings/support/protection and any shading W16.
    The selected foreground already contains fade and exposure once. Follow the
    [saved-layer replay order](file-contract.md#optional-shadow-fade); never apply
@@ -512,8 +561,9 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 6. Use **Export labelled current draft** for a labelled unaccepted delivery, or accept the
    inspected photo and export the accepted result. `result_rgb16.tif` is the
    chosen-background image; `result_RGB8_VIEW.png` is a reduced-precision preview.
-   `black_rgb16.tif` and existing black viewing files always use pure black.
-   Retain `background_rgb16.tif`, `background_settings.json`, selected
+   Select the black alternative for `black_rgb16.tif` and its PNG view, which
+   always use pure black. Request a native editable export to retain
+   `background_rgb16.tif`, `background_settings.json`, selected
    `foreground_rgb16.tif`, `alpha16.png`, saved shading W16/opacity and the other
    editable operands. Straight transparent RGBA8 does not include the backdrop.
 7. To return to black, select **Pure black** and **Apply background**. To recover
@@ -553,8 +603,9 @@ creating a file. See recovery below for invalid, stale or uncertain saves.
 
 **Export framed accepted result** and **Export framed draft** use the visible
 validated margins, including unsaved edits. They do not silently use or save the
-preset. The transparent checkbox includes a separate RGBA8 viewing file. Existing
-native export buttons keep their editable export contract.
+preset. Black and transparent checkboxes independently add alternatives in the
+framed output geometry. **Include native editable companion** adds a separate
+folder with full native layers; keep both folders for portable editing.
 
 The CLI also creates a separate framed delivery from explicit margins:
 
@@ -572,8 +623,10 @@ The command reports the delivery directory, output dimensions and the native
 image's rectangle inside the canvas. `result_rgb16.tif` retains the native result's
 processed sRGB samples exactly. `result_RGB8_VIEW.png` is an 8-bit viewing copy;
 the optional `transparent_RGBA8_VIEW.png` has 8-bit alpha and transparent margins.
-The compact bundle includes a manifest and readable description. Keep the local
-project and native export for editable source layers.
+The compact bundle includes the frozen recipe, manifest and readable description.
+Keep the local project or add `--variant editable` to this same margins command
+for a native editable sibling. The presentation's manifest binds that sibling and
+freezes its margins; the editable operands retain native coordinates.
 
 Margins extend the saved backdrop's edge and corner colours. Wide margins may
 show bands; inspect the resulting composition in a suitable colour-managed viewer.
@@ -669,10 +722,58 @@ The flag is mutually exclusive with `--margins`. Without either flag, the existi
 native export behavior applies; project series settings are never loaded implicitly.
 The CLI accepts a bounded regular JSON file and rejects symlink aliases.
 
-Each compact delivery contains `result_rgb16.tif`, `result_RGB8_VIEW.png`, optional
-`transparent_RGBA8_VIEW.png`, `README.txt` and `manifest.json` beneath a distinct
+Each compact delivery contains `result_rgb16.tif`, `result_RGB8_VIEW.png`,
+`recipe.toml`, `README.txt` and `manifest.json`, with independent optional
+black TIFF/PNG and `transparent_RGBA8_VIEW.png`, beneath a distinct
 `exports/rev-NNN[-DRAFT]-series-framed-<identity>/` directory. TIFF is processed
 sRGB RGB16 with resampled samples; PNGs are reduced-precision views. Transparent
 RGB is straight, with zero RGB wherever quantized alpha is zero. Retain the native
 editable project, masks, original capture and accepted dependencies independently.
+For an editable handoff, add `--variant editable` to the Match series command or
+select **Include native editable companion**. Keep the native sibling and this
+presentation together; its manifest freezes the chosen settings and byte binding.
+Repeating an intact delivery validates its
+actual files and current source/revision authorization before returning without rendering.
 See [preservation and recovery](troubleshooting.md#series-framing-recovery).
+
+
+## Local sharpening
+
+Use Local sharpening to enhance existing captured detail in hair, feathers, petals,
+fabric, eyes or translucent regions. It cannot restore missed focus or remove
+captured contamination. Start gently and inspect at native scale.
+
+1. Select the current complete revision and **Canvas authoring mode → Local
+   sharpening area**. Draw Apply regions with Brush or Rectangle, or enter numeric
+   rectangle coordinates. Brush radius and inward feather use native pixels.
+   Add hard Protect regions around areas that must remain exact.
+2. Set **Amount** (0–100%), **Detail size** (Gaussian sigma, 0.5–8 native pixels;
+   distinct from brush radius), and **Noise guard** (0–2% linear luminance).
+   Defaults are OFF, 0%, 1 pixel and 0.1%. Noise guard suppresses small differences;
+   it is not a denoiser. Larger radii affect wider structures.
+3. **Apply / replace sharpening area** replaces the whole adjustment. **Apply
+   sharpening amount to saved area** uses the saved geometry and current settings.
+   Pending area edits and unrelated effect drafts remain separate. On an unaccepted
+   draft, explicitly enable candidate comparison.
+4. **Compare Local sharpening OFF** retains cleanup, exposure, Shadow fade,
+   shading/spatial fade and background, recalculating downstream RGB from the
+   unsharpened input. Source and alpha stay unchanged. Compare creates no revision.
+   Inspect black, gray and white diagnostics for halos or noise amplification.
+5. **Reset Local sharpening** saves OFF / 0% and retains recoverable operands.
+   Changed alpha makes enabled sharpening stale; rebuild the whole area or Reset.
+   A new saved RGB lock preserves its selected pixels exactly and changes the
+   filtering context for neighboring unprotected pixels. Inspect that boundary.
+   Restore retains prior revisions and never grants acceptance.
+
+One settings tuple applies to all authored regions. Cleanup changes recompute
+sharpening from the current cleanup-selected input; repeated Apply does not compound
+it. Overshoot guards limit new luminance extrema, but do not guarantee invisible halos.
+
+For portable editing, explicitly request editable export. It includes the unsharpened
+cleanup-selected RGB and independent support, protection, alpha, settings and authored
+area. Replay sharpening, exposure, Shadow fade, then shading/spatial fade and
+alpha/background composition. Selected foreground already includes sharpening;
+do not apply it twice. Framed and match-series exports bind a complete native companion:
+keep both folders together. See the [saved contract](file-contract.md#optional-local-sharpening).
+New sharpening records require the updated application; retain pre-feature projects
+and exports for older applications. Photographic acceptance remains your decision.

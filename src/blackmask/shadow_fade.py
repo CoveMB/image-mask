@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 
+from .assets import revision_asset
 from .exposure import highlight_weight, linear_to_rgb16, rasterize_effect_area, srgb_to_linear
 from .project import ProjectError, digest
 from .repair import scalar16
@@ -75,7 +76,7 @@ SHADOW_FADE_FILES = ("support16.png", "protection16.png", "alpha16.png", "settin
 
 
 def read_shadow_fade(
-    directory: Path, manifest: dict[str, Any], alpha: np.ndarray
+    project: Path, directory: Path, manifest: dict[str, Any], alpha: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]] | None:
     """Validate immutable operands even when disabled; absence is the legacy OFF state."""
     if "shadow_fade" not in manifest:
@@ -86,7 +87,7 @@ def read_shadow_fade(
         "enabled",
         "settings",
         "stale",
-        "source_id",
+        "developed_id",
         "algorithm",
         "alpha_sha256",
         "support_sha256",
@@ -99,11 +100,11 @@ def read_shadow_fade(
         not isinstance(record, dict)
         or set(record) != keys
         or type(record["schema_version"]) is not int
-        or record["schema_version"] != 1
+        or record["schema_version"] != 2
         or type(record["enabled"]) is not bool
         or type(record["stale"]) is not bool
         or type(record["candidate_comparison"]) is not bool
-        or record["source_id"] != manifest["master_id"]
+        or record["developed_id"] != manifest["developed_id"]
         or record["algorithm"] != "linear-srgb-shadow-fade-v1"
     ):
         raise ProjectError("Invalid saved Shadow fade identity/schema/status")
@@ -115,7 +116,14 @@ def read_shadow_fade(
     height, width = alpha.shape
     coordinates(record["scope_xyxy"], width, height, box=True)
     saved = directory / "effects/shadow-fade"
-    if json.loads((saved / "settings.json").read_bytes()) != record:
+    if (
+        json.loads(
+            revision_asset(
+                project, directory, manifest, "effects/shadow-fade/settings.json"
+            ).read_bytes()
+        )
+        != record
+    ):
         raise ProjectError("Inconsistent saved Shadow fade settings record")
     arrays = []
     for name, key in (
@@ -123,7 +131,7 @@ def read_shadow_fade(
         ("protection16.png", "protection_sha256"),
         ("alpha16.png", "alpha_sha256"),
     ):
-        path = saved / name
+        path = revision_asset(project, directory, manifest, "effects/shadow-fade/" + name)
         if digest(path.read_bytes()) != record[key]:
             raise ProjectError("Saved Shadow fade dependency hash mismatch")
         value = scalar16(path)
@@ -136,11 +144,11 @@ def read_shadow_fade(
     ):
         raise ProjectError("Invalid saved Shadow fade protection/dependency status")
     if record["area_sha256"] is not None:
-        path = saved / "area.json"
+        path = revision_asset(project, directory, manifest, "effects/shadow-fade/area.json")
         if digest(path.read_bytes()) != record["area_sha256"]:
             raise ProjectError("Saved Shadow fade authored area hash mismatch")
         authored_support, authored_protection = rasterize_effect_area(
-            json.loads(path.read_bytes()), manifest["master_id"], width, height
+            json.loads(path.read_bytes()), manifest["developed_id"], width, height
         )
         if not np.array_equal(authored_support, support) or np.any(
             authored_protection & (protection == 0)
@@ -152,6 +160,7 @@ def read_shadow_fade(
 
 
 def selected_shadow_fade(
+    project: Path,
     directory: Path,
     foreground: np.ndarray,
     alpha: np.ndarray,
@@ -159,7 +168,7 @@ def selected_shadow_fade(
     *,
     shadow_fade_off: bool = False,
 ) -> np.ndarray:
-    saved = read_shadow_fade(directory, manifest, alpha)
+    saved = read_shadow_fade(project, directory, manifest, alpha)
     if saved is None:
         return foreground
     support, protection, record = saved

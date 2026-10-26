@@ -10,6 +10,7 @@ import pytest
 import tifffile
 from PIL import Image
 from test_effects import fixture_project
+from test_ingest import bind_raster, saved_hashes, saved_raster
 
 from blackmask import operations
 from blackmask.export import saved_layers
@@ -182,12 +183,12 @@ def test_saved_fade_independent_noncompounding_replacement_and_reset(tmp_path):
 
     project, _, _ = fixture_project(tmp_path)
     exposed = operations.apply_operation(project, exposure_request(project, ev=2))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     base, alpha, _ = saved_layers(project, exposed["revision"], master)
     first = operations.apply_operation(project, fade_request(project))
     directory = project / "revisions" / first["revision"] / "effects/shadow-fade"
-    support = scalar16(directory / "support16.png")
-    protection = scalar16(directory / "protection16.png") != 0
+    support = scalar16(saved_raster(directory / "support16.png"))
+    protection = scalar16(saved_raster(directory / "protection16.png")) != 0
     accepted = read_project(project)["accepted_revision"]
     for amount, preserve in ((0.5, 1), (1, 0), (0.25, 0.5), (0, 1)):
         result = operations.apply_operation(
@@ -272,13 +273,13 @@ def test_legacy_optional_sections_load_independently_without_rewrite(tmp_path, e
     else:
         recipe.pop("shadow_fade", None)
     path.write_text(tomli_w.dumps(recipe))
-    before = path.read_bytes()
-    master = read_project(project)["master_id"]
+    before = saved_raster(path).read_bytes()
+    master = read_project(project)["developed_id"]
     parsed = Recipe.from_dict(recipe, master)
     assert parsed.shadow_fade == fade_settings(enabled=False, amount=0)
     assert parsed.local_exposure == {"enabled": False, "ev": 0}
     read_revision(project, parent["revision"], master)
-    assert path.read_bytes() == before
+    assert saved_raster(path).read_bytes() == before
 
 
 @pytest.mark.parametrize("change_alpha", [False, True])
@@ -299,7 +300,7 @@ def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(tmp_path, change_
     project, _, _ = fixture_project(tmp_path)
     operations.apply_operation(project, exposure_request(project, ev=2))
     first = operations.apply_operation(project, fade_request(project, preserve=0))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     before_rgb, before_alpha, _ = saved_layers(project, first["revision"], master)
     assert 0 < before_alpha[1, 3] < 65535
     name = edits(
@@ -351,9 +352,9 @@ def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(tmp_path, change_
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("schema_version", 2),
+        ("schema_version", 1),
         ("enabled", 1),
-        ("source_id", "foreign"),
+        ("developed_id", "foreign"),
         ("algorithm", "unknown"),
         ("stale", True),
         ("unsupported", True),
@@ -363,15 +364,17 @@ def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(tmp_path, change_
 def test_saved_disabled_fade_semantics_reject_rehashed_corruption(tmp_path, field, value):
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, fade_request(project, enabled=False))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     read_revision(project, result["revision"], master)
     directory = project / "revisions" / result["revision"]
     manifest = json.loads((directory / "manifest.json").read_bytes())
     record = manifest["shadow_fade"]
     record[field] = value
     settings = directory / "effects/shadow-fade/settings.json"
-    settings.write_bytes(_json_bytes(record))
-    manifest["files"]["effects/shadow-fade/settings.json"] = digest(settings.read_bytes())
+    saved_raster(settings).write_bytes(_json_bytes(record))
+    manifest["files"]["effects/shadow-fade/settings.json"] = digest(
+        saved_raster(settings).read_bytes()
+    )
     (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError):
         read_revision(project, result["revision"], master)
@@ -394,11 +397,11 @@ def test_warm_fade_validation_rehashes_assets(tmp_path, asset, request_local):
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, fade_request(project))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     with _validation_scope() if request_local else nullcontext():
         read_revision(project, result["revision"], master)
         path = project / "revisions" / result["revision"] / asset
-        path.write_bytes(path.read_bytes() + b" ")
+        saved_raster(path).write_bytes(saved_raster(path).read_bytes() + b" ")
         with pytest.raises(ProjectError, match="hash mismatch"):
             read_revision(project, result["revision"], master)
 
@@ -421,7 +424,7 @@ def test_warm_fade_rejects_unbound_area_and_rehashed_geometry(tmp_path, enabled)
     result = operations.apply_operation(project, scalar_request(project))
     if not enabled:
         result = operations.apply_operation(project, fade_request(project, enabled=False))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     directory = project / "revisions" / result["revision"]
     with _validation_scope():
         read_revision(project, result["revision"], master)
@@ -433,19 +436,21 @@ def test_warm_fade_rejects_unbound_area_and_rehashed_geometry(tmp_path, enabled)
     other.mkdir()
     project, _, _ = fixture_project(other)
     result = operations.apply_operation(project, fade_request(project))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     read_revision(project, result["revision"], master)
     directory = project / "revisions" / result["revision"]
     manifest = json.loads((directory / "manifest.json").read_bytes())
     name = "effects/shadow-fade/support16.png"
-    support = scalar16(directory / name)
+    support = scalar16(saved_raster(directory / name))
     support[0, 1] = 0
     Image.fromarray(support).save(directory / name)
-    manifest["files"][name] = digest((directory / name).read_bytes())
-    manifest["shadow_fade"]["support_sha256"] = manifest["files"][name]
+    bind_raster(project, directory, manifest, name)
+    manifest["shadow_fade"]["support_sha256"] = saved_hashes(manifest)[name]
     settings = directory / "effects/shadow-fade/settings.json"
-    settings.write_bytes(_json_bytes(manifest["shadow_fade"]))
-    manifest["files"]["effects/shadow-fade/settings.json"] = digest(settings.read_bytes())
+    saved_raster(settings).write_bytes(_json_bytes(manifest["shadow_fade"]))
+    manifest["files"]["effects/shadow-fade/settings.json"] = digest(
+        saved_raster(settings).read_bytes()
+    )
     (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError, match="area differs"):
         read_revision(project, result["revision"], master)
@@ -470,14 +475,14 @@ def test_fade_input_snapshot_races_preserve_pointers(tmp_path, filename, at_poin
     project, _, parent = fixture_project(tmp_path)
     operation = scalar_request(project)
     operation_path = project / "request.json"
-    operation_path.write_bytes(_json_bytes(operation))
+    saved_raster(operation_path).write_bytes(_json_bytes(operation))
     before = (project / "state.json").read_bytes()
     path = project / (
         f"revisions/{parent['revision']}/manifest.json" if filename == "parent" else filename
     )
 
     def change():
-        path.write_bytes(path.read_bytes() + b" ")
+        saved_raster(path).write_bytes(saved_raster(path).read_bytes() + b" ")
 
     if at_pointer:
         original = effects._atomic_json
@@ -489,14 +494,14 @@ def test_fade_input_snapshot_races_preserve_pointers(tmp_path, filename, at_poin
 
         owner, name = effects, "_atomic_json"
     else:
-        original = review.write_review
+        original = review.write_revision_overview
 
         def changing(*args, **kwargs):
             result = original(*args, **kwargs)
             change()
             return result
 
-        owner, name = review, "write_review"
+        owner, name = review, "write_revision_overview"
     with patch.object(owner, name, changing), pytest.raises(ProjectError, match="Stale"):
         operations.apply_operation(project, operation, request_file=operation_path)
     assert (project / "state.json").read_bytes() == before
@@ -536,7 +541,7 @@ def test_fade_low_disk_busy_writer_and_pointer_failure_recovery(tmp_path):
     ):
         operations.apply_operation(project, fade_request(project))
     assert (project / "state.json").read_bytes() == before
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     orphan = read_revision(project, "rev-003", master)
     assert orphan["shadow_fade"]["enabled"]
     operations.restore_revision(project, "rev-003", replace_drafts=True)
@@ -555,7 +560,7 @@ def white_project(tmp_path):
     rgb[0, 5] = 65535
     project = tmp_path / "project"
     create_project(tiff(tmp_path / "source.tif", rgb, profile=srgb_profile()), project, {})
-    accept_development(project, read_project(project)["master_id"])
+    accept_development(project, read_project(project)["developed_id"])
     name = edits(
         project,
         [
@@ -589,7 +594,9 @@ def test_shadow_fade_preserves_upstream_exposure_clipping_counts(tmp_path):
             == expected
         )
         refreshed = json.loads(
-            Path(review_project(project, revision=result["revision"])["manifest_file"]).read_bytes()
+            saved_raster(
+                Path(review_project(project, revision=result["revision"])["manifest_file"])
+            ).read_bytes()
         )
         assert refreshed["effects"]["local_exposure"]["clipping"] == expected
         server = ReviewServer(project)
@@ -602,7 +609,9 @@ def test_shadow_fade_preserves_upstream_exposure_clipping_counts(tmp_path):
         finally:
             server.server_close()
         if enabled:
-            rgb = saved_layers(project, result["revision"], read_project(project)["master_id"])[0]
+            rgb = saved_layers(project, result["revision"], read_project(project)["developed_id"])[
+                0
+            ]
             np.testing.assert_array_equal(
                 rgb[0, 5], scalar_fade([65535] * 3, 65535, amount, preserve)
             )
@@ -620,30 +629,39 @@ def test_fade_export_distinct_layers_exact_replay_and_fresh_process(tmp_path):
 
     project, _, _ = fixture_project(tmp_path)
     exposed = operations.apply_operation(project, exposure_request(project, ev=2))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     unfaded = saved_layers(project, exposed["revision"], master)[0]
     cleanup_only = saved_layers(project, exposed["revision"], master, exposure_off=True)[0]
     result = operations.apply_operation(project, fade_request(project, amount=1 / 6, preserve=0))
     selected, alpha, _manifest = saved_layers(project, result["revision"], master)
-    exported = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
-    np.testing.assert_array_equal(tifffile.imread(exported / "foreground_rgb16.tif"), selected)
-    np.testing.assert_array_equal(
-        tifffile.imread(exported / "unfaded_foreground_rgb16.tif"), unfaded
+    exported = Path(
+        export_project(
+            project,
+            revision=result["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )["directory"]
     )
     np.testing.assert_array_equal(
-        tifffile.imread(exported / "unexposed_foreground_rgb16.tif"), cleanup_only
+        tifffile.imread(saved_raster(exported / "foreground_rgb16.tif")), selected
     )
     np.testing.assert_array_equal(
-        tifffile.imread(exported / "base_foreground_rgb16.tif"), cleanup_only
+        tifffile.imread(saved_raster(exported / "unfaded_foreground_rgb16.tif")), unfaded
     )
-    support = scalar16(exported / "shadow_fade_support16.png")
-    protection = scalar16(exported / "shadow_fade_protection16.png") != 0
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(exported / "unexposed_foreground_rgb16.tif")), cleanup_only
+    )
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(exported / "base_foreground_rgb16.tif")), cleanup_only
+    )
+    support = scalar16(saved_raster(exported / "shadow_fade_support16.png"))
+    protection = scalar16(saved_raster(exported / "shadow_fade_protection16.png")) != 0
     expected = unfaded.copy()
     for y, x in zip(*np.where((support != 0) & (alpha != 0) & ~protection), strict=True):
         expected[y, x] = scalar_fade(unfaded[y, x], int(support[y, x]), 1 / 6, 0)
     np.testing.assert_array_equal(selected, expected)
     np.testing.assert_array_equal(
-        tifffile.imread(exported / "black_rgb16.tif"),
+        tifffile.imread(saved_raster(exported / "black_rgb16.tif")),
         np.rint(expected.astype(float) * (alpha.astype(float) / 65535)[..., None]).astype(
             np.uint16
         ),
@@ -652,7 +670,7 @@ def test_fade_export_distinct_layers_exact_replay_and_fresh_process(tmp_path):
         np.array([[[48192] * 3]], np.uint16), np.array([[32768]], np.uint16)
     ).tolist() == [[[24096] * 3]]
     # Original path unavailable, inference/network forbidden in a new interpreter.
-    (tmp_path / "source.tif").rename(tmp_path / "unavailable.tif")
+    (saved_raster(tmp_path / "source.tif")).rename(tmp_path / "unavailable.tif")
     program = """import socket, sys, json
 from pathlib import Path
 from unittest.mock import patch
@@ -663,12 +681,12 @@ from blackmask.shadow_fade import apply_shadow_fade
 from blackmask.repair import scalar16
 project, exported = map(Path, sys.argv[1:3]); revision=sys.argv[3]
 with patch('socket.socket', side_effect=AssertionError('offline')), patch('blackmask.models.VitMatteSession', side_effect=AssertionError('no inference')):
-    master=read_project(project)['master_id']
+    master=read_project(project)['developed_id']
     selected, alpha, _=saved_layers(project, revision, master)
     settings=json.loads((exported/'shadow_fade_settings.json').read_bytes())['settings']
     replay=apply_shadow_fade(tifffile.imread(exported/'unfaded_foreground_rgb16.tif'), scalar16(exported/'shadow_fade_alpha16.png'), scalar16(exported/'shadow_fade_support16.png'), scalar16(exported/'shadow_fade_protection16.png') != 0, settings)
     np.testing.assert_array_equal(replay, selected)
-    assert export_project(project, revision=revision, draft=True)['directory'] == str(exported)
+    assert export_project(project, revision=revision, draft=True, variants=('black','transparent','editable'))['directory'] == str(exported)
 print('saved-only replay and export exact')
 """
     completed = subprocess.run(
@@ -682,7 +700,12 @@ print('saved-only replay and export exact')
     assert "saved-only replay and export exact" in completed.stdout
     (exported / "README.txt").write_text("different output")
     with pytest.raises(ProjectError, match="collision"):
-        export_project(project, revision=result["revision"], draft=True)
+        export_project(
+            project,
+            revision=result["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )
 
 
 def test_viewer_does_not_report_completion_with_pre_action_state(tmp_path):
@@ -761,11 +784,11 @@ def test_viewer_fade_endpoint_compare_security_and_warm_metadata(tmp_path):
             assert server.snapshot() == current
         for mode in ("shadow-fade-off", "exposure-off", "base"):
             path = f"/image/black/{revision}/0,0,6,4/{mode}"
-            pixels = np.array(Image.open(io.BytesIO(server.image(path))))
+            pixels = np.array(Image.open(saved_raster(io.BytesIO(server.image(path)))))
             rgb, alpha, _ = saved_layers(
                 project,
                 revision,
-                current["master_id"],
+                current["developed_id"],
                 shadow_fade_off=mode == "shadow-fade-off",
                 exposure_off=mode == "exposure-off",
                 effects_off=mode == "base",
@@ -789,10 +812,10 @@ def test_fade_explicit_disable_without_saved_area_and_prepared_alpha_binding(tmp
     )
     assert not disabled["shadow_fade"]["enabled"]
     prepared = operations.apply_operation(project, request(project))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     directory = project / "revisions" / prepared["revision"]
     manifest = read_revision(project, prepared["revision"], master)
-    del manifest["files"]["base_alpha16.png"]
+    del manifest["assets"]["base_alpha16.png"]
     (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError, match="Incomplete Shadow fade"):
         read_revision(project, prepared["revision"], master)
@@ -811,7 +834,7 @@ def test_fade_recomputes_after_upstream_changes_and_comparisons_retain_other_eff
     operations.apply_operation(project, shading_request(project))
     operations.apply_operation(project, exposure_request(project, ev=2))
     first = operations.apply_operation(project, fade_request(project, amount=0.4, preserve=0.6))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     for update in (exposure_request(project, ev=1, amount_only=True),):
         result = operations.apply_operation(project, update)
     result = operations.apply_operation(
@@ -819,8 +842,8 @@ def test_fade_recomputes_after_upstream_changes_and_comparisons_retain_other_eff
     )
     assert result["shadow_fade"] == first["shadow_fade"]
     directory = project / "revisions" / result["revision"] / "effects/shadow-fade"
-    support = scalar16(directory / "support16.png")
-    protection = scalar16(directory / "protection16.png") != 0
+    support = scalar16(saved_raster(directory / "support16.png"))
+    protection = scalar16(saved_raster(directory / "protection16.png")) != 0
     rgb, alpha, manifest = saved_layers(project, result["revision"], master)
     for exposure_off in (False, True):
         upstream = saved_layers(
@@ -834,13 +857,22 @@ def test_fade_recomputes_after_upstream_changes_and_comparisons_retain_other_eff
         assert np.any(actual != upstream)
     weight, opacity = saved_shading(project, result["revision"], alpha, manifest)
     assert weight is not None and opacity == 0.12
-    exported = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+    exported = Path(
+        export_project(
+            project,
+            revision=result["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )["directory"]
+    )
     independent_black = np.rint(
         rgb.astype(float)
         * (alpha.astype(float) / 65535)[..., None]
         * (1 - 0.12 * weight.astype(float) / 65535)[..., None]
     ).astype(np.uint16)
-    np.testing.assert_array_equal(tifffile.imread(exported / "black_rgb16.tif"), independent_black)
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(exported / "black_rgb16.tif")), independent_black
+    )
 
 
 @pytest.mark.parametrize("different_rgb", [False, True])
@@ -852,7 +884,7 @@ def test_fade_same_alpha_rgb_lock_outside_repair_support(tmp_path, different_rgb
 
     project, _, parent = fixture_project(tmp_path)
     faded = operations.apply_operation(project, fade_request(project, preserve=0))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     selected = saved_layers(project, faded["revision"], master)[0]
     lock_revision = parent["revision"] if different_rgb else faded["revision"]
     name = edits(
@@ -889,7 +921,7 @@ def test_present_null_fade_record_rejected_cold_and_warm(tmp_path, enabled, requ
     from blackmask.project import _validation_scope
 
     project, _, parent = fixture_project(tmp_path)
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     # Legacy absence remains valid; present null must never take that path.
     assert "shadow_fade" not in read_revision(project, parent["revision"], master)
     result = operations.apply_operation(project, fade_request(project, enabled=enabled))

@@ -31,10 +31,10 @@ let poll;globalThis.setInterval=callback=>{poll=callback;return 0;};
 globalThis.confirm=()=>true;
 globalThis.createImageBitmap=async blob=>({width:blob.width,height:blob.height,close(){}});
 const servedState={
- master_id:'master',working_revision:'rev-001',accepted_revision:'rev-001',
+ developed_id:'master',working_revision:'rev-001',accepted_revision:'rev-001',
  inputs_digest:'draft',authoring_digest:'author',dimensions_wh:[100,100],
  recipe:{groups:[]},guides:{regions:[]},
- revisions:[{revision:'rev-001',kind:'matte',draft_digest:'draft',final_acceptable:true,candidates:[]}],
+ revisions:[{revision:'rev-001',kind:'matte',draft_digest:'draft',final_acceptable:true,candidates:[],revision_manifest_sha256:'a'.repeat(64)}],
  operations:[],pending:null,action:{running:false,error:null,result:{directory:'exports/rev-001'}}
 };
 const posts=[], imageResolvers=[];
@@ -138,6 +138,38 @@ def test_spatial_apply_is_complete_bound_and_candidate_choice_stays_explicit():
  """)
 
 
+@pytest.mark.parametrize(
+    "completion", ["match", "newer", "revision", "settings", "error", "source"]
+)
+def test_reused_spatial_apply_clears_only_the_matching_submitted_draft(completion):
+    """Historical-parent matching must not strand Apply or consume a different draft."""
+    run_page(
+        "const completion="
+        + repr(completion)
+        + r""";
+ servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
+ await ready();spatialDraft.enabled=true;spatialDraft.oval.amount=.6;
+ const saved=structuredClone(spatialDraft);
+ servedState.revisions[0].spatial_fade={enabled:true,stale:false,settings:saved};
+ await refresh(true);
+ $('backgroundHex').value='#AB1234';$('backgroundHex').oninput();
+ const originalFetch=fetch;globalThis.fetch=async(path,options)=>{if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return originalFetch(path,options);};
+ await $('spatialApply').onclick();
+ if(completion==='newer'){spatialDraft.oval.amount=.4;markSpatialDirty();}
+ const expectedDraft=structuredClone(spatialDraft),applied=structuredClone(saved);
+ if(completion==='settings')applied.oval.amount=.2;
+ if(completion==='source')servedState.developed_id='other-developed-source';
+ servedState.action={running:false,name:'effects',error:completion==='error'?'failure':null,
+   result:{revision:completion==='revision'?'rev-old':'rev-001',parent:'rev-000',reused:true,
+   spatial_fade:{enabled:true,stale:false,settings:applied}}};
+ await refresh();
+ assert.equal(spatialDirty,completion!=='match');
+ assert.deepEqual(spatialDraft,completion==='match'?saved:expectedDraft);
+ assert.equal($('backgroundHex').value,'#AB1234');
+ """
+    )
+
+
 def test_spatial_canvas_handles_and_numeric_values_match_without_saving_on_drag():
     run_page(r"""
  servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
@@ -162,16 +194,19 @@ def test_spatial_canvas_handles_and_numeric_values_match_without_saving_on_drag(
 
 
 @pytest.mark.parametrize("pending", ["none", "geometry", "invalid", "stale"])
-def test_spatial_disable_uses_saved_geometry_and_retains_unapplied_draft(pending):
+@pytest.mark.parametrize("reused", [False, True])
+def test_spatial_disable_uses_saved_geometry_and_retains_unapplied_draft(pending, reused):
     run_page(
         "const pending="
         + repr(pending)
+        + ",reused="
+        + str(reused).lower()
         + r""";
  servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);
  await ready();addSpatialArc([30,40]);
  spatialDraft.enabled=true;spatialDraft.arcs[0].amount=.7;
- const saved=structuredClone(spatialDraft);
- servedState.revisions[0].spatial_fade={enabled:true,stale:false,settings:saved};
+ const saved=structuredClone(spatialDraft);saved.enabled=!reused;
+ servedState.revisions[0].spatial_fade={enabled:!reused,stale:false,settings:saved};
  servedState.accepted_revision='rev-000';await refresh(true);
  if(pending!=='none') {
    await $('spatialRemove').onclick();addSpatialArc([60,70]);
@@ -188,12 +223,12 @@ def test_spatial_disable_uses_saved_geometry_and_retains_unapplied_draft(pending
  assert.equal(sent.candidate_comparison,false);assert(!('spatial_fade_protection_file' in sent));
  assert.equal(sent.revision_manifest_sha256,(pending==='stale'?'b':'a').repeat(64));
  assert.deepEqual(spatialDraft,draft,'Disable must not replace pending geometry or switches');
- servedState.working_revision='rev-002';
- servedState.revisions.push({...servedState.revisions[0],revision:'rev-002',revision_manifest_sha256:'c'.repeat(64),spatial_fade:{enabled:false,stale:false,settings:expected}});
- servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-002',parent:'rev-001',spatial_fade:{enabled:false,stale:false,settings:expected}}};
+ const completedRevision=reused?'rev-001':'rev-002';servedState.working_revision=completedRevision;
+ if(!reused)servedState.revisions.push({...servedState.revisions[0],revision:completedRevision,revision_manifest_sha256:'c'.repeat(64),spatial_fade:{enabled:false,stale:false,settings:expected}});
+ servedState.action={running:false,name:'effects',error:null,result:{revision:completedRevision,parent:reused?'rev-000':'rev-001',reused,spatial_fade:{enabled:false,stale:false,settings:expected}}};
  await refresh();
  if(pending==='none') {assert(!spatialDirty);assert.deepEqual(spatialDraft,expected);}
- else {assert(spatialDirty);assert.deepEqual(spatialDraft,draft);assert($('spatialDraftStatus').textContent.includes('Stale'));}
+ else {assert(spatialDirty);assert.deepEqual(spatialDraft,draft);assert($('spatialDraftStatus').textContent.includes(!reused||pending==='stale'?'Stale':'Unapplied'));}
  assert.equal($('backgroundHex').value,'#AB1234');
  """
     )
@@ -309,6 +344,27 @@ def test_prepare_does_not_require_development_review_or_change_appearance_contro
  """)
 
 
+def test_gallery_pending_repair_preserves_unsubmitted_forms_and_polling_is_read_only():
+    run_page(r"""
+ servedState.preview={status:'pending',reason:'missing',latest_result_revision:'rev-002',accepted_revision:'rev-001'};
+ await ready();
+ assert($('previewStatus').textContent.includes('pending'));
+ assert($('previewStatus').textContent.includes('rev-002'));
+ assert.equal(posts.length,0);
+ $('backgroundHex').value='#151515';$('backgroundHex').oninput();
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ await $('previewRepair').onclick();
+ assert.equal(posts.at(-1).action,'preview-repair');
+ servedState.action={running:true,name:'preview-repair',error:null,result:null};await refresh();
+ servedState.action={running:false,name:'preview-repair',error:null,result:{status:'current'}};
+ servedState.preview={status:'current',revision:'rev-002',label:'Draft'};await refresh();
+ assert.equal($('backgroundHex').value,'#151515');
+ assert.equal($('exposureEV').value,'1.2');
+ assert($('previewStatus').textContent.includes('Draft'));
+ servedState.writer_busy=true;await refresh();assert($('previewRepair').disabled);
+ """)
+
+
 def test_series_mode_and_portable_controls_preserve_independent_forms():
     run_page(r"""
  servedState.series_settings={name:'Portrait series',output_width_px:40,output_height_px:50,side_margin_tenths_percent:150,minimum_vertical_margin_tenths_percent:50};
@@ -396,7 +452,9 @@ def test_series_buttons_export_the_named_selection_and_visible_settings():
  assert.equal($('seriesExportAccepted').disabled,true);const count=posts.length;await $('seriesExportAccepted').onclick();assert.equal(posts.length,count);
  $('viewRevision').value='rev-001';await $('viewRevision').onchange();
  servedState.action={running:true,name:'series-export',error:null,result:null};
+ $('seriesEditable').checked=true;
  await $('seriesExportAccepted').onclick();assert.equal(posts.at(-1).revision,'rev-001');assert.equal(posts.at(-1).draft,false);
+ assert.deepEqual(posts.at(-1).variants,['editable']);
  assert.equal($('cleanupSupport').value,'keep');
  """)
 
@@ -425,6 +483,24 @@ def test_export_keeps_complete_unsaved_guides_and_groups():
  assert.equal(dirty,true,'Export discarded unsaved authoring');
  assert.equal(JSON.stringify({groups,regions}),before);
  assert.equal(posts.at(-1).action,'export');
+ """)
+
+
+def test_requested_exports_send_variants_and_preserve_independent_forms():
+    run_page(r"""
+ await ready();
+ $('exportEditable').checked=true;$('exportBlack').checked=true;
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ const before=JSON.stringify({exposureControlsIdentity,ev:$('exposureEV').value});
+ await $('exportAccepted').onclick();
+ assert.deepEqual(posts.at(-1).variants,['black','editable']);
+ assert.equal(posts.at(-1).revision_manifest_sha256,'a'.repeat(64));
+ servedState.action={name:'export',running:false,error:null,result:{directory:'exports/new',reused:false}};
+ await refresh();
+ assert.equal(JSON.stringify({exposureControlsIdentity,ev:$('exposureEV').value}),before);
+ $('framingBlack').checked=true;$('framingEditable').checked=true;await $('framingExportAccepted').onclick();
+ assert.deepEqual(posts.at(-1).variants,['black','editable']);
+ assert.equal(posts.at(-1).revision_manifest_sha256,'a'.repeat(64));
  """)
 
 
@@ -485,7 +561,7 @@ def test_framing_uncertain_save_retains_fields_until_explicit_reload():
  $('framingLeft').value='1.5';$('framingLeft').oninput();
  await $('framingPreview').onclick();assert.match($('message').textContent,/whole pixels/);
  $('framingLeft').value='9';$('framingLeft').oninput();
- servedState.master_id='replacement-source';await refresh();
+ servedState.developed_id='replacement-source';await refresh();
  assert.equal(Number($('framingLeft').value),9);assert.equal(framingNeedsReload,true);
  """)
 
@@ -531,7 +607,7 @@ def test_framing_bitmap_pending_decode_rejects_changed_identity(change):
  const preview=previewFraming();for(let i=0;i<20&&!decode;i++)await Promise.resolve();assert(decode);
  """
         + {
-            "source": "state.master_id='new-source';",
+            "source": "state.developed_id='new-source';",
             "revision": "$('viewRevision').value='rev-002';",
             "digest": "state.revisions[0].revision_manifest_sha256='b'.repeat(64);",
             "margin": "$('framingLeft').value='2';$('framingLeft').oninput();",
@@ -1162,6 +1238,112 @@ assert($('fadeDraftStatus').textContent.includes('Unsaved Shadow fade settings')
     )
 
 
+@pytest.mark.parametrize("effect", ["exposure", "fade"])
+def test_reused_effect_completion_clears_only_matching_submission(effect):
+    """A reused result has a historical parent, while unrelated controls stay pending."""
+    run_page(
+        r"""
+const effect=EFFECT;
+servedState.revisions[0].local_exposure={enabled:true,stale:false,settings:{enabled:true,ev:.5}};
+servedState.revisions[0].shadow_fade={enabled:true,stale:false,settings:{enabled:true,amount:.5,preserve_highlights:1}};
+await ready();
+$('cleanupSupport').value='pending-cleanup.png';$('shadingWidth').value='123';
+$('backgroundHex').value='#223344';$('backgroundHex').oninput();
+if(effect==='exposure'){$('exposureEV').value='.5';$('exposureEV').oninput();$('exposureCandidate').checked=true;}
+else {$('fadeAmount').value='50';$('fadeAmount').oninput();$('fadeCandidate').checked=true;}
+const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST'){
+   const sent=JSON.parse(options.body);
+   servedState.action={name:'effects',running:false,error:null,result:{revision:'rev-001',parent:'rev-000',reused:true,
+     local_exposure:servedState.revisions[0].local_exposure,shadow_fade:servedState.revisions[0].shadow_fade}};
+   assert.equal(sent.base_revision,'rev-001');
+ }
+ return response;
+};
+await $(effect==='exposure'?'exposureAmount':'fadeAmountApply').onclick();
+assert.equal($(effect==='exposure'?'exposureCandidate':'fadeCandidate').checked,false);
+assert(!$(effect==='exposure'?'exposureDraftStatus':'fadeDraftStatus').textContent.includes('Unsaved '+(effect==='exposure'?'exposure settings':'Shadow fade settings')));
+assert.equal($('cleanupSupport').value,'pending-cleanup.png');assert.equal($('shadingWidth').value,'123');
+assert.equal($('backgroundHex').value,'#223344');assert.equal(backgroundDirty,true);
+assert($('result').textContent.includes('Reused'));
+await refresh();assert.equal($('cleanupSupport').value,'pending-cleanup.png');
+""".replace("EFFECT", repr(effect))
+    )
+
+
+@pytest.mark.parametrize("effect", ["exposure", "fade"])
+@pytest.mark.parametrize("completion", ["success", "error", "other-revision", "other-settings"])
+def test_reused_reset_synchronizes_only_matching_submitted_controls(effect, completion):
+    run_page(
+        r"""
+const effect=EFFECT,completion=COMPLETION;
+servedState.revisions[0].local_exposure={enabled:false,stale:false,settings:{enabled:false,ev:0}};
+servedState.revisions[0].shadow_fade={enabled:false,stale:false,settings:{enabled:false,amount:0,preserve_highlights:.3}};
+await ready();
+$('exposureEV').value='1.2';$('exposureEV').oninput();$('exposureCandidate').checked=true;$('exposureCandidate').onchange?.();
+$('fadeAmount').value='65';$('fadeAmount').oninput();$('fadeCandidate').checked=true;$('fadeCandidate').onchange?.();
+for(const prefix of ['exposure','fade']) {
+ $(prefix+'Role').value='regions';$(prefix+'Shape').value='rectangle';$(prefix+'Feather').value='0';
+ $(prefix+'Rectangle').value='50,50,60,60';await $(prefix+'AddRectangle').onclick();
+}
+$('cleanupSupport').value='pending-cleanup.png';$('shadingWidth').value='123';$('geometry').value='17,23';
+$('backgroundHex').value='#223344';$('backgroundHex').oninput();
+$('framingLeft').value='7';$('framingLeft').oninput();$('seriesName').value='Pending series';$('seriesName').oninput();
+const drafts=JSON.stringify({exposureArea,fadeArea,groups,regions,identity,exposureDirty,fadeDirty,backgroundDirty,framingDirty,seriesDirty});
+const unrelated=effect==='exposure'?fadeControlsIdentity:exposureControlsIdentity;
+const originalFetch=globalThis.fetch;
+globalThis.fetch=async(path,options)=>{
+ const response=await originalFetch(path,options);
+ if(options.method==='POST') {
+  const sent=JSON.parse(options.body);
+  assert.deepEqual(effect==='exposure'?sent.local_exposure:sent.shadow_fade,
+    effect==='exposure'?{enabled:false,ev:0}:{enabled:false,amount:0,preserve_highlights:.3});
+  const exposure=structuredClone(servedState.revisions[0].local_exposure),fade=structuredClone(servedState.revisions[0].shadow_fade);
+  if(completion==='other-settings') {exposure.settings.ev=.2;fade.settings.amount=.2;}
+  servedState.action={name:'effects',running:false,error:completion==='error'?'synthetic failure':null,
+   result:{revision:completion==='other-revision'?'rev-old':'rev-001',parent:'rev-000',reused:true,local_exposure:exposure,shadow_fade:fade}};
+ }
+ return response;
+};
+await $(effect==='exposure'?'exposureReset':'fadeReset').onclick();
+const success=completion==='success';
+assert.equal(Number($('exposureEV').value),success&&effect==='exposure'?0:1.2);
+assert.equal(Number($('exposureRange').value),success&&effect==='exposure'?0:1.2);
+assert.equal(Number($('fadeAmount').value),success&&effect==='fade'?0:65);
+assert.equal(Number($('fadeRange').value),success&&effect==='fade'?0:65);
+assert.equal(Number($('fadePreserve').value),30);assert.equal(Number($('fadePreserveRange').value),30);
+assert.equal($(effect==='exposure'?'exposureCandidate':'fadeCandidate').checked,!success);
+assert.equal((effect==='exposure'?exposureControlsIdentity:fadeControlsIdentity)===null,success);
+assert.equal(effect==='exposure'?fadeControlsIdentity:exposureControlsIdentity,unrelated);
+assert.equal(JSON.stringify({exposureArea,fadeArea,groups,regions,identity,exposureDirty,fadeDirty,backgroundDirty,framingDirty,seriesDirty}),drafts);
+assert.equal($('cleanupSupport').value,'pending-cleanup.png');assert.equal($('shadingWidth').value,'123');assert.equal($('geometry').value,'17,23');
+assert.equal($('backgroundHex').value,'#223344');assert.equal($('framingLeft').value,'7');assert.equal($('seriesName').value,'Pending series');
+assert.equal($(effect==='exposure'?'exposureDraftStatus':'fadeDraftStatus').textContent.includes('Unsaved '+(effect==='exposure'?'exposure settings':'Shadow fade settings')),!success);
+await refresh();assert.equal(Number($(effect==='exposure'?'exposureEV':'fadeAmount').value),success?0:effect==='exposure'?1.2:65);
+""".replace("EFFECT", repr(effect)).replace("COMPLETION", repr(completion))
+    )
+
+
+@pytest.mark.parametrize("effect", ["shading", "exposure", "fade"])
+def test_explicit_reload_during_reused_completion_needs_no_submitted_controls(effect):
+    run_page(
+        r"""
+await ready();
+const effect=EFFECT,result={revision:'rev-001',parent:'rev-000',reused:true};
+if(effect==='exposure')result.local_exposure={settings:{enabled:false,ev:0}};
+if(effect==='fade')result.shadow_fade={settings:{enabled:false,amount:0,preserve_highlights:1}};
+servedState.action={name:'effects',running:false,error:null,result};
+actionWasRunning=true;
+await $('reload').onclick();
+assert.equal($('message').textContent,'');assert.equal(actionWasRunning,false);
+assert.equal(exposureControlsIdentity,null);assert.equal(fadeControlsIdentity,null);
+assert.equal(Number($('exposureEV').value),0);assert.equal(Number($('fadeAmount').value),0);
+""".replace("EFFECT", repr(effect))
+    )
+
+
 @pytest.mark.parametrize("button", ["fadeAmountApply", "fadeApply", "fadeReset"])
 def test_applied_fade_controls_clear_only_after_success_and_keep_area_semantics(button):
     run_page(
@@ -1278,7 +1460,7 @@ assert($('fadeDraftStatus').textContent.includes('Unsaved Shadow fade settings')
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("master_id", "other-master"),
+        ("developed_id", "other-master"),
         ("working_revision", "rev-002"),
         ("inputs_digest", "other-draft"),
         ("authoring_digest", "other-author"),
@@ -1296,3 +1478,33 @@ await $('fadeAmountApply').onclick();await $('fadeApply').onclick();assert.equal
 assert.match($('message').textContent,/reload/i);
 """.replace("FIELD", repr(field)).replace("VALUE", repr(value))
     )
+
+
+def test_comparison_submission_preserves_drafts_binds_crop_and_reports_saved_paths():
+    run_page(r"""
+ await ready();
+ $('comparisonPresentation').value='native';$('comparisonNative').checked=false;
+ $('exposureEV').value='1.2';$('exposureEV').oninput();
+ $('backgroundHex').value='#AB1234';$('backgroundHex').oninput();
+ const selectedCrop=[...crop];
+ await $('comparisonSave').onclick();
+ let sent=posts.at(-1);
+ assert.equal(sent.action,'comparison');assert.equal(sent.revision,'rev-001');
+ assert.equal(sent.revision_manifest_sha256,'a'.repeat(64));
+ assert.deepEqual(sent.crops,[selectedCrop]);assert.equal(sent.presentation,null);
+ assert.equal(sent.retain_native,false);
+ servedState.action={name:'comparison',running:false,error:null,result:{comparison_manifest_file:'/synthetic/comparison/manifest.json',reused:false,view:{jpeg_base64:'YWJj',manifest_json:'{}'}}};
+ await refresh();
+ assert($('comparisonStatus').textContent.includes('/synthetic/comparison/manifest.json'));
+ assert.equal($('comparisonOpen').hidden,false);assert($('comparisonOpen').href.startsWith('blob:'));
+ assert.equal($('comparisonManifest').hidden,false);
+ assert.equal($('exposureEV').value,'1.2');assert.equal($('backgroundHex').value,'#AB1234');
+ $('comparisonPresentation').value='add-margins';$('comparisonNative').checked=true;
+ await $('comparisonSave').onclick();sent=posts.at(-1);
+ assert.equal(sent.presentation.mode,'add-margins');assert.equal(sent.presentation.revision,'rev-001');
+ assert.equal(sent.retain_native,true);
+ servedState.action={name:'comparison',running:false,error:'Missing bound native evidence',result:null};
+ await refresh();assert($('comparisonStatus').textContent.includes('Missing bound native evidence'));
+ const count=posts.length;imageLoading=true;await $('comparisonSave').onclick();
+ assert.equal(posts.length,count);assert($('message').textContent.includes('Load the matching native crop'));
+ """)

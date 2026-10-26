@@ -10,10 +10,11 @@ import numpy as np
 import pytest
 import tifffile
 from PIL import Image
+from test_ingest import bind_raster, saved_raster
 from test_operations import edits, opened, request
 
 from blackmask import operations
-from blackmask.project import ProjectError, load_master, read_project
+from blackmask.project import ProjectError, load_developed, read_project
 
 
 def prepared(tmp_path):
@@ -31,7 +32,7 @@ def prepared(tmp_path):
 
 def approve(project, result):
     return operations.accept_trimap(
-        project, result["revision"], result["master_id"], result["inputs_digest"]
+        project, result["revision"], result["developed_id"], result["inputs_digest"]
     )
 
 
@@ -58,41 +59,53 @@ def test_recorded_guides_matte_acceptance_and_saved_exports(tmp_path):
     approve(project, prepared_result)
     result = run_matte(project)
     revision = project / "revisions" / result["revision"]
-    alpha = np.array(Image.open(revision / "base_alpha16.png"))
+    alpha = np.array(Image.open(saved_raster(revision / "base_alpha16.png")))
     assert (
         alpha.dtype == np.uint16
         and alpha[0, 0] == 65535
         and alpha[1, 2] == 0
         and alpha[0, 1] == 16384
     )
-    master, _ = load_master(project, result["master_id"])
-    np.testing.assert_array_equal(tifffile.imread(revision / "foreground_rgb16.tif"), master)
+    master, _ = load_developed(project, result["developed_id"])
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(revision / "foreground_rgb16.tif")), master
+    )
     review = json.loads((revision / "review/manifest.json").read_text())
     assert review["crops"][0]["crop_xyxy"] == [0, 0, 3, 2]
     assert review["crops"][0]["displayed_dimensions_wh"] == [3, 2]
     assert read_project(project)["accepted_revision"] is None
     export = importlib.import_module("blackmask.export")
     with pytest.raises(ProjectError, match="accepted"):
-        export.export_project(project)
-    draft = export.export_project(project, revision=result["revision"], draft=True)
+        export.export_project(project, variants=("black", "transparent", "editable"))
+    draft = export.export_project(
+        project,
+        revision=result["revision"],
+        draft=True,
+        variants=("black", "transparent", "editable"),
+    )
     assert "DRAFT" in draft["directory"]
     operations.accept_revision(project, result["revision"])
-    output = export.export_project(project)
-    black = tifffile.imread(Path(output["directory"]) / "black_rgb16.tif")
+    output = export.export_project(project, variants=("black", "transparent", "editable"))
+    black = tifffile.imread(saved_raster(Path(output["directory"]) / "black_rgb16.tif"))
     expected = np.rint(
         master.astype(np.float64) * (alpha.astype(np.float64) / 65535)[..., None]
     ).astype(np.uint16)
     np.testing.assert_array_equal(black, expected)
     np.testing.assert_array_equal(
-        np.array(Image.open(Path(output["directory"]) / "alpha16.png")), alpha
+        np.array(Image.open(saved_raster(Path(output["directory"]) / "alpha16.png"))), alpha
     )
-    rgba = np.array(Image.open(Path(output["directory"]) / "transparent_RGBA8_VIEW.png"))
+    rgba = np.array(
+        Image.open(saved_raster(Path(output["directory"]) / "transparent_RGBA8_VIEW.png"))
+    )
     np.testing.assert_array_equal(rgba[..., :3], np.rint(master / 257).astype(np.uint8))
-    assert export.export_project(project) == output
+    assert export.export_project(project, variants=("black", "transparent", "editable")) == {
+        **output,
+        "reused": True,
+    }
     assert source.read_bytes() == capture
-    (Path(output["directory"]) / "black_rgb16.tif").write_bytes(b"different")
+    (saved_raster(Path(output["directory"]) / "black_rgb16.tif")).write_bytes(b"different")
     with pytest.raises(ProjectError, match="collision|differ|hash"):
-        export.export_project(project)
+        export.export_project(project, variants=("black", "transparent", "editable"))
 
 
 @pytest.mark.parametrize("trimap_confirmed", [False, True])
@@ -114,7 +127,7 @@ def test_optional_trimap_approval_is_preserved_and_validated_when_present(tmp_pa
     _, project, result = prepared(tmp_path)
     approve(project, result)
     approval = project / "approvals" / f"{result['revision']}-trimap.json"
-    original = approval.read_bytes()
+    original = saved_raster(approval).read_bytes()
     before = (project / "state.json").read_bytes()
     record = json.loads(original)
     record["trimap_sha256"] = "0" * 64
@@ -122,7 +135,7 @@ def test_optional_trimap_approval_is_preserved_and_validated_when_present(tmp_pa
     with pytest.raises(ProjectError, match="Stale trimap approval"):
         run_matte(project)
     assert (project / "state.json").read_bytes() == before
-    approval.write_bytes(original)
+    saved_raster(approval).write_bytes(original)
     matted = run_matte(project)
     assert (
         project / "revisions" / matted["revision"] / "trimap_approval.json"
@@ -188,7 +201,7 @@ def test_full_rerun_preserves_partial_alpha_and_foreground_locks(tmp_path):
     first = run_matte(project)
     operations.accept_revision(project, first["revision"])
     saved = project / "revisions" / first["revision"]
-    prior = np.array(Image.open(saved / "base_alpha16.png"))
+    prior = np.array(Image.open(saved_raster(saved / "base_alpha16.png")))
     assert prior[0, 1] == 16384
     filename = edits(
         project,
@@ -212,14 +225,14 @@ def test_full_rerun_preserves_partial_alpha_and_foreground_locks(tmp_path):
     ):
         second = run_matte(project)
     current = project / "revisions" / second["revision"]
-    alpha = np.array(Image.open(current / "base_alpha16.png"))
+    alpha = np.array(Image.open(saved_raster(current / "base_alpha16.png")))
     assert alpha[0, 1] == prior[0, 1] and alpha[1, 1] == 49151
     np.testing.assert_array_equal(
-        tifffile.imread(current / "foreground_rgb16.tif")[0, 1],
-        tifffile.imread(saved / "foreground_rgb16.tif")[0, 1],
+        tifffile.imread(saved_raster(current / "foreground_rgb16.tif"))[0, 1],
+        tifffile.imread(saved_raster(saved / "foreground_rgb16.tif"))[0, 1],
     )
     assert read_project(project)["accepted_revision"] == first["revision"]
-    assert np.array_equal(np.array(Image.open(saved / "base_alpha16.png")), prior)
+    assert np.array_equal(np.array(Image.open(saved_raster(saved / "base_alpha16.png"))), prior)
 
 
 def test_final_acceptance_rejects_stale_and_corrupt_saved_inputs(tmp_path):
@@ -232,7 +245,9 @@ def test_final_acceptance_rejects_stale_and_corrupt_saved_inputs(tmp_path):
     with pytest.raises(ProjectError, match="Stale|stale"):
         operations.accept_revision(project, matted["revision"])
     assert (project / "state.json").read_bytes() == before
-    (project / "revisions" / matted["revision"] / "base_alpha16.png").write_bytes(b"corrupt")
+    (saved_raster(project / "revisions" / matted["revision"] / "base_alpha16.png")).write_bytes(
+        b"corrupt"
+    )
     with pytest.raises(ProjectError, match="hash"):
         operations.accept_revision(project, matted["revision"])
     assert (project / "state.json").read_bytes() == before
@@ -241,16 +256,13 @@ def test_final_acceptance_rejects_stale_and_corrupt_saved_inputs(tmp_path):
 def rgb_lock_fixture(project, values):
     from test_operations import saved_alpha_fixture
 
-    from blackmask.ingest import write_master
-    from blackmask.project import digest
+    from blackmask.ingest import write_developed
 
     fixture = saved_alpha_fixture(project, np.full((2, 3), 12345, dtype=np.uint16))
     directory = Path(fixture["manifest_file"]).parent
-    write_master(directory / "corrected_rgb16.tif", values)
+    write_developed(directory / "corrected_rgb16.tif", values)
     manifest = json.loads((directory / "manifest.json").read_text())
-    manifest["files"]["corrected_rgb16.tif"] = digest(
-        (directory / "corrected_rgb16.tif").read_bytes()
-    )
+    bind_raster(project, directory, manifest, "corrected_rgb16.tif")
     (directory / "manifest.json").write_text(json.dumps(manifest))
     return fixture
 
@@ -274,11 +286,13 @@ def test_applicable_foreground_lock_values_survive_and_outside_is_master(tmp_pat
     result = operations.apply_operation(project, request(project, guide_edits_file=name))
     approve(project, result)
     matted = run_matte(project)
-    alpha = np.array(Image.open(project / "revisions" / matted["revision"] / "base_alpha16.png"))
-    foreground = tifffile.imread(
-        project / "revisions" / matted["revision"] / "foreground_rgb16.tif"
+    alpha = np.array(
+        Image.open(saved_raster(project / "revisions" / matted["revision"] / "base_alpha16.png"))
     )
-    master, _ = load_master(project, matted["master_id"])
+    foreground = tifffile.imread(
+        saved_raster(project / "revisions" / matted["revision"] / "foreground_rgb16.tif")
+    )
+    master, _ = load_developed(project, matted["developed_id"])
     assert alpha[0, 1] == 12345 and alpha[1, 1] == 16384
     np.testing.assert_array_equal(foreground[0, 1], [1234, 1234, 1234])
     np.testing.assert_array_equal(foreground[1], master[1])

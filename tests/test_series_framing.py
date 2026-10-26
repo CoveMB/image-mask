@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import tifffile
 from PIL import Image
+from test_ingest import saved_raster
 
 import blackmask.series_framing as series
 from blackmask.series_framing import (
@@ -85,12 +86,74 @@ def scalar_background_blend(foreground, background, amount):
     return 65535 * (12.92 * linear if linear <= 0.0031308 else 1.055 * linear ** (1 / 2.4) - 0.055)
 
 
+def test_black_series_keeps_selected_fade_target_at_partial_alpha():
+    from blackmask.spatial_fade import SpatialFadeOperands
+
+    foreground = np.full((4, 6, 3), 40000, np.uint16)
+    alpha = np.full((4, 6), 32768, np.uint16)
+    spatial = SpatialFadeOperands(
+        np.full(alpha.shape, 65535, np.uint16),
+        np.zeros(alpha.shape, bool),
+        {"enabled": True, "stale": False, "settings": {"preserve_highlights": 0}},
+    )
+    sampling = series_sampling_plan(
+        compute_series_layout(
+            alpha,
+            series_settings(
+                output_width_px=6,
+                output_height_px=4,
+                side_margin_tenths_percent=0,
+                minimum_vertical_margin_tenths_percent=0,
+            ),
+        )
+    )
+    assert sampling.identity
+    pixels = render_series(
+        foreground,
+        alpha,
+        sampling,
+        spatial_fade=spatial,
+        background_settings={"color_srgb": "#0a141e", "variation": 0.0},
+        black_background=True,
+    )
+    # q=1 targets 257*[10,20,30]; encoded alpha is applied exactly once.
+    np.testing.assert_array_equal(pixels, np.broadcast_to([1285, 2570, 3855], pixels.shape))
+
+
+def test_black_spatial_series_admits_separate_selected_target_canvas():
+    alpha = np.full((4, 6), 32768, np.uint16)
+    sampling = series_sampling_plan(
+        compute_series_layout(
+            alpha,
+            series_settings(
+                output_width_px=6,
+                output_height_px=4,
+                side_margin_tenths_percent=0,
+                minimum_vertical_margin_tenths_percent=0,
+            ),
+        )
+    )
+    normal = estimate_series_resources(
+        sampling, retained_native_bytes=192, transparent=False, spatial_fade_pixels=24
+    )
+    black = estimate_series_resources(
+        sampling,
+        retained_native_bytes=192,
+        transparent=False,
+        spatial_fade_pixels=24,
+        black_background=True,
+    )
+    assert black["spatial_target_rgb16_bytes"] == 144
+    assert black["estimated_peak_bytes"] == normal["estimated_peak_bytes"] + 144
+
+
+@pytest.mark.parametrize("black_background", [False, True])
 @pytest.mark.parametrize("configuration", ["oval", "arcs", "both"])
 @pytest.mark.parametrize(
     "shape,output", [((4, 6), (6, 4)), ((4, 6), (17, 19)), ((9, 12), (7, 11)), ((5, 31), (11, 23))]
 )
 def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
-    configuration, shape, output
+    configuration, shape, output, black_background
 ):
     from blackmask.background import make_background
 
@@ -112,7 +175,8 @@ def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
         )
     )
     background_settings = {"color_srgb": "#45202B", "variation": 0.8}
-    expected = make_background((output[1], output[0]), background_settings)
+    target = make_background((output[1], output[0]), background_settings)
+    expected = np.zeros_like(target) if black_background else target.copy()
     native_alpha = alpha.astype(np.float64) / 65535
     native_q = saved.weight16.astype(np.float64) / 65535
     native_q[saved.protection] = 0
@@ -129,14 +193,21 @@ def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
         for y in range(a.shape[0]):
             for x in range(a.shape[1]):
                 oy, ox = sampling.y.output_start + y, sampling.x.output_start + x
-                b = int(expected[oy, ox, channel])
+                b = int(target[oy, ox, channel])
                 faded = scalar_background_blend(straight[y, x], b, ratio[y, x])
                 contribution = p[y, x] if ratio[y, x] == 0 else faded * a[y, x]
-                expected[oy, ox, channel] = round(contribution + b * (1 - a[y, x]))
+                expected[oy, ox, channel] = round(
+                    contribution + (0 if black_background else b) * (1 - a[y, x])
+                )
     original = alpha.copy()
     with np.errstate(divide="raise", invalid="raise"):
         actual = render_series(
-            foreground, alpha, sampling, spatial_fade=saved, background_settings=background_settings
+            foreground,
+            alpha,
+            sampling,
+            spatial_fade=saved,
+            background_settings=background_settings,
+            black_background=black_background,
         )
         rgba = render_series(
             foreground,
@@ -154,9 +225,20 @@ def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
     saved.weight16[:] = 0
     np.testing.assert_array_equal(
         render_series(
-            foreground, alpha, sampling, spatial_fade=saved, background_settings=background_settings
+            foreground,
+            alpha,
+            sampling,
+            spatial_fade=saved,
+            background_settings=background_settings,
+            black_background=black_background,
         ),
-        render_series(foreground, alpha, sampling, background_settings=background_settings),
+        render_series(
+            foreground,
+            alpha,
+            sampling,
+            background_settings=background_settings,
+            black_background=black_background,
+        ),
     )
     np.testing.assert_array_equal(
         render_series(
@@ -287,7 +369,12 @@ def test_spatial_active_series_reconstructs_from_delivered_pair_with_project_una
     result = operations.apply_operation(project, spatial_request(project))
     values = series_settings(output_width_px=17, output_height_px=19).to_dict()
     exported = export_project(
-        project, revision=result["revision"], draft=True, series=values, framed_transparent=True
+        project,
+        revision=result["revision"],
+        draft=True,
+        series=values,
+        framed_transparent=True,
+        variants=("editable",),
     )
     portable = tmp_path / "portable"
     portable.mkdir()
@@ -346,7 +433,7 @@ def test_series_settings_strict_portable_round_trip(tmp_path):
         "minimum_vertical_margin_tenths_percent": 50,
     }
     path = tmp_path / "preset.json"
-    path.write_bytes(raw)
+    saved_raster(path).write_bytes(raw)
     assert parse_series_preset(raw) == read_series_preset_file(path) == settings
     assert isinstance(settings, SeriesSettings)
 
@@ -385,13 +472,13 @@ def test_series_settings_rejects_ambiguous_json_and_unsafe_files(tmp_path):
         with pytest.raises(ValueError):
             parse_series_preset(bad)
     path = tmp_path / "preset.json"
-    path.write_bytes(raw)
+    saved_raster(path).write_bytes(raw)
     alias = tmp_path / "alias.json"
     alias.symlink_to(path)
     for unsafe in (alias, tmp_path, tmp_path / "missing"):
         with pytest.raises((ValueError, OSError)):
             read_series_preset_file(unsafe)
-    assert path.read_bytes() == raw
+    assert saved_raster(path).read_bytes() == raw
 
 
 def test_series_layout_width_height_and_fractional_geometry():
@@ -647,7 +734,7 @@ def test_series_export_round_trip_identity_and_preservation(tmp_path):
     settings = series_settings(output_width_px=40, output_height_px=50).to_dict()
     output = export_project(project, series=settings, framed_transparent=True)
     directory = Path(output["directory"])
-    record = json.loads(Path(output["manifest_file"]).read_bytes())
+    record = json.loads(saved_raster(Path(output["manifest_file"])).read_bytes())
     assert record["kind"] == "series-framed-presentation"
     assert (
         record["source_record_sha256"]
@@ -655,22 +742,25 @@ def test_series_export_round_trip_identity_and_preservation(tmp_path):
     )
     assert record["settings"] == settings
     assert output["output_dimensions_wh"] == [40, 50]
-    pixels = tifffile.imread(directory / "result_rgb16.tif")
+    pixels = tifffile.imread(saved_raster(directory / "result_rgb16.tif"))
     assert pixels.shape == (50, 40, 3) and pixels.dtype == np.uint16
     assert np.any(pixels % 257)
-    with Image.open(directory / "transparent_RGBA8_VIEW.png") as image:
+    with Image.open(saved_raster(directory / "transparent_RGBA8_VIEW.png")) as image:
         rgba = np.array(image)
         assert image.info["icc_profile"] == srgb_profile()
     assert not rgba[rgba[..., 3] == 0, :3].any()
     assert "resized presentation" in (directory / "README.txt").read_text()
     assert not any(text in json.dumps(record) for text in (str(tmp_path), "/Users/", "source.tif"))
     first = hashes(project)
-    assert export_project(project, series=settings, framed_transparent=True) == output
+    assert export_project(project, series=settings, framed_transparent=True) == {
+        **output,
+        "reused": True,
+    }
     assert hashes(project) == first
     assert not list((project / "exports").glob(".export-*"))
     assert all(hashes(project)[name] == value for name, value in before.items())
     drafted = export_project(project, series=settings, revision=output["revision"], draft=True)
-    assert json.loads(Path(drafted["manifest_file"]).read_bytes())["draft"] is True
+    assert json.loads(saved_raster(Path(drafted["manifest_file"])).read_bytes())["draft"] is True
 
 
 def test_series_export_selected_revision_expected_identity(tmp_path):
@@ -689,7 +779,7 @@ def test_series_export_selected_revision_expected_identity(tmp_path):
         "revision"
     ]
     assert len({accepted["revision"], selected, working}) == 3
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     expected = hashlib.sha256(
         (project / "revisions" / selected / "manifest.json").read_bytes()
     ).hexdigest()
@@ -699,20 +789,20 @@ def test_series_export_selected_revision_expected_identity(tmp_path):
         series=settings,
         revision=selected,
         draft=True,
-        expected_master_id=master,
+        expected_developed_id=master,
         expected_revision_manifest_sha256=expected,
     )
     assert output["revision"] == selected
     for changes in (
-        {"expected_master_id": "0" * 64},
+        {"expected_developed_id": "0" * 64},
         {"expected_revision_manifest_sha256": "0" * 64},
-        {"expected_master_id": None},
+        {"expected_developed_id": None},
     ):
         arguments = {
             "series": settings,
             "revision": selected,
             "draft": True,
-            "expected_master_id": master,
+            "expected_developed_id": master,
             "expected_revision_manifest_sha256": expected,
         }
         arguments.update(changes)
@@ -726,7 +816,7 @@ def test_series_export_selected_revision_expected_identity(tmp_path):
     "failure", ["mismatch", "sync", "cleanup", "readback", "disk", "estimate", "state-change"]
 )
 def test_series_export_failures_reuse_and_recovery(tmp_path, monkeypatch, failure):
-    from test_framing import hashes, protected_project
+    from test_framing import hashes, protected_project, restore_delivery_after_staging
 
     from blackmask.export import export_project
 
@@ -739,9 +829,14 @@ def test_series_export_failures_reuse_and_recovery(tmp_path, monkeypatch, failur
     (retained / "evidence.txt").write_text("preserved")
     if failure == "mismatch":
         note = output / "README.txt"
-        raw = note.read_bytes()
-        note.write_bytes(bytes([raw[0] ^ 1]) + raw[1:])
+        raw = saved_raster(note).read_bytes()
+        saved_raster(note).write_bytes(bytes([raw[0] ^ 1]) + raw[1:])
     before = hashes(project)
+    if failure == "cleanup":
+        restore_delivery_after_staging(monkeypatch, output, tmp_path / "retained-complete-delivery")
+    elif failure in {"readback", "disk", "estimate", "state-change"}:
+        # These faults must exercise fresh work, rather than the intact fast return.
+        settings = {**settings, "name": "New explicitly requested delivery"}
     if failure == "sync":
         original = export._sync_directory
 
@@ -784,7 +879,7 @@ def test_series_export_failures_reuse_and_recovery(tmp_path, monkeypatch, failur
         def changed(*args, **kwargs):
             pixels = original_render(*args, **kwargs)
             path = project / "state.json"
-            path.write_bytes(path.read_bytes() + b"\n")
+            saved_raster(path).write_bytes(saved_raster(path).read_bytes() + b"\n")
             return pixels
 
         monkeypatch.setattr(series, "render_series", changed)
@@ -809,8 +904,8 @@ def test_series_settings_save_raw_cas_and_native_preservation(tmp_path):
     from blackmask.project import read_project
 
     project, _, _ = protected_project(tmp_path)
-    source_id = read_project(project)["master_id"]
-    settings, digest = series.read_series_settings(project, source_id, (6, 4))
+    developed_id = read_project(project)["developed_id"]
+    settings, digest = series.read_series_settings(project, developed_id, (6, 4))
     assert settings == SeriesSettings() and digest is None
     assert not (project / "series-framing.json").exists()
     before = hashes(project)
@@ -818,14 +913,14 @@ def test_series_settings_save_raw_cas_and_native_preservation(tmp_path):
         project,
         series_settings(output_width_px=40, output_height_px=50).to_dict(),
         expected_digest=None,
-        expected_source_id=source_id,
+        expected_developed_id=developed_id,
     )
     path = project / "series-framing.json"
-    raw = path.read_bytes()
+    raw = saved_raster(path).read_bytes()
     assert saved["series_digest"] == hashlib.sha256(raw).hexdigest()
     assert set(json.loads(raw)) == {
         "schema_version",
-        "master_id",
+        "developed_id",
         "source_dimensions_wh",
         "settings",
     }
@@ -834,29 +929,29 @@ def test_series_settings_save_raw_cas_and_native_preservation(tmp_path):
             project,
             saved["series_settings"],
             expected_digest=saved["series_digest"],
-            expected_source_id=source_id,
+            expected_developed_id=developed_id,
         )
         == saved
     )
-    assert path.read_bytes() == raw
-    path.write_bytes(raw + b"\n")
+    assert saved_raster(path).read_bytes() == raw
+    saved_raster(path).write_bytes(raw + b"\n")
     with pytest.raises(ValueError, match="Stale"):
         series.save_series_settings(
             project,
             saved["series_settings"],
             expected_digest=saved["series_digest"],
-            expected_source_id=source_id,
+            expected_developed_id=developed_id,
         )
     for bad in (
         b" " * 16385,
-        raw.replace(b'"schema_version":1', b'"schema_version":true'),
-        raw.replace(source_id.encode(), b"0" * 64),
+        raw.replace(b'"schema_version":2', b'"schema_version":true'),
+        raw.replace(developed_id.encode(), b"0" * 64),
         raw.replace(b'"settings":', b'"extra":1,"settings":'),
     ):
-        path.write_bytes(bad)
+        saved_raster(path).write_bytes(bad)
         with pytest.raises(ValueError):
-            series.read_series_settings(project, source_id, (6, 4))
-        assert path.read_bytes() == bad
+            series.read_series_settings(project, developed_id, (6, 4))
+        assert saved_raster(path).read_bytes() == bad
     after = hashes(project)
     assert all(after[name] == value for name, value in before.items())
 
@@ -867,11 +962,14 @@ def test_series_settings_two_process_lock_and_uncertain_write(tmp_path, monkeypa
     from blackmask.project import read_project
 
     project, _, _ = protected_project(tmp_path)
-    source_id = read_project(project)["master_id"]
+    developed_id = read_project(project)["developed_id"]
     saved = series.save_series_settings(
-        project, series_settings().to_dict(), expected_digest=None, expected_source_id=source_id
+        project,
+        series_settings().to_dict(),
+        expected_digest=None,
+        expected_developed_id=developed_id,
     )
-    program = "import json,sys; from pathlib import Path; from blackmask.series_framing import save_series_settings; value=json.loads(sys.argv[4]); save_series_settings(Path(sys.argv[1]),value,expected_digest=sys.argv[2],expected_source_id=sys.argv[3])"
+    program = "import json,sys; from pathlib import Path; from blackmask.series_framing import save_series_settings; value=json.loads(sys.argv[4]); save_series_settings(Path(sys.argv[1]),value,expected_digest=sys.argv[2],expected_developed_id=sys.argv[3])"
     children = [
         subprocess.Popen(
             [
@@ -880,7 +978,7 @@ def test_series_settings_two_process_lock_and_uncertain_write(tmp_path, monkeypa
                 program,
                 str(project),
                 saved["series_digest"],
-                source_id,
+                developed_id,
                 json.dumps(series_settings(name=name).to_dict()),
             ],
             stdout=subprocess.PIPE,
@@ -895,7 +993,7 @@ def test_series_settings_two_process_lock_and_uncertain_write(tmp_path, monkeypa
         code == 0 or b"Stale" in streams[1] or b"busy" in streams[1].lower()
         for streams, code in results
     )
-    current, current_digest = series.read_series_settings(project, source_id, (6, 4))
+    current, current_digest = series.read_series_settings(project, developed_id, (6, 4))
     before = (project / "series-framing.json").read_bytes()
     original_atomic = series._atomic_json
     monkeypatch.setattr(
@@ -908,7 +1006,7 @@ def test_series_settings_two_process_lock_and_uncertain_write(tmp_path, monkeypa
             project,
             series_settings(name="before failure").to_dict(),
             expected_digest=current_digest,
-            expected_source_id=source_id,
+            expected_developed_id=developed_id,
         )
     assert (project / "series-framing.json").read_bytes() == before
     monkeypatch.setattr(series, "_atomic_json", original_atomic)
@@ -926,7 +1024,7 @@ def test_series_settings_two_process_lock_and_uncertain_write(tmp_path, monkeypa
             project,
             series_settings(name="visible after failure").to_dict(),
             expected_digest=current_digest,
-            expected_source_id=source_id,
+            expected_developed_id=developed_id,
         )
     assert failure.value.visible["series_reload_required"] is True
     assert failure.value.visible["series_settings"]["name"] == "visible after failure"
@@ -951,7 +1049,7 @@ def series_project(tmp_path, shape=(4, 9)):
     pixels = np.full((height, width, 3), [117, 30001, 65003], np.uint16)
     project = tmp_path / "project"
     create_project(tiff(tmp_path / "source.tif", pixels, profile=srgb_profile()), project, {})
-    accept_development(project, read_project(project)["master_id"])
+    accept_development(project, read_project(project)["developed_id"])
     name = edits(
         project,
         [
@@ -983,9 +1081,9 @@ def test_series_portable_reuse_two_photos_independent_snapshots(tmp_path):
     settings = parse_series_preset(raw)
     outputs, presets = [], []
     for project in (first, second):
-        source_id = read_project(project)["master_id"]
+        developed_id = read_project(project)["developed_id"]
         series.save_series_settings(
-            project, settings.to_dict(), expected_digest=None, expected_source_id=source_id
+            project, settings.to_dict(), expected_digest=None, expected_developed_id=developed_id
         )
         presets.append((project / "series-framing.json").read_bytes())
         outputs.append(export_project(project, series=settings.to_dict()))

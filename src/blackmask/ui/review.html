@@ -223,7 +223,7 @@
         <canvas
           id="canvas"
           tabindex="0"
-          aria-label="Source and result; native-coordinate guides, Local exposure, Shadow fade or Fade shapes authoring. Numeric alternatives in each section."
+          aria-label="Source and result; native-coordinate guides, Local sharpening, Local exposure, Shadow fade or Fade shapes authoring. Numeric alternatives in each section."
         ></canvas>
       </div>
     </section>
@@ -367,7 +367,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -402,6 +402,33 @@
         <button id="backgroundApply">Apply background</button>
         <p id="backgroundStatus" role="status" class="small"></p>
         <p id="backgroundDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Local sharpening</legend>
+        <p class="small">Enhance existing detail inside a selected area. Alpha and protected RGB stay unchanged. Detail size is Gaussian sigma in native pixels, independent of brush radius. Noise guard suppresses small luminance differences; it does not remove noise or restore missing focus.</p>
+        <label>Sharpening drawing <select id="sharpeningRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
+        <label>Sharpening shape <select id="sharpeningShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+        <label>Sharpening brush radius (native pixels) <input id="sharpeningRadius" type="number" min="1" step="1" value="10" /></label>
+        <label>Softness (inward feather, native pixels; Apply only) <input id="sharpeningFeather" type="number" min="0" step="1" value="0" /></label>
+        <label>Sharpening numeric rectangle x0,y0,x1,y1 <input id="sharpeningRectangle" class="wide" /></label>
+        <button id="sharpeningAddRectangle">Add sharpening rectangle</button>
+        <label>Draft sharpening shapes <select id="sharpeningRegions" class="wide" size="4"></select></label>
+        <button id="sharpeningRemove">Remove sharpening shape</button>
+        <button id="sharpeningClear">Clear draft sharpening area</button>
+        <label>Amount (%) <input id="sharpeningRange" type="range" min="0" max="100" step="1" value="0" /></label>
+        <label>Amount (numeric %) <input id="sharpeningAmount" type="number" min="0" max="100" step="1" value="0" /></label>
+        <label>Detail size (native pixels) <input id="sharpeningDetailRange" type="range" min="0.5" max="8" step="0.1" value="1" /></label>
+        <label>Detail size (numeric native pixels) <input id="sharpeningDetail" type="number" min="0.5" max="8" step="0.1" value="1" /></label>
+        <label>Noise guard (%) <input id="sharpeningNoiseRange" type="range" min="0" max="2" step="0.01" value="0.1" /></label>
+        <label>Noise guard (numeric %) <input id="sharpeningNoise" type="number" min="0" max="2" step="0.01" value="0.1" /></label>
+        <label><input id="sharpeningCandidate" type="checkbox" /> Explicitly compare sharpening on an unaccepted candidate</label>
+        <button id="sharpeningApply">Apply / replace sharpening area</button>
+        <button id="sharpeningAmountApply">Apply sharpening amount to saved area</button>
+        <button id="sharpeningReset">Reset Local sharpening (OFF / 0%)</button>
+        <label><input id="sharpeningCompare" type="checkbox" /> Compare Local sharpening OFF (keep cleanup, exposure, Shadow fade and background)</label>
+        <p id="sharpeningStatus" role="status" class="small"></p>
+        <p id="sharpeningDraftStatus" role="status" class="small"></p>
+        <p class="small">Choose Local sharpening area in Canvas authoring mode above. Amount/reset use the saved area and keep pending area edits unsaved. Replacement includes removal of the old area. Reload discards unsaved area edits and loads saved geometry. Exposure remains independently editable. No model or internet needed.</p>
       </fieldset>
       <fieldset>
         <legend>Shadow fade</legend>
@@ -483,6 +510,8 @@
       </fieldset>
       <fieldset>
         <legend>6 · Recovery and photographic acceptance</legend>
+        <p id="previewStatus" role="status" aria-live="polite" class="small"></p>
+        <button id="previewRepair">Repair latest Result preview</button>
         <label
           >Interrupted operation
           <select id="operation"></select></label
@@ -501,7 +530,19 @@
           result at native scale on black/gray/white, including fine detail,
           transparency and seams</label
         ><button id="accept">Accept current photograph</button
-        ><button id="exportAccepted">Export accepted result</button
+        ><p class="small">Full native pixel dimensions: Result RGB16 TIFF and PNG8 view, recipe and manifest. PNG retains dimensions with reduced colour precision.</p>
+        <label><input id="exportBlack" type="checkbox" /> Include black TIFF/PNG alternative</label>
+        <label><input id="exportTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
+        <label><input id="exportEditable" type="checkbox" /> Include complete editable layers at original size</label>
+        <fieldset>
+          <legend>Save a focused comparison</legend>
+          <label>Presentation panel <select id="comparisonPresentation"><option value="native">Native views only</option><option value="add-margins">Add margins using visible settings</option><option value="match-series">Match series using visible settings</option></select></label>
+          <label><input id="comparisonNative" type="checkbox" /> Also retain this native crop as inspection evidence</label>
+          <button id="comparisonSave">Save comparison</button>
+          <p><a id="comparisonOpen" hidden target="_blank" rel="noopener">Open saved comparison sheet</a> <a id="comparisonManifest" hidden download="comparison-manifest.json">Download exact manifest</a></p>
+          <p id="comparisonStatus" role="status" class="small">Saves a small RGB8 comparison of the selected revision and native crop. Presentation pixels cannot authorize native edits. This does not accept the photograph.</p>
+        </fieldset>
+        <button id="exportAccepted">Export accepted result</button
         ><button id="exportDraft">Export labelled current draft</button>
         <p id="result" class="small" style="white-space: pre-wrap"></p>
       </fieldset>
@@ -525,6 +566,9 @@
         <p id="framingPreviewStatus" role="status" class="small"></p>
         <canvas id="framingCanvas" width="1" height="1" style="max-width:100%;height:auto" aria-label="RGB8 framing layout preview; display only, no guide authoring"></canvas>
         <label><input id="framingTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
+        <label><input id="framingBlack" type="checkbox" /> Include black TIFF/PNG alternative</label>
+        <label><input id="framingEditable" type="checkbox" /> Include native editable companion; keep both folders</label>
+        <p class="small">Result TIFF/PNG and recipe/manifest included. Editable layers stay at original size in the companion folder.</p>
         <button id="framingExportAccepted">Export framed accepted result</button>
         <button id="framingExportDraft">Export framed draft</button>
         <p class="small">Framed exports use these visible margins, including unsaved changes. Saving or exporting margins does not accept a photograph or composition. Centre image balances existing padding; it does not locate the subject.</p>
@@ -548,6 +592,9 @@
           <input id="seriesFile" type="file" accept="application/json,.json" hidden aria-label="Portable series preset JSON file" />
           <button id="seriesDownload">Download preset file</button>
           <label><input id="seriesTransparent" type="checkbox" /> Include transparent RGBA8 viewing copy</label>
+          <label><input id="seriesBlack" type="checkbox" /> Include black TIFF/PNG alternative</label>
+          <label><input id="seriesEditable" type="checkbox" /> Include native editable companion; keep both folders</label>
+          <p class="small">Result TIFF/PNG and recipe/manifest included. Editable layers stay at original size in the companion folder.</p>
           <button id="seriesExportAccepted">Export selected accepted result</button>
           <button id="seriesExportDraft">Export selected revision as draft</button>
           <p class="small">These actions use the named selection and visible settings, including unsaved edits. Preset files contain settings only. Loading a file does not save this photo. The saved backdrop recipe is regenerated at output size, including beneath partial-alpha edges. Enlargement adds no captured detail; reduction can hide fine detail. Inspect the exported TIFF and retain the native project. No composition acceptance is recorded.</p>
@@ -567,11 +614,14 @@
       originalRegions = [],
       dirty = false,
       pendingSaved = false;
+    let comparisonViewKey = "", comparisonViewUrls = [];
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
     let backgroundDirty = false, backgroundPublished = false;
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
+    let sharpeningArea = {regions: [], protection: []}, sharpeningDirty = false, sharpeningAreaPublished = false;
     let exposureControlsIdentity = null, exposureControlsSubmitted = null;
     let fadeControlsIdentity = null, fadeControlsSubmitted = null;
+    let sharpeningControlsIdentity = null, sharpeningControlsSubmitted = null;
     let spatialDraft = null, spatialDirty = false, spatialDraftIdentity = "", spatialDraftVersion = 0;
     let selectedSpatialId = "oval", spatialSubmitted = null, spatialAdding = false, spatialOverlayLoaded = false;
     const spatialControlIds = ["spatialMaster","spatialUseOval","spatialUseArcs","spatialSelect","spatialArcEnabled","spatialCenterX","spatialCenterY","spatialRotation","spatialWidth","spatialHeight","spatialSpan","spatialBend","spatialSide","spatialEndSoftness","spatialTransition","spatialStrength","spatialPreserve","spatialCandidate","spatialProtection","spatialApply","spatialDisable","spatialCancel","spatialAdd","spatialDuplicate","spatialRemove","spatialFlip"];
@@ -796,7 +846,7 @@
     }
     function spatialCurrentIdentity() {
       const current = state?.revisions.find(r=>r.revision===state.working_revision);
-      return JSON.stringify([state?.master_id,state?.working_revision,state?.inputs_digest,current?.revision_manifest_sha256]);
+      return JSON.stringify([state?.developed_id,state?.working_revision,state?.inputs_digest,current?.revision_manifest_sha256]);
     }
     function selectedSpatialShape() {
       return selectedSpatialId === "oval" ? spatialDraft?.oval : spatialDraft?.arcs.find(arc=>arc.id===selectedSpatialId);
@@ -883,7 +933,7 @@
       if(enabled && $("spatialProtection").value.trim()) fields.spatial_fade_protection_file=$("spatialProtection").value.trim();
       const preserveDraft=!!savedSettings && spatialDirty;
       spatialDirty=true;spatialDraftStatus();
-      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,master_id:state.master_id,preserve_draft:preserveDraft};
+      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,developed_id:state.developed_id,preserve_draft:preserveDraft};
       try {await action("effects",fields);} catch(error) {spatialSubmitted=null;throw error;}
     }
     function drawSpatialShapes(scale) {
@@ -945,6 +995,7 @@
         "shadingSupport", "shadingProtection", "shadingWidth", "shadingDirection", "shadingOpacity", "shadingCandidate",
         "exposureEV", "exposureRange", "exposureCandidate",
         "fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate",
+        "sharpeningAmount", "sharpeningRange", "sharpeningDetail", "sharpeningDetailRange", "sharpeningNoise", "sharpeningNoiseRange", "sharpeningCandidate",
       ];
       const subjectDrafts = preserveSubjectDrafts ? subjectControls.map(id => [id, $(id).type === "checkbox" ? $(id).checked : $(id).value]) : [];
 
@@ -981,6 +1032,17 @@
         $("fadeCandidate").checked = false;
       }
       renderFadeArea();
+      if (!sharpeningDirty) sharpeningArea = structuredClone(currentExposure?.sharpening_area || {regions: [], protection: []});
+      if (!sharpeningControlsIdentity) {
+        $("sharpeningAmount").value = (currentExposure?.local_sharpening?.settings?.amount ?? 0) * 100;
+        $("sharpeningRange").value = $("sharpeningAmount").value;
+        $("sharpeningDetail").value = currentExposure?.local_sharpening?.settings?.radius_px ?? 1;
+        $("sharpeningDetailRange").value = $("sharpeningDetail").value;
+        $("sharpeningNoise").value = (currentExposure?.local_sharpening?.settings?.noise_threshold ?? .001) * 100;
+        $("sharpeningNoiseRange").value = $("sharpeningNoise").value;
+        $("sharpeningCandidate").checked = false;
+      }
+      renderSharpeningArea();
       for (const [id, value] of subjectDrafts) {
         if ($(id).type === "checkbox") $(id).checked = value; else $(id).value = value;
       }
@@ -995,7 +1057,7 @@
       backgroundDraftStatus();
       $("candidate").value = "";
       identity = {
-        master_id: state.master_id,
+        developed_id: state.developed_id,
         base_revision: state.working_revision,
         inputs_digest: state.inputs_digest,
         authoring_digest: state.authoring_digest,
@@ -1041,6 +1103,12 @@
         current = state.revisions.find(
           (r) => r.revision === state.working_revision,
         );
+      const preview = state.preview;
+      $("previewStatus").textContent = !preview || preview.status === "not_applicable"
+        ? "Standalone project · no library gallery"
+        : "Native Result gallery · " + preview.status + " · latest " + (preview.latest_result_revision || preview.revision || "none") +
+          (preview.label ? " · " + preview.label : "") +
+          (preview.error ? " · " + preview.error : preview.reason ? " · " + preview.reason : "");
       $("cleanupStatus").textContent = current?.color_cleanup?.enabled
         ? current.color_cleanup.stale
           ? "STALE cleanup: BASE-to-BASE views, cleanup OFF on both sides. Appearance acceptance/export blocked; rebuild every changed-alpha dependency within declared support or explicitly disable. Prior accepted complete result remains saved."
@@ -1077,12 +1145,34 @@
           state.draft_error +
             " · Explicit restore can preserve and replace malformed drafts.",
         );
+      if (a.name === "comparison") {
+        const key = !a.running && !a.error && a.result?.view ? a.result.comparison_manifest_file : "";
+        if (key !== comparisonViewKey) {
+          for (const url of comparisonViewUrls) URL.revokeObjectURL(url);
+          comparisonViewUrls = [];
+          comparisonViewKey = key;
+          if (key) {
+            const view = a.result.view;
+            const jpeg = Uint8Array.from(atob(view.jpeg_base64), char => char.charCodeAt(0));
+            comparisonViewUrls = [URL.createObjectURL(new Blob([jpeg], {type:"image/jpeg"})), URL.createObjectURL(new Blob([view.manifest_json], {type:"application/json"}))];
+            $("comparisonOpen").href = comparisonViewUrls[0];
+            $("comparisonManifest").href = comparisonViewUrls[1];
+          }
+        }
+        $("comparisonOpen").hidden = $("comparisonManifest").hidden = !key;
+        $("comparisonStatus").textContent = a.running ? "Saving comparison…" : a.error
+          ? a.error + " · Saved work preserved; resolve the error before retrying"
+          : a.result ? (a.result.reused ? "Existing comparison: " : "Comparison saved: ") + a.result.comparison_manifest_file
+            + (a.result.native_manifest_file ? " · Native inspection evidence: " + a.result.native_manifest_file : " · No native evidence retained")
+            + " · Photographic acceptance unchanged" : "";
+      }
       if (a.result) {
         const r = a.result;
         $("result").textContent = [
           r.revision ? "Revision: " + r.revision : "",
+          r.reused === true ? "Reused current result; no new revision" : "",
           r.status ? "Status: " + r.status : "",
-          r.directory ? (a.error ? "Visible output requiring recovery: " : "Export saved: ") + r.directory : "",
+          r.directory ? (a.error ? "Visible output requiring recovery: " : r.reused ? "Existing delivery: " : "Export saved: ") + r.directory : "",
           r.editable_companion?.directory ? "Native editable folder: " + r.editable_companion.directory : "",
           r.editable_companion && !a.error ? "Keep both folders together for portable editing." : "",
           r.operation_id ? "Operation: " + r.operation_id : "",
@@ -1093,16 +1183,25 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
-      const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && a.result?.parent===spatialSubmitted.base_revision && state.master_id===spatialSubmitted.master_id;
+      const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && (a.result?.reused===true ? a.result.revision===spatialSubmitted.base_revision : a.result?.parent===spatialSubmitted.base_revision) && state.developed_id===spatialSubmitted.developed_id;
       if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
       if(reload || completed) spatialSubmitted=null;
       if(reload) resetSpatialFromSaved();
       if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;
       const appliedExposure = a.result?.local_exposure?.settings;
       if (reload || (completed && !a.error && exposureControlsSubmitted &&
-          a.name === "effects" && a.result?.parent === exposureControlsSubmitted.base_revision &&
+          a.name === "effects" && (a.result?.reused === true
+            ? a.result.revision === exposureControlsSubmitted.base_revision
+            : a.result?.parent === exposureControlsSubmitted.base_revision) &&
           appliedExposure?.enabled === exposureControlsSubmitted.enabled &&
-          appliedExposure?.ev === exposureControlsSubmitted.ev)) exposureControlsIdentity = null;
+          appliedExposure?.ev === exposureControlsSubmitted.ev)) {
+        exposureControlsIdentity = null;
+        if (!reload && completed && a.result?.reused === true) {
+          $("exposureEV").value = appliedExposure.ev;
+          $("exposureRange").value = appliedExposure.ev;
+          $("exposureCandidate").checked = false;
+        }
+      }
       if (completed) {
         exposureAreaPublished = false;
         exposureControlsSubmitted = null;
@@ -1110,13 +1209,49 @@
       if (reload || (completed && !a.error && fadeAreaPublished)) fadeDirty = false;
       const appliedFade = a.result?.shadow_fade?.settings;
       if (reload || (completed && !a.error && fadeControlsSubmitted &&
-          a.name === "effects" && a.result?.parent === fadeControlsSubmitted.base_revision &&
+          a.name === "effects" && (a.result?.reused === true
+            ? a.result.revision === fadeControlsSubmitted.base_revision
+            : a.result?.parent === fadeControlsSubmitted.base_revision) &&
           appliedFade?.enabled === fadeControlsSubmitted.enabled &&
           appliedFade?.amount === fadeControlsSubmitted.amount &&
-          appliedFade?.preserve_highlights === fadeControlsSubmitted.preserve_highlights)) fadeControlsIdentity = null;
+          appliedFade?.preserve_highlights === fadeControlsSubmitted.preserve_highlights)) {
+        fadeControlsIdentity = null;
+        if (!reload && completed && a.result?.reused === true) {
+          $("fadeAmount").value = appliedFade.amount * 100;
+          $("fadeRange").value = $("fadeAmount").value;
+          $("fadePreserve").value = appliedFade.preserve_highlights * 100;
+          $("fadePreserveRange").value = $("fadePreserve").value;
+          $("fadeCandidate").checked = false;
+        }
+      }
       if (completed) {
         fadeAreaPublished = false;
         fadeControlsSubmitted = null;
+      }
+      const appliedSharpening = a.result?.local_sharpening?.settings;
+      if (reload || (completed && !a.error && sharpeningControlsSubmitted &&
+          a.name === "effects" && (a.result?.reused === true
+            ? a.result.revision === sharpeningControlsSubmitted.base_revision
+            : a.result?.parent === sharpeningControlsSubmitted.base_revision) &&
+          appliedSharpening?.enabled === sharpeningControlsSubmitted.enabled &&
+          appliedSharpening?.amount === sharpeningControlsSubmitted.amount &&
+          appliedSharpening?.radius_px === sharpeningControlsSubmitted.radius_px &&
+          appliedSharpening?.noise_threshold === sharpeningControlsSubmitted.noise_threshold)) {
+        if (reload || sharpeningAreaPublished) sharpeningDirty = false;
+        sharpeningControlsIdentity = null;
+        if (!reload && completed && a.result?.reused === true) {
+          $("sharpeningAmount").value = appliedSharpening.amount * 100;
+          $("sharpeningRange").value = $("sharpeningAmount").value;
+          $("sharpeningDetail").value = appliedSharpening.radius_px;
+          $("sharpeningDetailRange").value = $("sharpeningDetail").value;
+          $("sharpeningNoise").value = appliedSharpening.noise_threshold * 100;
+          $("sharpeningNoiseRange").value = $("sharpeningNoise").value;
+          $("sharpeningCandidate").checked = false;
+        }
+      }
+      if (completed) {
+        sharpeningAreaPublished = false;
+        sharpeningControlsSubmitted = null;
       }
       const backgroundCompleted = completed && backgroundPublished && !a.error;
       const preserveSubjectDrafts = backgroundCompleted || !!spatialCompleted;
@@ -1131,6 +1266,12 @@
           : "Saved Shadow fade ON · amount " + Math.round(savedFade.settings.amount * 100) + "% · preserve highlights " + Math.round(savedFade.settings.preserve_highlights * 100) + "%" + (current.final_acceptable ? " · complete" : " · prepared; complete matte before appearance review")
         : "Saved Shadow fade OFF";
       renderFadeArea();
+      const savedSharpening = current?.local_sharpening;
+      $("sharpeningStatus").textContent = savedSharpening?.enabled
+        ? savedSharpening.stale ? "Saved Local sharpening STALE · BASE comparison; rebuild area or reset; every other stale effect still needs recovery"
+          : "Saved Local sharpening ON · amount " + Math.round(savedSharpening.settings.amount * 100) + "% · detail " + savedSharpening.settings.radius_px + " px · noise guard " + (savedSharpening.settings.noise_threshold * 100) + "%" + (current.final_acceptable ? " · complete" : " · prepared; complete matte before appearance review")
+        : "Saved Local sharpening OFF";
+      renderSharpeningArea();
       const savedExposure = current?.local_exposure;
       $("exposureStatus").textContent = savedExposure?.enabled
         ? savedExposure.stale ? "Saved local exposure STALE · BASE comparison; rebuild area or reset before export/acceptance"
@@ -1148,7 +1289,7 @@
       if (
         reload ||
         !identity ||
-        (completed && !a.error && !["framing-save","series-save","series-export"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
+        (completed && !a.error && a.result?.reused !== true && !["export","comparison","framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
       ) {
         loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";
@@ -1232,8 +1373,10 @@
         "restore",
         "resume",
         "accept",
+        "previewRepair",
         "exportAccepted",
         "exportDraft",
+        "comparisonSave", "comparisonNative", "comparisonPresentation",
         "shadingApply",
         "shadingOpacityApply",
         "shadingDisable",
@@ -1242,6 +1385,7 @@
         "exposureApply", "exposureAmount", "exposureReset",
         "backgroundApply",
         "fadeApply", "fadeAmountApply", "fadeReset",
+        "sharpeningApply", "sharpeningAmountApply", "sharpeningReset",
         "framingSave", "framingExportAccepted", "framingExportDraft", "framingReload",
       ]) {
         $(id).disabled = authoringBusy();
@@ -1251,7 +1395,9 @@
       for (const id of [
         "backgroundColor", "backgroundHex", "backgroundRange", "backgroundVariation", "backgroundBlack", "backgroundWarm", "backgroundCandidate",
         "fadeRole", "fadeShape", "fadeRadius", "fadeFeather", "fadeRectangle", "fadeAddRectangle", "fadeRemove", "fadeClear",
+        "sharpeningRole", "sharpeningShape", "sharpeningRadius", "sharpeningFeather", "sharpeningRectangle", "sharpeningAddRectangle", "sharpeningRemove", "sharpeningClear",
         "fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate",
+        "sharpeningAmount", "sharpeningRange", "sharpeningDetail", "sharpeningDetailRange", "sharpeningNoise", "sharpeningNoiseRange", "sharpeningCandidate",
         "authorMode", "exposureRole", "exposureShape", "exposureRadius", "exposureFeather", "exposureRectangle", "exposureAddRectangle", "exposureRemove", "exposureClear",
         "exposureEV", "exposureRange", "exposureCandidate",
         "framingLeft", "framingRight", "framingTop", "framingBottom", "framingEqual",
@@ -1269,11 +1415,12 @@
       ])
         $(id).disabled = authoringBusy();
       $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
+      $("previewRepair").disabled = authoringBusy() || !state?.preview || ["not_applicable","no_result"].includes(state.preview.status) || state.preview.reason === "configuration_required";
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
         $(id).disabled = authoringBusy();
       for(const id of spatialControlIds) $(id).disabled=authoringBusy();
       if(spatialDraft) renderSpatialControls();
-      $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.master_id || !!state?.series_error;
+      $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.developed_id || !!state?.series_error;
       const selected = state?.revisions.find(record=>record.revision === $("viewRevision").value);
       $("seriesExportAccepted").disabled = authoringBusy() || !selected?.final_acceptable || selected.revision !== state?.accepted_revision;
       $("seriesExportDraft").disabled = authoringBusy() || !selected?.final_acceptable;
@@ -1285,7 +1432,7 @@
     async function spatialBitmap(view, revision, requestedCrop, panel = "result") {
       const record=state.revisions.find(r=>r.revision===revision);
       if(!record?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
-      const request={master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,crop_xyxy:[...requestedCrop],view};
+      const request={developed_id:state.developed_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,crop_xyxy:[...requestedCrop],view};
       if(view==="selected") request.shape_id=selectedSpatialId;
       if(view==="off") request.panel=panel;
       const response=await (await api("/api/spatial-preview",request)).json();
@@ -1300,12 +1447,13 @@
       if (panel === "alpha") return "Alpha8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       const viewed = state.revisions.find(r => r.revision === revision),
         working = state.revisions.find(r => r.revision === state.working_revision);
-      const stale = record => ["color_cleanup", "shading", "local_exposure", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
+      const stale = record => ["color_cleanup", "shading", "local_sharpening", "local_exposure", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
       const isStale = stale(viewed) || stale(working);
-      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · local exposure OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
+      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · Local sharpening OFF · local exposure OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
+      const sharpening = $("sharpeningCompare").checked ? "OFF comparison" : viewed?.local_sharpening?.enabled ? "ON" : "OFF";
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
-      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · local exposure " + exposure + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
+      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
       if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF";
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
@@ -1329,6 +1477,7 @@
           : "");
       const key = [
         $("exposureCompare").checked,
+        $("sharpeningCompare").checked,
         $("fadeCompare").checked,
         $("spatialCompare").checked,
         spatialMap,
@@ -1357,8 +1506,8 @@
       try {
         const path =
           panel === "source"
-            ? `/image/source/${state.master_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+            ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = $("spatialCompare").checked && !["source","alpha"].includes(panel)
           ? await spatialBitmap("off",revision,requestedCrop,panel) : await bitmap(path);
         if (imageKey !== key) return;
@@ -1426,9 +1575,9 @@
         );
         ctx.globalAlpha = 1;
       }
-      if ($("overlay").value === "guides" || ["exposure", "fade"].includes($("authorMode").value)) {
-        const area = $("authorMode").value === "fade" ? fadeArea : exposureArea;
-        const drawnRegions = ["exposure", "fade"].includes($("authorMode").value)
+      if ($("overlay").value === "guides" || ["exposure", "fade", "sharpening"].includes($("authorMode").value)) {
+        const area = $("authorMode").value === "sharpening" ? sharpeningArea : $("authorMode").value === "fade" ? fadeArea : exposureArea;
+        const drawnRegions = ["exposure", "fade", "sharpening"].includes($("authorMode").value)
           ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions;
         for (const region of drawnRegions) {
           ctx.strokeStyle = {
@@ -1541,7 +1690,7 @@
     }
     function exposureControlsStale() {
       return exposureControlsIdentity && state && (
-        exposureControlsIdentity.master_id !== state.master_id ||
+        exposureControlsIdentity.developed_id !== state.developed_id ||
         exposureControlsIdentity.base_revision !== state.working_revision ||
         exposureControlsIdentity.inputs_digest !== state.inputs_digest ||
         exposureControlsIdentity.authoring_digest !== state.authoring_digest
@@ -1553,7 +1702,7 @@
     }
     function fadeControlsStale() {
       return fadeControlsIdentity && state && (
-        fadeControlsIdentity.master_id !== state.master_id ||
+        fadeControlsIdentity.developed_id !== state.developed_id ||
         fadeControlsIdentity.base_revision !== state.working_revision ||
         fadeControlsIdentity.inputs_digest !== state.inputs_digest ||
         fadeControlsIdentity.authoring_digest !== state.authoring_digest
@@ -1562,6 +1711,18 @@
     function markFadeControlsDirty() {
       fadeControlsIdentity ??= {...identity};
       renderFadeArea();
+    }
+    function sharpeningControlsStale() {
+      return sharpeningControlsIdentity && state && (
+        sharpeningControlsIdentity.developed_id !== state.developed_id ||
+        sharpeningControlsIdentity.base_revision !== state.working_revision ||
+        sharpeningControlsIdentity.inputs_digest !== state.inputs_digest ||
+        sharpeningControlsIdentity.authoring_digest !== state.authoring_digest
+      );
+    }
+    function markSharpeningControlsDirty() {
+      sharpeningControlsIdentity ??= {...identity};
+      renderSharpeningArea();
     }
     function renderEffectArea(prefix, area, unsaved, title) {
       select(prefix + "Regions", ["regions", "protection"].flatMap(kind => area[kind].map(r => [kind + ":" + r.id, (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
@@ -1577,6 +1738,11 @@
       if (fadeControlsIdentity) $("fadeDraftStatus").textContent += fadeControlsStale()
         ? " Stale Shadow fade settings; reload before applying." : " Unsaved Shadow fade settings.";
     }
+    function renderSharpeningArea() {
+      renderEffectArea("sharpening", sharpeningArea, sharpeningDirty, "Local sharpening");
+      if (sharpeningControlsIdentity) $("sharpeningDraftStatus").textContent += sharpeningControlsStale()
+        ? " Stale Local sharpening settings; reload before applying." : " Unsaved Local sharpening settings.";
+    }
     function addEffectRegion(prefix, geometry, shape) {
       if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before area authoring");
       const kind = $(prefix + "Role").value, [w, h] = state.dimensions_wh;
@@ -1587,14 +1753,16 @@
       const region = {id: prefix + "-" + crypto.randomUUID().slice(0,8), role: "support", shape, feather_px: feather};
       if (shape === "rectangle") region.xyxy = geometry;
       else { region.points = geometry; region.radius_px = radius; }
-      const area = prefix === "fade" ? fadeArea : exposureArea;
+      const area = prefix === "sharpening" ? sharpeningArea : prefix === "fade" ? fadeArea : exposureArea;
       area[kind].push(region);
-      if (prefix === "fade") { fadeDirty = true; renderFadeArea(); }
+      if (prefix === "sharpening") { sharpeningDirty = true; renderSharpeningArea(); }
+      else if (prefix === "fade") { fadeDirty = true; renderFadeArea(); }
       else { exposureDirty = true; renderExposureArea(); }
       draw();
     }
     function addExposureRegion(geometry, shape = $("exposureShape").value) { addEffectRegion("exposure", geometry, shape); }
     function addFadeRegion(geometry, shape = $("fadeShape").value) { addEffectRegion("fade", geometry, shape); }
+    function addSharpeningRegion(geometry, shape = $("sharpeningShape").value) { addEffectRegion("sharpening", geometry, shape); }
     async function exposure(enabled, replaceArea) {
       requireSaved();
       if (enabled && exposureControlsStale()) throw Error("Exposure settings belong to older project inputs; reload before applying");
@@ -1623,6 +1791,23 @@
       fadeControlsSubmitted = {base_revision: identity.base_revision, enabled, amount, preserve_highlights: preserve};
       try { return await action("effects", fields); }
       catch(error) { fadeAreaPublished = false; fadeControlsSubmitted = null; throw error; }
+    }
+    async function localSharpening(enabled, replaceArea) {
+      requireSaved();
+      if (enabled && sharpeningControlsStale()) throw Error("Local sharpening settings belong to older project inputs; reload before applying");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing Local sharpening");
+      const saved = state.revisions.find(revision => revision.revision === state.working_revision)?.local_sharpening?.settings;
+      const amount = enabled ? Number($("sharpeningAmount").value) / 100 : 0;
+      const radius_px = enabled ? Number($("sharpeningDetail").value) : saved?.radius_px ?? 1;
+      const noise_threshold = enabled ? Number($("sharpeningNoise").value) / 100 : saved?.noise_threshold ?? .001;
+      if (enabled && (["sharpeningAmount", "sharpeningDetail", "sharpeningNoise"].some(id => String($(id).value).trim() === "") || !Number.isFinite(amount) || amount < 0 || amount > 1 || !Number.isFinite(radius_px) || radius_px < .5 || radius_px > 8 || !Number.isFinite(noise_threshold) || noise_threshold < 0 || noise_threshold > .02)) throw Error("Use Amount 0–100%, Detail size 0.5–8 native pixels and Noise guard 0–2%");
+      const fields = {scope_xyxy: [0,0,...state.dimensions_wh], local_sharpening: {enabled, amount, radius_px, noise_threshold}, candidate_comparison: $("sharpeningCandidate").checked};
+      if (replaceArea) fields.sharpening_area = structuredClone(sharpeningArea);
+      else if (enabled) fields.sharpening_amount_only = true;
+      sharpeningAreaPublished = replaceArea;
+      sharpeningControlsSubmitted = {base_revision: identity.base_revision, enabled, amount, radius_px, noise_threshold};
+      try { return await action("effects", fields); }
+      catch(error) { sharpeningAreaPublished = false; sharpeningControlsSubmitted = null; throw error; }
     }
     function backgroundDraftStatus() {
       $("backgroundDraftStatus").textContent = (backgroundDirty ? "Unsaved background · preview still shows saved result" : "Controls match saved background") + ($("backgroundHex").value.toUpperCase() === "#000000" ? " · pure black at every variation" : "");
@@ -1668,11 +1853,34 @@
     $("fadePreserveRange").oninput = () => { $("fadePreserve").value = $("fadePreserveRange").value; markFadeControlsDirty(); };
     $("fadePreserve").oninput = () => { $("fadePreserveRange").value = $("fadePreserve").value; markFadeControlsDirty(); };
     $("fadeCandidate").onchange = markFadeControlsDirty;
+    $("sharpeningAddRectangle").onclick = guarded(() => addSharpeningRegion(bounds("sharpeningRectangle"), "rectangle"));
+    $("sharpeningRemove").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const [kind, id] = $("sharpeningRegions").value.split(":");
+      if (!id) return;
+      sharpeningArea[kind] = sharpeningArea[kind].filter(r => r.id !== id);
+      sharpeningDirty = true; renderSharpeningArea(); draw();
+    });
+    $("sharpeningClear").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      sharpeningArea = {regions: [], protection: []}; sharpeningDirty = true; renderSharpeningArea(); draw();
+    });
+    $("sharpeningApply").onclick = guarded(() => localSharpening(true, true));
+    $("sharpeningAmountApply").onclick = guarded(() => localSharpening(true, false));
+    $("sharpeningReset").onclick = guarded(() => localSharpening(false, false));
+    $("sharpeningRange").oninput = () => { $("sharpeningAmount").value = $("sharpeningRange").value; markSharpeningControlsDirty(); };
+    $("sharpeningAmount").oninput = () => { $("sharpeningRange").value = $("sharpeningAmount").value; markSharpeningControlsDirty(); };
+    for (const name of ["Detail", "Noise"]) {
+      $("sharpening" + name + "Range").oninput = () => { $("sharpening" + name).value = $("sharpening" + name + "Range").value; markSharpeningControlsDirty(); };
+      $("sharpening" + name).oninput = () => { $("sharpening" + name + "Range").value = $("sharpening" + name).value; markSharpeningControlsDirty(); };
+    }
+    $("sharpeningCandidate").onchange = markSharpeningControlsDirty;
     function compareChanged(id) {
-      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "spatialCompare"]) if (other !== id) $(other).checked = false;
+      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare"]) if (other !== id) $(other).checked = false;
       if (id !== "shadingPreview") $("shadingPreview").value = "";
       imageKey = ""; return loadImage();
     }
+    $("sharpeningCompare").onchange = guarded(() => compareChanged("sharpeningCompare"));
     $("fadeCompare").onchange = guarded(() => compareChanged("fadeCompare"));
     $("spatialCompare").onchange = guarded(() => compareChanged("spatialCompare"));
     $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
@@ -1748,10 +1956,10 @@
       const record = state.revisions.find(item=>item.revision === revision);
       if (!record?.final_acceptable || !record.revision_manifest_sha256)
         throw Error("Select a complete saved revision for framing preview");
-      return {master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,margins:framingMargins()};
+      return {developed_id:state.developed_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,margins:framingMargins()};
     }
     function framingKey(request) {
-      return JSON.stringify([request.master_id,request.revision,request.revision_manifest_sha256,
+      return JSON.stringify([request.developed_id,request.revision,request.revision_manifest_sha256,
         ...Object.keys(framingFields).map(name=>request.margins[name])]);
     }
     function framingStatus() {
@@ -1760,7 +1968,7 @@
         const margins = framingMargins(), [width,height] = state.dimensions_wh;
         $("framingStatus").textContent = `Native ${width} × ${height} · output ${width+margins.left_px+margins.right_px} × ${height+margins.top_px+margins.bottom_px} pixels · ` +
           (framingDirty ? "Unsaved margins" : framingDigest ? "Saved margins" : "Zero margins; no preset saved") +
-          (framingNeedsReload || framingSource !== state.master_id ? " · Reload saved margins required before saving" : "") +
+          (framingNeedsReload || framingSource !== state.developed_id ? " · Reload saved margins required before saving" : "") +
           (state.framing_error ? " · " + state.framing_error : "");
       } catch(error) { $("framingStatus").textContent = error.message; }
       let key = "";
@@ -1776,7 +1984,7 @@
     }
     function loadFramingState() {
       setFramingFields(state.framing || {left_px:0,right_px:0,top_px:0,bottom_px:0});
-      framingSource = state.master_id;
+      framingSource = state.developed_id;
       framingDigest = state.framing_digest ?? null;
       framingDirty = false;
       framingNeedsReload = false;
@@ -1786,7 +1994,7 @@
     }
     function syncFraming() {
       if (framingSource === null) loadFramingState();
-      else if (framingSource !== state.master_id) {
+      else if (framingSource !== state.developed_id) {
         framingNeedsReload = true;
         framingBitmap?.close();framingBitmap = null;framingDisplayedKey = "";
         $("framingCanvas").getContext("2d").clearRect(0,0,$("framingCanvas").width,$("framingCanvas").height);
@@ -1796,7 +2004,7 @@
       }
       const revision = $("viewRevision").value || state.working_revision;
       const selected = state.revisions.find(item=>item.revision === revision);
-      const key = JSON.stringify([state.master_id,revision,selected?.revision_manifest_sha256]);
+      const key = JSON.stringify([state.developed_id,revision,selected?.revision_manifest_sha256]);
       if (key !== framingSelectionKey) { framingSelectionKey = key; framingSequence++; }
       framingStatus();
     }
@@ -1855,11 +2063,11 @@
     $("framingReload").onclick = guarded(async()=>{await refresh();loadFramingState();});
     $("framingPreview").onclick = guarded(previewFraming);
     function framingAction(name, extra) {
-      return action(name,{master_id:state.master_id,base_revision:state.working_revision,
+      return action(name,{developed_id:state.developed_id,base_revision:state.working_revision,
         inputs_digest:state.inputs_digest,authoring_digest:state.authoring_digest,...extra});
     }
     $("framingSave").onclick = guarded(async()=>{
-      if (framingNeedsReload || framingSource !== state.master_id || state.framing_error)
+      if (framingNeedsReload || framingSource !== state.developed_id || state.framing_error)
         throw Error("Reload saved margins or resolve the framing.json error before saving");
       framingSubmitted = framingMargins();
       try { await framingAction("framing-save",{margins:framingSubmitted,expected_digest:framingDigest}); }
@@ -1868,8 +2076,9 @@
     async function exportFraming(draft) {
       const framing = framingMargins();
       if (!draft && !state.accepted_revision) throw Error("No accepted result to export");
-      await framingAction("export",{revision:draft ? state.working_revision : state.accepted_revision,draft,
-        framing,framed_transparent:$("framingTransparent").checked});
+      const revision=draft ? state.working_revision : state.accepted_revision;
+      await framingAction("export",{revision,draft,...exportRevisionIdentity(revision),
+        framing,framed_transparent:$("framingTransparent").checked,variants:exportVariants("framing")});
     }
     $("framingExportAccepted").onclick = guarded(()=>exportFraming(false));
     $("framingExportDraft").onclick = guarded(()=>exportFraming(true));
@@ -1901,10 +2110,10 @@
     function seriesRequest() {
       const revision=$("viewRevision").value, record=state?.revisions.find(item=>item.revision===revision);
       if (!record?.final_acceptable || !record.revision_manifest_sha256) throw Error("Select a complete saved revision for Match series");
-      return {master_id:state.master_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,settings:seriesSettings()};
+      return {developed_id:state.developed_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,settings:seriesSettings()};
     }
     function seriesKey(request) {
-      return JSON.stringify([request.master_id,request.revision,request.revision_manifest_sha256,...Object.keys(seriesDefaults).map(key=>request.settings[key])]);
+      return JSON.stringify([request.developed_id,request.revision,request.revision_manifest_sha256,...Object.keys(seriesDefaults).map(key=>request.settings[key])]);
     }
     function invalidateSeriesPreview() {
       seriesSequence++;seriesBitmap?.close();seriesBitmap=null;seriesLayout=null;seriesDisplayedKey="";
@@ -1921,16 +2130,16 @@
     }
     function markSeriesDirty() { seriesDirty=true;invalidateSeriesPreview();seriesStatus(); }
     function loadSeriesState() {
-      setSeriesFields(state.series_settings || seriesDefaults);seriesSource=state.master_id;seriesDigest=state.series_digest ?? null;
+      setSeriesFields(state.series_settings || seriesDefaults);seriesSource=state.developed_id;seriesDigest=state.series_digest ?? null;
       seriesDirty=false;seriesNeedsReload=false;invalidateSeriesPreview();seriesStatus();
     }
     function syncSeries() {
       if (!state) return;
       if (seriesSource===null) loadSeriesState();
-      else if (seriesSource!==state.master_id) {seriesNeedsReload=true;invalidateSeriesPreview();}
+      else if (seriesSource!==state.developed_id) {seriesNeedsReload=true;invalidateSeriesPreview();}
       else if (!seriesDirty && !seriesNeedsReload) {setSeriesFields(state.series_settings || seriesDefaults);seriesDigest=state.series_digest ?? null;}
       const selected=state.revisions.find(item=>item.revision===$("viewRevision").value);
-      const key=JSON.stringify([state.master_id,$("viewRevision").value,selected?.revision_manifest_sha256]);
+      const key=JSON.stringify([state.developed_id,$("viewRevision").value,selected?.revision_manifest_sha256]);
       if (key!==seriesSelectionKey) {seriesSelectionKey=key;invalidateSeriesPreview();}
       if (seriesBitmap) {try {if(seriesDisplayedKey!==seriesKey(seriesRequest()))invalidateSeriesPreview();}catch{invalidateSeriesPreview();}}
       seriesStatus();
@@ -1963,7 +2172,7 @@
       } catch(error) {if(matches())$("seriesPreviewStatus").textContent=error.message+" · Preview is stale; retry";}
       finally {next?.close();}
     }
-    function seriesAction(name,extra) {return action(name,{master_id:state.master_id,base_revision:state.working_revision,inputs_digest:state.inputs_digest,authoring_digest:state.authoring_digest,...extra});}
+    function seriesAction(name,extra) {return action(name,{developed_id:state.developed_id,base_revision:state.working_revision,inputs_digest:state.inputs_digest,authoring_digest:state.authoring_digest,...extra});}
     for(const id of ["seriesName","seriesWidth","seriesHeight","seriesVertical"])$(id).oninput=markSeriesDirty;
     $("seriesSide").oninput=()=>{$("seriesSideRange").value=$("seriesSide").value;markSeriesDirty();};
     $("seriesSideRange").oninput=()=>{$("seriesSide").value=$("seriesSideRange").value;markSeriesDirty();};
@@ -1971,12 +2180,12 @@
     $("seriesPreview").onclick=guarded(previewSeries);
     $("seriesReload").onclick=guarded(async()=>{await refresh();loadSeriesState();});
     $("seriesSave").onclick=guarded(async()=>{
-      if(seriesNeedsReload || seriesSource!==state.master_id || state.series_error)throw Error("Reload saved series settings or resolve series-framing.json before saving");
+      if(seriesNeedsReload || seriesSource!==state.developed_id || state.series_error)throw Error("Reload saved series settings or resolve series-framing.json before saving");
       seriesSubmitted=seriesSettings();try{await seriesAction("series-save",{settings:seriesSubmitted,expected_digest:seriesDigest});}catch(error){seriesSubmitted=null;throw error;}
     });
     async function exportSeries(draft) {
       const request=seriesRequest();if(!draft && request.revision!==state.accepted_revision)throw Error("Select the currently accepted revision for accepted series export");
-      await seriesAction("series-export",{revision:request.revision,draft,revision_manifest_sha256:request.revision_manifest_sha256,settings:request.settings,transparent:$("seriesTransparent").checked});
+      await seriesAction("series-export",{revision:request.revision,draft,revision_manifest_sha256:request.revision_manifest_sha256,settings:request.settings,transparent:$("seriesTransparent").checked,variants:exportVariants("series")});
     }
     $("seriesExportAccepted").onclick=guarded(()=>exportSeries(false));$("seriesExportDraft").onclick=guarded(()=>exportSeries(true));
     $("framingMode").onchange=guarded(()=>{
@@ -1987,13 +2196,13 @@
     $("seriesLoad").onclick=guarded(()=>$("seriesFile").click());
     $("seriesFile").onchange=guarded(async()=>{
       const file=$("seriesFile").files?.[0];if(!file)return;
-      const request=++seriesImportSequence,sequence=seriesSequence,source=state.master_id;
+      const request=++seriesImportSequence,sequence=seriesSequence,source=state.developed_id;
       try {
         if(file.size>16384)throw Error("Portable preset exceeds 16384 bytes");
         const bytes=new Uint8Array(await file.arrayBuffer());if(bytes.byteLength>16384)throw Error("Portable preset exceeds 16384 bytes");
         const raw=new TextDecoder("utf-8",{fatal:true}).decode(bytes);
         const result=await (await api("/api/series-preset-validate",{preset_json:raw})).json();
-        if(request!==seriesImportSequence || sequence!==seriesSequence || source!==state.master_id)return;
+        if(request!==seriesImportSequence || sequence!==seriesSequence || source!==state.developed_id)return;
         const settings=validateSeriesValue(result.settings);setSeriesFields(settings);markSeriesDirty();
         $("seriesPreviewStatus").textContent="Preset loaded into this form; not saved for this photo. Preview framing to inspect.";
       } finally {$("seriesFile").value="";}
@@ -2135,15 +2344,40 @@
         throw Error("Explicit photographic review is required");
       return action("accept", { revision: state.working_revision });
     });
+    function exportVariants(prefix) {
+      return (prefix === "export" ? ["black","transparent","editable"] : ["black","editable"])
+        .filter(name=>$(prefix+name[0].toUpperCase()+name.slice(1)).checked);
+    }
+    $("comparisonSave").onclick = guarded(async () => {
+      if (imageLoading || !image || !transform || !crop) throw Error("Load the matching native crop before saving a comparison");
+      const revision = $("viewRevision").value || state.working_revision;
+      const mode = $("comparisonPresentation").value;
+      const presentation = mode === "native" ? null : {mode, ...(mode === "add-margins" ? framingRequest() : seriesRequest())};
+      $("comparisonStatus").textContent = "Saving comparison…";
+      try {
+        await action("comparison", {revision, ...exportRevisionIdentity(revision), crops: [[...crop]], retain_native: $("comparisonNative").checked, presentation});
+      } catch (error) {
+        $("comparisonStatus").textContent = error.message + " · Saved work preserved; retry after resolving the error";
+        throw error;
+      }
+    });
+    function exportRevisionIdentity(revision) {
+      const record=state.revisions.find(item=>item.revision===revision);
+      if (!record?.final_acceptable || !record.revision_manifest_sha256)
+        throw Error("Reload the complete selected revision before exporting");
+      return {revision_manifest_sha256:record.revision_manifest_sha256};
+    }
     $("exportAccepted").onclick = guarded(() => {
       if (!state.accepted_revision) throw Error("No accepted photograph");
       return action("export", {
         revision: state.accepted_revision,
         draft: false,
+        ...exportRevisionIdentity(state.accepted_revision), variants:exportVariants("export"),
       });
     });
     $("exportDraft").onclick = guarded(() =>
-      action("export", { revision: state.working_revision, draft: true }),
+      action("export", { revision: state.working_revision, draft: true,
+        ...exportRevisionIdentity(state.working_revision),variants:exportVariants("export") }),
     );
     $("recoverPending").onclick = guarded(() => {
       if (authoringBusy())
@@ -2173,6 +2407,7 @@
         return;
       return refresh(true);
     });
+    $("previewRepair").onclick = guarded(() => action("preview-repair", {}));
     for (const id of ["panel", "viewRevision"])
       $(id).onchange = guarded(loadImage);
     $("overlay").onchange = guarded(() => {
@@ -2220,7 +2455,7 @@
     });
     canvas.onpointerdown = (event) => {
       const spatialMode=$("authorMode").value==="spatial";
-      const effectMode = ["exposure", "fade"].includes($("authorMode").value) ? $("authorMode").value : null;
+      const effectMode = ["exposure", "fade", "sharpening"].includes($("authorMode").value) ? $("authorMode").value : null;
       const panMode = event.shiftKey || (!effectMode && !spatialMode && $("shape").value === "pan");
       const point = nativePosition(event,spatialMode);
       if (!panMode && (authoringBusy() || imageLoading)) {

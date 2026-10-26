@@ -7,6 +7,7 @@ import tomllib
 import numpy as np
 import pytest
 import tomli_w
+from test_ingest import bind_raster, saved_hashes, saved_raster
 
 
 @pytest.mark.parametrize(
@@ -172,7 +173,7 @@ def legacy_project(tmp_path):
     recipe = tomllib.loads((project / "recipe.toml").read_text())
     recipe.pop("background", None)
     (project / "recipe.toml").write_text(tomli_w.dumps(recipe))
-    accept_development(project, read_project(project)["master_id"])
+    accept_development(project, read_project(project)["developed_id"])
     name = edits(
         project,
         [
@@ -200,14 +201,14 @@ def test_new_defaults_native_prepare_and_exact_inheritance(tmp_path):
         "color_srgb": "#120708",
         "variation": 0.55,
     }
-    manifest = read_revision(project, parent["revision"], state["master_id"])
+    manifest = read_revision(project, parent["revision"], state["developed_id"])
     assert manifest["background"]["settings"] == {"color_srgb": "#120708", "variation": 0.55}
-    original = read_background(project / "revisions" / parent["revision"], manifest)
+    original = read_background(project, project / "revisions" / parent["revision"], manifest)
     result = operations.apply_operation(project, effect_request(project))
-    inherited = read_revision(project, result["revision"], state["master_id"])
+    inherited = read_revision(project, result["revision"], state["developed_id"])
     assert inherited["background"] == manifest["background"]
     np.testing.assert_array_equal(
-        read_background(project / "revisions" / result["revision"], inherited), original
+        read_background(project, project / "revisions" / result["revision"], inherited), original
     )
 
 
@@ -221,11 +222,14 @@ def test_legacy_absence_roundtrip_opt_in_restore_and_unapplied_draft(tmp_path):
     project, parent = legacy_project(tmp_path)
     before = (project / "recipe.toml").read_bytes()
     recipe = tomllib.loads(before.decode())
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     assert "background" not in Recipe.from_dict(recipe, master).to_dict()
     result = operations.apply_operation(project, effect_request(project))
     assert "background" not in read_revision(project, result["revision"], master)
-    assert (project / "recipe.toml").read_bytes() == before
+    assert "background" not in tomllib.loads((project / "recipe.toml").read_text())
+    assert (
+        project / "revisions" / result["revision"] / "inputs/recipe.toml"
+    ).read_bytes() == before
     accepted = read_project(project)["accepted_revision"]
     applied = operations.apply_operation(project, background_request(project, "#ab3708", 0))
     assert applied["background"]["settings"] == {"color_srgb": "#AB3708", "variation": 0}
@@ -240,10 +244,19 @@ def test_legacy_absence_roundtrip_opt_in_restore_and_unapplied_draft(tmp_path):
     changed = tomllib.loads((project / "recipe.toml").read_text())
     changed["background"]["variation"] = 0.3
     (project / "recipe.toml").write_text(tomli_w.dumps(changed))
-    before_state = (project / "state.json").read_bytes()
-    with pytest.raises(ProjectError, match="[Bb]ackground"):
-        operations.apply_operation(project, effect_request(project, candidate_comparison=True))
-    assert (project / "state.json").read_bytes() == before_state
+    candidate = operations.apply_operation(
+        project, effect_request(project, candidate_comparison=True)
+    )
+    assert (
+        tomllib.loads((project / "recipe.toml").read_text())["background"] == changed["background"]
+    )
+    assert (
+        read_revision(project, candidate["revision"], master)["background"]["settings"]
+        == applied["background"]["settings"]
+    )
+    with pytest.raises(ProjectError, match="Stale final acceptance"):
+        operations.accept_revision(project, candidate["revision"])
+    assert read_project(project)["accepted_revision"] == accepted
 
 
 @pytest.mark.parametrize(
@@ -293,7 +306,7 @@ def test_background_current_and_warm_asset_validation(tmp_path, mutation):
     from test_effects import fixture_project
 
     from blackmask import operations
-    from blackmask.ingest import write_master
+    from blackmask.ingest import write_developed
     from blackmask.project import (
         ProjectError,
         _validation_scope,
@@ -305,7 +318,7 @@ def test_background_current_and_warm_asset_validation(tmp_path, mutation):
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, background_request(project, variation=0))
     directory = project / "revisions" / result["revision"]
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     with _validation_scope():
         manifest = read_revision(project, result["revision"], master)
         if mutation == "unbound":
@@ -319,17 +332,17 @@ def test_background_current_and_warm_asset_validation(tmp_path, mutation):
             if mutation == "algorithm":
                 record["algorithm"] = "unknown"
             if mutation == "identity":
-                record["master_id"] = "0" * 64
+                record["developed_id"] = "0" * 64
             if mutation == "settings":
                 record["settings"]["variation"] = True
                 (directory / "background/settings.json").write_text(json.dumps(record["settings"]))
             raster = directory / "background/background_rgb16.tif"
             if mutation == "uniform":
-                write_master(raster, np.zeros((4, 6, 3), dtype=np.uint16))
+                write_developed(raster, np.zeros((4, 6, 3), dtype=np.uint16))
             if mutation == "profile":
                 tifffile.imwrite(raster, np.zeros((4, 6, 3), dtype=np.uint16))
             if mutation == "dimensions":
-                write_master(raster, np.zeros((2, 6, 3), dtype=np.uint16))
+                write_developed(raster, np.zeros((2, 6, 3), dtype=np.uint16))
             if mutation == "dtype":
                 tifffile.imwrite(raster, np.zeros((4, 6, 3), dtype=np.uint8))
             if mutation == "recipe":
@@ -341,8 +354,8 @@ def test_background_current_and_warm_asset_validation(tmp_path, mutation):
                 ("background/background_rgb16.tif", "background_sha256"),
                 ("background/settings.json", "settings_sha256"),
             ]:
-                manifest["files"][name] = digest((directory / name).read_bytes())
-                record[key] = manifest["files"][name]
+                bind_raster(project, directory, manifest, name)
+                record[key] = saved_hashes(manifest)[name]
             (directory / "manifest.json").write_text(json.dumps(manifest))
         with pytest.raises(ProjectError):
             read_revision(project, result["revision"], master)
@@ -364,12 +377,12 @@ def test_background_combined_noncompounding_and_repair_staleness(tmp_path):
     operations.apply_operation(project, shading_request(project))
     operations.apply_operation(project, exposure_request(project, ev=1))
     parent = operations.apply_operation(project, fade_request(project))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     foreground, alpha, manifest = saved_layers(project, parent["revision"], master)
     old_dir = project / "revisions" / parent["revision"]
     old_files = {
-        name: (old_dir / name).read_bytes()
-        for name in manifest["files"]
+        name: (saved_raster(old_dir / name)).read_bytes()
+        for name in saved_hashes(manifest)
         if name.startswith("effects/")
         or name
         in {
@@ -400,13 +413,17 @@ def test_background_combined_noncompounding_and_repair_staleness(tmp_path):
                 shadow_fade_off=mode == "shadow-fade-off",
             )
             w, p = saved_shading(project, parent["revision"], a, m, effects_off=mode == "base")
-            b = np.zeros_like(rgb) if mode == "base" else read_background(old_dir, m)
+            b = np.zeros_like(rgb) if mode == "base" else read_background(project, old_dir, m)
             expected = np.rint(scalar_composite(rgb, a, b, w, p).astype(float) / 257).astype(
                 np.uint8
             )
             actual = np.array(
                 Image.open(
-                    io.BytesIO(server.image(f"/image/result/{parent['revision']}/0,0,6,4/{mode}"))
+                    saved_raster(
+                        io.BytesIO(
+                            server.image(f"/image/result/{parent['revision']}/0,0,6,4/{mode}")
+                        )
+                    )
                 )
             )
             np.testing.assert_array_equal(actual, expected)
@@ -417,14 +434,14 @@ def test_background_combined_noncompounding_and_repair_staleness(tmp_path):
         np.testing.assert_array_equal(actual_alpha, alpha)
         directory = project / "revisions" / result["revision"]
         for name, data in old_files.items():
-            assert (directory / name).read_bytes() == data
+            assert (saved_raster(directory / name)).read_bytes() == data
         for name in ["color_cleanup", "shading", "local_exposure", "shadow_fade"]:
             assert saved[name] == manifest[name]
         assert (
             json.loads((directory / "review/manifest.json").read_bytes())["local_exposure_clipping"]
             == clipping
         )
-    raster = read_background(directory, saved)
+    raster = read_background(project, directory, saved)
     support = np.zeros(alpha.shape, dtype=np.uint16)
     support[:, 2:4] = 65535
     from PIL import Image
@@ -452,7 +469,8 @@ def test_background_combined_noncompounding_and_repair_staleness(tmp_path):
         )
     repaired_manifest = read_revision(project, repaired["revision"], master)
     np.testing.assert_array_equal(
-        read_background(project / "revisions" / repaired["revision"], repaired_manifest), raster
+        read_background(project, project / "revisions" / repaired["revision"], repaired_manifest),
+        raster,
     )
     assert repaired_manifest["shadow_fade"]["stale"]
     background_only = operations.apply_operation(project, background_request(project, "#123456", 0))
@@ -460,26 +478,26 @@ def test_background_combined_noncompounding_and_repair_staleness(tmp_path):
         export_project(project, revision=background_only["revision"], draft=True)
     with pytest.raises(ProjectError, match="[Ss]tale"):
         operations.accept_revision(project, background_only["revision"])
-    from blackmask.project import load_master
+    from blackmask.project import load_developed
 
-    np.testing.assert_array_equal(load_master(project, master)[0], source)
+    np.testing.assert_array_equal(load_developed(project, master)[0], source)
 
 
 def test_saved_nonuniform_background_replays_without_generation(tmp_path, monkeypatch):
     from test_effects import fixture_project
 
     from blackmask import background
-    from blackmask.ingest import write_master
+    from blackmask.ingest import write_developed
     from blackmask.project import digest, read_project, read_revision
 
     project, _, result = fixture_project(tmp_path)
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     directory = project / "revisions" / result["revision"]
     manifest = read_revision(project, result["revision"], master)
     raster = np.arange(72, dtype=np.uint16).reshape(4, 6, 3) * 131
-    write_master(directory / "background/background_rgb16.tif", raster)
-    checksum = digest((directory / "background/background_rgb16.tif").read_bytes())
-    manifest["files"]["background/background_rgb16.tif"] = checksum
+    write_developed(directory / "background/background_rgb16.tif", raster)
+    checksum = digest((saved_raster(directory / "background/background_rgb16.tif")).read_bytes())
+    bind_raster(project, directory, manifest, "background/background_rgb16.tif")
     manifest["background"]["background_sha256"] = checksum
     (directory / "manifest.json").write_text(json.dumps(manifest))
 
@@ -488,7 +506,7 @@ def test_saved_nonuniform_background_replays_without_generation(tmp_path, monkey
 
     monkeypatch.setattr(background, "make_background", forbidden)
     manifest = read_revision(project, result["revision"], master)
-    np.testing.assert_array_equal(background.read_background(directory, manifest), raster)
+    np.testing.assert_array_equal(background.read_background(project, directory, manifest), raster)
 
 
 def test_background_busy_low_space_and_interrupted_state_restore(tmp_path, monkeypatch):
@@ -563,7 +581,7 @@ def test_background_race_preserves_newer_draft_and_accepted_pointer(tmp_path, mo
 
         monkeypatch.setattr(effects, "_atomic_bytes", atomic)
     with pytest.raises(ProjectError, match="Stale"):
-        operations.apply_operation(project, background_request(project))
+        operations.apply_operation(project, background_request(project, "#AB1234"))
     assert (project / "recipe.toml").read_bytes() == changed
     assert (project / "state.json").read_bytes() == before
 
@@ -621,10 +639,10 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
     project, source, _ = fixture_project(tmp_path)
     operations.apply_operation(project, shading_request(project))
     result = operations.apply_operation(project, background_request(project))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     foreground, alpha, manifest = saved_layers(project, result["revision"], master)
     directory = project / "revisions" / result["revision"]
-    backdrop = read_background(directory, manifest)
+    backdrop = read_background(project, directory, manifest)
     weight, opacity = saved_shading(project, result["revision"], alpha, manifest)
     expected = scalar_composite(foreground, alpha, backdrop, weight, opacity)
     app = ReviewServer(project)
@@ -642,8 +660,10 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
         np.testing.assert_array_equal(panel, wanted)
         pixels = np.array(
             Image.open(
-                io.BytesIO(
-                    app.image(f"/image/result/{result['revision']}/" + ",".join(map(str, crop)))
+                saved_raster(
+                    io.BytesIO(
+                        app.image(f"/image/result/{result['revision']}/" + ",".join(map(str, crop)))
+                    )
                 )
             )
         )
@@ -652,25 +672,41 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
     reviewed = review_project(project, crops=[[2, 1, 6, 4]])
     assets = __import__("pathlib").Path(reviewed["manifest_file"]).parent
     np.testing.assert_array_equal(
-        np.array(Image.open(assets / "crop-000-result_RGB8_VIEW.png")),
+        np.array(Image.open(saved_raster(assets / "crop-000-result_RGB8_VIEW.png"))),
         np.rint(expected[1:4, 2:6].astype(float) / 257).astype(np.uint8),
     )
-    exported = export_project(project, revision=result["revision"], draft=True)
+    exported = export_project(
+        project,
+        revision=result["revision"],
+        draft=True,
+        variants=("black", "transparent", "editable"),
+    )
     output = __import__("pathlib").Path(exported["directory"])
-    np.testing.assert_array_equal(tifffile.imread(output / "result_rgb16.tif"), expected)
-    np.testing.assert_array_equal(tifffile.imread(output / "background_rgb16.tif"), backdrop)
     np.testing.assert_array_equal(
-        tifffile.imread(output / "black_rgb16.tif"),
+        tifffile.imread(saved_raster(output / "result_rgb16.tif")), expected
+    )
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(output / "background_rgb16.tif")), backdrop
+    )
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(output / "black_rgb16.tif")),
         scalar_composite(foreground, alpha, np.zeros_like(backdrop), weight, opacity),
     )
-    np.testing.assert_array_equal(tifffile.imread(output / "foreground_rgb16.tif"), foreground)
-    rgba = np.array(Image.open(output / "transparent_RGBA8_VIEW.png"))
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(output / "foreground_rgb16.tif")), foreground
+    )
+    rgba = np.array(Image.open(saved_raster(output / "transparent_RGBA8_VIEW.png")))
     np.testing.assert_array_equal(rgba[..., 3], np.rint(alpha.astype(float) / 257).astype(np.uint8))
     assert (
         json.loads((output / "background_settings.json").read_bytes())
         == manifest["background"]["settings"]
     )
-    assert export_project(project, revision=result["revision"], draft=True) == exported
+    assert export_project(
+        project,
+        revision=result["revision"],
+        draft=True,
+        variants=("black", "transparent", "editable"),
+    ) == {**exported, "reused": True}
     code = """import sys, pathlib, numpy as np, tifffile
 from PIL import Image
 p=pathlib.Path(sys.argv[1])
@@ -690,15 +726,20 @@ assert np.array_equal(np.rint(f*a[...,None]*h[...,None]+b*(1-a[...,None])).astyp
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    (output / "result_rgb16.tif").write_bytes(b"preserved collision")
+    (saved_raster(output / "result_rgb16.tif")).write_bytes(b"preserved collision")
     from blackmask.project import ProjectError
 
     with pytest.raises(ProjectError, match="collision"):
-        export_project(project, revision=result["revision"], draft=True)
-    assert (output / "result_rgb16.tif").read_bytes() == b"preserved collision"
+        export_project(
+            project,
+            revision=result["revision"],
+            draft=True,
+            variants=("black", "transparent", "editable"),
+        )
+    assert (saved_raster(output / "result_rgb16.tif")).read_bytes() == b"preserved collision"
 
 
-def test_legacy_export_file_set_and_identical_reuse(tmp_path):
+def test_black_by_absence_default_compact_file_set_and_identical_reuse(tmp_path):
     from pathlib import Path
 
     from blackmask.export import export_project
@@ -708,19 +749,15 @@ def test_legacy_export_file_set_and_identical_reuse(tmp_path):
     result = export_project(project)
     output = Path(result["directory"])
     assert {p.name for p in output.iterdir()} == {
-        "black_rgb16.tif",
-        "alpha16.png",
-        "black_RGB8_VIEW.png",
-        "transparent_RGBA8_VIEW.png",
-        "foreground_rgb16.tif",
-        "source_rgb16.tif",
+        "result_rgb16.tif",
+        "result_RGB8_VIEW.png",
         "recipe.toml",
         "manifest.json",
         "README.txt",
     }
     manifest = (output / "manifest.json").read_bytes()
     assert "background" not in json.loads(manifest)
-    assert export_project(project) == result
+    assert export_project(project) == {**result, "reused": True}
     assert (output / "manifest.json").read_bytes() == manifest
     assert (project / "recipe.toml").read_bytes() == before
 

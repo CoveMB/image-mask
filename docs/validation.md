@@ -142,6 +142,65 @@ certification remains unperformed. Browser, photographic, automated and human
 acceptance claims above are deliberately separate; human photographic acceptance
 and a representative editable branching-photo evaluation remain pending.
 
+## Requested Result exports — original component evidence
+
+Requested-export tests exercise the default five-file Result delivery, independent
+black/transparent alternatives in all three geometry modes, and separate native
+editable recovery. They check exact uint16 samples and partial-value protection,
+same-size PNG8 conversion/profile, explicit accepted/draft selection, strict file
+membership/headers and current source/revision/operand authorization before reuse.
+Fault cases include corrupt/nonregular members, raw input changes during hashing
+or final sync, exclusive publication, late identical races and retained failed stages.
+Real subprocess checks exercise project-lock contention and repeat reuse separately
+from forced fresh rendering using saved assets in a clean target. A standalone
+subprocess reconstructs native Result from delivered independent F/A/W/opacity/B.
+
+Native synthetic browser observations exercised unchecked defaults, separate
+alternatives, native-only editable controls, unsaved margins/series dimensions,
+keyboard export/retry, visible reuse and corrupt-member errors. Unsaved guidance
+and exposure fields remained visible. A configured 6×4 synthetic library export
+left its gallery JPEG hash and all existing project files unchanged. Packaged page
+tests and native browser observations remain distinct evidence. These checks do
+not establish full-photo performance, installed activation, real model inference,
+print calibration or human photographic/composition/accessibility acceptance.
+
+## Unchanged effects requests
+
+The deterministic checks exercise repeated cleanup, shading rebuild/opacity,
+exposure and Shadow fade area/amount/disable, background and spatial Fade into background
+submissions through
+the shared operation owner. They check same revision/assets, independent draft
+and acceptance state, current identity/permission validation, meaningful changed
+protection/provenance, final input rechecks and failed-stage diagnostics.
+Geometry-omitting shading disable is checked with and without prior shading,
+changed/invalid geometry and legacy proof. Reused exposure/fade Reset checks paired
+controls and unrelated drafts, including failed and mismatched completions. CLI,
+viewer protocol/page handlers and latest-result gallery recovery remain connected
+to that owner. Restore A with latest B must not turn reuse into new generation.
+Spatial cases cover ON/OFF/inactive shapes, numeric equivalents, actual protection
+bytes, metadata-only protection changes, inherited saved-output bindings and matching
+reused Disable without consuming pending geometry. Cold semantic geometry validation
+is counted separately from new effects-output W generation; warm reuse retains the
+existing validation cache and mandatory binding/hash checks.
+
+Model and W-generation sentinels demonstrate routing and avoided work at those
+boundaries. They do not measure real inference speed, visual quality or human
+acceptance. Saved asset replay, extracted-package execution and native browser
+observations are separate evidence scopes. Unknown execution/request provenance
+computes normally; passing mathematical checks do not justify broader reuse.
+
+## Current Result gallery
+
+`tests/test_previews.py` exercises synthetic imported-photo publication, native scalar
+composition, external footer geometry/profile, state/derivative failure ordering,
+preserved collisions, filename-byte limits, saved-only completed resume, explicit
+CLI/HTTP recovery and real process contention. The shipped-page harness checks
+pending/repair status, busy controls and unsaved-form retention without implicit
+polling writes. Stub inference is not real-model or photographic acceptance. Native
+browser observations, package contents and resource measurements remain separate
+evidence; automated checks alone do not establish full accessibility or durability
+after physical power loss. See the [gallery contract](file-contract.md#current-result-gallery).
+
 ## Fixed-size series framing
 
 Current local implementation evidence is synthetic and bound to frozen application
@@ -1304,3 +1363,102 @@ real-model inference or direct browser session was run for this workflow change.
 Reopen an existing review server to load the updated Python behavior, preserving
 pending edits first. New mattes without an approval receipt require this updated
 application; existing saved projects remain readable without migration.
+
+## Requested Result v3 integrated with Fade into background
+
+The settled current-main integration passed **1,552 tests**, with **3 optional
+real-model checks skipped** for their explicit installed SAM/ViTMatte cache
+prerequisites. The complete run exited 0 in 1,619.09 seconds with every candidate
+input unchanged. Ruff lint and formatting passed (52 Python files); mypy passed
+(25 source files). Earlier failed runs and their exact candidate bytes remain
+separate evidence, including two symlink expectation failures and a library test
+that needed an explicit editable selection. Those failures were corrected without
+weakening the canonical symlink rejection or precision assertions.
+
+Coverage includes compact manual defaults and independent variants in all three
+modes; explicit final-assisted editable selection; complete native recovery
+operands for active and OFF spatial records; effective opacity zero for absent or
+disabled inward shading; old-version preservation; strict source/member/profile
+validation; request-derived pair lookup before producers; absent or damaged child
+refusal without repair; native-only retry; and intact pair reuse without rendering
+or staging. Independent scalar series oracles retain the selected Fade target
+behind the black diagnostic backdrop across differing output geometries. Six
+fresh-process cases force rendering from saved assets after removing access to
+the original project, original capture and earlier deliveries; separate copied
+pair cases reconstruct from delivered native operands without the project.
+
+All **31 profile-observed actual CLI children** were joined to their executable,
+command, return code, raw outputs and actual loaded application paths. Each
+reported all 41 locked metadata versions and actually loaded Pillow/core 13.0.0
+with the expected native binary hash. Ten copied delivery manifests recorded the
+required encoding pins. The same validators rejected four in-memory wrong
+loaded-version, source-path, metadata-pin and manifest-pin copies. Three additional
+mode-000 trace files were preserved unread: their command/parent/output identities
+remain unknown, and they are outside those 31 joined PIDs. This is complete
+evidence for the observed CLI scope, not uniform attestation of every Python
+subprocess. Historical Pillow 12.3 evidence does not establish this runtime result.
+
+One bounded synthetic in-app browser exercise covered keyboard export/reuse,
+manual native/margins/series variants, both-folder status, retained unsaved effect
+controls, accepted versus labelled draft output, and spatial ON/OFF defaults.
+The renewed missing-child error names both recovery paths and refuses repair.
+All 143 synthetic project files were restored unchanged after that fault; owned
+browser tabs and loopback servers were closed. This does not establish human
+usability or photographic acceptance.
+
+A single 512 × 384 to 960 × 1,200 black-plus-spatial series observation measured
+0.141919 seconds for rendering and 138,739,712 bytes whole-process peak RSS.
+The separate processing estimate was 55,693,952 bytes, including a 6,912,000-byte
+selected-target canvas. These scopes differ: the timing excludes imports and
+geometry, RSS includes them, and the estimate is neither measured RSS nor a memory
+reservation. Input hashes were unchanged. No general performance, photographic,
+print, real-inference, installed-activation or publication acceptance is implied.
+
+## Inspectable processing cache
+
+The original cache contribution's full suite passed **1,682 tests**, with **3 optional
+real-model checks skipped**, exit 0, in 1,563.51 seconds. All 54 captured Python
+source and test inputs remained unchanged during that run. Self-review then found
+three malformed ZIP envelopes whose exceptions escaped the shared cache parser.
+A narrow correction rejected encrypted members and normalized damaged deflate
+and unsupported-compression failures; **109 affected tests passed** afterward.
+These historical results predate the stored/deflate-only policy and subsequent
+bounded archive-reader corrections, so they do not establish current reader behavior.
+
+The current reader accepts stored and deflated caches, including mixed archives.
+BZIP2, LZMA and other unsupported methods remain protected recomputation misses,
+as specified in the [file contract](file-contract.md#inspecting-and-clearing-processing-cache).
+For the final reader inputs, **316 affected tests passed** in each of the source,
+extracted-wheel and extracted-sdist runs, with **1 real-model check explicitly
+deselected in each run**. These runs used Python 3.12.14. Earlier Python 3.12
+reader selection was checked through source-derived simulations; no older
+interpreter was executed. Ruff lint and formatting passed for all 54 Python files;
+mypy passed for all 25 source files. No new full-suite run is claimed for the later
+reader corrections.
+
+Real-file cases cover exclusive single-name publication, corrupt-entry retention,
+arrival and durability failures, bounded array headers, old hard links, read-only
+inspection, exact confirmation, writer contention, historical completion and
+authoring, configured-library validation, and partial clearing after late context
+changes. Deliberate faults demonstrate sensitivity to clobbering publication,
+stale link metadata, current-only history validation, missing library context,
+blanket authoring rejection and omission of later context checks.
+
+The combined configured-library journey uses a 96 × 64 synthetic RGB16 image,
+protected partial alpha, successive inward-shading opacities, equivalent-result
+reuse, distinct selected/working/accepted revisions, native gallery and focused
+comparison, all three delivery modes and editable companions. It preserves the
+original, sidecar, synthetic shared-model placeholders, saved operands, presets,
+deliveries and failed stages through explicit cache clearing. A fresh child forces
+reconstruction of all three deliveries from saved assets and frozen settings,
+without a reachable original project or selected model path. Separate combined
+cases exercise import, completed-matte and gallery interruption/recovery.
+
+The original full run recorded 434 child processes: 324 Python and 110 Node processes.
+Readable Python attestations matched the captured application paths and hashes,
+all 41 locked versions and loaded Pillow/core 13.0.0 where applicable. Six
+deliberately killed Python children have no final attestation; three mode-000
+attestations remain unread. Their commands and exits are retained, but their
+loaded modules are not inferred. Node commands and exits are separate JavaScript
+evidence. These checks do not establish real-model, photographic, print,
+accessibility or human usability acceptance.

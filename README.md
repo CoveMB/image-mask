@@ -20,8 +20,32 @@ candidates, selected membership groups and categorical trimap/support/protection
 assets. Optional morphology proposals use native-pixel margins and require separate
 review against the source. ViTMatte runs at native resolution, with optional trimap
 confirmation and separate final-photo acceptance, matching native-crop review assets,
-accepted RGB16 black/alpha16 exports and labelled PNG8 viewing copies. Run matting
+accepted full-size Result RGB16 TIFF exports and same-size PNG8 viewing copies. Run matting
 directly after preparation to review the actual masked photograph.
+
+New projects use storage schema 2 and developed-image identities. Immutable masks,
+RGB16 layers and effect operands are shared within the project; revisions retain
+text and a small overview. Old schema-1 projects are preserved and rejected without
+migration. Effective revision recipes and consumed draft snapshots are separate.
+Latest generated result history survives restore and acceptance changes.
+
+An optional [configured photo library](docs/library.md) safely creates Inbox,
+Photos, Results Preview and Comparisons. Explicit import moves a validated capture
+and declared sidecars once into a stable named photo folder, with interruption
+recovery and duplicate-source protection. Configured pinned model directories are
+shared across photographs. Import creates no result or gallery image.
+Complete native generation maintains one reduced JPEG per imported photo with a
+Draft/Accepted footer and explicit pending recovery. It follows the latest generated
+Result independently of restore/export; see the [gallery contract](docs/file-contract.md#current-result-gallery).
+Repeating a fully validated equivalent effects Apply reuses the current result,
+preserving pending drafts and acceptance; [reuse rules](docs/file-contract.md#unchanged-effects-results) describe conservative misses.
+
+Explicit export includes the selected Result pair, recipe, manifest and notes.
+Black and transparent alternatives are independent opt-ins. Complete editable
+layers are optional: native exports include them in the same folder; presentation
+exports add a native editable companion and retain
+their selected geometry. An intact matching delivery is validated and reused
+before rendering. See the [delivery contract](docs/file-contract.md#requested-result-deliveries).
 
 Scoped repairs save quantized operands for replay without models. Restore selects
 saved working inputs without changing final acceptance. `status` and `resume`
@@ -29,6 +53,9 @@ recover verified tiles or completed stages from interrupted matte/repair operati
 The offline loopback review window provides typed guide authoring, native
 comparisons and the same processing and recovery controls. Optional assisted
 review records bounded, source-based judgements through those same operations.
+Explicit [focused comparison sheets](docs/file-contract.md#focused-comparisons) save
+selected crops and optional presentation previews, with native evidence retained
+only when requested.
 
 The optional appearance effects start disabled. Source-guided color cleanup saves
 RGB16 layers with scoped stale/rebuild controls. Protected inward shading keeps
@@ -38,13 +65,18 @@ and exposure-only comparison. Shadow fade independently darkens soft subject are
 in linear light, with Amount, Preserve highlights, explicit protection and a
 fade-only comparison.
 
+**Local sharpening** enhances captured detail in authored areas, with Amount,
+Detail size (0.5–8 native pixels), Noise guard, hard protection and an OFF comparison.
+It runs after cleanup and before exposure; it never changes alpha or invents detail.
+See [Local sharpening](docs/workflow.md#local-sharpening) for limits and recovery.
+
 **Fade into background** blends subject colour toward the chosen background using
 an editable oval, independently directed arcs, or both. It preserves alpha and
 keeps Shadow fade independent. See the [offline walkthrough](docs/workflow.md#fade-into-background)
 for shape controls, saved strength maps, recovery and portable two-folder exports.
 
 Background appearance saves a tone and broad variation behind the matte. New
-projects start warm near-black (`#120708`, variation 55%); older projects stay
+projects start warm near-black (`#120708`, variation 55%); schema-2 recipes without background settings stay
 black until explicitly changed. The [background instructions](docs/workflow.md#background-appearance)
 explain Result, diagnostic views and separate editable exports. Presentation framing
 adds saved margins, a separate bounded RGB8 layout preview and compact RGB16
@@ -103,8 +135,12 @@ require a trusted sRGB TIFF export; this is a deliberately conservative limit.
 Opaque RGB JPEG/PNG8 profiles are converted through LittleCMS when necessary;
 8-bit captures gain no precision by entering the 16-bit container. Alpha-bearing
 images, compressed TIFF, RGB16 PNG and non-RGB input are rejected. Multi-frame
-PNG/MPO and multi-image JPEGs (including Ultra HDR gain maps) are rejected;
-export one SDR JPEG/PNG8 or a trusted uncompressed sRGB RGB16 TIFF first.
+PNG/MPO and multi-image JPEGs are rejected by default. For a supported SDR-base
+gain-map JPEG, explicitly add `--jpeg-sdr-primary` to `open` or `import` to use
+only its ordinary SDR image. The complete original stays intact; HDR brightness
+is omitted. Other multi-image files remain unsupported. See the
+[SDR-primary import contract](docs/file-contract.md#explicit-sdr-primary-jpeg-import),
+or export one SDR JPEG/PNG8 or a trusted uncompressed sRGB RGB16 TIFF first.
 
 RAW/DNG uses LibRaw, full-size AHD and explicit sRGB gamma/WB/brightness settings.
 LibRaw identifies TIFF-container RAW before ordinary TIFF import; an RGB8 preview
@@ -123,7 +159,7 @@ colour edits made in another application, import a supported developed image,
 preferably trusted uncompressed RGB16 sRGB TIFF. RAW decoding still applies the
 recorded conversion above; it is not a replacement for that application's rendering.
 Masking adds no exposure, white-balance or colour correction to the saved master.
-The existing CLI `accept --development --master-id ID` remains an optional legacy
+The existing CLI `accept --development --developed-id ID` remains an optional legacy
 review record for compatible scripts; it is never a prerequisite or final-photo acceptance.
 
 Changing development currently requires a separate project/master identity; dimensions
@@ -150,18 +186,23 @@ for explicit model setup, typed preparation and human review.
 | Content detection, RAW development, orientation and RGB16 | `src/blackmask/ingest.py` |
 | Validated DNG white-point/calibration fallback and recorded multipliers | `src/blackmask/dng_white_balance.py` |
 | Identity, shared writer lock, publication and approval | `src/blackmask/project.py` |
+| Explicit library configuration, original ownership and import recovery | `src/blackmask/library.py` |
+| Latest native Result gallery, footer and derivative recovery | `src/blackmask/previews.py` |
 | Preparation snapshots and selected candidate publication | `src/blackmask/operations.py` |
 | Typed native guides and categorical rasterization | `src/blackmask/guidance.py` |
 | Pinned explicit setup and local-only SAM/ViTMatte sessions | `src/blackmask/models.py` |
 | Quantized scoped merge and saved operand replay | `src/blackmask/repair.py` |
 | Native tile geometry, blending and verified cache | `src/blackmask/matte.py` |
-| Same-native-crop review assets | `src/blackmask/review.py` |
+| Read-only cache inventory and exact confirmed clearing | `src/blackmask/operations.py`; [cache contract](docs/file-contract.md#inspecting-and-clearing-processing-cache) |
+| Native review evidence and explicit focused comparison sheets | `src/blackmask/review.py` |
 | Canonical precision renderer and accepted/draft exports | `src/blackmask/export.py` |
 | Source cleanup, protected inward W16 and independent effect publication | `src/blackmask/effects.py` |
+| Alpha-aware linear-luminance local sharpening and saved operands | `src/blackmask/sharpening.py` |
 | Independent native area and linear-sRGB local exposure | `src/blackmask/exposure.py` |
 | Independent linear-sRGB Shadow fade and saved operands | `src/blackmask/shadow_fade.py` |
 | Native oval/arc fields and background-targeted colour blend | `src/blackmask/spatial_fade.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
+| Shared immutable raster references and role validation | `src/blackmask/assets.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | Presentation geometry, bounded sampling and source-bound preset | `src/blackmask/framing.py` |
 | Fixed-size subject layout, premultiplied resampling and portable series settings | `src/blackmask/series_framing.py` |
@@ -177,7 +218,8 @@ for explicit model setup, typed preparation and human review.
 ## Local data and repository hygiene
 
 Keep private captures, working projects, model assets, credentials and evaluation
-output outside this repository or under the ignored root `local/` directory.
+output outside this repository, under the ignored root `local/` directory, or in an
+explicitly configured ignored [photo library](docs/library.md).
 Ignored files are not disposable and are not backed up by Git. Arrange independent
 backups. Common photo formats are ignored; only deliberately owned synthetic test
 fixtures may be included beneath `tests/fixtures/`. Review actual staged content

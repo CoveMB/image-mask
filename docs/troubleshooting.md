@@ -69,6 +69,19 @@ A publication collision means another tool/editor created a project asset while 
 
 ## Native matte and export recovery
 
+- **Result gallery pending:** read `--config FILE status PROJECT`, resolve the reported
+  storage/collision problem, then use `--config FILE preview repair PROJECT` or the
+  viewer's Repair latest Result preview button. Repair uses saved layers without models or
+  the original. Unknown files and failed temporaries remain preserved. Native work
+  and actual acceptance survive a later JPEG failure.
+- **Gallery name too long:** existing names/pending imports remain frozen and usable.
+  Status reports required/available bytes; exact-name JPEG publication and acceptance
+  changes are blocked. No rename/alias/migration command exists. See the
+  [gallery contract](file-contract.md#current-result-gallery).
+- **Gallery acceptance warning:** conservative Draft can remain after uncertain state
+  sync or failed promotion. Inspect actual pointers and repair explicitly; a receipt
+  or filename never grants photographic acceptance.
+
 - **Trimap approval missing/stale:** a missing approval does not block matting or
   repair. A supplied stale/corrupt record is rejected rather than silently used.
   Preserve it, finish typed edits and prepare a new revision; confirmation of the
@@ -83,9 +96,20 @@ A publication collision means another tool/editor created a project asset while 
   a fresh current reviewed request.
 - **Final acceptance rejected:** require current complete matte and unchanged drafts,
   master/development and saved review assets. Prepared-only state never qualifies.
-- **Export collision:** keep prior delivery; identical output reuses it. Different
-  bytes or an incomplete directory fail without overwrite. A newer candidate has a
+- **Export collision:** keep prior delivery; an intact matching requested delivery
+  reuses before rendering or staging. Different bytes, malformed metadata or an
+  incomplete directory fail without overwrite. A newer candidate has a
   different revision; explicit unaccepted output must use `--revision ... --draft`.
+- **Missing black, transparent or editing layers:** default export contains the
+  Result TIFF/PNG pair and compact text files. Select the independent variant
+  controls or repeat `--variant black`, `--variant transparent`, `--variant editable`.
+  Editable adds native layers to native output, or a separate native companion
+  with explicit margins/series settings. Keep both folders. A completed primary
+  whose native companion is missing or damaged fails without recreating it; retain
+  available files and recover the intact pair. Native PNG8 retains the
+  TIFF's full dimensions but has reduced colour precision.
+- **Earlier export format:** retain its existing path and files. Current export
+  uses a new versioned identity, with no legacy lookup, recreation or migration.
 
 
 ## Framed export recovery
@@ -126,8 +150,9 @@ A publication collision means another tool/editor created a project asset while 
   it and retry the identical export to validate and sync it. An error before
   publication leaves the prior delivery intact and retains a `.export-*` stage.
   Failed stages are diagnostic evidence, not accepted results, and remain preserved.
-  An identical successful retry removes only its own verified duplicate stage, after
-  the existing delivery validates and its parent-directory sync succeeds. Earlier
+  A normal intact retry creates no stage. If an identical destination appears
+  during fresh work, only that attempt's verified duplicate stage may be removed
+  after the existing delivery validates and its parent-directory sync succeeds. Earlier
   stages are retained. If duplicate cleanup fails, the error identifies the durable
   delivery and the remaining stage; partially removed stage files may be incomplete.
 

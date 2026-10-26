@@ -13,10 +13,10 @@ from typing import Any, Literal
 import numpy as np
 from PIL import Image
 
+from .assets import saved_asset
 from .framing import validate_presentation_size
 from .project import (
     ProjectError,
-    _asset,
     _atomic_json,
     _json_bytes,
     _root,
@@ -336,11 +336,13 @@ def estimate_series_resources(
     transparent: bool,
     spatial_fade_pixels: int = 0,
     native_export_peak_bytes: int = 0,
+    black_background: bool = False,
 ) -> dict[str, int]:
     if (
         type(retained_native_bytes) is not int
         or retained_native_bytes < 0
         or type(transparent) is not bool
+        or type(black_background) is not bool
         or type(spatial_fade_pixels) is not int
         or spatial_fade_pixels < 0
         or type(native_export_peak_bytes) is not int
@@ -374,6 +376,9 @@ def estimate_series_resources(
             filtered_spatial_amount_bytes=4 * x.output_length * y.output_length,
             spatial_blend_tile_bytes=64 * max(width, height) * 128,
             spatial_transparent_rgba_bytes=4 * width * height if transparent else 0,
+            spatial_target_rgb16_bytes=6 * width * height
+            if black_background and not transparent
+            else 0,
         )
     series_peak = sum(value for key, value in values.items() if key != "output_rgba8_bytes")
     if native_export_peak_bytes:
@@ -472,12 +477,14 @@ def render_series(
     background_settings: dict[str, Any] | None = None,
     transparent: bool = False,
     spatial_fade: SpatialFadeOperands | None = None,
+    black_background: bool = False,
 ) -> np.ndarray:
     from .background import LEGACY_BACKGROUND, make_background, sample_background
     from .export import _foreground_contribution
 
     if (
         type(transparent) is not bool
+        or type(black_background) is not bool
         or not isinstance(foreground, np.ndarray)
         or foreground.dtype != np.uint16
         or foreground.ndim != 3
@@ -521,6 +528,7 @@ def render_series(
             else 0
         ),
         transparent=transparent,
+        black_background=black_background,
         **({"spatial_fade_pixels": alpha16.size} if active_spatial else {}),
     )
     native_amount = (
@@ -534,6 +542,8 @@ def render_series(
     settings = LEGACY_BACKGROUND if background_settings is None else background_settings
     if transparent:
         result = np.zeros((height, width, 4), np.uint8)
+    elif black_background:
+        result = np.zeros((height, width, 3), np.uint16)
     elif sampling.display_dimensions_wh == sampling.layout.output_dimensions_wh:
         result = make_background((height, width), settings)
     else:
@@ -541,7 +551,7 @@ def render_series(
         result = sample_background((output_height, output_width), settings, (width, height))
     target = None
     if native_amount is not None:
-        if not transparent:
+        if not transparent and not black_background:
             target = result
         elif sampling.display_dimensions_wh == sampling.layout.output_dimensions_wh:
             target = make_background((height, width), settings)
@@ -659,10 +669,10 @@ def render_series(
 
 
 def read_series_settings(
-    project: Path, source_id: str, source_size: tuple[int, int]
+    project: Path, developed_id: str, source_size: tuple[int, int]
 ) -> tuple[SeriesSettings, str | None]:
     """Read an optional source-bound snapshot without modifying the project."""
-    path = _asset(_root(project), "series-framing.json")
+    path = saved_asset(_root(project), "series-framing.json")
     try:
         raw = _bounded_file(path)
     except FileNotFoundError:
@@ -671,10 +681,10 @@ def read_series_settings(
         value = _parse_metadata(raw)
         if (
             not isinstance(value, dict)
-            or set(value) != {"schema_version", "master_id", "source_dimensions_wh", "settings"}
+            or set(value) != {"schema_version", "developed_id", "source_dimensions_wh", "settings"}
             or type(value["schema_version"]) is not int
-            or value["schema_version"] != 1
-            or value["master_id"] != source_id
+            or value["schema_version"] != 2
+            or value["developed_id"] != developed_id
             or not isinstance(value["source_dimensions_wh"], list)
             or any(type(item) is not int for item in value["source_dimensions_wh"])
             or value["source_dimensions_wh"] != list(source_size)
@@ -698,7 +708,11 @@ class SeriesSaveUncertain(ProjectError):
 
 
 def save_series_settings(
-    project: Path, value: dict[str, object], *, expected_digest: str | None, expected_source_id: str
+    project: Path,
+    value: dict[str, object],
+    *,
+    expected_digest: str | None,
+    expected_developed_id: str,
 ) -> dict[str, object]:
     """Explicit source-bound raw-byte CAS under the canonical project writer lock."""
     if expected_digest is not None and (
@@ -710,42 +724,52 @@ def save_series_settings(
     settings = validate_series_settings(value)
     project = _root(project)
     with project_lock(project):
-        source_bytes = _asset(project, "source.json").read_bytes()
+        source_bytes = saved_asset(project, "source.json").read_bytes()
         state = read_project(project, validate_drafts=False)
-        if state["master_id"] != expected_source_id:
+        if state["developed_id"] != expected_developed_id:
             raise ProjectError("Stale series source identity; reload the photo")
         source, _ = _validate_assets(project, state, validate_drafts=False)
         source_size = (source.shape[1], source.shape[0])
         del source
-        previous, previous_digest = read_series_settings(project, expected_source_id, source_size)
+        previous, previous_digest = read_series_settings(
+            project, expected_developed_id, source_size
+        )
         if previous_digest != expected_digest:
             raise ProjectError("Stale series settings; Reload saved series settings before saving")
         if previous_digest is not None and previous == settings:
             return {"series_settings": settings.to_dict(), "series_digest": previous_digest}
         envelope = {
-            "schema_version": 1,
-            "master_id": expected_source_id,
+            "schema_version": 2,
+            "developed_id": expected_developed_id,
             "source_dimensions_wh": list(source_size),
             "settings": settings.to_dict(),
         }
 
         def unchanged() -> None:
-            if _asset(project, "source.json").read_bytes() != source_bytes:
+            if saved_asset(project, "source.json").read_bytes() != source_bytes:
                 raise ProjectError("Stale series source before publication")
-            if read_project(project, validate_drafts=False)["master_id"] != expected_source_id:
+            if (
+                read_project(project, validate_drafts=False)["developed_id"]
+                != expected_developed_id
+            ):
                 raise ProjectError("Stale series master before publication")
-            if read_series_settings(project, expected_source_id, source_size)[1] != previous_digest:
+            if (
+                read_series_settings(project, expected_developed_id, source_size)[1]
+                != previous_digest
+            ):
                 raise ProjectError("Stale series settings before publication")
 
         check_space(project, 1024**2)
         try:
             _atomic_json(
-                _asset(project, "series-framing.json"), envelope, validate_before_replace=unchanged
+                saved_asset(project, "series-framing.json"),
+                envelope,
+                validate_before_replace=unchanged,
             )
         except (OSError, ValueError) as error:
             try:
                 visible, visible_digest = read_series_settings(
-                    project, expected_source_id, source_size
+                    project, expected_developed_id, source_size
                 )
             except (ProjectError, OSError):
                 observed: dict[str, object] = {"series_settings": None, "series_digest": None}

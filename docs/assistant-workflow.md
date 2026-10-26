@@ -19,6 +19,20 @@ unrelated existing effects and drafts. RAW still needs its recorded RGB conversi
 never silently choose a different rendering or claim an optional review happened.
 See [source appearance](workflow.md#source-appearance).
 
+## Final assisted exports
+
+For every final Codex-assisted export, explicitly include `--variant editable`
+(or API `variants=("editable",)`) in the chosen native, Add margins or Match series
+request. Include black/transparent alternatives only when requested. Native output
+retains full native RGB16 TIFF and same-dimension PNG8 view; the PNG is a reduced
+precision view. Presentation exports keep compact rendered files and return a
+native editable companion; provide both folders with their names and retain the
+project. The manifest freezes the presentation recipe and exact companion binding.
+Intermediate edits stay in the project. Saving/applying/exporting never supplies
+human photographic acceptance: use an explicit labelled draft for an unaccepted
+revision. Manual exports keep editable as an independent opt-in. See the
+[normative delivery contract](file-contract.md#requested-result-deliveries).
+
 ## Fade into background assistance
 
 Follow the [manual feature guide](workflow.md#fade-into-background) through the
@@ -51,7 +65,7 @@ alpha. These PNGs/contact sheets are explicitly RGB8/alpha8 viewing approximatio
 authoritative RGB16 and alpha16 paths are in `assets`. Never infer extra captured
 precision or reconstruct absent photographed detail.
 
-Use `master_id`, `working_revision` and `inputs_digest` from the current manifest.
+Use `developed_id`, `working_revision` and `inputs_digest` from the current manifest.
 Do not reuse a manifest with stale labels. `revision_inputs_digest` belongs to the
 selected saved revision; `inputs_digest` belongs to the current editable draft.
 `settings` is that revision's frozen recipe and `model` records actual execution;
@@ -75,15 +89,15 @@ detail. `source_resolved: true` records a judgement; it does not prove it correc
 ## Explicit cycle and finite operations
 
 Only an explicit user-requested new correction starts another cycle. Never start
-a new cycle automatically to reset the budget. Save a schema-1 JSON cycle request
+a new cycle automatically to reset the budget. Save a schema-2 JSON cycle request
 and invoke:
 
 ```sh
 .venv/bin/blackmask review PROJECT --cycle-request CYCLE_REQUEST.json
 ```
 
-A start request contains exactly `schema_version: 1`, `action: "start"`,
-`master_id`, `base_revision`, `inputs_digest` and `user_request` (the actual explicit
+A start request contains exactly `schema_version: 2`, `action: "start"`,
+`developed_id`, `base_revision`, `inputs_digest` and `user_request` (the actual explicit
 request). The base must be the current complete matte/repair, with no pending
 guidance. Copy identities from current saved state, never from these examples.
 The returned `cycle_id` identifies immutable events under
@@ -118,6 +132,12 @@ absolute `manifest_file`. Set `review_manifest_file` to that path relative to th
 project root: for project `/path/to/photo-project`,
 `/path/to/photo-project/reviews/rev-NNN/<hash>/manifest.json` becomes
 `reviews/rev-NNN/<hash>/manifest.json`. Keep the returned revision and hash unchanged.
+An explicitly requested focused comparison can include `--retain-native`; use its
+returned `native_manifest_file` in the same project-relative way. Its
+`comparison_manifest_file` and presentation pixels are viewing aids only and are
+rejected as native correction authority. Keep both bound native manifests for a
+repair comparison; do not regenerate a missing dependency behind an existing
+comparison. See the [comparison contract](file-contract.md#focused-comparisons).
 Its identity, crop transforms and image hashes are validated; modified or stale
 evidence is rejected. Unknown keys/operations,
 off-image coordinates, stale draft/parent/master and contradictory/lock-conflicting
@@ -132,7 +152,7 @@ remove or alter inherited locks.
 2. Trimap confirmation is optional. Continue directly to repair when the user
    prefers to review the actual masked photograph. A user who wants to record
    trimap review can use
-   `.venv/bin/blackmask accept PROJECT --revision REV --trimap --master-id ID --inputs-digest DIGEST`.
+   `.venv/bin/blackmask accept PROJECT --revision REV --trimap --developed-id ID --inputs-digest DIGEST`.
    Assistance never invents this confirmation. Source-development review is also
    optional; final photographic acceptance remains a separate human action.
 3. Build a finite repair request using those **returned** identities/support,
@@ -145,15 +165,22 @@ remove or alter inherited locks.
    attempt is reserved durably before model execution. At most **two repair
    attempts total across all defects** are allowed in this explicit cycle.
    Invalid proposals rejected before reservation do not spend an attempt.
-5. Inspect saved `review-before/manifest.json` and `review/manifest.json` under
-   the returned revision: identical native crops on source/black/gray/white/alpha,
-   plus `qa.json`, saved full-precision layers and preservation evidence. No second
-   automatic prepare/repair is allowed until the comparison is recorded.
+5. Run `.venv/bin/blackmask review PROJECT --revision REPAIR_REVISION`, using the
+   returned repair revision. This writes native RGB8/alpha8 PNG evidence under
+   `PROJECT/reviews/`. The returned absolute `manifest_file` identifies the after
+   manifest; its `assets.before_manifest` gives the matching before manifest's
+   project-relative path. Resolve that path from `PROJECT` and inspect both
+   manifests' `crops[].files` for identical native source/black/gray/white/alpha
+   crops, together with the repair revision's `qa.json`, saved full-precision
+   layers and preservation evidence. The
+   revision-local `review/manifest.json` and `review-before/manifest.json` locate
+   reduced JPEG overviews, not native inspection evidence. No second automatic
+   prepare/repair is allowed until the comparison is recorded.
 
 ## Assess, stop and present
 
 An assessment uses the cycle command above with exactly the common identity fields
-(`schema_version`, `master_id`, `base_revision`, `inputs_digest`), `action: "assess"`,
+(`schema_version`, `developed_id`, `base_revision`, `inputs_digest`), `action: "assess"`,
 `cycle_id`, `outcome` and `comparison`. The base/digest must match the current
 complete repair. `comparison` records concrete visible improvement/preservation,
 remaining uncertainty and relevant before/after observations. Outcomes are
@@ -162,11 +189,14 @@ remaining uncertainty and relevant before/after observations. Outcomes are
 attempt; the second assessment ends the budget. Alpha identical to the prepared
 parent forces `no_progress`, even if an improvement was claimed. This equality
 check can disprove a change; numerical change cannot prove visual improvement.
+The assessment response records project-relative `before_manifest` and
+`after_manifest` paths to its native evidence under `reviews/`; retain those
+returned paths with the recorded comparison.
 
 Stop earlier on ambiguity, absent source evidence, no clear improvement, a new
 regression or an artistic choice. To stop before a successful repair exists, send
 `action: "stop"`, the common identity fields, `cycle_id` and `reason`.
-A status request needs only `schema_version: 1`, `action: "status"` and `cycle_id`.
+A status request needs only `schema_version: 2`, `action: "status"` and `cycle_id`.
 Every start/reservation/assessment/stop is an immutable event with a content-hash filename and predecessor link, plus its
 original structured request; assessments include the operation result and
 before/after manifest paths. Reopen/status works without conversation memory. Event transitions are validated; retained immutable repair requests prevent truncated history from silently losing an attempt. A per-cycle `head.sha256` integrity anchor also detects loss of a terminal stop/assessment. Partial event/anchor publication fails closed: preserve the files and inspect the failure before an explicitly requested new cycle. This is local integrity checking, not protection against a local actor rewriting every related file.
@@ -196,7 +226,7 @@ manual workflow; do not make its commands depend on cycle history.
 
 ## Explicit background appearance
 
-Background tone/variation use the same schema-1 effects operation and current
+Background tone/variation use the same schema-2 effects operation and current
 master/base/draft identities as manual controls, with exclusive `background`
 settings and full native scope. They require explicit user appearance intent;
 the automatic alpha-repair cycle does not choose them. Preserve accepted state
@@ -255,3 +285,22 @@ Appearance settings are descriptive recipes, not an automatic preset loader.
 A supported portable series preset can be loaded through **Match series → Load
 preset file**. Keep references local; do not upload or include them in distributions.
 Ignored references need their own backup; Git does not back them up.
+
+
+## Local sharpening assistance
+
+Use only the supported Local sharpening controls or the
+[typed effects request](file-contract.md#optional-local-sharpening). Obtain the
+user's requested target/protected scope and preserve source, alpha, crop, colour,
+exposure, fade and background settings. Author explicit support and hard Protect
+areas; start with a mild Amount and appropriate native Detail size. This is one
+generic captured-detail operation, not subject detection or invented texture.
+
+Preserve the previous draft and inspect matching native source/alpha/black/gray/white
+and Local sharpening OFF comparisons. Stop on halos, amplified noise, ambiguity or
+no improvement. At most two candidates are permitted in a bounded assisted trial;
+a stronger second candidate requires clear improvement from the first. Never choose
+additional private photographs without authority. Export a clearly labelled DRAFT
+with complete editable layers, including unsharpened input and sharpening operands,
+and verify saved-only replay. Human photographic acceptance remains separate from
+engineering checks and assistant judgment.

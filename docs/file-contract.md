@@ -1,19 +1,27 @@
 # Photo project contract
 
-One project contains one untouched source reference and one developed master.
-`source.json` records original resolved path/SHA-256, detected format, original
+Storage schema **2** is the only supported project format. Schema-1 projects are
+rejected without writes, including lock-file creation; retain them for their
+original application version or start a separate new project. No migration or
+compatibility tree is provided. The independent portable series preset remains
+schema 1; it contains settings, not project identity.
+
+One project contains one untouched source reference and one developed image.
+`source.json` records original locator/SHA-256, detected format, original
 precision (RAW captured precision unknown), original dimensions/profile hash where
 available, applied orientation owner, crop/development decisions, output encoding,
-clipping count and master file hash. The original remains outside writable assets.
+clipping count and developed file hash. Standalone locators are resolved absolute
+paths; imported locators are `../original/<camera-name>`, relative to `project/`.
+The original remains outside writable assets.
 
-`masters/<master_id>.tif` is uncompressed RGB16 with embedded canonical sRGB ICC.
+`assets/developed/<developed_id>.tif` is uncompressed RGB16 with embedded canonical sRGB ICC.
 Identity is SHA-256 of canonical JSON development/source metadata followed by
 contiguous little-endian RGB16 samples. Dimensions alone never establish identity.
 RAW orientation is applied by LibRaw; other EXIF transforms are applied once by the
 ingest owner. Coordinates begin at the oriented master top-left. Points use
-integer pixel indices; boxes are half-open [x0,y0,x1,y1). Guide dimensions and master identity must match exactly.
+integer pixel indices; boxes are half-open [x0,y0,x1,y1). Guide dimensions and developed identity must match exactly.
 
-`recipe.toml` is typed schema 1 with identity, `guides_file="guides.json"`, editable
+`recipe.toml` is typed schema 2 with identity, `guides_file="guides.json"`, editable
 notes and named groups. Matting keeps geometry at 1024/256, permits auto/cpu/mps,
 color cleanup default disabled/strength .35 (enabled boolean and finite strength
 0–1 are supported) and shading disabled/opacity 0. Unknown keys, malformed types or
@@ -21,14 +29,22 @@ unavailable processing settings fail visibly. Validation expands with supported
 processing features. Prose is never code.
 `guides.json` contains schema, identity, dimensions and typed regions; see [guidance](guidance.md).
 
-`state.json` alone owns `working_revision`/`accepted_revision` (initially null),
-`development_approved`, master ID and status. A new project is `ready` for mask
+`state.json` alone owns `working_revision`/`accepted_revision` and
+`latest_result_revision` (initially null),
+`development_approved`, developed ID and status. A new project is `ready` for mask
 preparation without development approval. The Boolean remains compatibility
 metadata for optional legacy review; it is not automatically set to true and no
-processing, trimap-review or final-acceptance operation requires it. Older empty
+processing, trimap-review or final-acceptance operation requires it. Schema-2 empty
 projects with `review_needed` remain valid without rewriting state. Working
 revisions still require `review_needed`, or `accepted` when the working and accepted
-pointers match. Source/master/drafts remain validated on reopen and before writes.
+pointers match. Source/developed/drafts remain validated on reopen and before writes.
+Latest records the last successfully generated complete matte/repair/effects result
+with no stale enabled effects, independently of current drafts and selection.
+Normal generation and successful fresh resume publish working/latest together.
+Preparation, stale or failed work, acceptance, restore, explicit review and native
+or presentation exports do not advance latest. Restoring A after generating B
+retains latest B. Post-replace sync failure reports visible state and uncertain
+durability; it never promises rollback.
 Trimap and final-photo acceptance are still explicit; neither is inferred.
 
 All writers use `project.project_lock`: stable `.writer.lock`, exclusive
@@ -48,7 +64,7 @@ inward shading use the additive effects contracts below. Never use a flattened
 preview as a master. The [manual review window](workflow.md) provides native
 registration and guide authoring through these shared contracts.
 
-Initial assets/state use atomic create-if-absent hard links within the project filesystem; concurrent externally created files cause a visible collision and remain unchanged. Own staged files may remain as diagnostic hard links and are never authoritative. Approval alone uses atomic replacement of existing state. RAW rejected coefficients use null for non-finite values, recorded shape and an explicit validity flag; finite values remain recorded.
+Initial assets/state use atomic create-if-absent hard links within the project filesystem; concurrent externally created files cause a visible collision and remain unchanged. Own staged files may remain as diagnostic hard links and are never authoritative. Updates to existing state use atomic replacement. RAW rejected coefficients use null for non-finite values, recorded shape and an explicit validity flag; finite values remain recorded.
 
 
 TIFF container recognition belongs to LibRaw, not the first TIFF page or filename.
@@ -57,6 +73,40 @@ while opening permits the ordinary TIFF validator; development/processing failur
 after recognition stay errors, including later unsupported-operation errors.
 Ordinary TIFF precision/compression/profile rules are unchanged. Known DNG/CFA
 containers that LibRaw cannot decode cannot be imported as a developed TIFF.
+
+## Explicit SDR-primary JPEG import
+
+`open SOURCE --project NEW_PROJECT --jpeg-sdr-primary` and configured library
+`import SOURCE --subject NAME --jpeg-sdr-primary` explicitly select the ordinary
+SDR primary of a supported gain-map JPEG. The default continues to reject
+multi-image input. No gain map is applied, no HDR image is reconstructed, and
+the complete original JPEG, including its auxiliary payload, remains unchanged.
+The master has the primary's original 8-bit precision in an RGB16 container;
+ordinary ICC conversion and EXIF orientation still apply exactly once.
+
+This bounded route requires two MPF entries with non-overlapping, complete JPEG
+payloads, a baseline primary entry and an auxiliary entry, gain-map namespace
+version `1.0` in both XMP packets, and explicit `BaseRenditionIsHDR="False"` in
+the auxiliary packet. Missing, contradictory or malformed metadata is rejected.
+Each image must have one standard XMP packet; duplicate and extended packets
+are unsupported. Pillow-recognized gain-map JPEGs using the conventional `hdrgm`
+prefix are supported; other namespace-prefix spellings may be rejected as MPO.
+Unlike the general format's optional default, absent SDR-base declaration is not
+assumed here. Generic MPO, animation and HDR-base input remain unsupported.
+This is SDR selection, not complete HDR-format validation or HDR support.
+
+API callers supply Boolean `development["jpeg_sdr_primary"] = True`.
+The option and `metadata.jpeg_sdr_primary` (selected image `0`, image count `2`,
+base rendition `SDR`, gain map applied `false`) enter the developed identity and
+saved `source.json`. Without the option, existing defaults and identities stay
+unchanged. Reopening uses the saved master without decoding again. No saved
+project is migrated or redeveloped. Import recovery retains its frozen original
+development options; it cannot retrofit this choice into an earlier failed
+reservation. Preserve that transaction and use a new standalone project or a
+separate configured library for a different development.
+
+The format's primary/auxiliary metadata meanings are defined by the
+[Ultra HDR format specification](https://developer.android.com/media/platform/hdr-image-format).
 
 ## RAW as-shot white balance
 
@@ -105,15 +155,229 @@ a different development requires a separate project; existing guides, masks and
 accepted outputs cannot be rebound by dimensions alone.
 
 
+## Configured library and original ownership
+
+Explicit storage TOML owns the library destination and optional existing native
+model paths. Relative values bind to the selected file's canonical parent; there
+is no config discovery or fallback. Unknown fields and unsafe paths reject before
+mutation. Loading/status create nothing. Writes create missing managed directories
+with mode0700 and new generated import/project files with mode0600 independently
+of umask. Existing permissions, including moved originals and sidecars, are preserved.
+Managed components reject
+symlinks, dangling links, files and permission conflicts.
+Ownership scans in Photos and Inbox/.imports ignore only exact `.DS_Store` entries
+identified as regular files without following links; all other unexpected entries fail closed.
+
+The library owns Inbox, Photos, Results Preview and Comparisons. Each imported
+`Photos/<frozen-basename>/` contains `original/` and `project/`. Source records retain
+schema2 and add `original_filename` and `library={photo_id,folder_basename,sidecars}`;
+sidecars have filename/SHA-256 records. Photo ID is P plus the first12 source-hash
+hex characters; full hashes determine identity and prefix collisions reject.
+Project validation checks this ownership structure without requiring the original
+to be available for ordinary saved-asset reopen/replay. No schema/state/revision
+transition or migration is introduced.
+
+One stable `.import.lock` holds a nonblocking flock across an entire import/resume,
+including published/pending identity checks, preparation, original moves and final
+publication. Existing-photo processing retains its project lock. Only explicitly
+selected regular same-stem Inbox files move. All inputs, space and device identities
+are checked before first move; a complete usable project is prepared through the
+canonical decoder/create_project first. Native exclusive same-filesystem moves and
+parent syncs preserve destinations; cross-device imports have no copy/delete fallback.
+Only a complete validated photo bundle is published under Photos. Imports do not
+advance working/accepted/latest state or produce a gallery image.
+
+Private `Inbox/.imports/<photo-id>/import.json` is product recovery state, retained
+after completion. Its schema2 `kind="photo-import"` records the full source hash,
+frozen photo/folder identity, exact development options, phase and selected filenames,
+hashes and sizes. Inbox/original paths derive only from those confined components.
+The record survives the exclusive move of its staged `bundle/` into Photos. Each
+move syncs the file, both changed parents and the record. Resume validates actual
+Inbox/staged/final files rather than trusting phase as proof of movement. Ambiguous,
+missing, changed or malformed ownership fails closed and preserves remnants.
+Preparation attempts interrupted before bundle publication are retained; explicit
+resume can prepare a new empty attempt under the same reservation. No automatic
+cleanup or general transaction service exists.
+
+Published duplicates return the validated existing project and preserve the extra
+Inbox input. Pending duplicates return the exact recovery record; they never
+create a second photo or implicitly resume. Changed config does not relocate a
+library; recovery requires its matching original destination. Publication followed
+by sync/record failure can leave a complete published photo with uncertain
+durability. Resume rechecks actual state and reports it; no rollback is promised.
+Originals and recovery records require independent backups. See [library usage](library.md).
+
+## Current Result gallery
+
+Each imported photo has one replaceable `Results Preview/<frozen-basename>.jpg`,
+bound to `latest_result_revision`, independently of working selection and acceptance.
+Complete non-stale native generation/resume publishes after native state. Configured
+reopen or `preview repair PROJECT` repairs pending output; intact output is reused
+without writing. Status and viewer polling never repair. Preparation, drafts, restore,
+review, presentation presets/previews and exports do not advance the gallery.
+Standalone projects have no library gallery.
+
+The gallery uses the canonical saved native Result composition, including saved
+spatial fade, its protection and the selected backdrop target. It does not flatten
+those appearance settings into source pixels or change native alpha.
+
+The photograph retains native aspect, with integer thumbnail rounding, long edge
+at most 1600 and no upscale. Explicit RGB16-to-RGB8 conversion and quality85/optimize
+JPEG are lossy; canonical sRGB ICC is included without copied EXIF/GPS/XMP. An 18px
+Draft/Accepted revision footer sits outside the photograph. Tiny/narrow photographs
+are centred on a canvas at least 360px wide without photographic enlargement.
+
+Project-local `preview.json` uses independent schema1, kind `result-preview` and
+encoding `native-result-jpeg-v1`. It binds photo/folder/source/developed identities,
+revision/raw manifest hash, label, dimensions, photo rectangle and JPEG hash. A JPEG
+comment repeats ownership/layout except its own hash, allowing recovery after JPEG
+publication without a receipt. Neither record selects pointers or grants acceptance.
+Inspection is bounded to 16KiB records/16MiB JPEG, without native rendering. Foreign,
+malformed, symlink/nonregular or multiply-linked JPEG collisions remain preserved.
+A missing/stale receipt is recoverable from validated ownership and saved assets.
+
+Writers require the matching configured destination/Photos/frozen-folder/project and
+hold the existing project lock; they never acquire the import lock inside it. An
+exclusive0600 gallery temporary, file sync, identity/target recheck, atomic replacement
+and parent sync precede receipt publication. First creation is exclusive; failed
+temporaries remain. JPEG/receipt failure after native completion returns actual
+pointers with `preview_pending`; it does not roll back native work.
+
+Before acceptance changes, latest's JPEG must durably become Draft. Failure leaves
+acceptance unchanged. Only successful state commit permits promotion, only when
+latest equals accepted. State replacement followed by sync failure requires actual
+state reread and no promotion or guessed rollback. Promotion/receipt failure leaves
+actual acceptance with pending output. Generate/accept B, restore A, then accept A
+keeps B's photograph labelled Draft. Conservative Draft is allowed; false Accepted
+is forbidden. Native assets, schemas and revision snapshots remain unchanged.
+
+New import proposals reserve `.jpg` within the actual gallery parent's filesystem
+component-byte limit before lock/state creation, source moves or duplicate lookup.
+Existing longer names and pending imports remain valid and frozen. Native generation
+works with pending `name_too_long` and required/available byte counts; repair writes
+nothing and acceptance changes stop because Draft demotion cannot publish. No alias,
+truncation, rename or migration is performed. A valid duplicate proposal returns its
+existing overlong owner; an overlong proposal rejects before lookup. Camera and
+sidecar names remain unchanged. See [library usage](library.md).
+
+## Shared raster operands and effective recipes
+
+`manifest.files` maps revision-local text and the small overview to file hashes.
+`manifest.assets` maps logical raster roles to `{path, sha256}` references under
+project `assets/`. New raster objects are content-addressed PNG/TIFF files;
+`assets/developed/<developed_id>.tif` retains the identity-bound developed input.
+An identical foreground references that same object with its file hash; it is not
+duplicated under a hash filename.
+Logical raster names below describe roles, not revision-local physical files.
+One canonical resolver validates paths, hashes, role, precision, profile, native
+dimensions and registration, with effect/parent semantics checked before warm reuse.
+The viewer exposes only its existing authenticated image/mask routes.
+
+Inherited references retain exact encoded bytes. An opacity-only shading change
+reuses foreground, alpha, W, support and protection without encoding new rasters.
+New or changed operands are published and validated before the complete revision
+and state. Failures can retain unreferenced immutable objects and unique stages;
+these are preserved, never automatically collected. Accepted work never depends
+on processing cache.
+
+A completed matte/repair/effects recipe is the exact effective native recipe: applied cleanup, shading,
+exposure, fade and background settings plus inherited effective sections. Exact
+consumed draft/request bytes remain in `inputs/`. Only applied root draft sections
+are synchronized; unrelated pending values remain editable and block acceptance
+when their digest differs. Requests bind consumed inputs; public results identify
+current editable `inputs_digest` and immutable `revision_inputs_digest`. Restore
+selects effective settings, with explicit draft replacement and recovery when needed.
+Presentation presets remain independent small project snapshots; deliveries record
+the actual settings used, including unsaved settings.
+
+Published revisions retain text and one bounded `preview.jpg`, never native PNG
+panels or precision TIFFs. The JPEG is a labelled reduced RGB8 approximation, with
+maximum long edge 1600 and no upscale. Before/after records retain native crop,
+origin, displayed dimensions and scale. `panel_boxes_xyxy` locates each panel in
+the shared JPEG; the displayed dimensions/scale refer to the named `source` panel.
+Native before/after evidence uses matching selected or BASE effect settings on both
+sides, including when a stale enabled effect requires BASE comparison.
+Use explicit `review` output under
+`reviews/` for native PNG evidence; reduced overview pixels do not authorize
+native assisted corrections. The separate [current Result gallery](#current-result-gallery)
+does not replace revision overviews or native evidence.
+
+## Focused comparisons
+
+`review PROJECT --comparison` explicitly saves a focused RGB8 JPEG sheet and
+`manifest.json`. Ordinary `review` and assisted cycle requests still produce native
+inspection evidence. Generation never starts a comparison automatically.
+The comparison has a maximum 1600-pixel long edge, labelled native-crop rows and
+optional separate presentation panel. It is a lossy approximation, never a source
+of correction coordinates or photographic acceptance.
+
+Standalone output is `PROJECT/reviews/comparisons/<revision>-<request-sha256>/`.
+Configured imported projects use `Comparisons/<photo_id>/<revision>-<request-sha256>/`
+under the selected library. Only `comparison_RGB8_VIEW.jpg` and `manifest.json`
+are published there. After confirmed publication and the final input check, only
+the current call's unchanged reduced intermediates and empty staging directories
+are removed. Earlier stages are never collected, including on intact reuse.
+Publication or validation failures preserve staging. Cleanup refuses unfamiliar
+members, replaced files/directories and symlinks; a cleanup error reports the
+durably published comparison separately and retains remaining stage files for
+inspection. Requests do not change working, accepted, latest Result, gallery or
+draft pointers/settings.
+
+The schema-2 manifest has kind `comparison`, `native_authoring_allowed: false`,
+`identity_sha256`, `request`, `files`, `dimensions_wh`, `panel_order`, `crops`,
+`presentation` and `native_evidence`. The normalized request captures source and
+raw revision identities, draft/authoring digests, state/source manifest hashes,
+exact half-open native crop boxes and effective settings, including appearance
+staleness. Managed records retain the logical photo ID and frozen folder basename. Crop origins, source
+panel dimensions, scales and `panel_boxes_xyxy` describe the displayed sheet.
+Presentation records bind the selected revision's raw manifest hash, actual margin
+or series settings, algorithm, full output geometry and output-to-display scale.
+They do not change native crop coordinates. Both presentation modes use the same
+bounded rendering as the manual window.
+
+`--retain-native` additionally retains native PNG evidence in project-local
+`reviews/rev-NNN/<hash>/`. The comparison binds the exact after manifest and, for
+repairs, its direct before manifest, including their raw SHA-256 values. The
+response supplies `comparison_manifest_file`, `reused`, and, when requested,
+`native_manifest_file`. Native admission checks real PNG geometry, required views,
+unit scales, native origins and member hashes; a correctly rehashed reduced or
+presentation record cannot authorize native corrections. Native manifest references
+must be nonempty project-relative paths without `..`; admission rejects invalid
+references before reserving an assisted repair attempt.
+
+Comparison lookup depends on the captured request, independently of live native
+evidence. Reuse validates all bound native dependencies before any native
+publisher can run. Missing directories, symlinks, altered manifests/pixels or
+foreign evidence stop with the comparison and native locations; the existing
+comparison is preserved and the native evidence is not recreated. Restore the
+intact bound evidence before retrying. When native publication succeeds but the
+comparison publication fails, the reported native evidence remains usable; retry
+can finish that unchanged pair. A publication or validation failure after the
+directory becomes visible reports completion as unconfirmed; an intact retry
+validates the pair and syncs each bound native directory's parent, then the comparison directory's parent,
+before reporting success. A repeated sync failure retains that uncertainty and
+the visible files. Neither partial completion nor reuse implies human approval.
+
+The optional `--presentation FILE` accepts one JSON object with exactly `mode`,
+`developed_id`, `revision`, `revision_manifest_sha256`, and either `margins`
+(for `add-margins`) or `settings` (for `match-series`). Copy identities from the
+current state and selected revision's raw manifest digest; settings use the
+existing [margin](#saved-framing-and-bounded-preview) or series contracts. Stale identities and
+stale enabled appearance are refused. This option and `--retain-native` require
+`--comparison` and cannot be combined with `--cycle-request`.
+
 ## Prepared revisions
 
 `revisions/rev-NNN/manifest.json` records parent, master, complete/kind, input/draft
 digests, scope, exact file hashes, candidate names/selection/material policies,
 model/package/config/backend/dtype/tensor/normalization metadata and referenced
 edit snapshot hashes. `request.json` preserves original request bytes through CLI;
-`result.json` stores the outcome and portable revision-relative asset paths. The
-public operation returns resolved absolute paths for immediate local inspection.
-Recipe/guides are immutable effective inputs; `inputs/` preserves original draft,
+`result.json` stores the outcome and portable logical raster-role names; resolve
+them through `manifest.assets`. The
+public operation returns resolved absolute shared-asset paths for immediate local inspection.
+Prepared recipe/guides are immutable inputs for the next matte or repair; preparation
+does not apply pending appearance effects. Completion records the actual inherited
+effect settings in its effective recipe. `inputs/` preserves original draft,
 state/source record and exact external edits. No private capture is copied.
 
 `trimap.png` is full-master grayscale8 with only 0/128/255. `source_proxy8.png` is
@@ -122,7 +386,7 @@ explicitly lower precision than the master. `candidates/` and
 contains `support16.png`, categorical `protection.png`, and `lock_values16.png`.
 The latter holds bound saved alpha only under the protection mask. An initial
 prepare has no `base_alpha16.png`; when a parent supplies alpha/applicable corrected
-RGB, preparation copies those bytes unchanged. No prepare is final-acceptable.
+RGB, preparation inherits their references unchanged. No prepare is final-acceptable.
 
 Every prepare holds the original shared nonblocking writer lock. It validates
 current base/master/draft digest, typed guides and
@@ -153,7 +417,7 @@ owners; complete matte acceptance still validates current state.
 
 
 Optional per-group `morphology` saves explicit native foreground erosion and
-unknown dilation margins without changing schema-1 drafts that omit it.
+unknown dilation margins without changing schema-2 drafts that omit it.
 Requested selected-mask proposals add `trimap_proposal.png` and binary
 `proposal_boundary.png`; manifest/result identify their exact groups, candidates,
 settings and unreviewed status. They are optional revision assets, so existing
@@ -170,11 +434,10 @@ master, draft, manifest and authoritative trimap hashes. Optional proposals rema
 unreviewed. Matting and repair do not require this confirmation. When present, it
 is validated and copied into `trimap_approval.json`; without it, neither an approval
 record nor that revision asset is created. Effects preserve the asset only when
-their parent contains it. Existing revisions remain readable without migration;
+their parent contains it. Within schema 2, revisions without this optional confirmation remain readable;
 older application versions requiring this asset cannot read new unconfirmed mattes.
 Matte snapshots current inputs and any supplied confirmation, saves scalar16 alpha,
-RGB16 foreground, model/package/backend/padding/tile records and same-crop review
-assets. No prepare-only/incomplete/stale candidate can be final-accepted.
+RGB16 foreground, model/package/backend/padding/tile records and a small same-crop overview. No prepare-only/incomplete/stale candidate can be final-accepted.
 `qa.json` records structural/core/lock counts and pending human photographic review;
 state's explicit accepted pointer records final acceptance separately.
 
@@ -183,29 +446,118 @@ applicable RGB lock values. Scalar alpha16 has no ICC/gamma. The canonical base
 renderer in export.py uses these saved layers without model calls. Accepted revisions
 remain intact while newer preparation/matte advances the working pointer.
 
-`reviews/rev-NNN/<crop-and-manifest-hash>/` stores additional native-crop review
-exports; immutable revision review assets remain unchanged. `exports/rev-NNN/` is
-accepted delivery, `exports/rev-NNN-DRAFT/` explicitly unaccepted/labelled. Actual
-existing bytes must match for reuse. Native macOS exclusive rename prevents even
+`reviews/rev-NNN/<crop-and-manifest-hash>/` stores explicitly requested native-crop
+review exports, outside the lightweight revision directory. Requested deliveries
+use versioned identity paths described [below](#requested-result-deliveries).
+Native macOS exclusive rename prevents even
 empty concurrent directory collisions from replacing existing files. Filesystems
 without exclusive rename support fail visibly. Cooperative locks do not exclude
 hostile external writers; finish text edits before processing.
 
 `cache/matte/` contains verified rebuildable tile predictions keyed by master,
 input/crop/trimap, model/config/package, backend/dtype/geometry/preprocessing.
-Malformed/unknown entries miss. A backend switch starts the whole fresh stage in
-its own namespace. Accepted layers are outside cache. Retained temporary hard links
-and failed-stage directories are diagnostic, not accepted or resume authority.
+An initially present corrupt regular entry is a recomputation miss. Its bytes and
+the new diagnostic temporary remain intact, and the tile reports
+`cache_publication="skipped_corrupt_existing"`. Symlinks and other nonregular
+destinations are errors. A backend switch starts the whole fresh stage in its own
+namespace. Accepted layers are outside cache.
+
+New successful predictions are serialized, file-synced and validated, then
+published with a same-filesystem exclusive rename and parent-directory sync.
+Success leaves one named NPZ with one link and no temporary alias from that attempt.
+An arriving destination or failed rename preserves existing names and the temporary.
+Failure after rename preserves the named prediction and reports uncertain durability;
+there is no rollback or overwrite fallback. Old temporary hard links, corrupt
+entries and failed stages remain diagnostic data, never accepted or resume authority.
+
+### Inspecting and clearing processing cache
+
+`cache inspect PROJECT` reads direct children of `cache/matte` and returns eligible
+`candidates`, `protected` entries with reasons, integrity `blockers`, `writer_busy`,
+`candidate_logical_bytes` and a deterministic `candidate_digest`. Inspection never
+creates a cache, backend marker, lock, request, receipt or preview.
+
+Only regular single-link files named `<64-lowercase-hex>.npz` with the canonical
+tile format are eligible. ZIP members must use stored (the native producer) or
+deflate compression; a mixture of these two methods is supported. Every member's
+compression method is checked before decoding any member. BZIP2/LZMA and other unsupported methods,
+including previously readable entries, remain protected and are recomputation
+misses. Their existing bytes are never converted, replaced or cleared automatically.
+Each rerun at an occupied unsupported or corrupt key can repeat inference and retain
+another validated `.tile-*` diagnostic with `cache_publication="skipped_corrupt_existing"`.
+
+Admission uses one bounded archive snapshot, checks exactly four physical directory
+records before public ZIP metadata allocation, and validates consistent footer,
+local-header, payload and descriptor extents. Public metadata reads a separate
+in-memory view of those unchanged directory records with a trusted fixed trailer;
+its offsets are rebased to the original archive, which still owns payload validation.
+This keeps metadata allocation bounded across supported Python 3.12 readers.
+Supported ZIP64, descriptor, comment
+and prefix forms retain those checks. The compressed archive ceiling is 11,574,336
+bytes; decoded NPY members are limited to 8,398,608 bytes for alpha and 1,058,576
+bytes for each text member. Actual output length, complete stream termination and
+CRC must match before any array allocation. Every deflate/drain call has a positive
+remaining-length-plus-one bound; excess output and trailing compressed data reject.
+
+All four NPY headers (versions 1 or 2, at most 10,000 bytes each) are checked before
+array allocation from the validated buffers, with pickle disabled. The four unique
+members must contain finite float32/float64 alpha,
+scalar JSON-object metadata, the matching key and content checksum. Alpha dimensions
+are bounded by the native tile size. Backend markers, `.tile-*`, unknown files,
+nonregular entries, unsupported compression, malformed arrays and every multiply linked
+file are protected.
+No recursive cache deletion, alias grouping or automatic cleanup occurs.
+
+`cache clear PROJECT --confirm DIGEST` requires the exact inspected digest and
+the canonical project writer lock. Imported projects also require their matching
+explicit `--config FILE`, enforced by the public operation as well as CLI.
+The digest binds candidate names, hashes, logical sizes, fresh file/link identities,
+cache-directory identities and retained project/recovery/permanent context.
+All retained published revisions and delivery dependencies must validate.
+
+A completed matte/repair requires intact saved operation/input/dependency hashes,
+a matching **published** revision and completion manifest hash, and matching
+`progress.json` with `phase="complete"`, `status="review_needed"` and revision.
+`completion.json` alone precedes publication and cannot establish completion.
+Later draft changes, restore, working-pointer changes or removal of the original
+external request file do not undo valid saved completion. Resume keeps its stricter
+current-input checks. Unresolved, malformed or unknown requests block clearing.
+Typed viewer history must have retained consumption or restore-supersession
+evidence. A restore backup alone does not retire pending edits: the published
+supersession pointer must match its retained prior pointer. Each resolved edit
+batch accounts for one authoring record, preserving exact pointer associations;
+identical actions cannot resolve an extra interrupted authoring save. Unprovable
+history blocks clearing. Assisted cycles must have a valid stopped hash chain and anchor.
+
+Known `recovery/restore-*` directories preserve prior bytes and a bound target
+request. A fully captured backup is protected without implying restore completion;
+incomplete or unrecognized captures block clearing. Prior invalid draft bytes remain
+opaque backup data. Clearing never repairs or removes any history.
+
+Before unlinking, clear rechecks context and the candidate's path, content, fresh
+identity and link count through held real directory descriptors. It repeats context
+checks before every later unlink and stops on the first change or failure.
+Results report `status`, actual `removed` paths, `removed_logical_bytes`, `failures`
+and `durability_uncertain`. Partial removal or parent-sync uncertainty returns a
+nonzero CLI exit and preserves the remainder. There is no rollback claim.
+Originals, models, shared assets, revisions, presets, deliveries and recovery
+diagnostics remain untouched. Logical bytes do not promise physical disk recovery
+on copy-on-write or snapshot filesystems.
+
+This is the cooperative local-writer boundary: advisory locks and fresh checks
+do not make compare-and-unlink atomic against arbitrary hostile writers.
 
 
 ## Saved scoped repairs and restore
 
-Schema-1 repair revisions extend complete matte revisions; earlier saved matte
+Schema-2 repair revisions extend complete matte revisions; earlier saved matte
 and prepared revisions remain readable. Preparation carries parental
 `base_alpha16.png` and `foreground_rgb16.tif` unchanged. Repair requires a current
-human-reviewed prepared revision with a complete same-master parental matte,
+prepared revision with a complete same-master parental matte,
 verified immutable ancestry and exact current draft digest. No repeated guide
 edits are accepted on a repair request.
+Trimap confirmation is optional; any recorded approval is validated. Final
+photographic acceptance remains a separate human decision.
 
 Every repair contains `repair/parent_alpha16.png`,
 `repair/candidate_alpha16.png`, `repair/support16.png` and `repair/merge.json`.
@@ -249,7 +601,7 @@ binds snapshot and consumed parent/support/lock/approval hashes and the original
 request file, if supplied. `progress.json` describes calculation progress/errors;
 `completion.json` references only a validated complete temporary/published
 revision. These records never own working or accepted pointers: `state.json`
-remains the sole authority. Older projects need no migration; records are optional.
+remains the sole authority. Within schema 2, these records are optional.
 Resume checks dependencies again immediately before publication/pointer replacement.
 Accepted data remains outside cache. Complete stage reuse validates the same
 revision contract as normal publication; incomplete or corrupt work is retained
@@ -281,7 +633,7 @@ pending pointer bytes, so same-recipe edits in another browser cannot be overwri
 silently. Pending edits do not become confirmed guides until canonical preparation;
 processing/approval rejects unprepared current pending edits. Immutable prepare
 `external_inputs` proves consumption, including after a restore of an older identity.
-Older projects need no migration; these optional files appear only on manual save.
+Within schema 2, these optional files appear only on manual save.
 
 Explicit restore preserves previous recipe/guides through the existing recovery
 owner. Restore also retains the exact pending pointer bytes in recovery and marks the pointer
@@ -293,25 +645,82 @@ viewing approximations, never replacements for authoritative precision layers.
 
 ## Optional assisted review history
 
-Schema-1 manual processing requests remain compatible. Prepare/repair optionally accept `assisted_review` as defined by [the assisted workflow](assistant-workflow.md). Immutable `requests/review-<identity>/000-<content-sha256>.json`, `001-<content-sha256>.json`, etc. record the original explicit cycle request, reservations and source comparisons with content-addressed filenames and predecessor hashes. Terminal-byte changes, missing/reordered predecessors, contradictory transitions and lost reservations referenced by retained recovery requests fail closed. A per-cycle `head.sha256` integrity anchor binds the latest event, detecting removal of a valid terminal suffix as well as altered bytes. Events publish before the atomic anchor update; any partial event/anchor publication fails closed and remains retained for inspection. The anchor owns no working/accepted pointers or separate attempt counter. The single project lock serializes writes. This history is advisory, not another working/accepted state authority. A repair reservation is durable before model execution and reused by the same resume request. Two attempts total are shared across all defects; judgement is required between attempts. Stop keeps the best valid revision identity without changing acceptance or restoring drafts. Original prepare/repair requests/results and recovery snapshots retain existing meanings.
+Schema-2 manual processing requests remain compatible. Prepare/repair optionally accept `assisted_review` as defined by [the assisted workflow](assistant-workflow.md). Immutable `requests/review-<identity>/000-<content-sha256>.json`, `001-<content-sha256>.json`, etc. record the original explicit cycle request, reservations and source comparisons with content-addressed filenames and predecessor hashes. Terminal-byte changes, missing/reordered predecessors, contradictory transitions and lost reservations referenced by retained recovery requests fail closed. A per-cycle `head.sha256` integrity anchor binds the latest event, detecting removal of a valid terminal suffix as well as altered bytes. Events publish before the atomic anchor update; any partial event/anchor publication fails closed and remains retained for inspection. The anchor owns no working/accepted pointers or separate attempt counter. The single project lock serializes writes. This history is advisory, not another working/accepted state authority. A repair reservation is durable before model execution and reused by the same resume request. Two attempts total are shared across all defects; judgement is required between attempts. Stop keeps the best valid revision identity without changing acceptance or restoring drafts. Original prepare/repair requests/results and recovery snapshots retain existing meanings.
 
 Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; protected inward shading uses the additive contract below.
 
+Each successful native review removes only its own unchanged duplicate staging files or empty outer staging directory after validating durable canonical evidence, required before evidence and current inputs. Canonical manifests and PNGs are rechecked after synchronization and final input checks, before any disposal. Earlier stages, unknown or changed members, replacements, links and failed or uncertain invocations remain for inspection. A late disposal failure may leave some validated duplicates removed; its error identifies the durable canonical evidence and remaining stage. Completed native evidence remains usable if a later comparison or assessment write fails. This lifecycle does not change review identities, rendering, acceptance or existing recovery retention.
+
+
+## Unchanged effects results
+
+Effects run only on explicit submission. A fully validated repeat of the current
+complete effects request returns the same revision/assets with `reused=true`.
+New computation returns `reused=false`. The returned `parent` remains that saved
+revision's historical parent; `inputs_digest` identifies the current editable
+draft, and `revision_inputs_digest` identifies the saved effective recipe/guides.
+Reuse never changes working/latest/accepted state or rewrites drafts. Existing
+pending draft differences can still block acceptance. Restored working A can be
+reused while latest B remains the gallery result. A missing latest gallery may be
+repaired by the existing derivative owner, with failure reported as pending.
+
+The additive `effects_reuse` record in an effects manifest and its hash-bound
+`result.json` contains `schema_version=1`, `execution`, `request`, `inputs` and
+the current `spatial_fade` and `local_sharpening` output bindings (null when absent).
+It records the finite effects execution version, Python/package/algorithm versions,
+effective request settings/scope/mode/candidate semantics, captured input hashes,
+source/native/guides/base-recipe/lock identities. Locator names alone never prove
+equivalence. Fresh base/draft identities and all normal permissions, operand,
+protection, stale-effect and publication rechecks precede a hit. The original
+consumed request/result must bind to this revision and its parent, so inherited
+provenance cannot authorize another kind of operation.
+
+Missing, unknown or unsupported reuse provenance computes normally; existing
+revisions are not rewritten. Changed protection, scope, authored metadata or
+execution identity can create a meaningful small revision even if pixels agree.
+There is no historical request search, registry or new cache engine. The explicit
+effects execution version must change when equivalence, validation or arithmetic
+semantics change. Existing native model/tile cache invalidation stays independent.
+Current `validated-effects-v4` covers all seven effects, including Fade into background's
+validated nested settings, algorithm, actual explicit protection bytes and all four
+saved spatial operands. Its output binding includes OFF and inherited spatial state;
+new output is bound only after generation, allowing the first equivalent repeat to
+reuse it. Native recipe identity excludes all seven appearance sections. Mandatory cold
+saved-geometry validation may rasterize W; a hit performs no additional result/effect/W
+generation, while existing warm validation caches retain their fresh-hash safeguards.
+Omitted shading-disable geometry still resolves from validated saved settings before
+comparison and generation; the original request remains unchanged in diagnostics.
+Older v1/v2/v3 proof computes normally once.
+The sharpening binding includes its complete saved operands and the cleanup-selected
+input: base/corrected RGB, alpha, cleanup record and cleanup dependencies.
+Successful reused Reset synchronizes only its matching submitted effect controls
+to the returned settings; unrelated controls and independent area drafts remain.
+Matching reused spatial Apply clears only its submitted draft; Disable still uses
+saved geometry and preserves unrelated or subsequently edited shapes. Explicit Reload
+and Cancel retain their existing saved-state behavior.
+An actual computation miss captures its request, root input bytes and
+`inputs/effects.json` identities/hashes in the existing `.effects-*` stage before
+generation; failure retains diagnostics and prior accepted data. This diagnostic
+record identifies consumed inputs; the final reuse proof additionally binds generated
+spatial and sharpening output. It is not a separate archive of every external
+file or a resumable execution checkpoint.
+This adds no effects-resume API. Early invalid submissions return errors without
+publishing a result or silently consuming drafts.
 
 ## Optional source-guided color cleanup
 
-Schema-1 `effects` requests extend the finite `run` operation. Common identity fields
+Schema-2 `effects` requests extend the finite `run` operation. Common identity fields
 are unchanged. Require `scope_xyxy`, project-relative `support_file` (aligned scalar16),
 and boolean `candidate_comparison`. Optional `color_cleanup` overrides the current recipe
 section with enabled boolean and finite strength in [0,1]. A complete accepted base
 or explicit candidate comparison is required to enable nonzero cleanup. Old requests
-and projects remain valid; no migration or model setup is needed.
+and schema-2 projects remain valid; no model setup is needed.
 
 Complete effects revisions retain unchanged `base_alpha16.png` and base
 `foreground_rgb16.tif`, plus separate profiled `corrected_rgb16.tif`, canonical
 `effects/support16.png`, dependency `effects/alpha16.png`, immutable actual
 `effects/settings.json` and the operation's `effects/write_support16.png`. The manifest
-hashes every file and records actual strength, enabled/stale state, master identity,
+hashes every file and records actual strength, enabled/stale state, developed identity,
 alpha/support hashes, native scope, algorithm and parent manifest identity. The parent
 chain retains prior scoped settings; latest strength describes the latest patch, not
 an implicit global rewrite. Cumulative support/dependency maps describe retained layers;
@@ -320,9 +729,8 @@ Current review exports project `settings.color_cleanup` from the validated saved
 manifest's applied enabled/strength values, including inherited effects and zero/off
 semantics. Stale enabled cleanup retains those settings; `effects.color_cleanup.stale`,
 `cleanup_stale` and the selected base asset identify its temporary exclusion from the
-view. Other settings come from the consumed recipe snapshot. The saved `recipe.toml`
-and `draft_digest` remain exact consumed draft inputs, including when an operation
-overrode cleanup settings.
+view. Other settings come from the consumed recipe snapshot. The saved `recipe.toml` and `draft_digest` bind effective settings; exact consumed
+draft bytes, including any overridden values, remain under `inputs/`.
 
 Nearest confirmed-empty (trimap=0 AND alpha=0) source RGB supplies background;
 amount=strength*(1-alpha16/65535)*(support16/65535). Correction is
@@ -349,9 +757,9 @@ state pointer with rechecks. An interrupted pointer leaves a complete orphan rev
 that can be inspected and selected explicitly with restore; no accepted pointer changes.
 
 
-Effects revisions bind their `draft_digest`, saved recipe and saved guides to the
-actual consumed snapshots. Recipe-only cleanup/notes edits can therefore be reviewed,
-accepted and restored exactly. Changed guidance or mask-affecting recipe sections
+Effects revisions bind their `draft_digest`, saved recipe and saved guides to
+the effective settings. Unapplied notes and other draft sections remain pending;
+only explicitly applied settings join that effective snapshot. Changed guidance or mask-affecting recipe sections
 require prepare and a complete matte first; effects cannot accept unprepared mask
 changes. Valid whitespace-only guide changes retain their exact consumed bytes.
 
@@ -375,7 +783,7 @@ layers. Original source/master and prior accepted exports remain unchanged.
 
 ## Optional protected inward shading
 
-Schema-1 `effects` retains its common identity, `scope_xyxy`, `support_file` and
+Schema-2 `effects` retains its common identity, `scope_xyxy`, `support_file` and
 `candidate_comparison` fields. `shading` contains boolean `enabled`, finite scalar
 `opacity` in [0,1], positive `width_px` no larger than the native image extent,
 and `direction_degrees` in [0,360). Direction is clockwise in native coordinates:
@@ -415,7 +823,9 @@ The one authoritative renderer is encoded-sRGB float64
 `round(F * (A16/65535) * (1 - p*(W16/65535)))`, ties-to-even. F is saved base
 foreground with applicable RGB locks or selected corrected RGB. No intermediate
 shaded foreground quantization, flattened-black foreground reuse, second alpha
-application or second compositing mode is permitted. Off/p=0 is identity relative
+application or second compositing mode is permitted. Here p is effective opacity:
+use saved `shading.opacity` only when `shading.enabled` is true; disabled or absent
+shading means p=0 even when nonzero W/opacity are retained for editing. Off/p=0 is identity relative
 to the selected unshaded foreground/alpha rendering.
 
 Prepare carries the optional effects; matte/repair recompute their independent alpha
@@ -458,8 +868,8 @@ Radii, half-span and transition width are `[.5,2*max(width,height)]`; bend is
 Direction is `positive` or `negative`. UI full width/height/span are twice saved
 radii/half-span. Inactive vectors remain validated and independently recoverable.
 
-An exclusive schema-1 `effects` request contains exactly the common
-`schema_version`, `kind`, `master_id`, `base_revision`, `inputs_digest`,
+An exclusive schema-2 `effects` request contains exactly the common
+`schema_version`, `kind`, `developed_id`, `base_revision`, `inputs_digest`,
 `scope_xyxy`, `candidate_comparison`, plus complete `spatial_fade` and optionally
 `spatial_fade_protection_file` when enabled. Scope is the full native rectangle.
 No other effect/background fields are permitted. Enable requires an accepted base
@@ -471,9 +881,11 @@ old arc footprints. Enabling spatial fade disables inward shading and retains it
 settings/W; enabling inward shading disables spatial fade and retains its operands.
 OFF never revives the other mode. Shadow fade is independent.
 
-Four revision-hashed assets live under `effects/spatial-fade/`: `weight16.png`,
-`protection16.png`, `alpha16.png`, `settings.json`. These hold combined strength
-W16, categorical P16, alpha dependency and the complete manifest record respectively.
+The logical roles under `effects/spatial-fade/` are `weight16.png`,
+`protection16.png`, `alpha16.png` and `settings.json`. The three rasters use immutable
+shared `assets` bindings; revision-local `settings.json` stays in `files`. They hold
+combined strength W16, categorical P16, alpha dependency and the complete manifest
+record respectively. Readers validate their bound bytes and native registration.
 The exact record fields are `schema_version:1`, `enabled`, `settings`, `stale`,
 `source_id`, `algorithm:"linear-srgb-oval-arcs-background-fade-v1"`,
 `alpha_sha256`, `weight_sha256`, `protection_sha256`, `candidate_comparison`,
@@ -494,7 +906,7 @@ shapes as `C=max(amount*G)` and quantize once, `W16=round(65535*C)` ties-to-even
 Master OFF does not erase W. Generation holds one W16 plus 64-row geometry scratch,
 not full-frame fields for each arc. A weaker arc cannot subtract from an oval.
 
-Selected foreground F includes applicable cleanup, exposure and independent Shadow
+Selected foreground F includes applicable cleanup, sharpening, exposure and independent Shadow
 fade. For alpha-positive, unprotected pixels, `q=W16/65535*(1-p*h(F))`: p is this
 feature's highlight setting, h is cubic linear-sRGB luminance weighting using
 .2126/.7152/.0722 and thresholds .10/.75. Alpha gates eligibility only. Master OFF,
@@ -515,7 +927,7 @@ no per-arc resampling/blending or scaled native backdrop. Zero fields preserve t
 original series contribution exactly. When spatial fade is OFF, q is zero; active
 inward shading instead uses the existing `P=R(A*F*H)` path with its saved H factor.
 
-Native deliveries add exactly `spatial_fade_weight16.png`,
+Native editable deliveries add exactly `spatial_fade_weight16.png`,
 `spatial_fade_protection16.png`, `spatial_fade_alpha16.png`,
 `spatial_fade_settings.json` to the existing conditional inventory.
 `foreground_rgb16.tif` stays pre-spatial, already including selected earlier effects.
@@ -527,21 +939,16 @@ With spatial fade OFF, q is zero; if inward shading is enabled, use delivered
 `shadow_weight16.png` and its opacity to calculate `H=1-opacity*W16/65535` and
 `round(F*A*H+B*(1-A))`. Otherwise H is 1. The native manifest/README formula
 describes the active mode even when inactive spatial operands are retained.
-Do not apply exposure/Shadow fade again to selected foreground. For series, use
+Do not apply sharpening/exposure/Shadow fade again to selected foreground. For series, use
 compact layout/sampling/background metadata and the applicable premultiplied
 procedure above; include native H in P before sampling when inward shading is active.
 Native recipe and README are editable-handoff material, distinct from compact notes.
 
-Every Add margins or Match series export with a spatial record, including OFF/zero,
-publishes/reuses a real native sibling `exports/<revision[-DRAFT]>/` FIRST. Compact
-member sets remain unchanged. Its manifest adds `editable_companion` with exactly
-`directory_name`, `manifest_sha256`, `files_sha256`: all native members except
-manifest.json, INCLUDING README.txt (the historical native `files` map omits notes).
-The binding checks master/revision/draft/raw revision-manifest/settings/background
-identities and participates in compact directory identity. Return JSON adds
-`editable_companion` with exactly `directory`, `manifest_file`, `manifest_sha256`.
-Keep both siblings with their names. Without a spatial record there is no new
-companion/response field and legacy file sets remain exact.
+Editable delivery is an explicit option in every presentation mode. A spatial
+record, including OFF/zero, never opts into a companion automatically. The
+[requested delivery contract](#requested-result-deliveries) owns the native
+sibling's request identity, exact byte binding, file inventory and conditional
+response. Compact presentation folders contain no native editing rasters.
 
 Both phases use one writer lock and validated shared source/foreground/alpha.
 They publish sequentially, not atomically as a pair, with exclusive directories,
@@ -555,7 +962,7 @@ After durable success, only that invocation's byte-verified duplicate stage is
 removed. Failed, uncertain and earlier stages remain preserved. A cleanup error
 identifies the durably published output and any remaining duplicate-stage files.
 
-Authenticated `POST /api/spatial-preview` takes exactly `master_id`, `revision`,
+Authenticated `POST /api/spatial-preview` takes exactly `developed_id`, `revision`,
 raw `revision_manifest_sha256`, native `crop_xyxy`, `view`. Views are `off`,
 `combined`, `effective`, `selected`; selected adds `shape_id` (`oval` or an ID in
 THAT revision). OFF optionally adds diagnostic `panel`. Unknown/removed IDs and
@@ -567,12 +974,12 @@ replace newer drafts or display stale decoded maps. Map opacity is display-only.
 
 ## Optional local exposure
 
-`local_exposure` is an optional schema-1 recipe section with exactly `enabled`
+`local_exposure` is an optional schema-2 recipe section with exactly `enabled`
 (boolean) and `ev` (finite number in [-3,3], excluding booleans). Missing means
 OFF / 0 EV in memory. Reading legacy recipes does not rewrite their bytes or
 immutable revision digests. New projects default to OFF / 0 EV.
 
-An exposure-only schema-1 `effects` request uses the existing master/base/draft
+An exposure-only schema-2 `effects` request uses the existing master/base/draft
 identities, `scope_xyxy` and `candidate_comparison`, plus `local_exposure`. It
 cannot also change cleanup or shading. An enabled area rebuild takes exactly one
 of:
@@ -598,7 +1005,7 @@ their scope must cover the saved area. Viewer actions use the full-image scope.
 Immutable revisions save `effects/exposure/support16.png`, `protection16.png`,
 `alpha16.png`, `settings.json`, and `area.json` for authored geometry. Every asset
 is revision-hashed. The strict manifest `local_exposure` record contains
-`schema_version=1`, enabled/settings/stale, `source_id`, scope, candidate comparison,
+`schema_version=2`, enabled/settings/stale, `developed_id`, scope, candidate comparison,
 `support_sha256`, `protection_sha256`, `alpha_sha256`, optional `area_sha256`
 (null for scalar inputs), and algorithm `linear-srgb-local-exposure-v1`.
 The settings asset equals the record. Dependency types, identities, hashes,
@@ -606,8 +1013,8 @@ dimensions, categorical protection and authored geometry are validated even OFF.
 Request, draft, source, parent, area and protection inputs are rechecked before
 atomic publication under the canonical writer lock. Accepted state is unchanged.
 
-Selection order is original saved foreground, optional saved cleanup, local
-exposure, optional Shadow fade, then either inward shading or
+Selection order is original saved foreground, optional saved cleanup, Local
+sharpening, local exposure, optional Shadow fade, then either inward shading or
 [Fade into background](#optional-fade-into-background), and alpha composition. For eligible pixels,
 decode sRGB to linear RGB, multiply by `2 ** (ev * support16 / 65535)`, clamp to
 [0,1], encode to sRGB and quantize once with float64/ties-to-even RGB16.
@@ -615,7 +1022,7 @@ The sRGB thresholds are .04045 (decode) and .0031308 (encode). Alpha does not
 scale the exposure gain. Zero-alpha, zero-support and protected RGB are exact;
 alpha never changes. OFF and 0 EV take exact identity paths. Exposure always
 starts from the unexposed saved layers and cannot compound on repeated requests.
-Saved RGB locks snapshot selected pre-shading RGB, including exposure and fade,
+Saved RGB locks snapshot selected pre-shading RGB, including sharpening, exposure and fade,
 and exclude those pixels from subsequent exposure and fade. Prepare/matte/repair retain operands; changed alpha makes
 enabled exposure stale until explicit rebuild or disable. Any stale enabled
 effect produces a labelled BASE comparison; acceptance/export is blocked.
@@ -631,12 +1038,12 @@ clipping metadata rather than reprocessing the photograph on every status poll.
 cleanup, fade and shading; `/base` disables all optional effects. Source and alpha
 panels remain unaffected. Comparison creates no revision.
 
-When exposure is present, exports retain selected `foreground_rgb16.tif`,
+When exposure is present, native exports with `--variant editable` retain selected `foreground_rgb16.tif`,
 `unexposed_foreground_rgb16.tif`, `base_foreground_rgb16.tif`, source/alpha,
 `exposure_support16.png`, `exposure_protection16.png`,
 `exposure_alpha16.png`, `exposure_settings.json`, and authored
 `exposure_area.json` where present. Shading W16/opacity remain independent.
-The unexposed export remains cleanup-selected RGB before both exposure and fade.
+The unexposed export includes selected sharpening after cleanup, before exposure and fade.
 Reconstruct by applying exposure once, then optional fade once, then the existing
 shading/alpha renderer. The selected foreground already
 contains exposure; applying it again would be incorrect. Reduced-precision
@@ -646,7 +1053,7 @@ changing final acceptance; no model inference or download is involved.
 
 ## Optional Shadow fade
 
-The optional schema-1 recipe section `shadow_fade` has exactly `enabled` (strict
+The optional schema-2 recipe section `shadow_fade` has exactly `enabled` (strict
 boolean), `amount` and `preserve_highlights` (finite int/float, excluding booleans,
 in [0,1]). Defaults are OFF / 0 / 1. Either this section or `local_exposure` may
 be absent independently. Missing means OFF in memory; read/reopen never rewrites
@@ -655,7 +1062,7 @@ explicit restore. Older applications are not promised forward compatibility with
 new effect records; preserve a separate pre-extension project for older binaries.
 Never strip a new effect record to force an older reader to accept it.
 
-A separate schema-1 `effects` operation uses the common identities,
+A separate schema-2 `effects` operation uses the common identities,
 `scope_xyxy`, `candidate_comparison` and `shadow_fade`. It cannot mutate another
 effect. An enabled rebuild takes exactly one area source: `shadow_fade_area`
 with the same strict `regions`/`protection` support shapes as exposure, or
@@ -669,7 +1076,7 @@ rejects replacement fields. Enabled selections need nonempty eligible pixels,
 even at amount 0. Explicit disable works without a previous area and with stale
 alpha; it retains saved operands. UI whole-adjustment requests use full-image scope.
 
-Fade follows cleanup and local exposure, before encoded-sRGB shading and alpha.
+Fade follows cleanup, local sharpening and local exposure, before encoded-sRGB shading and alpha.
 Start every render from unfaded RGB16, never from flattened or previously faded
 pixels. Decode normalized sRGB with threshold .04045. In float64, compute linear
 luminance `Y = .2126 R + .7152 G + .0722 B`, `t = clip((Y-.10)/.65,0,1)`,
@@ -685,8 +1092,8 @@ No detail synthesis, alpha erosion or new compositing mode occurs.
 Immutable `effects/shadow-fade/` contains `support16.png`, `protection16.png`,
 `alpha16.png`, `settings.json`, and optional `area.json`. Every asset and the
 revision's `base_alpha16.png` are manifest-bound, including prepared revisions.
-The optional manifest `shadow_fade` record has exactly `schema_version=1`,
-`enabled`, `settings`, `stale`, `source_id`,
+The optional manifest `shadow_fade` record has exactly `schema_version=2`,
+`enabled`, `settings`, `stale`, `developed_id`,
 `algorithm="linear-srgb-shadow-fade-v1"`, `scope_xyxy`, `candidate_comparison`,
 `support_sha256`, `protection_sha256`, `alpha_sha256`, `area_sha256` (null for
 scalar input). Settings JSON equals the record. Hashes, types, dimensions,
@@ -696,7 +1103,7 @@ caches retain no image arrays and never bypass current asset hashing.
 
 Prepare retains operands; matte/repair recompute alpha staleness and union new RGB
 locks into protection. RGB locks save the selected pre-shading appearance and
-cannot receive fade twice. Changed upstream cleanup/exposure settings recompute
+cannot receive fade twice. Changed upstream cleanup/sharpening/exposure settings recompute
 luminance from current unfaded RGB; there is no cached tonal mask to rebind.
 Changed alpha makes enabled fade stale until explicit rebuild or disable.
 Any stale enabled effect disables all optional effects in labelled BASE comparisons
@@ -707,14 +1114,14 @@ pointer replacement. Interrupted pointer replacement may retain a complete orpha
 only state is authoritative. Explicit restore/retry preserves accepted work.
 
 `shadow_fade_off=true` in layer selection and `/image/.../shadow-fade-off` in
-review retain cleanup, exposure and shading. Exposure-OFF retains fade and
+review retain cleanup, sharpening, exposure and shading. Exposure-OFF retains fade and
 recomputes its weighting from exposure-OFF RGB. BASE disables all optional effects.
 The UI selects one comparison at a time. Comparison writes no revision.
 Reset saves fade OFF / amount 0, retaining area, other effects and pending area edits.
 
 Exports retain selected `foreground_rgb16.tif` (exposure and fade applied once),
-`unfaded_foreground_rgb16.tif` (cleanup+exposure),
-`unexposed_foreground_rgb16.tif` (cleanup before both exposure and fade),
+`unfaded_foreground_rgb16.tif` (cleanup+sharpening+exposure),
+`unexposed_foreground_rgb16.tif` (cleanup+sharpening before exposure and fade),
 `base_foreground_rgb16.tif`, source/alpha and all existing exposure/shading operands.
 Fade operands are `shadow_fade_support16.png`, `shadow_fade_protection16.png`,
 `shadow_fade_alpha16.png`, `shadow_fade_settings.json`, optional
@@ -732,9 +1139,9 @@ in [0,1], excluding booleans. New project creation explicitly writes
 `#120708` / 0.55. Missing legacy settings remain absent through reads, unrelated
 edits and restore; their rendering is uniform black. No schema migration is performed.
 
-Background-bearing revisions bind `background/background_rgb16.tif` and
-`background/settings.json` in `files`. The optional manifest `background` has
-exactly `schema_version:1`, `algorithm:"smooth-tonal-background-v1"`, `master_id`,
+Background-bearing revisions bind `background/background_rgb16.tif` in `assets`
+and `background/settings.json` in `files`. The optional manifest `background` has
+exactly `schema_version:2`, `algorithm:"smooth-tonal-background-v1"`, `developed_id`,
 `width`, `height`, `settings`, `background_sha256`, `settings_sha256`. The JSON
 file equals the two-key settings. Recipe/record/settings, identity, native shape,
 uint16 RGB, sRGB profile and hashes must agree. Unknown, missing or unbound assets
@@ -759,13 +1166,14 @@ once to RGB16. Zero variation copies RGB8*257; black is exact zero at all streng
 There is no crop/viewport normalization, seed or random pattern.
 
 Final Result is encoded-sRGB float64 `round(F*A*H + B*(1-A))`, ties-to-even,
-where F is selected RGB16 after cleanup/exposure/fade, A=alpha16/65535,
-H=1-opacity*W16/65535 and B is the saved RGB16 backdrop. H applies only to F;
+where F is selected RGB16 after cleanup/sharpening/exposure/fade, A=alpha16/65535,
+H=1-p*W16/65535 and B is the saved RGB16 backdrop. p is saved opacity only when
+shading is enabled, otherwise zero (including absent shading). H applies only to F;
 alpha applies once, with no earlier rounding. Black compatibility keeps the
 existing arithmetic order. Protected underlying RGB/alpha remain exact while
 partial-alpha flattened colour changes with B. Clipping diagnostics are independent.
 
-Schema-1 `kind:effects` accepts exclusive `background` settings with all existing
+Schema-2 `kind:effects` accepts exclusive `background` settings with all existing
 master/base/draft/candidate identities and full native `scope_xyxy`. It cannot
 combine foreground controls, area/support/protection inputs or amount-only flags.
 It uses the canonical writer lock, snapshots, rechecks, immutable publication and
@@ -773,21 +1181,122 @@ state-last pointer. An effective recipe is retained with the revision; its edita
 copy is atomically updated before state publication. On interruption, accepted
 state stays intact, the draft may differ, and a complete orphan can be explicitly
 restored with draft replacement. Newer drafts are never silently overwritten.
-Other operations inherit exact assets/settings and reject unapplied background
-draft differences; alpha repair does not stale or rebuild B. Existing foreground
+Unrelated effects operations inherit exact background assets/settings and preserve
+pending background draft differences; acceptance remains blocked until resolved.
+Preparation/matting use their selected root recipe; alpha repair does not stale or rebuild B. Existing foreground
 stale flags still block acceptance/export. Prepared revisions remain non-acceptable.
 
-New background-bearing exports add `result_rgb16.tif`, `result_RGB8_VIEW.png`,
-`background_rgb16.tif`, `background_settings.json`, a `background` record and
-`result_compositing` description. Result uses B; existing black and transparent
-files retain their meanings. Selected foreground is pre-shading and already
+Every requested delivery includes `result_rgb16.tif` and `result_RGB8_VIEW.png`.
+Native `--variant editable` also includes `background_rgb16.tif`,
+`background_settings.json` when saved. Result uses B; optional black and transparent
+views retain their meanings. Selected foreground is pre-shading and already
 exposed/faded: do not replay these twice. Saved F/A/W/opacity/B reconstruct Result
+using the effective-opacity rule above,
 without source, models, cache or analytic generation. All RGB16 TIFFs carry sRGB.
-Legacy exports keep their old file set/metadata and identical-delivery reuse;
-differing-content collisions are refused. Existing immutable legacy reviews are
-not regenerated on open. Current readers restore prior revisions; old readers
+Earlier export files remain preserved at their saved paths; current export neither
+looks them up nor recreates, migrates or overwrites their format. Existing immutable
+reviews are not regenerated on open. Current readers restore prior revisions; old readers
 are not promised to understand new records. Retain a prior project/revision for
 recovery rather than stripping fields. No automatic cleanup occurs.
+
+## Requested Result deliveries
+
+Default export is exactly five regular files: `result_rgb16.tif`,
+`result_RGB8_VIEW.png`, `recipe.toml`, `manifest.json`, `README.txt`. Native output
+keeps the full original pixel dimensions, without upscaling or print sizing.
+Result follows the selected saved backdrop; absent background means black.
+The TIFF is uncompressed processed sRGB uint16. The same-size PNG is RGB8; all
+delivered RGB/RGBA rasters embed the canonical sRGB ICC. Scalar16 editing masks
+remain exact and carry no ICC/gamma. A larger file container adds no captured detail.
+
+Repeatable `--variant` choices are independent: `black` adds `black_rgb16.tif`
+and `black_RGB8_VIEW.png`; `transparent` adds `transparent_RGBA8_VIEW.png`.
+Both follow the selected native, Add margins or Match series output geometry.
+`editable` does not imply either viewing alternative. In native mode it adds
+native operands to that folder. With Add margins (including zeros) or Match series,
+it adds a separate native editable sibling, not resampled layers in the primary.
+Manual defaults remain compact, including saved spatial OFF/ON records. Final
+Codex-assisted exports explicitly request editable in the chosen presentation mode;
+intermediate edits remain in the project and do not imply photographic acceptance.
+The existing `--framed-transparent` spelling selects the same transparency variant
+for explicit margins/series. Canonical variant ordering gives equivalent selections
+one identity.
+
+Native editable includes selected pre-shading `foreground_rgb16.tif`, `alpha16.png`,
+`source_rgb16.tif`, saved corrected RGB and W16/settings where present, independent
+background B/settings, and saved exposure/fade source, unexposed/unfaded, support,
+protection, alpha, area and settings operands where present. F already contains
+local sharpening/exposure/Shadow fade; never apply them twice. Spatial F remains pre-spatial,
+with all four saved spatial operands retained even OFF; use the
+[active-mode reconstruction](#optional-fade-into-background). Delivered F/A/W/opacity/B reproduce Result
+without the project, original, models or cache using the saved float64 ties-to-even
+renderer. A missing backdrop means zero B. Flattened Result is never editable F.
+Recovery uses the saved opacity only when the delivered shading record is enabled;
+disabled or absent shading means effective opacity zero, regardless of retained
+nonzero W/opacity. A missing W means zero. Keep retained editing settings unchanged.
+
+Schema-2 manifests identify `export_version=requested-result-v4`, selected revision,
+raw source/revision-manifest hashes, effective recipe hash, explicit draft status,
+mode/settings/geometry/algorithm, requested variants, native asset/effect identities,
+actual Python/NumPy/Pillow/tifffile encoding versions and profile digest. The
+request-record hash identifies `exports/<revision[-DRAFT]>-native-<sha256>/`,
+`-framed-<sha256>/` or `-series-framed-<sha256>/`. Each `files` entry records
+actual bytes/hash and raster dimensions/precision/mode/profile. The frozen recipe
+comes from that revision, never the mutable root draft. Notes contain no timestamps
+or capture paths. Inference provenance stays bound through the raw revision hash.
+Version 4 retains the effective-opacity recovery rule, spatial identity/operands
+and explicit optional sibling delivery, and adds Local sharpening operands.
+Unversioned, v1, v2 and v3 files remain preserved at their existing paths; no legacy
+lookup, recreation, migration or rewrite is performed.
+
+For presentation+editable, the native child is a native requested delivery with
+`requested_variants=["editable"]`, independent of presentation geometry and its
+black/transparent choices. Before any producer, selection, allocation or staging,
+build its pure request and deterministic directory, then include only
+`editable_companion_request={identity_sha256,directory_name}` in the primary's pure
+request. Neither directory lookup depends on existing child bytes. The primary
+manifest additionally requires `editable_companion` with exactly `directory_name`,
+`manifest_sha256`, `files_sha256` (every child member except manifest, including
+README). These actual byte bindings and both `files` tables are strictly validated;
+they do not enter the primary lookup hash. Unexpected/missing binding fields fail.
+Return JSON adds exactly `{directory,manifest_file,manifest_sha256}` beneath
+`editable_companion`. Keep both folders and their names for portable editing.
+
+A present primary with an entirely absent, corrupt, mismatched or symlinked child
+fails before either producer; it never recreates that child. An exact native-only
+partial may be reused before producing its missing primary. Both absent permits
+native-first publication after paired admission; both intact permits no-render
+full-pair reuse with exact binding/status/source rechecks and parent sync. A
+primary that is itself invalid is preserved. The pair publishes sequentially, not
+atomically: later failure can leave a usable native-only partial or visible output
+with unconfirmed durability. Preserve named outputs/failed stages and retry the
+identical request; do not overwrite or silently repair damaged pairs.
+
+The project lock covers capture, authorization, native operand validation, member
+validation and publication. Default selects retained acceptance even with newer
+working/latest revisions. Explicit unaccepted output requires revision plus draft;
+explicit draft stays labelled DRAFT even for an accepted revision. Root drafts,
+presets and unrelated pointers do not change a frozen effective delivery request.
+Current acceptance/stale flags, expected source/raw revision and all saved operands
+are checked anyway; raw state/source/revision are rechecked before return/publication.
+
+An intact exact matching delivery validates before renderer/effect application,
+full composed-output allocation, pending-write admission, exports creation or staging.
+Validation still reads native saved operands and may replay scalar repair/layout
+calculations. Existing delivery rasters use streaming hashes and TIFF/PNG headers,
+not full decoded output arrays. Exact canonical metadata/member sets, file sizes,
+bit depth, channel layout, profiles and before/after file signatures must match.
+Missing, changed, hidden extra, directory, FIFO or symlink members fail preserved;
+they are not replacement cache misses. This cooperative local trust boundary is not
+an authenticity guarantee against an attacker rewriting files and their hashes.
+
+Fresh requests retain the 10 GiB reserve, native allowance and selected output
+budget; alternatives/readbacks are processed sequentially. Intact reuse syncs the
+parent without creating a duplicate stage. A genuine late identical collision may
+dispose only of this attempt's fully verified duplicate after durable reuse and
+final checks. Exclusive no-overwrite publication, visible durability uncertainty,
+failed-stage preservation and mode-specific recovery below remain in force.
+No acceptance, gallery, native revision, draft or preset changes result from export.
 
 ## Framed presentation exports
 
@@ -800,7 +1309,7 @@ before staging or expanded raster allocation. Native dimensions, editing
 coordinates, saved layers, acceptance and project schema do not change.
 
 The canonical saved renderer completes the native Result once, including selected
-cleanup/exposure/fade, shading and alpha. Framing copies those RGB16 samples without
+cleanup/sharpening/exposure/fade, shading and alpha. Framing copies those RGB16 samples without
 resampling at `(left, top)`. Outside that rectangle, only the saved native backdrop's
 nearest edge/corner pixels extend outwards; legacy backdrop absence means black.
 No foreground edge is stretched and no larger analytic backdrop is regenerated.
@@ -808,10 +1317,10 @@ The optional straight RGBA8 view retains the canonical native viewing samples an
 has zero RGB and alpha outside. All delivered rasters carry the canonical sRGB ICC
 profile; TIFF is uncompressed processed RGB16, PNGs are reduced-precision views.
 
-The flat directory `exports/<revision[-DRAFT]>-framed-<full-sha256>/` contains
-`result_rgb16.tif`, `result_RGB8_VIEW.png`, optional
-`transparent_RGBA8_VIEW.png`, `README.txt` and `manifest.json`.
-The schema-1 manifest has kind `framed-presentation`, master/revision identities,
+The flat directory `exports/<revision[-DRAFT]>-framed-<full-sha256>/` uses the
+[requested member set](#requested-result-deliveries), including recipe and opted-in
+black/transparent variants, with no editable native rasters.
+The schema-2 manifest has kind `framed-presentation`, master/revision identities,
 exact validated revision-manifest byte hash, source/output dimensions, margins,
 half-open `source_rect_xyxy`, algorithm `saved-backdrop-edge-padding-v1`,
 encoding/profile/variant identities, selected effect/backdrop identities and
@@ -819,8 +1328,8 @@ project-relative native-asset hashes. Its `files` records hash every delivered
 member except the manifest itself, with raster dimensions and precision.
 The directory identity hashes the canonical manifest inputs before delivered-file
 records are added. The bundle excludes capture paths, model configuration and
-editable native rasters; keep the local project for further editing. With a spatial
-record, also keep the mandatory [native companion](#optional-fade-into-background).
+editable native rasters; keep the local project for further editing. When editable is
+explicitly requested, also keep the [native companion](#requested-result-deliveries).
 
 The accepted-source label is “Framed presentation of accepted revision; framing
 has not been separately accepted”. Explicit `--revision ... --draft` produces
@@ -836,15 +1345,17 @@ Identical complete deliveries are reused; differing, missing, extra, symlinked o
 directory members are rejected without overwrite. Files and directories are synced
 before exclusive publication. A failed parent sync can leave a complete visible
 delivery with unconfirmed durability; identical retry validates and syncs it.
-After successful identical reuse and parent sync, only that attempt's verified
-duplicate stage is removed. Failed exports retain any unpublished stages;
+Normal intact reuse creates no stage. If a byte-identical destination appears
+during fresh work, only that attempt's verified duplicate stage is removed after
+successful validation, final input checks and parent sync. Failed exports retain any unpublished stages;
 failed reuse validation or parent sync retains its duplicate stage. A cleanup
 failure reports that publication succeeded and identifies the stage for inspection;
 some stage files may already be removed. Earlier stages and prior deliveries are
 never swept by an export retry.
 
 Resource admission retains the 10 GiB disk reserve and adds the existing native
-allowance plus 16 bytes per framed pixel and 2 MiB. Expanded variants/readbacks are
+allowance plus 16 bytes per output pixel, another 10 when black is selected, and
+2 MiB. Expanded variants/readbacks are
 processed sequentially; RGB8 conversion uses one row of float64 scratch and PNG
 readback hashes decoded rows. Admission is a disk-capacity estimate, not a RAM
 estimate/reservation or a guarantee that every supported size fits current memory.
@@ -852,8 +1363,8 @@ estimate/reservation or a guarantee that every supported size fits current memor
 
 ## Saved framing and bounded preview
 
-Optional `framing.json` is an independent schema-1 source preset. It contains exactly
-`schema_version: 1`, `master_id`, `source_dimensions_wh: [width, height]` and `margins`
+Optional `framing.json` is an independent schema-2 source preset. It contains exactly
+`schema_version: 2`, `developed_id`, `source_dimensions_wh: [width, height]` and `margins`
 with `left_px`, `right_px`, `top_px`, `bottom_px`. Dimensions and margins are strict
 JSON integers; booleans, fractions, negatives, extra fields and foreign source or
 dimensions fail. Metadata is bounded to 16 KiB and symlinks are rejected. Absence
@@ -875,7 +1386,7 @@ margins before another save. No rollback is claimed.
 Each validated viewer snapshot revision entry supplies `revision_manifest_sha256`,
 the SHA-256 of the exact validated saved manifest bytes, independently of
 `draft_digest`. Authenticated same-origin `POST /api/framing-preview` accepts only
-`master_id`, `revision`, `revision_manifest_sha256` and `margins`. It requires a
+`developed_id`, `revision`, `revision_manifest_sha256` and `margins`. It requires a
 complete saved result and rejects stale enabled effects rather than rendering BASE.
 Source/state/manifest identity is checked again after rendering. The response echoes
 all request identity fields and returns `png_base64`, source/output/display dimensions,
@@ -897,7 +1408,7 @@ has no native guide-authoring handlers and its pixels cannot define native edits
 Match series is a separate resized presentation mode. Existing native exports,
 exact Add margins samples/identities, `framing.json`, project-state schema, masks,
 guidance/recipe digests, coordinates and working/accepted pointers retain their
-contracts. Opening an older project creates no series metadata and performs no migration.
+contracts. Opening a schema-2 project without series metadata creates none; schema-1 projects are refused without writes.
 
 A portable preset is bounded UTF-8 JSON, at most **16384 bytes**, with exactly:
 
@@ -931,8 +1442,8 @@ releasing its object URL afterward. Initiating download does not establish that
 the browser saved a disk file and never saves a project. Valid Load changes only
 the form; cancellation, invalid data or a superseded response changes no settings.
 
-Optional project `series-framing.json` contains exactly `schema_version: 1`,
-`master_id`, `source_dimensions_wh: [width,height]` and `settings`, where settings
+Optional project `series-framing.json` contains exactly `schema_version: 2`,
+`developed_id`, `source_dimensions_wh: [width,height]` and `settings`, where settings
 is the five-field settings object above without portable schema/kind. It has the
 same 16 KiB bound. Absence returns in-memory defaults/null digest without a write.
 Invalid metadata remains preserved; only the affected series persistence flow is
@@ -952,7 +1463,7 @@ the continuous transformed original bounds, not the first nonzero filtered pixel
 Height-limited fits report wider sides. Source-edge contact warns about clipped
 detail; no outlier removal, subject detection, rotation or new photographed detail occurs.
 
-Canonical saved-layer selection supplies cleanup, exposure and Shadow fade;
+Canonical saved-layer selection supplies cleanup, sharpening, exposure and Shadow fade;
 saved shading and alpha apply once. Stale enabled effects block. The renderer uses
 encoded-sRGB float64 contribution arithmetic, then separable Pillow scalar `F`
 (float32 storage) Lanczos passes over explicit transparent support. All colour/
@@ -974,7 +1485,7 @@ sampling is approximate and bounded to 1600 pixels on the long edge, while the
 normalization pass still has output-size-dependent computation.
 
 Snapshots expose independent `series_settings`, `series_digest`, `series_error`.
-`POST /api/series-preview` takes exactly `master_id`, `revision`,
+`POST /api/series-preview` takes exactly `developed_id`, `revision`,
 `revision_manifest_sha256` and visible validated `settings`. It echoes those fields,
 full layout, full/display dimensions, algorithm, reduced-preview label and `png_base64`.
 The source/state/raw revision and validated saved assets are checked before/after
@@ -990,9 +1501,10 @@ draft remains DRAFT. CLI `--series-preset PATH` may capture its target under loc
 with existing default-accepted/explicit-draft rules, and is exclusive with `--margins`.
 No mode silently saves visible settings or substitutes a different revision.
 
-The flat directory `exports/<revision[-DRAFT]>-series-framed-<full-sha256>/` contains
-RGB16 TIFF, RGB8 PNG, optional straight RGBA8 PNG, notes and manifest, using the
-same filenames as compact Add margins deliveries. The schema-1 manifest kind is
+The flat directory `exports/<revision[-DRAFT]>-series-framed-<full-sha256>/` uses
+the [requested member set](#requested-result-deliveries), including frozen recipe
+and independent black/transparent variants, with no editable native rasters.
+The schema-2 manifest kind is
 `series-framed-presentation`; algorithm is `series-lanczos-premultiplied-v1`.
 Its identity binds full settings/layout/sampling, exact validated source-record and
 revision-manifest byte hashes, master/native-asset/effect/background identities,
@@ -1009,3 +1521,58 @@ Resource geometry/coefficient/allocation checks precede staging or expanded allo
 with the existing 10 GiB reserve plus pending-write allowance. Estimates include
 retained inputs, output, alpha, scalar intermediate, strip/coefficient and encoding
 scratch. They are not RAM reservations or guarantees that every valid size fits.
+
+
+## Optional local sharpening
+
+Schema-2 recipes may contain `local_sharpening` with exactly `enabled` (boolean),
+`amount` [0,1], `radius_px` [0.5,8] and `noise_threshold` [0,0.02].
+Numbers are finite int/float, excluding booleans. Absence reads as OFF with defaults
+false/0/1/0.001 without rewriting old bytes. Schema-1 policy is unchanged.
+
+A schema-2 `kind:"effects"` request uses the common developed/base/draft identities,
+scope and candidate-comparison fields. Local sharpening is exclusive. Enabled
+replacement requires exactly `sharpening_area` (typed regions and hard protection)
+or `support_file` plus `sharpening_protection_file`. `sharpening_amount_only:true`
+uses saved geometry; disable and amount-only cannot replace it. Scope contains both
+old and replacement support. Saved guide/RGB protections are merged, never dropped.
+
+The schema-2 `local_sharpening` record binds enabled/settings/stale/developed ID,
+algorithm `linear-srgb-local-sharpening-v1`, full alpha/support/protection/optional
+area SHA-256, scope and candidate-comparison status. `effects/sharpening/` contains
+support16.png, categorical protection16.png, alpha16.png, settings.json and optional
+area.json. Registered asset shapes bind native dimensions. All dependencies and
+authored/scalar equivalence are validated even OFF; unbound area files are rejected
+before warm validation. Unsupported versions and algorithms fail explicitly.
+
+Rendering starts from current cleanup-selected RGB16, decodes float64 linear sRGB,
+and forms Y=0.2126R+0.7152G+0.0722B. The mean is G(Y*A)/G(A), A=alpha16/65535,
+with Gaussian sigma radius_px, reflect boundaries and integer radius ceil(4*sigma).
+Soft-thresholded detail is multiplied by amount and support16/65535. Only nonzero
+alpha/support, unprotected pixels are writable. Target Y is bounded by valid
+nonzero-alpha 3×3 luminance extrema, then a common RGB gain is limited to gamut.
+Y=0, zero denominator/adjustment, OFF and zero Amount preserve exact samples.
+Alpha weights context, not write strength. Changed RGB encodes/quantizes once with
+float64 ties-to-even. Full-width strips retain the full kernel halo and write only
+core rows; previews crop the native result and use this same kernel.
+
+Order is cleanup → sharpening → exposure → Shadow fade → shading or spatial fade →
+alpha/background composition. New selected-RGB locks are protected from reapplication;
+their captured values become part of subsequent neighborhood context. Alpha changes
+make enabled sharpening stale, blocking acceptance/export until whole-adjustment
+rebuild or Reset. Prepare/matte/repair, restore, processing-cache context and gallery
+use the same validated inherited records. Effects publication retains writer locking,
+input rechecks, complete staged revisions and state-last pointers.
+
+Editable native deliveries add `unsharpened_foreground_rgb16.tif` (cleanup-selected)
+and `sharpening_support16.png`, `sharpening_protection16.png`,
+`sharpening_alpha16.png`, `sharpening_settings.json`, plus
+`sharpening_area.json` when authored. Unexposed RGB includes sharpening; unfaded RGB
+includes sharpening/exposure; selected foreground includes all three. Replay from
+one appropriate starting layer; never sharpen selected RGB twice. Framed/series
+editable companions bind these same native operands. Export variants stay independent.
+
+New sharpening records require the updated reader. Older binaries have validation
+bypasses and are not guaranteed to reject or correctly render them. Preserve
+pre-feature projects/exports for older applications; no automatic stripping,
+migration, cleanup or photographic acceptance is performed.

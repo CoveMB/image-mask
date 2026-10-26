@@ -8,7 +8,7 @@ from .guidance import identifier
 
 @dataclass(frozen=True)
 class Recipe:
-    master_id: str
+    developed_id: str
     notes: str = ""
     groups: list[dict[str, Any]] = field(default_factory=list)
     device: str = "auto"
@@ -24,10 +24,19 @@ class Recipe:
     background: dict[str, Any] | None = None
     spatial_fade: dict[str, Any] | None = None
 
+    local_sharpening: dict[str, Any] = field(
+        default_factory=lambda: {
+            "enabled": False,
+            "amount": 0.0,
+            "radius_px": 1.0,
+            "noise_threshold": 0.001,
+        }
+    )
+
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
-            "master_id": self.master_id,
+            "schema_version": 2,
+            "developed_id": self.developed_id,
             "guides_file": "guides.json",
             "notes": self.notes,
             "groups": self.groups,
@@ -36,6 +45,7 @@ class Recipe:
             "shading": self.shading,
             "local_exposure": self.local_exposure,
             "shadow_fade": self.shadow_fade,
+            "local_sharpening": self.local_sharpening,
             **({"background": self.background} if self.background is not None else {}),
             **({"spatial_fade": self.spatial_fade} if self.spatial_fade is not None else {}),
         }
@@ -44,18 +54,20 @@ class Recipe:
     def from_dict(
         cls,
         value: dict[str, Any],
-        master_id: str,
+        developed_id: str,
         *,
         max_margin_px: int | None = None,
         dimensions_wh: tuple[int, int] | None = None,
     ) -> "Recipe":
-        expected = cls(master_id).to_dict()
+        expected = cls(developed_id).to_dict()
         if (
-            set(value) - {"local_exposure", "shadow_fade", "background", "spatial_fade"}
-            != set(expected) - {"local_exposure", "shadow_fade", "background", "spatial_fade"}
+            set(value)
+            - {"local_exposure", "shadow_fade", "background", "spatial_fade", "local_sharpening"}
+            != set(expected)
+            - {"local_exposure", "shadow_fade", "background", "spatial_fade", "local_sharpening"}
             or type(value.get("schema_version")) is not int
-            or value["schema_version"] != 1
-            or value["master_id"] != master_id
+            or value["schema_version"] != 2
+            or value["developed_id"] != developed_id
             or value["guides_file"] != "guides.json"
             or not isinstance(value["notes"], str)
         ):
@@ -63,8 +75,10 @@ class Recipe:
         from .effects import validate_cleanup, validate_shading
         from .exposure import validate_exposure
         from .shadow_fade import validate_shadow_fade
+        from .sharpening import validate_local_sharpening
 
-        validate_shadow_fade(value.get("shadow_fade", cls(master_id).shadow_fade))
+        validate_local_sharpening(value.get("local_sharpening", cls(developed_id).local_sharpening))
+        validate_shadow_fade(value.get("shadow_fade", cls(developed_id).shadow_fade))
         if "background" in value:
             from .background import validate_background
 
@@ -133,7 +147,7 @@ class Recipe:
                     )
             seen.add(stable_id)
         return cls(
-            master_id,
+            developed_id,
             value["notes"],
             groups,
             value["matting"]["device"],
@@ -141,7 +155,8 @@ class Recipe:
             float(value["color_cleanup"]["strength"]),
             dict(value["shading"]),
             dict(value.get("local_exposure", {"enabled": False, "ev": 0.0})),
-            dict(value.get("shadow_fade", cls(master_id).shadow_fade)),
+            dict(value.get("shadow_fade", cls(developed_id).shadow_fade)),
             dict(value["background"]) if "background" in value else None,
             dict(value["spatial_fade"]) if "spatial_fade" in value else None,
+            dict(value.get("local_sharpening", cls(developed_id).local_sharpening)),
         )

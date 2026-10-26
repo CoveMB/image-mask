@@ -1,0 +1,10 @@
+# Copy to storage.local.toml and choose your own destination.
+# Every relative path is relative to this file, never the working directory.
+[storage]
+destination = "../local"
+
+# Optional existing, hash-pinned native model directories. No downloads or copies.
+# Explicit command-line model paths override these; these override model environment variables.
+# [models]
+# sam_cache = "../local/models/sam"
+# vitmatte_cache = "../local/models/vitmatte"

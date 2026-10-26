@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 from PIL import Image
-from test_ingest import srgb_profile, tiff
+from test_ingest import bind_raster, saved_raster, srgb_profile, tiff
 from test_matte_operations import StubSession, approve, run_matte
 from test_operations import edits, request
 
@@ -20,7 +20,7 @@ def parent_project(tmp_path):
     )
     project = tmp_path / "project"
     create_project(source, project, {})
-    accept_development(project, read_project(project)["master_id"])
+    accept_development(project, read_project(project)["developed_id"])
     prepared = operations.apply_operation(project, request(project))
     approve(project, prepared)
     parent = run_matte(project)
@@ -79,7 +79,9 @@ def test_public_returned_absolute_support_path_and_exact_outside(tmp_path):
         ),
     ):
         result = run_repair(project, repair_request(project, prepared, [0, 0, 5, 4], [1, 1, 4, 3]))
-    with Image.open(project / "revisions" / result["revision"] / "base_alpha16.png") as image:
+    with Image.open(
+        saved_raster(project / "revisions" / result["revision"] / "base_alpha16.png")
+    ) as image:
         alpha = np.array(image)
     assert np.all(alpha[1:3, 1:4] == 49151)
     outside = np.ones((4, 5), dtype=bool)
@@ -101,7 +103,7 @@ def test_moved_native_context_invalidates_identical_crop_bytes(tmp_path):
         return np.full(guide.shape, 0.75), {}
 
     identity = cache_identity()
-    identity.pop("master_id")
+    identity.pop("developed_id")
     with (
         patch.object(StubSession, "identity", identity),
         patch.object(StubSession, "predict", side_effect=prediction),
@@ -130,7 +132,7 @@ from blackmask.project import ProjectError, digest, project_lock
 
 
 def alpha_at(project, revision):
-    with Image.open(project / "revisions" / revision / "base_alpha16.png") as image:
+    with Image.open(saved_raster(project / "revisions" / revision / "base_alpha16.png")) as image:
         return np.array(image)
 
 
@@ -145,20 +147,18 @@ def alpha_at(project, revision):
     ],
 )
 def test_repair_roundtrip_replay_full_rerun_locks_and_restore(tmp_path, policy, level, expected):
-    from blackmask.ingest import write_master
+    from blackmask.ingest import write_developed
     from blackmask.repair import replay_repair
 
     source, project, parent = parent_project(tmp_path)
     capture = source.read_bytes()
     directory = project / "revisions" / parent["revision"]
-    foreground = tifffile.imread(directory / "foreground_rgb16.tif")
+    foreground = tifffile.imread(saved_raster(directory / "foreground_rgb16.tif"))
     foreground[1, 2] = [1111, 2222, 3333]
     # Explicit synthetic saved RGB fixture, never photographic acceptance evidence.
-    write_master(directory / "foreground_rgb16.tif", foreground)
+    write_developed(directory / "foreground_rgb16.tif", foreground)
     manifest = json.loads((directory / "manifest.json").read_bytes())
-    manifest["files"]["foreground_rgb16.tif"] = digest(
-        (directory / "foreground_rgb16.tif").read_bytes()
-    )
+    bind_raster(project, directory, manifest, "foreground_rgb16.tif")
     (directory / "manifest.json").write_text(json.dumps(manifest))
     filename = edits(
         project,
@@ -184,7 +184,10 @@ def test_repair_roundtrip_replay_full_rerun_locks_and_restore(tmp_path, policy, 
         alpha_at(project, prepared["revision"]), alpha_at(project, parent["revision"])
     )
     np.testing.assert_array_equal(
-        tifffile.imread(Path(prepared["manifest_file"]).parent / "foreground_rgb16.tif"), foreground
+        tifffile.imread(
+            saved_raster(Path(prepared["manifest_file"]).parent / "foreground_rgb16.tif")
+        ),
+        foreground,
     )
     with pytest.raises(ProjectError, match="prepared"):
         operations.accept_revision(project, prepared["revision"])
@@ -203,7 +206,7 @@ def test_repair_roundtrip_replay_full_rerun_locks_and_restore(tmp_path, policy, 
     saved = Path(result["manifest_file"]).parent
     alpha = alpha_at(project, result["revision"])
     prior = alpha_at(project, parent["revision"])
-    with Image.open(saved / "repair/support16.png") as image:
+    with Image.open(saved_raster(saved / "repair/support16.png")) as image:
         support = np.array(image)
     assert np.any(support == 0) and np.any((support > 0) & (support < 65535))
     assert np.all(alpha[support == 0] == prior[support == 0])
@@ -211,14 +214,27 @@ def test_repair_roundtrip_replay_full_rerun_locks_and_restore(tmp_path, policy, 
     # Independent scalar formula at a non-protected, genuinely feathered sample.
     weight = int(support[2, 1]) / 65535
     assert alpha[2, 1] == round(16384 * (1 - weight) + expected * weight)
-    np.testing.assert_array_equal(tifffile.imread(saved / "foreground_rgb16.tif"), foreground)
+    np.testing.assert_array_equal(
+        tifffile.imread(saved_raster(saved / "foreground_rgb16.tif")), foreground
+    )
     np.testing.assert_array_equal(replay_repair(project, result["revision"]), alpha)
     empty = tmp_path / "empty-cache"
     empty.mkdir()
     code = """
-import json,sys
+import json,os,sys
 from pathlib import Path
 import numpy as np
+blocked = [Path(value).resolve() for value in sys.argv[4:]]
+forbidden_reads = []
+def audit(event, args):
+    if event == "socket.connect":
+        raise AssertionError("network forbidden during replay")
+    if event == "open" and isinstance(args[0], (str, bytes)):
+        path = Path(os.fsdecode(args[0])).resolve()
+        if any(path == root or path.is_relative_to(root) for root in blocked):
+            forbidden_reads.append(str(path))
+            raise AssertionError("original/cache forbidden during replay")
+sys.addaudithook(audit)
 from blackmask import models
 calls=[]
 def forbidden(*args,**kwargs):
@@ -229,7 +245,7 @@ models.SamSession.__init__=forbidden
 from blackmask.repair import replay_repair
 alpha=replay_repair(Path(sys.argv[1]),sys.argv[2])
 np.save(sys.argv[3],alpha)
-print(json.dumps({"model_calls":len(calls),"exact":True}))
+print(json.dumps({"model_calls":len(calls),"forbidden_reads":len(forbidden_reads),"exact":True}))
 """
     env = dict(
         os.environ,
@@ -238,22 +254,38 @@ print(json.dumps({"model_calls":len(calls),"exact":True}))
         HF_HUB_OFFLINE="1",
         PYTHONDONTWRITEBYTECODE="1",
     )
-    replayed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            code,
-            str(project),
-            result["revision"],
-            str(tmp_path / "replay.npy"),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+    cache = project / "cache"
+    retained_source = tmp_path / "retained-source.tif"
+    retained_cache = tmp_path / "retained-processing-cache"
+    source.rename(retained_source)
+    try:
+        if cache.exists():
+            cache.rename(retained_cache)
+        assert not source.exists() and not cache.exists()
+        replayed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                code,
+                str(project),
+                result["revision"],
+                str(tmp_path / "replay.npy"),
+                str(source),
+                str(cache),
+                str(retained_source),
+                str(retained_cache),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    finally:
+        retained_source.rename(source)
+        if retained_cache.exists():
+            retained_cache.rename(cache)
     assert replayed.returncode == 0, replayed.stderr
-    assert json.loads(replayed.stdout) == {"model_calls": 0, "exact": True}
+    assert json.loads(replayed.stdout) == {"model_calls": 0, "forbidden_reads": 0, "exact": True}
     np.testing.assert_array_equal(np.load(tmp_path / "replay.npy"), alpha)
     assert list(empty.iterdir()) == []
     # Later complete matte rerun respects same saved partial alpha/RGB lock.
@@ -270,7 +302,9 @@ print(json.dumps({"model_calls":len(calls),"exact":True}))
         full = run_matte(project)
     assert alpha_at(project, full["revision"])[1, 2] == 16384
     np.testing.assert_array_equal(
-        tifffile.imread(Path(full["manifest_file"]).parent / "foreground_rgb16.tif")[1, 2],
+        tifffile.imread(saved_raster(Path(full["manifest_file"]).parent / "foreground_rgb16.tif"))[
+            1, 2
+        ],
         [1111, 2222, 3333],
     )
     restored = operations.restore_revision(project, result["revision"])
@@ -282,7 +316,7 @@ print(json.dumps({"model_calls":len(calls),"exact":True}))
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("master_id", "0" * 64),
+        ("developed_id", "0" * 64),
         ("base_revision", "rev-999"),
         ("inputs_digest", "0" * 64),
         ("context_xyxy", [0, 0, 0, 2]),
@@ -316,9 +350,9 @@ def test_repair_failure_preserves_accepted_export_source_and_newer_draft(tmp_pat
     from blackmask.export import export_project
 
     source, project, parent = parent_project(tmp_path)
-    exported = export_project(project)
+    exported = export_project(project, variants=("black", "transparent", "editable"))
     export_path = Path(exported["directory"]) / "black_rgb16.tif"
-    accepted_bytes = export_path.read_bytes()
+    accepted_bytes = saved_raster(export_path).read_bytes()
     source_bytes = source.read_bytes()
     prepared = repair_guides(project, [1, 1, 3, 3])
     operation = repair_request(project, prepared, [0, 0, 5, 4], [1, 1, 3, 3])
@@ -351,7 +385,7 @@ def test_repair_failure_preserves_accepted_export_source_and_newer_draft(tmp_pat
             with pytest.raises(ProjectError, match="Stale"):
                 run_repair(project, operation)
     assert (project / "state.json").read_bytes() == before
-    assert export_path.read_bytes() == accepted_bytes
+    assert saved_raster(export_path).read_bytes() == accepted_bytes
     assert source.read_bytes() == source_bytes
     assert read_project(project)["accepted_revision"] == parent["revision"]
     if failure == "draft-edit":
@@ -364,11 +398,12 @@ def test_restore_unsaved_text_recovery_and_interrupted_pointer(tmp_path):
     with (project / "recipe.toml").open("a") as stream:
         stream.write("\n# preserve my unsaved text\n")
     before = {
-        name: (project / name).read_bytes() for name in ("recipe.toml", "guides.json", "state.json")
+        name: (saved_raster(project / name)).read_bytes()
+        for name in ("recipe.toml", "guides.json", "state.json")
     }
     with pytest.raises(ProjectError, match="Unsaved"):
         operations.restore_revision(project, parent["revision"])
-    assert all((project / name).read_bytes() == data for name, data in before.items())
+    assert all((saved_raster(project / name)).read_bytes() == data for name, data in before.items())
     with (
         patch("blackmask.operations._atomic_json", side_effect=OSError("pointer fault")),
         pytest.raises(OSError),
@@ -377,7 +412,9 @@ def test_restore_unsaved_text_recovery_and_interrupted_pointer(tmp_path):
     assert (project / "state.json").read_bytes() == before["state.json"]
     recovery = list((project / "recovery").iterdir())
     assert len(recovery) == 1
-    assert all((recovery[0] / name).read_bytes() == data for name, data in before.items())
+    assert all(
+        (saved_raster(recovery[0] / name)).read_bytes() == data for name, data in before.items()
+    )
     restored = operations.restore_revision(project, parent["revision"], replace_drafts=True)
     assert restored["accepted_revision"] == parent["revision"]
     assert restored["working_revision"] == parent["revision"]
@@ -512,7 +549,7 @@ def test_replay_rejects_invalid_bound_mapping_parent_and_order(tmp_path, change)
     result = run_repair(project, repair_request(project, prepared, [0, 0, 5, 4], [1, 1, 3, 3]))
     directory = Path(result["manifest_file"]).parent
     path = directory / "repair/merge.json"
-    record = json.loads(path.read_bytes())
+    record = json.loads(saved_raster(path).read_bytes())
     if change == "mapping":
         record["crop_mapping"]["origin_xy"] = [1, 0]
     elif change == "parent":
@@ -521,7 +558,7 @@ def test_replay_rejects_invalid_bound_mapping_parent_and_order(tmp_path, change)
         record["operation_order"] = "different ordering"
     path.write_text(json.dumps(record))
     manifest = json.loads((directory / "manifest.json").read_bytes())
-    manifest["files"]["repair/merge.json"] = digest(path.read_bytes())
+    manifest["files"]["repair/merge.json"] = digest(saved_raster(path).read_bytes())
     (directory / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(ProjectError, match="mapping|bindings"):
         replay_repair(project, result["revision"])
@@ -537,7 +574,7 @@ def test_alias_support_rejected_and_late_ancestor_edit_never_publishes(tmp_path)
         run_repair(project, dict(operation, support_file="support-alias.png"))
     state = (project / "state.json").read_bytes()
     ancestor = project / "revisions" / parent["revision"] / "manifest.json"
-    prior = ancestor.read_bytes()
+    prior = saved_raster(ancestor).read_bytes()
 
     def late_edit(rgb, guide, device):
         record = json.loads(prior)
@@ -560,7 +597,9 @@ def test_actual_killed_repair_writer_retains_accepted_files_and_releases_lock(tm
     operation = repair_request(project, prepared, [0, 0, 5, 4], [1, 1, 3, 3])
     before = (project / "state.json").read_bytes()
     capture = source.read_bytes()
-    alpha = (project / "revisions" / parent["revision"] / "base_alpha16.png").read_bytes()
+    alpha = (
+        saved_raster(project / "revisions" / parent["revision"] / "base_alpha16.png")
+    ).read_bytes()
     marker = tmp_path / "inference-entered"
     code = """
 import json,sys,time
@@ -587,9 +626,13 @@ operations.apply_operation(Path(sys.argv[1]),json.loads(sys.argv[2]),model_cache
     )
     try:
         deadline = time.monotonic() + 10
-        while not marker.exists() and child.poll() is None and time.monotonic() < deadline:
+        while (
+            not saved_raster(marker).exists()
+            and child.poll() is None
+            and time.monotonic() < deadline
+        ):
             time.sleep(0.02)
-        assert marker.exists(), "repair child never entered inference"
+        assert saved_raster(marker).exists(), "repair child never entered inference"
         child.kill()
         _, stderr = child.communicate(timeout=5)
         assert child.returncode == -9, stderr
@@ -599,7 +642,9 @@ operations.apply_operation(Path(sys.argv[1]),json.loads(sys.argv[2]),model_cache
             child.communicate(timeout=5)
     assert (project / "state.json").read_bytes() == before
     assert source.read_bytes() == capture
-    assert (project / "revisions" / parent["revision"] / "base_alpha16.png").read_bytes() == alpha
+    assert (
+        saved_raster(project / "revisions" / parent["revision"] / "base_alpha16.png")
+    ).read_bytes() == alpha
     with project_lock(project):
         assert read_project(project)["accepted_revision"] == parent["revision"]
 
@@ -616,18 +661,18 @@ def test_explicit_restore_recovers_malformed_drafts_without_weakening_reads(
 ):
     source, project, parent = parent_project(tmp_path)
     repair_guides(project, [1, 1, 3, 3])
-    (project / filename).write_bytes(bad_bytes)
+    (saved_raster(project / filename)).write_bytes(bad_bytes)
     capture = source.read_bytes()
     state_bytes = (project / "state.json").read_bytes()
     with pytest.raises(ProjectError):
         read_project(project)
     with pytest.raises(ProjectError):
         operations.restore_revision(project, parent["revision"])
-    assert (project / filename).read_bytes() == bad_bytes
+    assert (saved_raster(project / filename)).read_bytes() == bad_bytes
     assert (project / "state.json").read_bytes() == state_bytes
     result = operations.restore_revision(project, parent["revision"], replace_drafts=True)
     recovery = Path(result["recovery_directory"])
-    assert (recovery / filename).read_bytes() == bad_bytes
+    assert (saved_raster(recovery / filename)).read_bytes() == bad_bytes
     assert (recovery / "state.json").read_bytes() == state_bytes
     assert result["working_revision"] == result["accepted_revision"] == parent["revision"]
     assert read_project(project)["accepted_revision"] == parent["revision"]
@@ -641,13 +686,15 @@ def test_explicit_restore_still_rejects_invalid_immutable_assets(tmp_path, inval
     capture = source.read_bytes()
     (project / "recipe.toml").write_bytes(b"broken = [")
     if invalid == "master":
-        (project / "masters" / (state["master_id"] + ".tif")).write_bytes(b"invalid master")
+        (saved_raster(project / "assets/developed" / (state["developed_id"] + ".tif"))).write_bytes(
+            b"invalid master"
+        )
     elif invalid == "state":
         broken = dict(state, status="invalid status")
         (project / "state.json").write_text(json.dumps(broken))
     else:
         broken = json.loads((project / "source.json").read_bytes())
-        broken["master_id"] = "0" * 64
+        broken["developed_id"] = "0" * 64
         (project / "source.json").write_text(json.dumps(broken))
     state_bytes = (project / "state.json").read_bytes()
     with pytest.raises(ProjectError):
@@ -691,10 +738,10 @@ def test_default_repair_review_retains_saved_asymmetric_crops_and_explicit_overr
     context = [1, 0, 5, 4]
     result = run_repair(project, repair_request(project, prepared, context, [1, 1, 3, 3]))
     reviewed = review_project(project, revision=result["revision"])
-    record = json.loads(Path(reviewed["manifest_file"]).read_bytes())
+    record = json.loads(saved_raster(Path(reviewed["manifest_file"])).read_bytes())
     assert [crop["crop_xyxy"] for crop in record["crops"]] == [context]
     overridden = review_project(project, revision=result["revision"], crops=[[0, 0, 2, 2]])
-    override = json.loads(Path(overridden["manifest_file"]).read_bytes())
+    override = json.loads(saved_raster(Path(overridden["manifest_file"])).read_bytes())
     assert [crop["crop_xyxy"] for crop in override["crops"]] == [[0, 0, 2, 2]]
 
 
@@ -722,9 +769,10 @@ def test_restore_noncanonical_valid_guide_text_from_immutable_input_snapshot(tmp
     else:
         target = run_repair(project, repair_request(project, prepared, [0, 0, 5, 4], [1, 1, 3, 3]))
     assert (project / "guides.json").read_bytes() == original
-    # Existing saved revisions may store normalized guides but hash original draft bytes.
+    # Preparation normalizes guides for rasterization; completed results retain
+    # the exact effective guide bytes used by their digest and recovery paths.
     directory = Path(target["manifest_file"]).parent
-    assert (directory / "guides.json").read_bytes() != original
+    assert ((directory / "guides.json").read_bytes() == original) is (kind != "prepare")
     result = operations.restore_revision(project, target["revision"])
     assert result["working_revision"] == target["revision"]
     assert (project / "guides.json").read_bytes() == original
@@ -792,20 +840,26 @@ def test_restore_orphan_rejects_unsaved_drafts_without_explicit_replacement(tmp_
     source, project, revision = orphan_preparation(tmp_path)
     capture = source.read_bytes()
     path = project / filename
-    path.write_bytes(
-        path.read_bytes() + (b"\n# unsaved recipe text\n" if filename == "recipe.toml" else b"\n\n")
+    saved_raster(path).write_bytes(
+        saved_raster(path).read_bytes()
+        + (b"\n# unsaved recipe text\n" if filename == "recipe.toml" else b"\n\n")
     )
     before = {
-        name: (project / name).read_bytes() for name in ("recipe.toml", "guides.json", "state.json")
+        name: (saved_raster(project / name)).read_bytes()
+        for name in ("recipe.toml", "guides.json", "state.json")
     }
     with pytest.raises(ProjectError, match="Unsaved|replace-drafts"):
         operations.restore_revision(project, revision)
-    assert all((project / name).read_bytes() == value for name, value in before.items())
+    assert all(
+        (saved_raster(project / name)).read_bytes() == value for name, value in before.items()
+    )
     assert not (project / "recovery").exists()
     result = operations.restore_revision(project, revision, replace_drafts=True)
     assert result["working_revision"] == revision and result["accepted_revision"] is None
     recovery = Path(result["recovery_directory"])
-    assert all((recovery / name).read_bytes() == value for name, value in before.items())
+    assert all(
+        (saved_raster(recovery / name)).read_bytes() == value for name, value in before.items()
+    )
     assert operations.draft_digest(project) == result["inputs_digest"]
     assert source.read_bytes() == capture
 
@@ -813,10 +867,14 @@ def test_restore_orphan_rejects_unsaved_drafts_without_explicit_replacement(tmp_
 def test_restore_orphan_with_matching_drafts_needs_no_replacement_flag(tmp_path):
     source, project, revision = orphan_preparation(tmp_path)
     capture = source.read_bytes()
-    before = {name: (project / name).read_bytes() for name in ("recipe.toml", "guides.json")}
+    before = {
+        name: (saved_raster(project / name)).read_bytes() for name in ("recipe.toml", "guides.json")
+    }
     result = operations.restore_revision(project, revision)
     assert result["working_revision"] == revision and result["accepted_revision"] is None
-    assert all((project / name).read_bytes() == value for name, value in before.items())
+    assert all(
+        (saved_raster(project / name)).read_bytes() == value for name, value in before.items()
+    )
     assert source.read_bytes() == capture
 
 

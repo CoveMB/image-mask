@@ -13,13 +13,23 @@ import rawpy
 
 from .export import export_project
 from .ingest import IngestError
+from .library import (
+    ensure_library,
+    import_photo,
+    load_storage_config,
+    resume_import,
+    validate_library_project,
+)
 from .models import setup_sam, setup_vitmatte, verify_sam, verify_vitmatte
 from .operations import (
     accept_revision,
     accept_trimap,
     apply_operation,
+    clear_processing_cache,
     draft_digest,
+    inspect_processing_cache,
     operation_status,
+    reopen_project_status,
     resume_operation,
 )
 from .project import ProjectError, accept_development, create_project, read_project
@@ -49,7 +59,25 @@ def doctor(path: Path, model_cache: Path | None = None, model: str = "sam") -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="blackmask")
+    parser.add_argument("--config", type=Path, help="Explicit local storage TOML; no discovery")
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("library-init", help="Safely create the configured library folders")
+    imported = commands.add_parser(
+        "import", help="Move a selected Inbox original and declared sidecars"
+    )
+    imported.add_argument("source", type=Path)
+    imported.add_argument("--subject", required=True)
+    imported.add_argument("--capture-date")
+    imported.add_argument("--sidecar", type=Path, action="append", default=[])
+    imported.add_argument("--assume-srgb", action="store_true")
+    imported.add_argument("--white-balance", choices=("camera", "daylight"), default="camera")
+    imported.add_argument(
+        "--jpeg-sdr-primary",
+        action="store_true",
+        help="Use only the verified SDR primary of a gain-map JPEG; omit HDR brightness",
+    )
+    imported_resume = commands.add_parser("import-resume", help="Resume one exact pending import")
+    imported_resume.add_argument("pending", type=Path)
     opened = commands.add_parser(
         "open", help="Create/reopen a project and open its offline review window"
     )
@@ -68,6 +96,11 @@ def main() -> int:
     )
     opened.add_argument("--assume-srgb", action="store_true")
     opened.add_argument("--white-balance", choices=("camera", "daylight"), default="camera")
+    opened.add_argument(
+        "--jpeg-sdr-primary",
+        action="store_true",
+        help="Use only the verified SDR primary of a gain-map JPEG; omit HDR brightness",
+    )
     accepted = commands.add_parser(
         "accept", help="Record trimap/final-photo approval or optional legacy development review"
     )
@@ -81,7 +114,7 @@ def main() -> int:
         help="Optionally review authoritative prepared trimap; requires revision/master/digest",
     )
     accepted.add_argument("--inputs-digest")
-    accepted.add_argument("--master-id", help="Identity of the master you inspected")
+    accepted.add_argument("--developed-id", help="Identity of the master you inspected")
     checked = commands.add_parser("doctor", help="Report local preflight without downloading")
     checked.add_argument("--project", type=Path, default=Path.cwd())
     checked.add_argument("--model-cache", type=Path)
@@ -110,12 +143,34 @@ def main() -> int:
     reviewed.add_argument(
         "--crops", type=Path, help="JSON list of native half-open crop rectangles"
     )
+    reviewed.add_argument(
+        "--comparison",
+        action="store_true",
+        help="Save a lightweight comparison sheet and exact manifest",
+    )
+    reviewed.add_argument(
+        "--retain-native",
+        action="store_true",
+        help="Also retain requested native inspection crops outside revisions",
+    )
+    reviewed.add_argument(
+        "--presentation",
+        type=Path,
+        help="Explicit bound Add margins or Match series preview request JSON",
+    )
     exported = commands.add_parser(
-        "export", help="Export accepted RGB16 black/alpha16 and labelled viewing PNGs"
+        "export", help="Export full-size selected Result RGB16 TIFF/PNG8 with recipe and manifest"
     )
     exported.add_argument("project", type=Path)
     exported.add_argument("--revision")
     exported.add_argument("--draft", action="store_true")
+    exported.add_argument(
+        "--variant",
+        action="append",
+        default=[],
+        choices=("black", "transparent", "editable"),
+        help="Add an independent output; editable includes full native layers or a native editable companion for presentation exports",
+    )
     presentation = exported.add_mutually_exclusive_group()
     presentation.add_argument(
         "--margins",
@@ -156,49 +211,118 @@ def main() -> int:
     )
     status = commands.add_parser("status", help="Read recovery status without waiting for a writer")
     status.add_argument("project", type=Path)
+    cache = commands.add_parser("cache", help="Inspect or explicitly clear expendable predictions")
+    cache_actions = cache.add_subparsers(dest="cache_action", required=True)
+    cache_inspect = cache_actions.add_parser("inspect", help="Read cache inventory without writes")
+    cache_inspect.add_argument("project", type=Path)
+    cache_clear = cache_actions.add_parser("clear", help="Clear the exact inspected eligible set")
+    cache_clear.add_argument("project", type=Path)
+    cache_clear.add_argument("--confirm", required=True, metavar="DIGEST")
+    preview = commands.add_parser(
+        "preview", help="Explicitly repair the latest native Result gallery"
+    )
+    preview.add_argument("action", choices=("repair",))
+    preview.add_argument("project", type=Path)
     arguments = parser.parse_args()
     try:
-        if arguments.command == "open":
+        config = load_storage_config(arguments.config) if arguments.config is not None else None
+        if arguments.command in {
+            "accept",
+            "run",
+            "resume",
+            "restore",
+            "review",
+            "export",
+            "preview",
+        }:
+            validate_library_project(arguments.project, config)
+        result: dict[str, Any]
+        if arguments.command in {"library-init", "import", "import-resume"}:
+            if config is None:
+                raise ProjectError("Library commands require an explicit --config FILE")
+            if arguments.command == "library-init":
+                ensure_library(config)
+                result = {"destination": str(config.destination)}
+            else:
+                path = (
+                    resume_import(config, arguments.pending)
+                    if arguments.command == "import-resume"
+                    else import_photo(
+                        config,
+                        arguments.source,
+                        subject=arguments.subject,
+                        capture_date=arguments.capture_date,
+                        development={
+                            "assume_srgb": arguments.assume_srgb,
+                            "white_balance": arguments.white_balance,
+                            **({"jpeg_sdr_primary": True} if arguments.jpeg_sdr_primary else {}),
+                        },
+                        sidecars=tuple(arguments.sidecar),
+                    )
+                )
+                result = (
+                    {"status": "pending", "pending": str(path), "input_preserved": True}
+                    if path.name == "import.json"
+                    else {"status": "ready", "project": str(path)}
+                )
+                if arguments.command == "import":
+                    result["input_preserved"] = arguments.source.exists()
+        elif arguments.command == "open":
             if arguments.source is not None:
                 development = {
                     "assume_srgb": arguments.assume_srgb,
                     "white_balance": arguments.white_balance,
+                    **({"jpeg_sdr_primary": True} if arguments.jpeg_sdr_primary else {}),
                 }
                 create_project(arguments.source, arguments.project, development)
             result = dict(
                 read_project(arguments.project), inputs_digest=draft_digest(arguments.project)
             )
+            from .previews import result_preview_status
+
+            if config is not None and arguments.headless:
+                result.update(reopen_project_status(arguments.project, storage_config=config))
+            else:
+                result["preview"] = result_preview_status(arguments.project, config)
+                result["preview_pending"] = result["preview"]["status"] == "pending"
             if not arguments.headless:
                 from .viewer import open_viewer
 
-                open_viewer(arguments.project, arguments.model_cache, arguments.sam_cache)
+                open_viewer(
+                    arguments.project,
+                    arguments.model_cache or (config.vitmatte_cache if config else None),
+                    arguments.sam_cache or (config.sam_cache if config else None),
+                    storage_config=config,
+                )
                 return 0
         elif arguments.command == "accept":
             if arguments.trimap:
                 if (
                     arguments.revision is None
-                    or arguments.master_id is None
+                    or arguments.developed_id is None
                     or arguments.inputs_digest is None
                 ):
                     raise ProjectError(
-                        "Trimap approval requires --revision, --master-id and --inputs-digest"
+                        "Trimap approval requires --revision, --developed-id and --inputs-digest"
                     )
                 result = accept_trimap(
                     arguments.project,
                     arguments.revision,
-                    arguments.master_id,
+                    arguments.developed_id,
                     arguments.inputs_digest,
                 )
             elif arguments.revision is not None:
-                if arguments.inputs_digest is not None or arguments.master_id is not None:
+                if arguments.inputs_digest is not None or arguments.developed_id is not None:
                     raise ProjectError(
                         "Final-photo acceptance uses --revision; trimap identity flags require --trimap"
                     )
-                result = accept_revision(arguments.project, arguments.revision)
+                result = accept_revision(
+                    arguments.project, arguments.revision, storage_config=config
+                )
             else:
-                if arguments.master_id is None or arguments.inputs_digest is not None:
-                    raise ProjectError("Development approval requires the inspected --master-id")
-                result = accept_development(arguments.project, arguments.master_id)
+                if arguments.developed_id is None or arguments.inputs_digest is not None:
+                    raise ProjectError("Development approval requires the inspected --developed-id")
+                result = accept_development(arguments.project, arguments.developed_id)
         elif arguments.command == "setup-model":
             result = (
                 setup_sam(arguments.model_cache)
@@ -208,13 +332,31 @@ def main() -> int:
         elif arguments.command == "review":
             crops = json.loads(arguments.crops.read_bytes()) if arguments.crops else None
             if arguments.cycle_request:
-                if arguments.revision or arguments.crops:
-                    raise ProjectError("Cycle requests cannot be combined with crop/revision flags")
+                if (
+                    arguments.revision
+                    or arguments.crops
+                    or arguments.comparison
+                    or arguments.retain_native
+                    or arguments.presentation
+                ):
+                    raise ProjectError(
+                        "Cycle requests cannot be combined with crop/revision/comparison flags"
+                    )
                 result = review_cycle(
                     arguments.project, json.loads(arguments.cycle_request.read_bytes())
                 )
             else:
-                result = review_project(arguments.project, revision=arguments.revision, crops=crops)
+                result = review_project(
+                    arguments.project,
+                    revision=arguments.revision,
+                    crops=crops,
+                    comparison=arguments.comparison,
+                    retain_native=arguments.retain_native,
+                    presentation=json.loads(arguments.presentation.read_bytes())
+                    if arguments.presentation
+                    else None,
+                    storage_config=config,
+                )
         elif arguments.command == "export":
             from .series_framing import read_series_preset_file
 
@@ -232,6 +374,7 @@ def main() -> int:
                 if arguments.margins is not None
                 else None,
                 framed_transparent=arguments.framed_transparent,
+                variants=tuple(arguments.variant),
                 series=read_series_preset_file(arguments.series_preset).to_dict()
                 if arguments.series_preset is not None
                 else None,
@@ -240,7 +383,10 @@ def main() -> int:
             from .operations import restore_revision
 
             result = restore_revision(
-                arguments.project, arguments.revision, replace_drafts=arguments.replace_drafts
+                arguments.project,
+                arguments.revision,
+                replace_drafts=arguments.replace_drafts,
+                storage_config=config,
             )
         elif arguments.command == "replay":
             from .repair import replay_repair
@@ -256,22 +402,68 @@ def main() -> int:
             result = resume_operation(
                 arguments.project,
                 arguments.operation,
-                model_cache=arguments.model_cache,
+                model_cache=arguments.model_cache or (config.vitmatte_cache if config else None),
                 source=arguments.source,
+                storage_config=config,
             )
         elif arguments.command == "status":
-            result = operation_status(arguments.project)
+            result = operation_status(arguments.project, storage_config=config)
+        elif arguments.command == "cache":
+            result = (
+                inspect_processing_cache(arguments.project)
+                if arguments.cache_action == "inspect"
+                else clear_processing_cache(
+                    arguments.project, arguments.confirm, storage_config=config
+                )
+            )
+        elif arguments.command == "preview":
+            from .previews import refresh_result_preview
+
+            if config is None:
+                raise ProjectError("Preview repair requires explicit --config FILE")
+            result = refresh_result_preview(arguments.project, config)
         elif arguments.command == "run":
+            request = json.loads(arguments.request.read_bytes())
+            if not isinstance(request, dict):
+                raise ProjectError("Operation request must be a JSON object")
             result = apply_operation(
                 arguments.project,
-                json.loads(arguments.request.read_bytes()),
-                model_cache=arguments.model_cache,
+                request,
+                model_cache=arguments.model_cache
+                or (
+                    (
+                        config.sam_cache
+                        if request.get("kind") == "prepare"
+                        else config.vitmatte_cache
+                    )
+                    if config
+                    else None
+                ),
                 request_file=arguments.request,
+                storage_config=config,
             )
         else:
-            result = doctor(arguments.project, arguments.model_cache, arguments.model)
+            result = doctor(
+                arguments.project,
+                arguments.model_cache
+                or (
+                    (config.sam_cache if arguments.model == "sam" else config.vitmatte_cache)
+                    if config
+                    else None
+                ),
+                arguments.model,
+            )
         print(json.dumps(result, indent=2, allow_nan=False))
-        return 0
+        return (
+            1
+            if (
+                arguments.command == "preview"
+                and result["status"] == "pending"
+                or arguments.command == "cache"
+                and result.get("status") == "partial"
+            )
+            else 0
+        )
     except (ProjectError, IngestError, OSError, ValueError, TypeError) as error:
         print(f"blackmask: {error}", file=sys.stderr)
         return 1

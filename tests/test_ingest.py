@@ -2,6 +2,7 @@ import hashlib
 import io
 import struct
 import zlib
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -9,7 +10,7 @@ import pytest
 import tifffile
 from PIL import Image, ImageCms
 
-from blackmask.ingest import IngestError, decode_source, srgb_profile, write_master
+from blackmask.ingest import IngestError, decode_source, srgb_profile, write_developed
 
 
 def ramp():
@@ -50,8 +51,8 @@ def test_rgb16_non_257_roundtrip(tmp_path):
     np.testing.assert_array_equal(pixels, ramp())
     assert metadata["format"] == "TIFF" and metadata["source_precision_bits"] == 16
     output = tmp_path / "master.tif"
-    write_master(output, pixels)
-    np.testing.assert_array_equal(tifffile.imread(output), ramp())
+    write_developed(output, pixels)
+    np.testing.assert_array_equal(tifffile.imread(saved_raster(output)), ramp())
     assert source.read_bytes() == before
     with tifffile.TiffFile(output) as image:
         assert image.pages[0].compression == 1
@@ -464,7 +465,7 @@ def test_triple_profile_interpolation_matches_independent_sdk_reference():
 def test_dng_white_point_project_reopens_saved_master_without_raw_decoder(tmp_path):
     import json
 
-    from blackmask.project import create_project, load_master, read_project
+    from blackmask.project import create_project, load_developed, read_project
 
     source = tmp_path / "capture.dng"
     source.write_bytes(dng_white_point_metadata())
@@ -475,8 +476,8 @@ def test_dng_white_point_project_reopens_saved_master_without_raw_decoder(tmp_pa
     created = json.loads((project / "state.json").read_bytes())
     with patch("blackmask.ingest.rawpy.imread", side_effect=AssertionError("must not redevelop")):
         reopened = read_project(project)
-        pixels, metadata = load_master(project, reopened["master_id"])
-    assert created["master_id"] == reopened["master_id"]
+        pixels, metadata = load_developed(project, reopened["developed_id"])
+    assert created["developed_id"] == reopened["developed_id"]
     np.testing.assert_array_equal(pixels, ramp())
     assert metadata["as_shot_white_balance"]["multipliers"] == [2, 1, 2, 1]
     assert reopened["development_approved"] is False
@@ -617,7 +618,7 @@ def test_unrecognized_dng_cannot_be_imported_as_ordinary_rgb16_tiff():
         decode_source(buffer.getvalue(), {})
 
 
-def multi_image_jpeg(*, gain_map=False):
+def multi_image_jpeg(*, gain_map=False, base_hdr="False", orientation=1, extra_auxiliary_xmp=None):
     """Build two actual JPEG payloads and an MPF directory, without photo assets."""
     buffer = io.BytesIO()
     options = {}
@@ -627,11 +628,34 @@ def multi_image_jpeg(*, gain_map=False):
             b'<rdf:Description xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" '
             b'hdrgm:Version="1.0"/></x:xmpmeta>'
         )
+    auxiliary = Image.new("RGB", (8, 6), (100, 100, 100))
+    if gain_map:
+        base = "" if base_hdr is None else f' hdrgm:BaseRenditionIsHDR="{base_hdr}"'
+        auxiliary.encoderinfo = {
+            "xmp": (
+                '<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+                '<rdf:Description xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+                'xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" '
+                f'hdrgm:Version="1.0"{base}/></x:xmpmeta>'
+            ).encode()
+        }
+        if extra_auxiliary_xmp is not None:
+            auxiliary.encoderinfo["extra"] = (
+                b"\xff\xe1" + struct.pack(">H", len(extra_auxiliary_xmp) + 2) + extra_auxiliary_xmp
+            )
+        # Namespace declarations must be valid for the application XMP reader.
+        options["xmp"] = options["xmp"].replace(
+            b"<rdf:Description ",
+            b'<rdf:Description xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" ',
+        )
+    exif = Image.Exif()
+    exif[274] = orientation
     Image.new("RGB", (8, 6), (20, 80, 160)).save(
         buffer,
         format="MPO",
         save_all=True,
-        append_images=[Image.new("RGB", (8, 6), (100, 100, 100))],
+        append_images=[auxiliary],
+        exif=exif,
         **options,
     )
     return buffer.getvalue()
@@ -639,7 +663,7 @@ def multi_image_jpeg(*, gain_map=False):
 
 def test_mpo_rejection_names_actual_format_and_recovery():
     data = multi_image_jpeg()
-    with Image.open(io.BytesIO(data)) as image:
+    with Image.open(saved_raster(io.BytesIO(data))) as image:
         assert image.format == "MPO" and image.n_frames == 2
     with pytest.raises(IngestError, match="Multi-frame MPO.*single-image SDR JPEG/PNG8"):
         decode_source(data, {"assume_srgb": True})
@@ -647,13 +671,74 @@ def test_mpo_rejection_names_actual_format_and_recovery():
 
 def test_gain_map_jpeg_cannot_silently_become_an_sdr_master():
     data = multi_image_jpeg(gain_map=True)
-    with Image.open(io.BytesIO(data)) as image:
+    with Image.open(saved_raster(io.BytesIO(data))) as image:
         assert image.format == "JPEG" and getattr(image, "n_frames", 1) == 1
         assert image._getmp()[0xB001] == 2
     with pytest.raises(
         IngestError, match="Multi-image JPEG.*Ultra HDR.*single-image SDR JPEG/PNG8"
     ):
         decode_source(data, {"assume_srgb": True})
+
+
+@pytest.mark.parametrize("orientation", [1, 6])
+def test_explicit_sdr_primary_preserves_primary_pixels_orientation_and_precision(orientation):
+    data = multi_image_jpeg(gain_map=True, orientation=orientation)
+    with Image.open(io.BytesIO(data)) as image:
+        expected = np.array(image, dtype=np.uint16) * 257
+    if orientation == 6:
+        expected = np.rot90(expected, -1)
+    pixels, metadata = decode_source(data, {"assume_srgb": True, "jpeg_sdr_primary": True})
+    np.testing.assert_array_equal(pixels, expected)
+    assert metadata["source_precision_bits"] == 8
+    assert metadata["jpeg_sdr_primary"] == {
+        "selected_image": 0,
+        "image_count": 2,
+        "base_rendition": "SDR",
+        "hdr_gain_map_applied": False,
+    }
+    assert metadata["development_options"]["jpeg_sdr_primary"] is True
+
+
+@pytest.mark.parametrize("base_hdr", ["True", None, "unknown"])
+def test_sdr_primary_requires_explicit_sdr_base_metadata(base_hdr):
+    with pytest.raises(IngestError, match="SDR base"):
+        decode_source(
+            multi_image_jpeg(gain_map=True, base_hdr=base_hdr),
+            {"assume_srgb": True, "jpeg_sdr_primary": True},
+        )
+
+
+def test_sdr_primary_rejects_truncated_auxiliary_payload():
+    data = multi_image_jpeg(gain_map=True)
+    with pytest.raises(IngestError, match="gain-map JPEG"):
+        decode_source(data[:-4], {"assume_srgb": True, "jpeg_sdr_primary": True})
+
+
+@pytest.mark.parametrize("namespace", [b"xap/1.0/", b"xmp/extension/"])
+def test_sdr_primary_rejects_duplicate_or_extended_xmp(namespace):
+    # Pillow's last standard XMP packet would otherwise hide this HDR-base claim.
+    packet = (
+        b'<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+        b'<rdf:Description xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        b'xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" '
+        b'hdrgm:Version="1.0" hdrgm:BaseRenditionIsHDR="True"/></x:xmpmeta>'
+    )
+    data = multi_image_jpeg(
+        gain_map=True, extra_auxiliary_xmp=b"http://ns.adobe.com/" + namespace + b"\x00" + packet
+    )
+    with pytest.raises(IngestError, match="XMP"):
+        decode_source(data, {"assume_srgb": True, "jpeg_sdr_primary": True})
+
+
+@pytest.mark.parametrize("value", [1, "true", None])
+def test_sdr_primary_option_requires_boolean(value):
+    with pytest.raises(IngestError, match="jpeg_sdr_primary must be a boolean"):
+        decode_source(multi_image_jpeg(gain_map=True), {"jpeg_sdr_primary": value})
+
+
+def test_sdr_primary_does_not_enable_generic_mpo():
+    with pytest.raises(IngestError, match="Multi-frame MPO"):
+        decode_source(multi_image_jpeg(), {"assume_srgb": True, "jpeg_sdr_primary": True})
 
 
 @pytest.mark.parametrize("disposal", [0, 1, 2])
@@ -666,7 +751,71 @@ def test_animated_png_rejection_names_actual_format_and_recovery(disposal):
         append_images=[Image.new("RGB", (8, 6), (100, 100, 100))],
         disposal=disposal,
     )
-    with Image.open(io.BytesIO(buffer.getvalue())) as image:
+    with Image.open(saved_raster(io.BytesIO(buffer.getvalue()))) as image:
         assert image.format == "PNG" and image.n_frames == 2
     with pytest.raises(IngestError, match="Multi-frame PNG.*single-image SDR JPEG/PNG8"):
         decode_source(buffer.getvalue(), {"assume_srgb": True})
+
+
+def saved_raster(path):
+    """Resolve a fixture role to raw bytes; application readers still validate every binding."""
+    if not isinstance(path, Path) or path.exists() or path.suffix.lower() not in {".png", ".tif"}:
+        return path
+    for ancestor in path.parents:
+        if ancestor.name == "revisions":
+            root = ancestor.parent
+            relative = path.relative_to(ancestor)
+            if len(relative.parts) < 2:
+                return path
+            import json
+
+            try:
+                manifest = json.loads((ancestor / relative.parts[0] / "manifest.json").read_bytes())
+            except (OSError, ValueError):
+                return path
+            name = str(Path(*relative.parts[1:]))
+            if name in manifest.get("assets", {}):
+                return root / manifest["assets"][name]["path"]
+            return path
+    return path
+
+
+def bind_raster(project, directory, manifest, name):
+    """Publish a deliberately changed synthetic operand with a fresh immutable binding."""
+    from blackmask.assets import store_asset
+    from blackmask.project import digest
+
+    path = directory / name
+    if path.suffix.lower() not in {".png", ".tif"}:
+        manifest["files"][name] = digest(path.read_bytes())
+        return manifest["files"][name]
+    if not path.exists():
+        path = project / manifest["assets"][name]["path"]
+    reference = store_asset(project, path)
+    manifest.setdefault("assets", {})[name] = reference
+    manifest["files"].pop(name, None)
+    if path.is_relative_to(directory):
+        path.unlink()
+    return reference["sha256"]
+
+
+def saved_hashes(record):
+    """Fixture inspection includes shared operands as well as retained small files."""
+    return {
+        **record["files"],
+        **{name: ref["sha256"] for name, ref in record.get("assets", {}).items()},
+    }
+
+
+def native_review_directories(project, revision):
+    """Explicitly request full native evidence instead of reading the reduced overview."""
+    import json
+
+    from blackmask.review import review_project
+
+    after = Path(review_project(project, revision=revision)["manifest_file"])
+    record = json.loads(after.read_bytes())
+    return {
+        "review": after.parent,
+        "review-before": (project / record["assets"]["before_manifest"]).parent,
+    }

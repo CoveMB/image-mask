@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from test_ingest import bind_raster, saved_raster
 
 from blackmask.project import ProjectError
 
@@ -466,6 +467,264 @@ def spatial_request(project, settings=None, *, candidate=False, **fields):
     )
 
 
+@pytest.mark.parametrize("mode", ["oval", "off", "empty", "arcs"])
+def test_spatial_equivalent_submission_reuses_current_native_result(tmp_path, mode):
+    """Missing spatial identity/recipe handling must not publish a redundant revision."""
+    from test_effects import fixture_project
+
+    from blackmask import operations
+    from blackmask.project import read_project
+
+    project, _, parent = fixture_project(tmp_path)
+    settings = spatial_settings(6, 4)
+    if mode == "off":
+        settings["enabled"] = False
+    if mode == "empty":
+        settings["oval"]["enabled"] = False
+    if mode == "arcs":
+        settings["arcs_enabled"] = True
+        settings["arcs"] = [arc_settings(center_xy=[3, 2], half_span=2, bend=0.5, end_softness=0.5)]
+    first = operations.apply_operation(project, spatial_request(project, settings, candidate=True))
+    before = {
+        str(path.relative_to(project)): path.read_bytes()
+        for path in project.rglob("*")
+        if path.is_file()
+    }
+    repeated = spatial_request(project, copy.deepcopy(settings), candidate=True)
+    with patch(
+        "blackmask.operations.VitMatteSession", side_effect=AssertionError("model on reuse")
+    ):
+        second = operations.apply_operation(project, repeated)
+    assert second["reused"] is True
+    assert second["revision"] == first["revision"]
+    assert second["parent"] == first["parent"]
+    assert read_project(project)["accepted_revision"] == parent["revision"]
+    assert before == {
+        str(path.relative_to(project)): path.read_bytes()
+        for path in project.rglob("*")
+        if path.is_file()
+    }
+
+
+@pytest.mark.parametrize("amount", [0.0, 0.6])
+def test_spatial_reuse_uses_protection_bytes_and_validated_nested_numbers(tmp_path, amount):
+    """Locator spelling/numeric encoding may reuse, but changed safety bytes need history."""
+    from PIL import Image
+    from test_effects import fixture_project
+
+    from blackmask import operations
+    from blackmask.assets import revision_asset
+    from blackmask.project import read_project, read_revision
+    from blackmask.repair import scalar16
+    from blackmask.spatial_fade import read_spatial_fade
+
+    project, _, _ = fixture_project(tmp_path)
+    protection = np.zeros((4, 6), dtype=np.uint16)
+    protection[1, 2] = 65535
+    Image.fromarray(protection).save(project / "protection-a.png")
+    settings = spatial_settings(6, 4)
+    settings["oval"]["amount"] = amount
+    settings["oval"]["center_xy"] = [3, 2]
+    first = operations.apply_operation(
+        project,
+        spatial_request(
+            project, settings, candidate=True, spatial_fade_protection_file="protection-a.png"
+        ),
+    )
+    (project / "protection-b.png").write_bytes((project / "protection-a.png").read_bytes())
+    equivalent = copy.deepcopy(settings)
+    equivalent["oval"]["center_xy"] = [3.0, 2.0]
+    second = operations.apply_operation(
+        project,
+        spatial_request(
+            project, equivalent, candidate=True, spatial_fade_protection_file="protection-b.png"
+        ),
+    )
+    assert second["reused"] is True and second["revision"] == first["revision"]
+    protection[2, 3] = 65535
+    Image.fromarray(protection).save(project / "protection-b.png")
+    changed = operations.apply_operation(
+        project,
+        spatial_request(
+            project, equivalent, candidate=True, spatial_fade_protection_file="protection-b.png"
+        ),
+    )
+    assert changed["reused"] is False and changed["revision"] != first["revision"]
+    manifest = read_revision(project, changed["revision"], read_project(project)["developed_id"])
+    directory = project / "revisions" / changed["revision"]
+    alpha = scalar16(revision_asset(project, directory, manifest, "base_alpha16.png"))
+    saved = read_spatial_fade(project, directory, manifest, alpha)
+    assert saved is not None and saved.protection[1, 2] and saved.protection[2, 3]
+
+
+@pytest.mark.parametrize("cold", [False, True])
+def test_spatial_reuse_keeps_cold_integrity_validation_without_effect_generation(tmp_path, cold):
+    """Reuse cannot bypass cold geometry validation or rerun effects generation."""
+    from test_effects import fixture_project
+
+    from blackmask import operations, spatial_fade
+    from blackmask import project as project_module
+
+    project, _, _ = fixture_project(tmp_path)
+    first = operations.apply_operation(project, spatial_request(project, candidate=True))
+    if cold:
+        project_module._validate_spatial_fade_semantics.cache_clear()
+    before = {
+        str(path.relative_to(project)): path.read_bytes()
+        for path in project.rglob("*")
+        if path.is_file()
+    }
+    with (
+        patch(
+            "blackmask.spatial_fade.make_spatial_weight", wraps=spatial_fade.make_spatial_weight
+        ) as validation,
+        patch(
+            "blackmask.effects.make_spatial_weight",
+            side_effect=AssertionError("new output W on reuse"),
+        ),
+        patch("blackmask.operations.VitMatteSession", side_effect=AssertionError("model on reuse")),
+    ):
+        repeated = operations.apply_operation(project, spatial_request(project, candidate=True))
+    assert repeated["reused"] and repeated["revision"] == first["revision"]
+    assert validation.call_count == (1 if cold else 0)
+    assert before == {
+        str(path.relative_to(project)): path.read_bytes()
+        for path in project.rglob("*")
+        if path.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    "binding", ["record", "weight16.png", "protection16.png", "alpha16.png", "settings.json"]
+)
+def test_inherited_spatial_output_binding_must_match_before_background_reuse(tmp_path, binding):
+    """A stale saved output proof must miss even when native operands still validate."""
+    from test_background import background_request
+    from test_effects import fixture_project
+
+    from blackmask import operations
+    from blackmask.project import digest, read_project
+
+    project, _, parent = fixture_project(tmp_path)
+    operations.apply_operation(project, spatial_request(project, candidate=True))
+    first = operations.apply_operation(project, background_request(project))
+    repeated = operations.apply_operation(project, background_request(project))
+    assert repeated["reused"] and repeated["revision"] == first["revision"]
+    directory = project / "revisions" / first["revision"]
+    manifest = json.loads((directory / "manifest.json").read_bytes())
+    result = json.loads((directory / "result.json").read_bytes())
+    for proof in (manifest["effects_reuse"], result["effects_reuse"]):
+        if binding == "record":
+            proof["spatial_fade"]["record"]["candidate_comparison"] = False
+        else:
+            proof["spatial_fade"]["files"]["effects/spatial-fade/" + binding] = "0" * 64
+    (directory / "result.json").write_text(json.dumps(result))
+    manifest["files"]["result.json"] = digest((directory / "result.json").read_bytes())
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    changed = operations.apply_operation(project, background_request(project))
+    assert not changed["reused"] and changed["revision"] != first["revision"]
+    assert changed["spatial_fade"] == first["spatial_fade"]
+    assert read_project(project)["accepted_revision"] == parent["revision"]
+
+
+def test_spatial_reuse_rechecks_actual_protection_bytes_before_return(tmp_path, monkeypatch):
+    """A proven hit cannot hide a referenced protection file changed before return."""
+    from PIL import Image
+    from test_effects import fixture_project
+
+    from blackmask import effects, operations
+
+    project, _, _ = fixture_project(tmp_path)
+    protection = np.zeros((4, 6), dtype=np.uint16)
+    protection[1, 2] = 65535
+    target = project / "spatial-protection.png"
+    Image.fromarray(protection).save(target)
+    operations.apply_operation(
+        project, spatial_request(project, candidate=True, spatial_fade_protection_file=target.name)
+    )
+    before = (project / "state.json").read_bytes()
+    original = effects._reused_effects_result
+
+    def change_protection(*arguments):
+        result = original(*arguments)
+        assert result is not None
+        target.write_bytes(target.read_bytes() + b"\n")
+        return result
+
+    monkeypatch.setattr(effects, "_reused_effects_result", change_protection)
+    with pytest.raises(ProjectError, match="Stale spatial fade protection"):
+        operations.apply_operation(
+            project,
+            spatial_request(project, candidate=True, spatial_fade_protection_file=target.name),
+        )
+    assert (project / "state.json").read_bytes() == before
+    assert target.read_bytes().endswith(b"\n")
+
+
+@pytest.mark.parametrize("failure", [RuntimeError, MemoryError, KeyboardInterrupt])
+def test_spatial_generation_failure_preserves_captured_request_and_native_state(tmp_path, failure):
+    """New spatial geometry must not run before its exact recovery inputs are captured."""
+    import hashlib
+
+    from PIL import Image
+    from test_effects import fixture_project
+
+    from blackmask import operations
+
+    project, _, parent = fixture_project(tmp_path)
+    protection = np.zeros((4, 6), dtype=np.uint16)
+    protection[1, 2] = 65535
+    protection_path = project / "spatial-protection.png"
+    Image.fromarray(protection).save(protection_path)
+    operation = spatial_request(
+        project, candidate=True, spatial_fade_protection_file=protection_path.name
+    )
+    request_file = project / "spatial-request.json"
+    request_bytes = (json.dumps(operation, indent=2) + "\n").encode()
+    request_file.write_bytes(request_bytes)
+    root_inputs = {
+        name: (project / name).read_bytes()
+        for name in ("state.json", "source.json", "recipe.toml", "guides.json")
+    }
+    before = {
+        str(path.relative_to(project)): path.read_bytes()
+        for path in project.rglob("*")
+        if path.is_file()
+    }
+    revisions_before = sorted(path.name for path in (project / "revisions").iterdir())
+    with (
+        patch(
+            "blackmask.effects.make_spatial_weight", side_effect=failure("spatial generation fault")
+        ),
+        pytest.raises(failure, match="spatial generation fault"),
+    ):
+        operations.apply_operation(project, operation, request_file=request_file)
+    stages = list((project / "revisions").glob(".effects-*"))
+    assert len(stages) == 1, "A failed spatial computation must retain its diagnostic stage"
+    stage = stages[0]
+    assert (stage / "request.json").read_bytes() == request_bytes
+    for name, captured in root_inputs.items():
+        assert (stage / "inputs" / name).read_bytes() == captured
+    proof = json.loads((stage / "inputs/effects.json").read_bytes())
+    protection_hash = hashlib.sha256(protection_path.read_bytes()).hexdigest()
+    assert proof["request"]["spatial_fade"] == operation["spatial_fade"]
+    assert proof["request"]["spatial_fade_protection_file"] == {"sha256": protection_hash}
+    assert proof["inputs"]["request_files"]["spatial_fade_protection_file"] == protection_hash
+    for name in ("source", "guides"):
+        assert proof["inputs"][name] == hashlib.sha256(root_inputs[name + ".json"]).hexdigest()
+    for name, captured in before.items():
+        assert (project / name).read_bytes() == captured
+    assert (
+        json.loads((project / "state.json").read_bytes())["accepted_revision"] == parent["revision"]
+    )
+    assert (
+        sorted(path.name for path in (project / "revisions").iterdir() if path != stage)
+        == revisions_before
+    )
+    assert not (stage / "manifest.json").exists()
+    assert not (stage / "result.json").exists()
+
+
 def test_spatial_operation_replaces_mode_without_baking_source_or_losing_settings(tmp_path):
     import tomllib
 
@@ -481,7 +740,7 @@ def test_spatial_operation_replaces_mode_without_baking_source_or_losing_setting
     project, _, parent = fixture_project(tmp_path)
     operations.apply_operation(project, fade_request(project, amount=0.38))
     old = operations.apply_operation(project, shading_request(project, opacity=0.75))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     before_rgb, before_alpha, before = saved_layers(project, old["revision"], master)
     original_source = (project / "source.json").read_bytes()
     settings = spatial_settings(6, 4)
@@ -507,9 +766,9 @@ def test_spatial_operation_replaces_mode_without_baking_source_or_losing_setting
         "effects/shading/protection16.png",
         "effects/shading/support16.png",
     ):
-        assert manifest["files"][name] == before["files"][name]
+        assert manifest["assets"][name] == before["assets"][name]
     assert saved_shading(project, result["revision"], alpha, manifest) == (None, 0.0)
-    saved = read_spatial_fade(project / "revisions" / result["revision"], manifest, alpha)
+    saved = read_spatial_fade(project, project / "revisions" / result["revision"], manifest, alpha)
     assert saved.record["settings"] == settings
     assert saved.protection[2, 3]
     assert tomllib.loads((project / "recipe.toml").read_text())["spatial_fade"] == settings
@@ -588,9 +847,9 @@ def test_spatial_protection_is_categorical_additive_and_survives_shape_replaceme
         project,
         spatial_request(project, settings, spatial_fade_protection_file="spatial-protection.png"),
     )
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     _, alpha, manifest = saved_layers(project, first["revision"], master)
-    saved = read_spatial_fade(project / "revisions" / first["revision"], manifest, alpha)
+    saved = read_spatial_fade(project, project / "revisions" / first["revision"], manifest, alpha)
     assert 0 < alpha[1, 3] < 65535 and saved.protection[1, 3]
     assert saved.weight16.any()
     prior_weight = saved.weight16.copy()
@@ -607,7 +866,9 @@ def test_spatial_protection_is_categorical_additive_and_survives_shape_replaceme
             updated["arcs"] = []
         result = operations.apply_operation(project, spatial_request(project, updated))
         _, alpha, manifest = saved_layers(project, result["revision"], master)
-        saved = read_spatial_fade(project / "revisions" / result["revision"], manifest, alpha)
+        saved = read_spatial_fade(
+            project, project / "revisions" / result["revision"], manifest, alpha
+        )
         np.testing.assert_array_equal(saved.weight16, make_spatial_weight(alpha.shape, updated))
         assert np.any(saved.weight16 != prior_weight)
         assert saved.protection[1, 3]
@@ -621,7 +882,7 @@ def test_spatial_protection_is_categorical_additive_and_survives_shape_replaceme
         ),
     )
     _, alpha, manifest = saved_layers(project, result["revision"], master)
-    saved = read_spatial_fade(project / "revisions" / result["revision"], manifest, alpha)
+    saved = read_spatial_fade(project, project / "revisions" / result["revision"], manifest, alpha)
     assert saved.protection[1, 3] and saved.protection[2, 2]
 
 
@@ -657,18 +918,34 @@ def test_spatial_saved_operands_are_validated_even_off_and_after_cache_warmup(
     from test_effects import fixture_project
 
     from blackmask import operations
-    from blackmask.project import read_project, read_revision
+    from blackmask.assets import revision_asset
+    from blackmask.project import _validation_scope, read_project, read_revision
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(
         project, spatial_request(project, dict(spatial_settings(6, 4), enabled=enabled))
     )
-    master = read_project(project)["master_id"]
-    read_revision(project, result["revision"], master)
-    target = project / "revisions" / result["revision"] / "effects/spatial-fade" / asset
-    target.write_bytes(b"tampered")
-    with pytest.raises(ProjectError):
-        read_revision(project, result["revision"], master)
+    master = read_project(project)["developed_id"]
+    directory = project / "revisions" / result["revision"]
+    logical_name = f"effects/spatial-fade/{asset}"
+    with _validation_scope():
+        manifest = read_revision(project, result["revision"], master)
+        if asset.endswith(".png"):
+            assert logical_name in manifest["assets"]
+            target = revision_asset(project, directory, manifest, logical_name)
+            assert target.is_file()
+            expected_error = "^Stale shared asset hash mismatch or changed while reading$"
+        else:
+            target = directory / logical_name
+            if asset == "settings.json":
+                assert target.is_file()
+                expected_error = "^Saved revision hash mismatch:"
+            else:
+                assert not target.exists()
+                expected_error = "^Invalid saved spatial fade inventory$"
+        target.write_bytes(b"tampered")
+        with pytest.raises(ProjectError, match=expected_error):
+            read_revision(project, result["revision"], master)
 
 
 @pytest.mark.parametrize("change_alpha,repairing", [(False, False), (True, False), (True, True)])
@@ -687,7 +964,7 @@ def test_spatial_prepare_matte_repair_stale_locks_and_replay(tmp_path, change_al
 
     project, _, _ = fixture_project(tmp_path)
     first = operations.apply_operation(project, spatial_request(project))
-    master = read_project(project)["master_id"]
+    master = read_project(project)["developed_id"]
     before_rgb, before_alpha, _ = saved_layers(project, first["revision"], master)
     name = edits(
         project,
@@ -725,7 +1002,7 @@ def test_spatial_prepare_matte_repair_stale_locks_and_replay(tmp_path, change_al
     assert manifest["spatial_fade"]["stale"] is change_alpha
     assert alpha[1, 3] == before_alpha[1, 3]
     np.testing.assert_array_equal(rgb[1, 3], before_rgb[1, 3])
-    saved = read_spatial_fade(project / "revisions" / result["revision"], manifest, alpha)
+    saved = read_spatial_fade(project, project / "revisions" / result["revision"], manifest, alpha)
     assert saved.protection[1, 3]
     if repairing:
         np.testing.assert_array_equal(replay_repair(project, result["revision"]), alpha)
@@ -763,10 +1040,10 @@ def test_spatial_rehashed_geometry_tamper_is_rejected_with_master_off(tmp_path):
     )
     for name in ("weight16.png", "settings.json"):
         relative = f"effects/spatial-fade/{name}"
-        manifest["files"][relative] = digest((directory / relative).read_bytes())
+        bind_raster(project, directory, manifest, relative)
     (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError, match="geometry"):
-        read_revision(project, result["revision"], result["master_id"])
+        read_revision(project, result["revision"], result["developed_id"])
 
 
 def test_spatial_aliased_oval_cannot_be_accepted_as_an_arc():
@@ -805,7 +1082,7 @@ def test_spatial_interrupted_publication_reports_visible_revision_and_preserves_
             operations.apply_operation(project, operation)
         visible = max((project / "revisions").glob("rev-*"))
         assert str(visible) in str(error.value)
-        read_revision(project, visible.name, parent["master_id"])
+        read_revision(project, visible.name, parent["developed_id"])
         operations.restore_revision(project, visible.name)
         assert read_project(project)["working_revision"] == visible.name
     else:
@@ -860,7 +1137,7 @@ def test_spatial_dual_enabled_saved_state_rejected_even_in_effects_off_compariso
 
     from blackmask import operations
     from blackmask.export import saved_layers
-    from blackmask.project import _json_bytes, digest
+    from blackmask.project import _json_bytes
 
     project, _, _ = fixture_project(tmp_path)
     operations.apply_operation(project, shading_request(project))
@@ -870,10 +1147,10 @@ def test_spatial_dual_enabled_saved_state_rejected_even_in_effects_off_compariso
     manifest["shading"]["enabled"] = manifest["shading"]["settings"]["enabled"] = True
     relative = "effects/shading/settings.json"
     (directory / relative).write_bytes(_json_bytes(manifest["shading"]))
-    manifest["files"][relative] = digest((directory / relative).read_bytes())
+    bind_raster(project, directory, manifest, relative)
     (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     with pytest.raises(ProjectError, match="both|exclusive"):
-        saved_layers(project, result["revision"], result["master_id"], effects_off=True)
+        saved_layers(project, result["revision"], result["developed_id"], effects_off=True)
 
 
 @pytest.mark.parametrize("configuration", ["oval", "arcs", "both"])
@@ -1012,7 +1289,9 @@ def test_spatial_switch_back_exports_declare_and_replay_active_shading(tmp_path,
         options["framing"] = margins
     elif delivery == "series":
         options["series"] = SeriesSettings(output_width_px=17, output_height_px=19).to_dict()
-    response = export_project(project, revision=result["revision"], draft=True, **options)
+    response = export_project(
+        project, revision=result["revision"], draft=True, variants=("editable",), **options
+    )
     native_path = Path(response.get("editable_companion", response)["directory"])
     portable = tmp_path / "portable"
     portable.mkdir()
@@ -1078,8 +1357,12 @@ def test_spatial_native_export_reconstructs_from_actual_delivered_layers(tmp_pat
         center_xy=[0, 0], inner_radii_xy=[0.5, 0.5], transition_width=0.5, amount=1
     )
     result = operations.apply_operation(project, spatial_request(project, settings))
-    foreground, alpha, _ = saved_layers(project, result["revision"], result["master_id"])
-    exported = Path(export_project(project, revision=result["revision"], draft=True)["directory"])
+    foreground, alpha, _ = saved_layers(project, result["revision"], result["developed_id"])
+    exported = Path(
+        export_project(
+            project, revision=result["revision"], draft=True, variants=("editable", "transparent")
+        )["directory"]
+    )
     manifest = json.loads((exported / "manifest.json").read_bytes())
     saved = delivered_spatial(exported, manifest["spatial_fade"])
     np.testing.assert_array_equal(tifffile.imread(exported / "foreground_rgb16.tif"), foreground)
@@ -1099,7 +1382,7 @@ def test_spatial_native_export_reconstructs_from_actual_delivered_layers(tmp_pat
         )
     for name in ("weight16.png", "protection16.png", "alpha16.png", "settings.json"):
         member = "spatial_fade_" + name
-        assert manifest["files"][member] == digest((exported / member).read_bytes())
+        assert manifest["files"][member]["sha256"] == digest((exported / member).read_bytes())
     assert manifest["spatial_fade"]["settings"] == settings
 
 
@@ -1132,15 +1415,26 @@ def test_spatial_framed_pair_delivers_portable_native_companion(
     if series:
         options["series"].update(output_width_px=16, output_height_px=16)
     response = export_project(
-        project, revision=result["revision"], draft=True, framed_transparent=transparent, **options
+        project,
+        revision=result["revision"],
+        draft=True,
+        framed_transparent=transparent,
+        variants=("editable",),
+        **options,
     )
     frame = Path(response["directory"])
     native = Path(response["editable_companion"]["directory"])
-    expected_names = {"result_rgb16.tif", "result_RGB8_VIEW.png", "README.txt", "manifest.json"}
+    expected_names = {
+        "result_rgb16.tif",
+        "result_RGB8_VIEW.png",
+        "recipe.toml",
+        "README.txt",
+        "manifest.json",
+    }
     if transparent:
         expected_names.add("transparent_RGBA8_VIEW.png")
     assert {p.name for p in frame.iterdir()} == expected_names
-    assert native.name == result["revision"] + "-DRAFT"
+    assert native.name.startswith(result["revision"] + "-DRAFT-native-")
     frame_manifest = json.loads((frame / "manifest.json").read_bytes())
     native_manifest = json.loads((native / "manifest.json").read_bytes())
     binding = frame_manifest["editable_companion"]
@@ -1193,9 +1487,9 @@ def test_spatial_pair_failures_keep_outputs_and_identical_retry_completes(tmp_pa
     options = {
         "revision": result["revision"],
         "draft": True,
+        "variants": ("editable",),
         "framing": {"left_px": 1, "right_px": 1, "top_px": 1, "bottom_px": 1},
     }
-    native = project / "exports" / (result["revision"] + "-DRAFT")
     original_sync = export._sync_directory
     count = 0
 
@@ -1216,6 +1510,9 @@ def test_spatial_pair_failures_keep_outputs_and_identical_retry_completes(tmp_pa
         context = patch.object(export, "_sync_directory", fail_sync)
     with context, pytest.raises(ProjectError) as error:
         export.export_project(project, **options)
+    candidates = list((project / "exports").glob(result["revision"] + "-DRAFT-native-*"))
+    assert len(candidates) == 1
+    native = candidates[0]
     assert native.is_dir() and str(native) in str(error.value)
     before = {p.name: p.read_bytes() for p in native.iterdir()}
     response = export.export_project(project, **options)
@@ -1224,8 +1521,8 @@ def test_spatial_pair_failures_keep_outputs_and_identical_retry_completes(tmp_pa
     assert Path(response["directory"]).is_dir()
 
 
-@pytest.mark.parametrize("failure", [None, "sync", "cleanup"])
-def test_spatial_companion_reuse_discards_only_current_durable_duplicate(tmp_path, failure):
+@pytest.mark.parametrize("failure", [None, "sync"])
+def test_spatial_companion_reuse_creates_no_duplicate_and_preserves_evidence(tmp_path, failure):
     from test_effects import fixture_project
 
     from blackmask import export, operations
@@ -1235,6 +1532,7 @@ def test_spatial_companion_reuse_discards_only_current_durable_duplicate(tmp_pat
     options = {
         "revision": result["revision"],
         "draft": True,
+        "variants": ("editable",),
         "framing": {"left_px": 1, "right_px": 1, "top_px": 1, "bottom_px": 1},
     }
     first = export.export_project(project, **options)
@@ -1252,21 +1550,14 @@ def test_spatial_companion_reuse_discards_only_current_durable_duplicate(tmp_pat
                 raise OSError("retry parent sync failed")
             return original_sync(path)
 
-        context = (
-            patch.object(export, "_sync_directory", side_effect=fail_parent_sync)
-            if failure == "sync"
-            else patch.object(
-                export.shutil, "rmtree", side_effect=OSError("duplicate cleanup failed")
-            )
-        )
+        context = patch.object(export, "_sync_directory", side_effect=fail_parent_sync)
         with context, pytest.raises(ProjectError):
             export.export_project(project, **options)
     preserved = {
         p: {f.name: f.read_bytes() for f in p.iterdir()} for p in exports.glob(".export-*")
     }
     assert retained in preserved
-    if failure is not None:
-        assert len(preserved) >= 2
+    assert set(preserved) == {retained}, "Fast reuse must not stage a duplicate"
     for left in (1, 1, 2):
         options["framing"]["left_px"] = left
         response = export.export_project(project, **options)
@@ -1289,6 +1580,7 @@ def test_spatial_companion_reuse_rejects_tampering_without_overwrite(tmp_path, t
     options = {
         "revision": result["revision"],
         "draft": True,
+        "variants": ("editable",),
         "framing": {"left_px": 1, "right_px": 1, "top_px": 1, "bottom_px": 1},
     }
     first = export_project(project, **options)
@@ -1321,17 +1613,19 @@ def test_spatial_saved_reviews_use_canonical_colour_and_new_background_retains_g
 
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, spatial_request(project))
-    rgb, alpha, before = saved_layers(project, result["revision"], result["master_id"])
+    rgb, alpha, before = saved_layers(project, result["revision"], result["developed_id"])
     saved = saved_spatial_fade(project, result["revision"], alpha, before)
     background = tifffile.imread(
-        project / "revisions" / result["revision"] / "background/background_rgb16.tif"
+        saved_raster(project / "revisions" / result["revision"] / "background/background_rgb16.tif")
     )
     expected = render_background(
         rgb, alpha, background, spatial_fade=saved, fade_background16=background
     )
     generated = project / "revisions" / result["revision"] / "review"
-    with Image.open(generated / "crop-000-result_RGB8_VIEW.png") as image:
-        np.testing.assert_array_equal(np.array(image), np.rint(expected / 257).astype(np.uint8))
+    overview = json.loads((generated / "manifest.json").read_bytes())
+    assert overview["overview"] is True
+    assert all(set(crop["files"]) == {"overview"} for crop in overview["crops"])
+    assert not list(generated.glob("*.png"))
     reviewed = Path(review_project(project)["manifest_file"])
     record = json.loads(reviewed.read_bytes())
     assert record["effects"]["spatial_fade"] == before["spatial_fade"]
@@ -1339,11 +1633,14 @@ def test_spatial_saved_reviews_use_canonical_colour_and_new_background_retains_g
     with Image.open(reviewed.parent / "crop-000-result_RGB8_VIEW.png") as image:
         np.testing.assert_array_equal(np.array(image), np.rint(expected / 257).astype(np.uint8))
     changed = operations.apply_operation(project, background_request(project, "#552233", 0.2))
-    new_rgb, new_alpha, after = saved_layers(project, changed["revision"], result["master_id"])
+    new_rgb, new_alpha, after = saved_layers(project, changed["revision"], result["developed_id"])
     assert after["spatial_fade"] == before["spatial_fade"]
     for name, checksum in before["files"].items():
         if name.startswith("effects/spatial-fade/"):
             assert after["files"][name] == checksum
+    for name, reference in before["assets"].items():
+        if name.startswith("effects/spatial-fade/"):
+            assert after["assets"][name] == reference
     np.testing.assert_array_equal(new_rgb, rgb)
     np.testing.assert_array_equal(new_alpha, alpha)
     assert after["background"] != before["background"]
@@ -1359,6 +1656,7 @@ def test_spatial_pair_admission_precedes_both_publications_and_native_arrays_are
     options = {
         "revision": result["revision"],
         "draft": True,
+        "variants": ("editable",),
         "framing": {"left_px": 1, "right_px": 1, "top_px": 1, "bottom_px": 1},
     }
     with (
@@ -1367,25 +1665,29 @@ def test_spatial_pair_admission_precedes_both_publications_and_native_arrays_are
     ):
         export.export_project(project, **options)
     assert not (project / "exports").exists()
-    real_layers, real_native = export.saved_layers, export._export_native_locked
+    from blackmask import effects
+
+    real_selected, real_writer = effects.selected_foreground, export._write_delivery
     consumed = []
+    writes = []
 
-    def layers(*args, **kwargs):
-        values = real_layers(*args, **kwargs)
-        consumed.append(values[:2])
-        return values
+    def selected(project, revision, base, alpha, manifest, **kwargs):
+        foreground = real_selected(project, revision, base, alpha, manifest, **kwargs)
+        consumed.append((foreground, alpha))
+        return foreground
 
-    def native(*args, **kwargs):
+    def writer(*args, **kwargs):
         assert kwargs["foreground"] is consumed[0][0]
         assert kwargs["alpha"] is consumed[0][1]
-        return real_native(*args, **kwargs)
+        writes.append(kwargs["record"]["mode"])
+        return real_writer(*args, **kwargs)
 
     with (
-        patch.object(export, "saved_layers", layers),
-        patch.object(export, "_export_native_locked", native),
+        patch.object(effects, "selected_foreground", selected),
+        patch.object(export, "_write_delivery", writer),
     ):
         first = export.export_project(project, **options)
-    assert len(consumed) == 1
+    assert len(consumed) == 1 and writes == ["native", "add-margins"]
     native_directory = Path(first["editable_companion"]["directory"])
     original = {p.name: p.read_bytes() for p in native_directory.iterdir()}
     options["framing"]["left_px"] = 2
@@ -1393,3 +1695,35 @@ def test_spatial_pair_admission_precedes_both_publications_and_native_arrays_are
     assert second["editable_companion"] == first["editable_companion"]
     assert second["directory"] != first["directory"]
     assert {p.name: p.read_bytes() for p in native_directory.iterdir()} == original
+
+
+def test_spatial_operation_retains_shared_schema2_operands(tmp_path):
+    from test_effects import fixture_project
+    from test_operations import request
+
+    from blackmask import operations
+    from blackmask.project import read_project, read_revision
+
+    project, _, parent = fixture_project(tmp_path)
+    settings = spatial_settings(6, 4)
+    result = operations.apply_operation(
+        project,
+        request(
+            project,
+            kind="effects",
+            scope_xyxy=[0, 0, 6, 4],
+            candidate_comparison=True,
+            spatial_fade=settings,
+        ),
+    )
+    manifest = read_revision(project, result["revision"], read_project(project)["developed_id"])
+    roles = {
+        "effects/spatial-fade/weight16.png",
+        "effects/spatial-fade/protection16.png",
+        "effects/spatial-fade/alpha16.png",
+    }
+    assert roles <= set(manifest["assets"])
+    assert not roles & set(manifest["files"])
+    assert all(not (project / "revisions" / result["revision"] / name).exists() for name in roles)
+    assert read_project(project)["latest_result_revision"] == result["revision"]
+    assert read_project(project)["accepted_revision"] == parent["revision"]

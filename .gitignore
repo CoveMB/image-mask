@@ -32,6 +32,8 @@ htmlcov/
 # Private photos, photo projects, model downloads and evaluation output
 # Keep these outside the repository or beneath this root-only directory.
 /local/
+/library/
+/config/storage.local.toml
 /.cache/
 *.safetensors
 

@@ -1,34 +1,48 @@
 """Single encoded-sRGB base renderer and honest lower-precision views."""
 
+from __future__ import annotations
+
 import hashlib
+import importlib.metadata
 import json
 import os
+import platform
 import shutil
+import stat
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import tifffile
 from PIL import Image
 
-from .ingest import srgb_profile, write_master
+from .assets import revision_hashes, saved_asset
+from .ingest import srgb_profile, write_developed
 from .project import (
     ProjectError,
-    _asset,
     _json_bytes,
     _publish_new_directory,
     _root,
     _sync_directory,
     check_space,
     digest,
-    load_master,
+    load_developed,
     project_lock,
     read_project,
     read_revision,
 )
-from .spatial_fade import SpatialFadeOperands, blend_background_float, spatial_fade_amount
+from .spatial_fade import (
+    SPATIAL_FADE_FILES,
+    SpatialFadeOperands,
+    blend_background_float,
+    spatial_fade_amount,
+)
+
+if TYPE_CHECKING:
+    from .framing import Margins
+    from .series_framing import SeriesSamplingPlan
 
 
 def shading_factor(
@@ -198,35 +212,32 @@ def read_rgb16(path: Path) -> np.ndarray:
         return page.asarray()
 
 
-def saved_layers(
-    project: Path,
-    revision: str,
-    master_id: str,
-    *,
-    effects_off: bool = False,
-    exposure_off: bool = False,
-    shadow_fade_off: bool = False,
+def validated_layer_inputs(
+    project: Path, revision: str, developed_id: str
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    manifest = read_revision(project, revision, master_id)
+    """Validate permanent native operands without applying or composing appearance."""
+    manifest = read_revision(project, revision, developed_id)
     if (
         manifest.get("kind") not in {"matte", "repair", "effects"}
         or manifest.get("final_acceptable") is not True
     ):
         raise ProjectError("Export/review requires a complete matte, not prepared-only state")
-    foreground = read_rgb16(_asset(project, f"revisions/{revision}/foreground_rgb16.tif"))
-    with Image.open(_asset(project, f"revisions/{revision}/base_alpha16.png")) as image:
+    foreground = read_rgb16(saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif"))
+    with Image.open(saved_asset(project, f"revisions/{revision}/base_alpha16.png")) as image:
         if image.format != "PNG" or image.mode not in {"I;16", "I;16B", "I;16L"}:
             raise ProjectError("Invalid saved scalar alpha16")
         alpha = np.array(image)
-    master, _ = load_master(project, master_id)
+    master, _ = load_developed(project, developed_id)
     if foreground.shape != master.shape:
         raise ProjectError("Saved foreground dimensions differ from master")
-    render_black(foreground, alpha)
-    with Image.open(_asset(project, f"revisions/{revision}/trimap.png")) as image:
+    _validate_render_inputs(foreground, alpha)
+    with Image.open(saved_asset(project, f"revisions/{revision}/trimap.png")) as image:
         trimap = np.array(image)
-    with Image.open(_asset(project, f"revisions/{revision}/supports/protection.png")) as image:
+    with Image.open(saved_asset(project, f"revisions/{revision}/supports/protection.png")) as image:
         protection = np.array(image)
-    with Image.open(_asset(project, f"revisions/{revision}/supports/lock_values16.png")) as image:
+    with Image.open(
+        saved_asset(project, f"revisions/{revision}/supports/lock_values16.png")
+    ) as image:
         locked = np.array(image)
     if (
         trimap.shape != alpha.shape
@@ -242,10 +253,35 @@ def saved_layers(
         from .repair import replay_repair
 
         replay_repair(project, revision)
-    from .effects import effects_stale, saved_shading, selected_foreground
+    from .background import read_background
+    from .effects import read_cleanup, saved_shading, saved_spatial_fade
+    from .exposure import read_exposure
+    from .shadow_fade import read_shadow_fade
+    from .sharpening import read_local_sharpening
 
-    effects_off = effects_off or effects_stale(manifest)
-    saved_shading(project, revision, alpha, manifest, effects_off=effects_off)
+    read_cleanup(project, revision, foreground, alpha, manifest)
+    saved_shading(project, revision, alpha, manifest)
+    directory = saved_asset(project, f"revisions/{revision}")
+    read_exposure(project, directory, manifest, alpha)
+    read_shadow_fade(project, directory, manifest, alpha)
+    read_local_sharpening(project, directory, manifest, alpha)
+    read_background(project, directory, manifest)
+    saved_spatial_fade(project, revision, alpha, manifest)
+    return foreground, alpha, manifest
+
+
+def saved_layers(
+    project: Path,
+    revision: str,
+    developed_id: str,
+    *,
+    effects_off: bool = False,
+    sharpening_off: bool = False,
+    exposure_off: bool = False,
+    shadow_fade_off: bool = False,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    foreground, alpha, manifest = validated_layer_inputs(project, revision, developed_id)
+    from .effects import effects_stale, selected_foreground
 
     foreground = selected_foreground(
         project,
@@ -253,7 +289,8 @@ def saved_layers(
         foreground,
         alpha,
         manifest,
-        effects_off=effects_off,
+        effects_off=effects_off or effects_stale(manifest),
+        sharpening_off=sharpening_off,
         exposure_off=exposure_off,
         shadow_fade_off=shadow_fade_off,
     )
@@ -287,329 +324,6 @@ def publish_artifacts(stage: Path, destination: Path) -> None:
     else:
         _publish_new_directory(stage, destination)
         _sync_directory(destination.parent)
-
-
-def export_project(
-    project: Path,
-    *,
-    revision: str | None = None,
-    draft: bool = False,
-    framing: dict[str, int] | None = None,
-    framed_transparent: bool = False,
-    series: dict[str, object] | None = None,
-    expected_master_id: str | None = None,
-    expected_revision_manifest_sha256: str | None = None,
-) -> dict[str, Any]:
-    if type(framed_transparent) is not bool:
-        raise ValueError("framed_transparent must be a boolean")
-    if series is not None and framing is not None:
-        raise ValueError("Series settings and pixel margins are mutually exclusive")
-    if series is None and (
-        expected_master_id is not None or expected_revision_manifest_sha256 is not None
-    ):
-        raise ValueError("Expected presentation identities require series settings")
-    if series is not None:
-        if type(draft) is not bool or (expected_master_id is None) != (
-            expected_revision_manifest_sha256 is None
-        ):
-            raise ValueError(
-                "Series export requires a boolean draft flag and paired expected identities"
-            )
-        if any(
-            value is not None
-            and (
-                not isinstance(value, str)
-                or len(value) != 64
-                or any(c not in "0123456789abcdef" for c in value)
-            )
-            for value in (expected_master_id, expected_revision_manifest_sha256)
-        ):
-            raise ValueError("Series expected identities must be SHA-256 hex strings")
-    if framed_transparent and framing is None and series is None:
-        raise ValueError("Transparent framing requires explicit margins")
-    project = _root(project)
-    with project_lock(project):
-        if framing is not None or series is not None:
-            return _export_framed(
-                project,
-                revision,
-                draft,
-                framing,
-                framed_transparent,
-                series=series,
-                expected_master_id=expected_master_id,
-                expected_revision_manifest_sha256=expected_revision_manifest_sha256,
-            )
-        state = read_project(project)
-        if revision is None:
-            if draft:
-                raise ProjectError("Draft export requires explicit revision")
-            revision = state["accepted_revision"]
-        if revision is None:
-            raise ProjectError("No accepted result to export")
-        if revision != state["accepted_revision"] and not draft:
-            raise ProjectError("Unaccepted revision requires explicit --draft")
-        foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
-        return _export_native_locked(
-            project,
-            revision=revision,
-            draft=draft,
-            state=state,
-            foreground=foreground,
-            alpha=alpha,
-            manifest=manifest,
-        )
-
-
-def _export_native_locked(
-    project: Path,
-    *,
-    revision: str,
-    draft: bool,
-    state: dict[str, Any],
-    foreground: np.ndarray,
-    alpha: np.ndarray,
-    manifest: dict[str, Any],
-) -> dict[str, Any]:
-    """Build the canonical native delivery using arrays validated under the caller's lock."""
-    from .effects import effects_stale, saved_shading, saved_spatial_fade
-
-    if effects_stale(manifest):
-        raise ProjectError(
-            "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before export"
-        )
-    weight, opacity = saved_shading(project, revision, alpha, manifest)
-    spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    before = _asset(project, "state.json").read_bytes()
-    manifest_bytes = _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
-    check_space(
-        project,
-        foreground.nbytes * (22 if "background" in manifest else 18)
-        + (
-            alpha.nbytes * 3 + len(_json_bytes(manifest["spatial_fade"]))
-            if "spatial_fade" in manifest
-            else 0
-        )
-        + 1024**2,
-    )
-    exports = _asset(project, "exports")
-    exports.mkdir(exist_ok=True)
-    label = f"{revision}-DRAFT" if draft else revision
-    stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
-    from .background import read_background
-
-    background = read_background(_asset(project, f"revisions/{revision}"), manifest)
-    target = (
-        background
-        if background is not None
-        else np.zeros_like(foreground)
-        if spatial is not None
-        else None
-    )
-    if background is not None:
-        result_pixels = render_background(
-            foreground,
-            alpha,
-            background,
-            weight,
-            opacity,
-            spatial_fade=spatial,
-            fade_background16=target,
-        )
-        write_master(stage / "result_rgb16.tif", result_pixels)
-        Image.fromarray(np.rint(result_pixels.astype(np.float64) / 257).astype(np.uint8)).save(
-            stage / "result_RGB8_VIEW.png"
-        )
-        for saved, delivered in (
-            ("background/background_rgb16.tif", "background_rgb16.tif"),
-            ("background/settings.json", "background_settings.json"),
-        ):
-            (stage / delivered).write_bytes(
-                _asset(project, f"revisions/{revision}/{saved}").read_bytes()
-            )
-        if not np.array_equal(read_rgb16(stage / "result_rgb16.tif"), result_pixels):
-            raise ProjectError("Result RGB16 export round trip failed")
-    black = render_black(
-        foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
-    )
-    write_master(stage / "black_rgb16.tif", black)
-    Image.fromarray(alpha).save(stage / "alpha16.png")
-    Image.fromarray(np.rint(black.astype(np.float64) / 257).astype(np.uint8)).save(
-        stage / "black_RGB8_VIEW.png"
-    )
-    Image.fromarray(
-        view_rgba(
-            foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
-        )
-    ).save(stage / "transparent_RGBA8_VIEW.png")
-    if not np.array_equal(tifffile.imread(stage / "black_rgb16.tif"), black):
-        raise ProjectError("RGB16 export round trip failed")
-    with Image.open(stage / "alpha16.png") as image:
-        if (
-            not np.array_equal(np.array(image), alpha)
-            or "icc_profile" in image.info
-            or "gamma" in image.info
-        ):
-            raise ProjectError("Scalar16 export round trip/profile failed")
-    write_master(stage / "foreground_rgb16.tif", foreground)
-    if "local_exposure" in manifest:
-        unexposed, _, _ = saved_layers(
-            project, revision, state["master_id"], exposure_off=True, shadow_fade_off=True
-        )
-        write_master(stage / "unexposed_foreground_rgb16.tif", unexposed)
-        base = _asset(project, f"revisions/{revision}/foreground_rgb16.tif")
-        (stage / "base_foreground_rgb16.tif").write_bytes(base.read_bytes())
-        for name in (
-            "support16.png",
-            "protection16.png",
-            "alpha16.png",
-            "settings.json",
-            "area.json",
-        ):
-            asset = f"effects/exposure/{name}"
-            if asset in manifest["files"]:
-                (stage / ("exposure_" + name)).write_bytes(
-                    _asset(project, f"revisions/{revision}/{asset}").read_bytes()
-                )
-    if "shadow_fade" in manifest:
-        unfaded, _, _ = saved_layers(project, revision, state["master_id"], shadow_fade_off=True)
-        write_master(stage / "unfaded_foreground_rgb16.tif", unfaded)
-        if "local_exposure" not in manifest:
-            write_master(stage / "unexposed_foreground_rgb16.tif", unfaded)
-            (stage / "base_foreground_rgb16.tif").write_bytes(
-                _asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
-            )
-        for name in (
-            "support16.png",
-            "protection16.png",
-            "alpha16.png",
-            "settings.json",
-            "area.json",
-        ):
-            asset = f"effects/shadow-fade/{name}"
-            if asset in manifest["files"]:
-                (stage / ("shadow_fade_" + name)).write_bytes(
-                    _asset(project, f"revisions/{revision}/{asset}").read_bytes()
-                )
-    write_master(stage / "source_rgb16.tif", load_master(project, state["master_id"])[0])
-    if "spatial_fade" in manifest:
-        from .spatial_fade import SPATIAL_FADE_FILES
-
-        for name in SPATIAL_FADE_FILES:
-            (stage / ("spatial_fade_" + name)).write_bytes(
-                _asset(project, f"revisions/{revision}/effects/spatial-fade/{name}").read_bytes()
-            )
-    for name in ("shadow_weight16.png", "corrected_rgb16.tif", "recipe.toml"):
-        if name in manifest["files"]:
-            (stage / name).write_bytes(_asset(project, f"revisions/{revision}/{name}").read_bytes())
-    for effect, name in (
-        ("color_cleanup", "effects/settings.json"),
-        ("shading", "effects/shading/settings.json"),
-    ):
-        if effect in manifest:
-            (stage / (effect + "_settings.json")).write_bytes(_json_bytes(manifest[effect]))
-    record = {
-        "schema_version": 1,
-        "revision": revision,
-        "master_id": state["master_id"],
-        "draft": draft,
-        "label": "DRAFT - unaccepted explicit export" if draft else "Human-accepted saved revision",
-        "revision_manifest_sha256": digest(manifest_bytes),
-        "compositing": manifest["compositing"],
-        "color_cleanup": manifest.get("color_cleanup", {"enabled": False}),
-        "shading": manifest.get("shading", {"enabled": False}),
-        **({"local_exposure": manifest["local_exposure"]} if "local_exposure" in manifest else {}),
-        **({"shadow_fade": manifest["shadow_fade"]} if "shadow_fade" in manifest else {}),
-        **({"spatial_fade": manifest["spatial_fade"]} if "spatial_fade" in manifest else {}),
-        **({"background": manifest["background"]} if "background" in manifest else {}),
-        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved cleanup; baked shading at saved p; editable W16 plus p retained separately"
-        + (
-            "; selected foreground includes linear-sRGB local exposure once; unexposed foreground and independent support/protection/alpha/settings retained"
-            if "local_exposure" in manifest
-            else ""
-        )
-        + (
-            "; replay unexposed -> exposure once -> unfaded -> linear-sRGB Shadow fade once -> selected foreground -> encoded-sRGB shading and alpha once; selected foreground is already faded; independent fade operands retained"
-            if "shadow_fade" in manifest
-            else ""
-        ),
-        **(
-            {
-                "result_compositing": "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-opacity*W16/65535, A=alpha16/65535; selected foreground already includes exposure/fade; B is saved background RGB16; processed sRGB TIFF, not sensor RAW"
-            }
-            if "background" in manifest
-            else {}
-        ),
-        "files": {p.name: digest(p.read_bytes()) for p in stage.iterdir() if p.is_file()},
-    }
-    if "spatial_fade" in manifest:
-        record["views"] += (
-            "; When enabled, Fade into background blends selected pre-spatial foreground toward the selected background in linear sRGB before encoded alpha compositing; transparent RGB retains that tint and alpha is unchanged. When disabled, the active inward-shading setting still applies. foreground_rgb16.tif remains pre-spatial and pre-shading; spatial_fade_* operands include inactive vectors."
-        )
-        if manifest["spatial_fade"]["enabled"] and "result_compositing" in record:
-            record["result_compositing"] = (
-                "round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints"
-            )
-    (stage / "manifest.json").write_bytes(_json_bytes(record))
-    (stage / "README.txt").write_text(
-        record["label"]
-        + "\nRGB16 black TIFF and scalar alpha16 are lossless. "
-        + record["views"]
-        + (
-            "\nResult RGB16 TIFF uses the saved chosen background; black TIFF stays pure black. Background RGB16/settings are independent editable operands; foreground RGB16 is pre-shading, already exposed/faded. Reconstruct: "
-            + record["result_compositing"]
-            + ". All RGB16 TIFFs carry sRGB profiles. Algorithm: "
-            + manifest["background"]["algorithm"]
-            if "background" in manifest
-            else ""
-        )
-        + "\n"
-    )
-    if (
-        before != _asset(project, "state.json").read_bytes()
-        or manifest_bytes != _asset(project, f"revisions/{revision}/manifest.json").read_bytes()
-    ):
-        raise ProjectError("Stale export state or saved inputs")
-    read_revision(project, revision, state["master_id"])
-    destination = _asset(project, f"exports/{label}")
-    if "spatial_fade" in manifest:
-        expected = {p.name: _file_digest(p) for p in stage.iterdir()}
-        reused = destination.exists() or destination.is_symlink()
-        if reused:
-            _check_flat_delivery(destination, set(expected))
-        try:
-            publish_artifacts(stage, destination)
-            if reused:
-                _sync_directory(destination.parent)
-        except OSError as error:
-            if destination.exists():
-                raise ProjectError(
-                    f"Native editable delivery visible at {destination}, but durability is unconfirmed; preserve it and retry identical export: {error}"
-                ) from error
-            raise
-        _check_flat_delivery(destination, set(expected))
-        if any(_file_digest(destination / name) != checksum for name, checksum in expected.items()):
-            raise ProjectError(
-                f"Native editable delivery changed during publication at {destination}"
-            )
-        if reused:
-            # The current attempt's byte-verified duplicate is disposable only
-            # after the native delivery and its parent directory are durable.
-            try:
-                shutil.rmtree(stage)
-            except OSError as error:
-                raise ProjectError(
-                    f"Native editable delivery is durably published at {destination}, but duplicate "
-                    f"stage cleanup failed at {stage}; inspect remaining stage files: {error}"
-                ) from error
-    else:
-        publish_artifacts(stage, destination)
-    return {
-        "revision": revision,
-        "draft": draft,
-        "directory": str(destination),
-        "manifest_file": str(destination / "manifest.json"),
-    }
 
 
 def _pixel_digest(pixels: np.ndarray) -> str:
@@ -659,72 +373,571 @@ def _check_flat_delivery(directory: Path, names: set[str]) -> None:
         raise ProjectError("Output collision; existing delivery preserved")
     members = list(directory.iterdir())
     if {path.name for path in members} != names or any(
-        path.is_symlink() or not path.is_file() for path in members
+        not stat.S_ISREG(path.lstat().st_mode) for path in members
     ):
         raise ProjectError("Output collision: unexpected delivery members preserved")
 
 
-def _editable_companion_binding(
-    directory: Path,
-    manifest: dict[str, Any],
-    revision_manifest_sha256: str,
-    draft: bool,
-) -> dict[str, Any]:
-    """Verify portable native bytes and bind the full inventory, including its notes."""
-    if directory.name != f"{manifest['revision']}{'-DRAFT' if draft else ''}":
-        raise ProjectError("Invalid native editable companion directory identity")
-    if directory.is_symlink() or (directory / "manifest.json").is_symlink():
-        raise ProjectError("Output collision: symlinked native editable companion")
-    raw = (directory / "manifest.json").read_bytes()
-    native = json.loads(raw)
-    if any(
-        native.get(key) != value
-        for key, value in (
-            ("revision", manifest["revision"]),
-            ("master_id", manifest["master_id"]),
-            ("draft", draft),
-            ("revision_manifest_sha256", revision_manifest_sha256),
-            ("spatial_fade", manifest["spatial_fade"]),
-            ("background", manifest.get("background")),
-        )
-    ):
-        raise ProjectError("Native editable companion identity differs from presentation")
-    names = set(native["files"]) | {"README.txt", "manifest.json"}
-    _check_flat_delivery(directory, names)
-    hashes = {name: _file_digest(directory / name) for name in names - {"manifest.json"}}
-    if any(hashes[name] != value for name, value in native["files"].items()):
-        raise ProjectError("Native editable companion file hash mismatch")
+EXPORT_VERSION = "requested-result-v4"
+
+
+def _delivery_effect_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Export finite recovery settings, rather than arbitrary private revision annotations."""
+    keys = {
+        "schema_version",
+        "enabled",
+        "stale",
+        "settings",
+        "opacity",
+        "algorithm",
+        "developed_id",
+        "alpha_sha256",
+        "support_sha256",
+        "protection_sha256",
+        "area_sha256",
+        "candidate_comparison",
+        "scope_xyxy",
+        "weight_sha256",
+        "corrected_sha256",
+    }
+    return {key: value for key, value in record.items() if key in keys}
+
+
+def _export_execution_identity() -> dict[str, Any]:
+    try:
+        packages = {
+            name: importlib.metadata.version(name) for name in ("numpy", "Pillow", "tifffile")
+        }
+    except importlib.metadata.PackageNotFoundError as error:
+        raise ProjectError(
+            "Cannot identify export encoding runtime; delivery not generated"
+        ) from error
     return {
-        "directory_name": directory.name,
-        "manifest_sha256": digest(raw),
-        "files_sha256": hashes,
+        "version": EXPORT_VERSION,
+        "python": {"implementation": platform.python_implementation(), "version": sys.version},
+        "packages": packages,
+        "tiff": "uncompressed-rgb16-srgb-v1",
+        "png": "uint8-straight-srgb-zlib6-v1",
+        "rounding": "NumPy float64 ties-to-even",
+        "icc_profile_sha256": digest(srgb_profile()),
     }
 
 
-def _export_framed(
+def _delivery_notes(record: dict[str, Any]) -> bytes:
+    mode = record["mode"]
+    text = record["label"] + "\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. "
+    text += "Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. "
+    text += "Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\n"
+    if mode == "add-margins":
+        text += "The native image is copied without resampling; margins extend saved backdrop edge pixels. Optional straight RGBA has zero RGBA margins.\n"
+    elif mode == "match-series":
+        text += "This is a resized presentation using existing photographed detail. The saved backdrop recipe is regenerated at final output dimensions. Enlargement adds no captured detail; reduction can hide fine features.\n"
+    if mode != "native":
+        text += "No composition acceptance is recorded.\n"
+        companion = record.get("editable_companion_request")
+        if companion is not None:
+            text += f"Keep this presentation and native editable folder {companion['directory_name']} together for portable editing. The manifest freezes presentation settings and exact companion hashes.\n"
+        else:
+            text += "Editable layers were not requested.\n"
+    if "editable" in record["requested_variants"] and mode == "native":
+        text += "Native editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
+        if "spatial_fade" in record:
+            text += "With enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\n"
+    if "local_sharpening" in record and "editable" in record["requested_variants"]:
+        text += (
+            "Replay Local sharpening from unsharpened_foreground_rgb16.tif (cleanup-selected RGB), "
+            "sharpening_support16.png/protection16.png/alpha16.png and sharpening_settings.json. "
+            "Apply linear-srgb-local-sharpening-v1 once, then exposure, Shadow fade, shading or "
+            "spatial fade, then alpha/background composition. Unexposed RGB already includes "
+            "sharpening; unfaded RGB includes sharpening and exposure; foreground includes all "
+            "three. These are alternative starting points: never sharpen them twice. "
+            "Optional sharpening_area.json retains authored geometry. Older applications cannot "
+            "reliably read new sharpening records; keep pre-feature projects/exports for them.\n"
+        )
+    if "result_compositing" in record:
+        text += "Saved compositing: " + record["result_compositing"] + "\n"
+    return text.encode()
+
+
+def _delivery_members(
+    request_record: dict[str, Any], manifest: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    variants = request_record["requested_variants"]
+    width, height = request_record["output_dimensions_wh"]
+    rgb = {
+        "dimensions_wh": [width, height],
+        "precision_bits": 16,
+        "mode": "RGB",
+        "icc_profile_sha256": digest(srgb_profile()),
+    }
+    view = {**rgb, "precision_bits": 8}
+    members = {
+        "result_rgb16.tif": dict(rgb),
+        "result_RGB8_VIEW.png": dict(view),
+        "recipe.toml": {},
+        "README.txt": {},
+    }
+    if "black" in variants:
+        members.update({"black_rgb16.tif": dict(rgb), "black_RGB8_VIEW.png": dict(view)})
+    if "transparent" in variants:
+        members["transparent_RGBA8_VIEW.png"] = {**view, "mode": "RGBA"}
+    if "editable" in variants and request_record["mode"] == "native":
+        names = {"foreground_rgb16.tif", "alpha16.png", "source_rgb16.tif"}
+        saved = revision_hashes(manifest)
+        names.update(
+            name for name in ("shadow_weight16.png", "corrected_rgb16.tif") if name in saved
+        )
+        for effect in ("color_cleanup", "shading"):
+            if effect in manifest:
+                names.add(effect + "_settings.json")
+        if "background" in manifest:
+            names.update({"background_rgb16.tif", "background_settings.json"})
+        for section, directory, prefix in (
+            ("local_sharpening", "sharpening", "sharpening"),
+            ("local_exposure", "exposure", "exposure"),
+            ("shadow_fade", "shadow-fade", "shadow_fade"),
+        ):
+            if section not in manifest:
+                continue
+            names.update({"unexposed_foreground_rgb16.tif", "base_foreground_rgb16.tif"})
+            if section == "local_sharpening":
+                names.add("unsharpened_foreground_rgb16.tif")
+            if section == "shadow_fade":
+                names.add("unfaded_foreground_rgb16.tif")
+            for name in (
+                "support16.png",
+                "protection16.png",
+                "alpha16.png",
+                "settings.json",
+                "area.json",
+            ):
+                if f"effects/{directory}/{name}" in saved:
+                    names.add(prefix + "_" + name)
+        if "spatial_fade" in manifest:
+            names.update("spatial_fade_" + name for name in SPATIAL_FADE_FILES)
+        for name in names:
+            members[name] = (
+                dict(rgb)
+                if name.endswith(".tif")
+                else (
+                    {
+                        "dimensions_wh": [width, height],
+                        "precision_bits": 16,
+                        "mode": "I;16",
+                        "icc_profile_sha256": None,
+                    }
+                    if name.endswith(".png")
+                    else {}
+                )
+            )
+    return members
+
+
+def _member_signature(path: Path) -> tuple[int, ...]:
+    value = path.lstat()
+    if not stat.S_ISREG(value.st_mode):
+        raise ProjectError("Output collision: nonregular delivery member preserved")
+    return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
+
+
+def _validate_delivery(
+    directory: Path,
+    request_record: dict[str, Any],
+    members: dict[str, dict[str, Any]],
+    *,
+    companion_binding: dict[str, Any] | None = None,
+) -> None:
+    _check_flat_delivery(directory, {*members, "manifest.json"})
+    signatures = {name: _member_signature(directory / name) for name in (*members, "manifest.json")}
+    # Bound the compact file table before reading; no raster is decoded for reuse.
+    if signatures["manifest.json"][2] > len(_json_bytes(request_record)) + len(
+        members
+    ) * 1024 + 1024 + (
+        len(_json_bytes(companion_binding)) + 1024 if companion_binding is not None else 0
+    ):
+        raise ProjectError("Output collision: oversized delivery manifest preserved")
+    try:
+        raw = (directory / "manifest.json").read_bytes()
+        record = json.loads(raw)
+        if not isinstance(record, dict) or _json_bytes(record) != raw:
+            raise ValueError("Noncanonical manifest")
+        if "editable_companion_request" in request_record:
+            expected = request_record["editable_companion_request"]
+            if (
+                companion_binding is None
+                or set(companion_binding) != {"directory_name", "manifest_sha256", "files_sha256"}
+                or companion_binding["directory_name"] != expected["directory_name"]
+                or record.pop("editable_companion", None) != companion_binding
+            ):
+                raise ValueError("Editable companion binding mismatch")
+        elif "editable_companion" in record or companion_binding is not None:
+            raise ValueError("Unexpected editable companion binding")
+        files = record.pop("files")
+        if (
+            _json_bytes(record) != _json_bytes(request_record)
+            or not isinstance(files, dict)
+            or set(files) != set(members)
+        ):
+            raise ValueError("Delivery request/member mismatch")
+        for name, expected in members.items():
+            path = directory / name
+            metadata = files[name]
+            if (
+                not isinstance(metadata, dict)
+                or set(metadata) != {"sha256", "bytes", *expected}
+                or any(metadata[key] != value for key, value in expected.items())
+            ):
+                raise ValueError("Invalid delivery member metadata")
+            if (
+                type(metadata["bytes"]) is not int
+                or metadata["bytes"] != signatures[name][2]
+                or metadata["sha256"] != _file_digest(path)
+            ):
+                raise ValueError("Differing existing files")
+            if name == "recipe.toml" and metadata["sha256"] != request_record["recipe_sha256"]:
+                raise ValueError("Recipe binding mismatch")
+            if name == "README.txt" and path.read_bytes() != _delivery_notes(request_record):
+                raise ValueError("Notes binding mismatch")
+            if name.endswith(".tif"):
+                with tifffile.TiffFile(path) as image:
+                    page = image.pages[0]
+                    if (
+                        not isinstance(page, tifffile.TiffPage)
+                        or len(image.pages) != 1
+                        or page.dtype != np.dtype("uint16")
+                        or int(page.compression) != 1
+                        or page.photometric != 2
+                        or page.planarconfig != 1
+                        or page.samplesperpixel != 3
+                        or page.extrasamples
+                        or page.shape
+                        != (expected["dimensions_wh"][1], expected["dimensions_wh"][0], 3)
+                        or page.tags.get(34675) is None
+                        or page.tags[34675].value != srgb_profile()
+                    ):
+                        raise ValueError("Invalid delivery TIFF header/profile")
+            elif name.endswith(".png"):
+                with path.open("rb") as stream:
+                    header = stream.read(26)
+                # Pillow exposes multichannel PNG16 as RGB/RGBA too; inspect IHDR precision.
+                if (
+                    len(header) != 26
+                    or header[:8] != b"\x89PNG\r\n\x1a\n"
+                    or header[12:16] != b"IHDR"
+                    or header[24] != expected["precision_bits"]
+                    or header[25] != {"RGB": 2, "RGBA": 6, "I;16": 0}[expected["mode"]]
+                ):
+                    raise ValueError("Invalid delivery PNG file precision/channel header")
+                with Image.open(path, formats=["PNG"]) as image:
+                    if list(image.size) != expected["dimensions_wh"] or (
+                        image.mode != expected["mode"]
+                        if expected["mode"] != "I;16"
+                        else image.mode not in {"I;16", "I;16L", "I;16B"}
+                    ):
+                        raise ValueError("Invalid delivery PNG precision/dimensions")
+                    if expected["icc_profile_sha256"] is None:
+                        if "icc_profile" in image.info or "gamma" in image.info:
+                            raise ValueError("Scalar PNG must not carry ICC/gamma")
+                    elif image.info.get("icc_profile") != srgb_profile():
+                        raise ValueError("Invalid delivery PNG profile")
+        if any(
+            _member_signature(directory / name) != signature
+            for name, signature in signatures.items()
+        ):
+            raise ValueError("Delivery changed during validation")
+        _check_flat_delivery(directory, {*members, "manifest.json"})
+    except (OSError, ValueError, TypeError, KeyError, tifffile.TiffFileError) as error:
+        raise ProjectError(
+            f"Output collision: differing existing files or invalid delivery preserved: {error}"
+        ) from error
+
+
+def _recheck_export_inputs(
+    project: Path,
+    captured: dict[str, bytes],
+    state: dict[str, Any],
+    revision: str,
+    manifest: dict[str, Any],
+) -> None:
+    if any(saved_asset(project, name).read_bytes() != value for name, value in captured.items()):
+        raise ProjectError("Stale export state or saved inputs")
+    final_state = read_project(project)
+    _, _, final_manifest = validated_layer_inputs(project, revision, state["developed_id"])
+    if (
+        final_state != state
+        or final_manifest != manifest
+        or any(saved_asset(project, name).read_bytes() != value for name, value in captured.items())
+    ):
+        raise ProjectError("Stale export state or saved inputs")
+
+
+def _write_rgb_pair(stage: Path, stem: str, pixels: np.ndarray) -> tuple[str, str]:
+    checksum = _pixel_digest(pixels)
+    write_developed(stage / (stem + "_rgb16.tif"), pixels)
+    view = _write_framed_rgb8(stage / (stem + "_RGB8_VIEW.png"), pixels)
+    return checksum, view
+
+
+def _verify_rgb_pair(
+    stage: Path, stem: str, size: tuple[int, int], checksums: tuple[str, str]
+) -> None:
+    restored = read_rgb16(stage / (stem + "_rgb16.tif"))
+    if restored.shape != (size[1], size[0], 3) or _pixel_digest(restored) != checksums[0]:
+        raise ProjectError("RGB16 export round trip failed")
+    del restored
+    _verify_framed_png(stage / (stem + "_RGB8_VIEW.png"), "RGB", size, checksums[1])
+
+
+def export_project(
+    project: Path,
+    *,
+    revision: str | None = None,
+    draft: bool = False,
+    framing: dict[str, int] | None = None,
+    framed_transparent: bool = False,
+    series: dict[str, object] | None = None,
+    expected_developed_id: str | None = None,
+    expected_revision_manifest_sha256: str | None = None,
+    variants: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    if type(draft) is not bool or type(framed_transparent) is not bool:
+        raise ValueError("Export draft and transparent flags must be booleans")
+    if (
+        not isinstance(variants, (tuple, list))
+        or any(
+            type(value) is not str or value not in {"black", "transparent", "editable"}
+            for value in variants
+        )
+        or len(set(variants)) != len(variants)
+    ):
+        raise ValueError("Export variants must be distinct black, transparent or editable tokens")
+    if framing is not None and series is not None:
+        raise ValueError("Series settings and pixel margins are mutually exclusive")
+    if framed_transparent and framing is None and series is None:
+        raise ValueError("Transparent framing requires explicit margins or series settings")
+    if (expected_developed_id is None) != (expected_revision_manifest_sha256 is None):
+        raise ValueError("Export requires paired expected source and revision identities")
+    for value in (expected_developed_id, expected_revision_manifest_sha256):
+        if value is not None and (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(c not in "0123456789abcdef" for c in value)
+        ):
+            raise ValueError("Expected export identities must be SHA-256 hex strings")
+    selected = set(variants) | ({"transparent"} if framed_transparent else set())
+    normalized = tuple(name for name in ("black", "transparent", "editable") if name in selected)
+    project = _root(project)
+    with project_lock(project):
+        return _export_delivery(
+            project,
+            revision,
+            draft,
+            framing,
+            series,
+            normalized,
+            expected_developed_id,
+            expected_revision_manifest_sha256,
+        )
+
+
+def _delivery_request_record(
+    state: dict[str, Any],
+    source: dict[str, Any],
+    manifest: dict[str, Any],
+    captured: dict[str, bytes],
+    recipe: bytes,
+    *,
+    draft: bool,
+    variants: tuple[str, ...],
+    native_dimensions_wh: tuple[int, int],
+    sampling: SeriesSamplingPlan | None = None,
+    margins_settings: Margins | None = None,
+    settings: dict[str, Any] | None = None,
+    companion_request: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build lookup identity entirely from validated request facts, never delivery bytes."""
+    from .framing import framed_geometry
+
+    revision = manifest["revision"]
+    manifest_name = f"revisions/{revision}/manifest.json"
+    size = native_dimensions_wh
+    width, height = size
+    rectangle = (0, 0, *size)
+    mode = "native"
+    settings = {} if settings is None else settings
+    if sampling is not None:
+        mode = "match-series"
+        width, height = sampling.layout.output_dimensions_wh
+    elif margins_settings is not None:
+        mode = "add-margins"
+        width, height, rectangle = framed_geometry(size, margins_settings)
+        settings = margins_settings.to_dict()
+    record: dict[str, Any] = {
+        "schema_version": 2,
+        "kind": {
+            "native": "native-result",
+            "add-margins": "framed-presentation",
+            "match-series": "series-framed-presentation",
+        }[mode],
+        "mode": mode,
+        "export_version": EXPORT_VERSION,
+        "revision": revision,
+        "developed_id": state["developed_id"],
+        "revision_manifest_sha256": digest(captured[manifest_name]),
+        "source_record_sha256": digest(captured["source.json"]),
+        "recipe_sha256": digest(recipe),
+        "draft": draft,
+        "requested_variants": list(variants),
+        "label": (
+            "DRAFT - explicit resized series presentation"
+            if draft
+            else "Resized series presentation of accepted revision; composition has not been separately accepted"
+        )
+        if sampling is not None
+        else (
+            (
+                "DRAFT - explicit framed presentation"
+                if draft
+                else "Framed presentation of accepted revision; framing has not been separately accepted"
+            )
+            if margins_settings is not None
+            else (
+                "DRAFT - unaccepted explicit export" if draft else "Human-accepted saved revision"
+            )
+        ),
+        "source_dimensions_wh": list(size),
+        "output_dimensions_wh": [width, height],
+        "algorithm": "series-lanczos-premultiplied-v1"
+        if sampling is not None
+        else (
+            "saved-backdrop-edge-padding-v1"
+            if margins_settings is not None
+            else "saved-native-result-v1"
+        ),
+        "encoding": _export_execution_identity(),
+        "compositing": manifest["compositing"],
+        "native_assets": {
+            f"assets/developed/{state['developed_id']}.tif": source["developed_file_sha256"],
+            **{reference["path"]: reference["sha256"] for reference in manifest["assets"].values()},
+        },
+        "effects": {
+            name: {
+                "enabled": manifest.get(name, {}).get("enabled", False),
+                "record_sha256": digest(_json_bytes(manifest[name])) if name in manifest else None,
+            }
+            for name in (
+                "color_cleanup",
+                "shading",
+                "local_sharpening",
+                "local_exposure",
+                "shadow_fade",
+                "spatial_fade",
+            )
+        },
+        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved foreground already includes Local sharpening, local exposure and Shadow fade; apply none again; baked shading at effective p (saved p when enabled, 0 when disabled or absent); editable W16 plus p retained separately only when requested",
+        **{
+            name: (
+                _delivery_effect_record(manifest[name]) if name != "background" else manifest[name]
+            )
+            for name in (
+                "color_cleanup",
+                "shading",
+                "local_sharpening",
+                "local_exposure",
+                "shadow_fade",
+                "background",
+            )
+            if name in manifest
+        },
+    }
+    if "spatial_fade" in manifest:
+        record["spatial_fade"] = manifest["spatial_fade"]
+    if sampling is not None:
+        record.update(
+            {
+                "settings": settings,
+                "layout": sampling.layout.to_dict(),
+                "sampling": sampling.to_dict(),
+                "backend": {
+                    "name": "Pillow",
+                    "version": record["encoding"]["packages"]["Pillow"],
+                    "mode": "F",
+                    "filter": "Lanczos",
+                    "source_box": "float32",
+                    "reducing_gap": None,
+                    "quantization": "NumPy ties-to-even",
+                },
+            }
+        )
+    else:
+        record["source_rect_xyxy"] = list(rectangle)
+        if margins_settings is not None:
+            record["margins"] = settings
+    if mode != "native":
+        for name in (
+            "color_cleanup",
+            "shading",
+            "local_sharpening",
+            "local_exposure",
+            "shadow_fade",
+            "spatial_fade",
+        ):
+            record.pop(name, None)
+        if "background" in manifest:
+            record["background"] = {
+                "record_sha256": digest(_json_bytes(manifest["background"])),
+                "background_sha256": manifest["background"]["background_sha256"],
+                **(
+                    {
+                        "algorithm": manifest["background"]["algorithm"],
+                        "settings": manifest["background"]["settings"],
+                        "placement": "recipe-regenerated-at-final-output-size",
+                    }
+                    if sampling is not None
+                    else {}
+                ),
+            }
+    if mode == "native":
+        record["result_compositing"] = (
+            "round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints"
+            if manifest.get("spatial_fade", {}).get("enabled")
+            else "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-p*W16/65535, A=alpha16/65535; p is saved opacity only when shading is enabled, otherwise zero; B is saved background RGB16 or zero"
+        ) + "; F already includes Local sharpening, local exposure and Shadow fade"
+    if companion_request is not None:
+        record["editable_companion_request"] = companion_request
+    record["identity_sha256"] = digest(_json_bytes(record))
+    return record
+
+
+def _delivery_destination(project: Path, record: dict[str, Any]) -> Path:
+    label = record["revision"] + ("-DRAFT" if record["draft"] else "")
+    suffix = {"native": "native", "add-margins": "framed", "match-series": "series-framed"}[
+        record["mode"]
+    ]
+    return saved_asset(project, f"exports/{label}-{suffix}-{record['identity_sha256']}")
+
+
+def _export_delivery(
     project: Path,
     revision: str | None,
     draft: bool,
     framing: dict[str, int] | None,
-    transparent: bool,
-    *,
-    series: dict[str, object] | None = None,
-    expected_master_id: str | None = None,
-    expected_revision_manifest_sha256: str | None = None,
+    series: dict[str, object] | None,
+    variants: tuple[str, ...],
+    expected_developed_id: str | None,
+    expected_revision_manifest_sha256: str | None,
 ) -> dict[str, Any]:
-    """Publish one compact presentation while holding the canonical project lock."""
-    from .background import read_background
-    from .effects import effects_stale, saved_shading, saved_spatial_fade
-    from .framing import frame_result, frame_transparent, framed_geometry, validate_margins
+    from .effects import effects_stale, selected_foreground
+    from .framing import framed_geometry, validate_margins
 
-    # Capture before validation, then bind the actual returned objects to these bytes.
-    # Cooperative writers use the project lock; this is not a hostile-writer snapshot.
-    captured = {name: _asset(project, name).read_bytes() for name in ("state.json", "source.json")}
+    captured = {
+        name: saved_asset(project, name).read_bytes() for name in ("state.json", "source.json")
+    }
     state = read_project(project)
-    if expected_master_id is not None and state["master_id"] != expected_master_id:
-        raise ProjectError("Stale series source identity; reload the selected photo")
     if _json_bytes(json.loads(captured["state.json"])) != _json_bytes(state):
-        raise ProjectError("Stale framed export state")
+        raise ProjectError("Stale export state")
+    if expected_developed_id is not None and state["developed_id"] != expected_developed_id:
+        raise ProjectError("Stale export source identity; reload the selected photo")
     if revision is None:
         if draft:
             raise ProjectError("Draft export requires explicit revision")
@@ -734,32 +947,30 @@ def _export_framed(
     if revision != state["accepted_revision"] and not draft:
         raise ProjectError("Unaccepted revision requires explicit --draft")
     manifest_name = f"revisions/{revision}/manifest.json"
-    captured[manifest_name] = _asset(project, manifest_name).read_bytes()
+    captured[manifest_name] = saved_asset(project, manifest_name).read_bytes()
     if (
         expected_revision_manifest_sha256 is not None
         and digest(captured[manifest_name]) != expected_revision_manifest_sha256
     ):
-        raise ProjectError("Stale series revision manifest; reload the selected result")
-    foreground, alpha, manifest = saved_layers(project, revision, state["master_id"])
+        raise ProjectError("Stale export revision manifest; reload the selected result")
+    base, alpha, manifest = validated_layer_inputs(project, revision, state["developed_id"])
     if _json_bytes(json.loads(captured[manifest_name])) != _json_bytes(manifest):
-        raise ProjectError("Stale framed export revision manifest")
-    master, metadata = load_master(project, state["master_id"])
-    source = json.loads(captured["source.json"])
-    if source["master_id"] != state["master_id"] or source["metadata"] != metadata:
-        raise ProjectError("Stale framed export source")
-    del master
-    if any(_asset(project, name).read_bytes() != value for name, value in captured.items()):
-        raise ProjectError("Stale framed export state or saved inputs")
+        raise ProjectError("Stale export revision manifest")
     if effects_stale(manifest):
-        raise ProjectError("Stale enabled appearance: rebuild or explicitly disable before export")
-    size = (foreground.shape[1], foreground.shape[0])
+        raise ProjectError(
+            "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before export"
+        )
+    source = json.loads(captured["source.json"])
+    size = (base.shape[1], base.shape[0])
     sampling = None
-    series_settings = None
-    settings_record: dict[str, object] = {}
+    margins_settings = None
+    settings: dict[str, Any] = {}
+    rectangle = (0, 0, *size)
+    mode = "native"
+    width, height = size
     if series is not None:
         from .series_framing import (
             compute_series_layout,
-            estimate_series_resources,
             series_sampling_plan,
             validate_series_settings,
         )
@@ -767,208 +978,276 @@ def _export_framed(
         series_settings = validate_series_settings(series)
         sampling = series_sampling_plan(compute_series_layout(alpha, series_settings))
         width, height = sampling.layout.output_dimensions_wh
-        source_rect = sampling.layout.subject_bounds_xyxy
-        settings_record.update(series_settings.to_dict())
-    else:
-        settings = validate_margins(framing, size)
-        width, height, source_rect = framed_geometry(size, settings)
-        settings_record.update(settings.to_dict())
-    # Disk admission retains the native allowance and adds framed TIFF/PNG payloads
-    # with headroom. RAM use is separate; expanded variants are processed in sequence.
-    check_space(
-        project,
-        foreground.nbytes * (22 if "background" in manifest else 18)
-        + (
-            alpha.nbytes * 3 + len(_json_bytes(manifest["spatial_fade"]))
-            if "spatial_fade" in manifest
-            else 0
+        settings = series_settings.to_dict()
+        mode = "match-series"
+    elif framing is not None:
+        margins_settings = validate_margins(framing, size)
+        width, height, rectangle = framed_geometry(size, margins_settings)
+        settings = margins_settings.to_dict()
+        mode = "add-margins"
+    recipe = saved_asset(project, f"revisions/{revision}/recipe.toml").read_bytes()
+    native_record = None
+    native_directory = None
+    companion_request = None
+    if mode != "native" and "editable" in variants:
+        native_record = _delivery_request_record(
+            state,
+            source,
+            manifest,
+            captured,
+            recipe,
+            draft=draft,
+            variants=("editable",),
+            native_dimensions_wh=size,
         )
-        + 16 * width * height
-        + 2 * 1024**2,
+        native_directory = _delivery_destination(project, native_record)
+        companion_request = {
+            "identity_sha256": native_record["identity_sha256"],
+            "directory_name": native_directory.name,
+        }
+    record = _delivery_request_record(
+        state,
+        source,
+        manifest,
+        captured,
+        recipe,
+        draft=draft,
+        variants=variants,
+        native_dimensions_wh=size,
+        sampling=sampling,
+        margins_settings=margins_settings,
+        settings=settings,
+        companion_request=companion_request,
     )
-    weight, opacity = saved_shading(project, revision, alpha, manifest)
-    spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    background = read_background(_asset(project, f"revisions/{revision}"), manifest)
-    # Native layer conversion/readback and framed rendering run sequentially. This
-    # conservative native envelope includes retained layers, float conversion and
-    # allocator scratch; it is an admission estimate, not measured resident memory.
-    native_peak = foreground.nbytes * 28 + alpha.nbytes * 8 if "spatial_fade" in manifest else 0
-    if (
-        native_peak
-        and max(native_peak, foreground.nbytes * 8 + alpha.nbytes * 8 + 16 * width * height)
-        > sys.maxsize
-    ):
-        raise ProjectError("Paired export memory estimate exceeds allocation bounds")
+    destination = _delivery_destination(project, record)
+    members = _delivery_members(record, manifest)
+    _recheck_export_inputs(project, captured, state, revision, manifest)
+    present = destination.exists() or destination.is_symlink()
+    binding = None
+    if native_directory is not None and native_record is not None:
+        child_present = native_directory.exists() or native_directory.is_symlink()
+        if present and not child_present:
+            raise ProjectError(
+                f"Incomplete delivery pair: native editable companion is missing at {native_directory}; "
+                f"existing primary preserved at {destination}. Restore the intact native folder before retrying."
+            )
+        if child_present:
+            binding = _editable_companion_binding(native_directory, native_record, manifest)
+    response: dict[str, Any] = {
+        "revision": revision,
+        "draft": draft,
+        "directory": str(destination),
+        "manifest_file": str(destination / "manifest.json"),
+        "mode": mode,
+        "variants": list(variants),
+        "output_dimensions_wh": [width, height],
+    }
     if sampling is not None:
+        response.update({"settings": settings, "layout": sampling.layout.to_dict()})
+    elif margins_settings is not None:
+        response.update({"framing": settings, "source_rect_xyxy": list(rectangle)})
+
+    def recheck_pair() -> None:
+        _recheck_export_inputs(project, captured, state, revision, manifest)
+        if native_directory is not None and native_record is not None:
+            actual = _editable_companion_binding(native_directory, native_record, manifest)
+            if actual != binding:
+                raise ProjectError("Output collision: native editable companion binding changed")
+
+    if present:
+        _validate_delivery(destination, record, members, companion_binding=binding)
+        recheck_pair()
+        try:
+            if native_directory is not None:
+                _sync_directory(native_directory.parent)
+            _sync_directory(destination.parent)
+        except OSError as error:
+            raise ProjectError(
+                f"Delivery is visible at {destination}, but publication durability is unconfirmed; preserve it and retry identical export: {error}"
+            ) from error
+        _validate_delivery(destination, record, members, companion_binding=binding)
+        recheck_pair()
+        if binding is not None and native_directory is not None:
+            response["editable_companion"] = {
+                "directory": str(native_directory),
+                "manifest_file": str(native_directory / "manifest.json"),
+                "manifest_sha256": binding["manifest_sha256"],
+            }
+        return {**response, "reused": True}
+    # Conservative bound covers retained native operands, both pending deliveries and scratch.
+    pending = base.nbytes * (22 if "background" in manifest else 18)
+    pending += (16 + (10 if "black" in variants else 0)) * width * height + 2 * 1024**2
+    if native_record is not None and binding is None:
+        pending += base.nbytes * 22 + 2 * 1024**2
+    check_space(project, pending)
+    if sampling is not None:
+        from .series_framing import estimate_series_resources
+
         estimate_series_resources(
             sampling,
-            retained_native_bytes=foreground.nbytes
-            + alpha.nbytes
-            + (0 if weight is None else weight.nbytes)
-            + (0 if background is None else background.nbytes)
-            + (0 if spatial is None else spatial.weight16.nbytes + spatial.protection.nbytes),
-            transparent=transparent,
-            **({"spatial_fade_pixels": alpha.size} if spatial is not None else {}),
-            **({"native_export_peak_bytes": native_peak} if native_peak else {}),
+            retained_native_bytes=base.nbytes + alpha.nbytes,
+            transparent="transparent" in variants,
+            spatial_fade_pixels=alpha.size
+            if manifest.get("spatial_fade", {}).get("enabled")
+            else 0,
+            black_background="black" in variants,
+            native_export_peak_bytes=base.nbytes * 22 if native_record is not None else 0,
         )
-    variants = ["result_rgb16.tif", "result_RGB8_VIEW.png"]
-    if transparent:
-        variants.append("transparent_RGBA8_VIEW.png")
-    native_names = {
-        "foreground_rgb16.tif",
-        "base_alpha16.png",
-        "corrected_rgb16.tif",
-        "shadow_weight16.png",
-        "trimap.png",
-        "supports/protection.png",
-        "supports/lock_values16.png",
-        "background/background_rgb16.tif",
-        "background/settings.json",
-        "effects/settings.json",
-        *(
-            f"effects/{effect}/{name}"
-            for effect in ("shading", "exposure", "shadow-fade")
-            for name in (
-                "support16.png",
-                "protection16.png",
-                "alpha16.png",
-                "settings.json",
-                "area.json",
+    foreground = selected_foreground(project, revision, base, alpha, manifest)
+    del base
+    if native_record is not None and native_directory is not None and binding is None:
+        if destination.exists() or destination.is_symlink():
+            raise ProjectError(
+                f"Incomplete delivery pair: primary appeared at {destination} before native companion "
+                f"publication at {native_directory}; existing output preserved"
             )
-        ),
-    }
-    record = {
-        "schema_version": 1,
-        "kind": "framed-presentation",
-        "revision": revision,
-        "master_id": state["master_id"],
-        "revision_manifest_sha256": digest(captured[manifest_name]),
-        "draft": draft,
-        "label": "DRAFT - explicit framed presentation"
-        if draft
-        else "Framed presentation of accepted revision; framing has not been separately accepted",
-        "source_dimensions_wh": list(size),
-        "margins": settings_record,
-        "output_dimensions_wh": [width, height],
-        "source_rect_xyxy": list(source_rect),
-        "algorithm": "saved-backdrop-edge-padding-v1",
-        "encoding": {
-            "result": "uncompressed processed sRGB RGB16 TIFF; native samples copied exactly",
-            "views": "sRGB RGB8/RGBA8 reduced precision; straight RGB, zero RGBA margins",
-            "icc_profile_sha256": digest(srgb_profile()),
-        },
-        "variants": variants,
-        "effects": {
-            name: {
-                "enabled": manifest.get(name, {}).get("enabled", False),
-                "record_sha256": digest(_json_bytes(manifest[name])) if name in manifest else None,
-            }
-            for name in (
-                "color_cleanup",
-                "shading",
-                "local_exposure",
-                "shadow_fade",
-                *(("spatial_fade",) if "spatial_fade" in manifest else ()),
-            )
-        },
-        "background": {
-            "record_sha256": digest(_json_bytes(manifest["background"])),
-            "background_sha256": manifest["background"]["background_sha256"],
+        _export_native_locked(
+            project,
+            state=state,
+            foreground=foreground,
+            alpha=alpha,
+            manifest=manifest,
+            record=native_record,
+            recipe=recipe,
+            captured=captured,
+            paired_primary=destination,
+        )
+        binding = _editable_companion_binding(native_directory, native_record, manifest)
+    if binding is not None and native_directory is not None:
+        response["editable_companion"] = {
+            "directory": str(native_directory),
+            "manifest_file": str(native_directory / "manifest.json"),
+            "manifest_sha256": binding["manifest_sha256"],
         }
-        if "background" in manifest
-        else None,
-        "native_assets": {
-            f"masters/{state['master_id']}.tif": source["master_file_sha256"],
-            **{
-                f"revisions/{revision}/{name}": value
-                for name, value in manifest["files"].items()
-                if name in native_names
-            },
+    try:
+        reused = _write_delivery(
+            project,
+            state=state,
+            foreground=foreground,
+            alpha=alpha,
+            manifest=manifest,
+            record=record,
+            recipe=recipe,
+            captured=captured,
+            sampling=sampling,
+            margins_settings=margins_settings,
+            companion_binding=binding,
+            companion_record=native_record,
+        )
+    except (OSError, ValueError, MemoryError) as error:
+        if binding is not None and native_directory is not None:
+            raise ProjectError(
+                f"Incomplete delivery pair. Native folder is visible at {native_directory}; inspect or retry identical export. {error}"
+            ) from error
+        raise
+    return {**response, "reused": reused}
+
+
+def _editable_companion_binding(
+    directory: Path, native_request: dict[str, Any], manifest: dict[str, Any]
+) -> dict[str, Any]:
+    """Verify the exact requested native inventory before binding its observed bytes."""
+    if directory.name != _delivery_destination(directory.parent.parent, native_request).name:
+        raise ProjectError("Invalid native editable companion directory identity")
+    _validate_delivery(directory, native_request, _delivery_members(native_request, manifest))
+    raw = (directory / "manifest.json").read_bytes()
+    return {
+        "directory_name": directory.name,
+        "manifest_sha256": digest(raw),
+        "files_sha256": {
+            name: _file_digest(directory / name)
+            for name in (*_delivery_members(native_request, manifest),)
         },
     }
-    if sampling is not None and series_settings is not None:
-        from PIL import __version__ as pillow_version
 
-        record.pop("margins")
-        record.pop("source_rect_xyxy")
-        record.update(
-            {
-                "kind": "series-framed-presentation",
-                "source_record_sha256": digest(captured["source.json"]),
-                "label": "DRAFT - explicit resized series presentation"
-                if draft
-                else "Resized series presentation of accepted revision; composition has not been separately accepted",
-                "settings": settings_record,
-                "layout": sampling.layout.to_dict(),
-                "sampling": sampling.to_dict(),
-                "algorithm": "series-lanczos-premultiplied-v1",
-                "backend": {
-                    "name": "Pillow",
-                    "version": pillow_version,
-                    "mode": "F",
-                    "filter": "Lanczos",
-                    "source_box": "float32",
-                    "reducing_gap": None,
-                    "quantization": "NumPy ties-to-even",
-                },
-                "encoding": {
-                    "result": "uncompressed processed sRGB RGB16 TIFF; resampled existing detail",
-                    "views": "sRGB RGB8/RGBA8 reduced precision; straight RGB, zero RGB where quantized alpha is zero",
-                    "icc_profile_sha256": digest(srgb_profile()),
-                },
-                "background": {
-                    "algorithm": manifest.get("background", {}).get("algorithm", "legacy-black"),
-                    "settings": manifest.get("background", {}).get(
-                        "settings", {"color_srgb": "#000000", "variation": 0.0}
-                    ),
-                    "placement": "recipe-regenerated-at-final-output-size",
-                    "native_record_sha256": digest(_json_bytes(manifest["background"]))
-                    if "background" in manifest
-                    else None,
-                },
-            }
-        )
-    companion = None
-    companion_binding = None
-    if "spatial_fade" in manifest:
-        companion_directory = _asset(project, f"exports/{revision}{'-DRAFT' if draft else ''}")
-        try:
-            companion = _export_native_locked(
-                project,
-                revision=revision,
-                draft=draft,
-                state=state,
-                foreground=foreground,
-                alpha=alpha,
-                manifest=manifest,
+
+def _export_native_locked(
+    project: Path,
+    *,
+    state: dict[str, Any],
+    foreground: np.ndarray,
+    alpha: np.ndarray,
+    manifest: dict[str, Any],
+    record: dict[str, Any],
+    recipe: bytes,
+    captured: dict[str, bytes],
+    paired_primary: Path,
+) -> bool:
+    """Use the one requested writer with native geometry and caller-owned arrays/lock."""
+    return _write_delivery(
+        project,
+        state=state,
+        foreground=foreground,
+        alpha=alpha,
+        manifest=manifest,
+        record=record,
+        recipe=recipe,
+        captured=captured,
+        paired_primary=paired_primary,
+    )
+
+
+def _write_delivery(
+    project: Path,
+    *,
+    state: dict[str, Any],
+    foreground: np.ndarray,
+    alpha: np.ndarray,
+    manifest: dict[str, Any],
+    record: dict[str, Any],
+    recipe: bytes,
+    captured: dict[str, bytes],
+    sampling: SeriesSamplingPlan | None = None,
+    margins_settings: Margins | None = None,
+    companion_binding: dict[str, Any] | None = None,
+    companion_record: dict[str, Any] | None = None,
+    paired_primary: Path | None = None,
+) -> bool:
+    from .background import read_background
+    from .effects import saved_shading, saved_spatial_fade
+    from .framing import frame_result, frame_transparent
+
+    revision = record["revision"]
+    variants = record["requested_variants"]
+    width, height = record["output_dimensions_wh"]
+    destination = _delivery_destination(project, record)
+    members = _delivery_members(record, manifest)
+
+    def recheck() -> None:
+        _recheck_export_inputs(project, captured, state, revision, manifest)
+        if paired_primary is not None and (paired_primary.exists() or paired_primary.is_symlink()):
+            raise ProjectError(
+                f"Incomplete delivery pair: primary appeared at {paired_primary} before native companion "
+                f"publication at {destination}; existing output preserved"
             )
-            companion_binding = _editable_companion_binding(
-                companion_directory, manifest, digest(captured[manifest_name]), draft
-            )
-        except (OSError, ValueError, MemoryError) as error:
-            if companion_directory.exists():
-                raise ProjectError(
-                    f"Incomplete framed delivery pair. Native folder is visible at {companion_directory}; inspect or retry identical export. {error}"
-                ) from error
-            raise
-        record["editable_companion"] = companion_binding
-    try:
-        identity = digest(_json_bytes(record))
-        label = f"{revision}-DRAFT" if draft else revision
-        delivery_mode = "series-framed" if sampling is not None else "framed"
-        destination = _asset(project, f"exports/{label}-{delivery_mode}-{identity}")
-        names = {*variants, "README.txt", "manifest.json"}
-        reused = destination.exists() or destination.is_symlink()
-        if reused:
-            _check_flat_delivery(destination, names)
-        exports = _asset(project, "exports")
-        exports.mkdir(exist_ok=True)
-        stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
+        if companion_record is not None:
+            native = _delivery_destination(project, companion_record)
+            if _editable_companion_binding(native, companion_record, manifest) != companion_binding:
+                raise ProjectError("Output collision: native editable companion binding changed")
+
+    recheck()
+    weight, opacity = saved_shading(project, revision, alpha, manifest)
+    spatial = saved_spatial_fade(project, revision, alpha, manifest)
+    background = (
+        None
+        if sampling is not None
+        else read_background(project, saved_asset(project, f"revisions/{revision}"), manifest)
+    )
+    target = (
+        background
+        if background is not None
+        else np.zeros_like(foreground)
+        if spatial is not None and sampling is None
+        else None
+    )
+    exports = saved_asset(project, "exports")
+    exports.mkdir(exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
+    for stem in ("result", *(["black"] if "black" in variants else [])):
         if sampling is not None:
             from .series_framing import render_series
 
-            del background
-            result = render_series(
+            pixels = render_series(
                 foreground,
                 alpha,
                 sampling,
@@ -976,196 +1255,258 @@ def _export_framed(
                 opacity=opacity,
                 background_settings=manifest.get("background", {}).get("settings"),
                 spatial_fade=spatial,
+                black_background=stem == "black",
             )
         else:
             native = (
-                render_black(
-                    foreground,
-                    alpha,
-                    weight,
-                    opacity,
-                    spatial_fade=spatial,
-                    fade_background16=background
-                    if background is not None
-                    else np.zeros_like(foreground)
-                    if spatial is not None
-                    else None,
-                )
-                if background is None
-                else render_background(
+                render_background(
                     foreground,
                     alpha,
                     background,
                     weight,
                     opacity,
                     spatial_fade=spatial,
-                    fade_background16=background,
+                    fade_background16=target,
                 )
-            )
-            result = frame_result(native, background, settings)
-            del native
-        result_digest = _pixel_digest(result)
-        write_master(stage / "result_rgb16.tif", result)
-        view_digest = _write_framed_rgb8(stage / "result_RGB8_VIEW.png", result)
-        del result
-        # Release the expanded render before any expanded readback or next variant.
-        restored = read_rgb16(stage / "result_rgb16.tif")
-        if restored.shape != (height, width, 3) or _pixel_digest(restored) != result_digest:
-            raise ProjectError("Framed RGB16 export round trip failed")
-        del restored
-        _verify_framed_png(stage / "result_RGB8_VIEW.png", "RGB", (width, height), view_digest)
-        if transparent:
-            rgba = (
-                render_series(
+                if stem == "result" and background is not None
+                else render_black(
                     foreground,
                     alpha,
-                    sampling,
-                    weight16=weight,
-                    opacity=opacity,
-                    background_settings=manifest.get("background", {}).get("settings"),
-                    transparent=True,
+                    weight,
+                    opacity,
                     spatial_fade=spatial,
+                    fade_background16=target,
                 )
-                if sampling is not None
-                else frame_transparent(
+            )
+            pixels = (
+                frame_result(native, background if stem == "result" else None, margins_settings)
+                if margins_settings is not None
+                else native
+            )
+            del native
+        checksums = _write_rgb_pair(stage, stem, pixels)
+        del pixels
+        _verify_rgb_pair(stage, stem, (width, height), checksums)
+    if "transparent" in variants:
+        rgba = (
+            render_series(
+                foreground,
+                alpha,
+                sampling,
+                weight16=weight,
+                opacity=opacity,
+                transparent=True,
+                spatial_fade=spatial,
+                background_settings=manifest.get("background", {}).get("settings"),
+            )
+            if sampling is not None
+            else (
+                frame_transparent(
                     view_rgba(
                         foreground,
                         alpha,
                         weight,
                         opacity,
                         spatial_fade=spatial,
-                        fade_background16=background
-                        if background is not None
-                        else np.zeros_like(foreground)
-                        if spatial is not None
-                        else None,
+                        fade_background16=target,
                     ),
-                    settings,
+                    margins_settings,
+                )
+                if margins_settings is not None
+                else view_rgba(
+                    foreground,
+                    alpha,
+                    weight,
+                    opacity,
+                    spatial_fade=spatial,
+                    fade_background16=target,
                 )
             )
-            rgba_digest = _pixel_digest(rgba)
-            image = Image.fromarray(rgba)
-            try:
-                image.save(stage / "transparent_RGBA8_VIEW.png", icc_profile=srgb_profile())
-            finally:
-                # RGBA images map the NumPy buffer; the context manager does not close it.
-                image.close()
-                del rgba
-            _verify_framed_png(
-                stage / "transparent_RGBA8_VIEW.png", "RGBA", (width, height), rgba_digest
-            )
-        notes = (
-            "\nThis is a resized presentation using existing photographed detail. "
-            "The saved backdrop recipe is regenerated at final output dimensions, including beneath partial-alpha edges. "
-            "Enlargement adds no captured detail; reduction can hide fine features. "
-            "RGB16 TIFF retains processed precision; PNGs are reduced-precision views. "
-            "The native editable project remains authoritative and unchanged; retain it for editing. "
-            "Series framing confers no photographic acceptance.\n"
-            if sampling is not None
-            else "\nThe native image is copied without resampling at the manifest's source rectangle. "
-            "Margins extend saved backdrop edge pixels (black for legacy projects); visible bands "
-            "are possible. RGB16 TIFF retains processed sRGB precision. PNGs are reduced-precision "
-            "views; optional RGBA is straight and has zero RGBA margins. Framing does not alter "
-            "native editing coordinates or confer photographic acceptance. Editable source layers "
-            "remain in the local project at the manifest's relative native asset paths.\n"
         )
-        if companion_binding is not None:
-            notes += f"\nKeep and copy BOTH this presentation folder and its native editable sibling {companion_binding['directory_name']}. The sibling contains unfaded editable layers and complete spatial operands; no original project is needed for layer/render reconstruction.\n"
-        (stage / "README.txt").write_text(str(record["label"]) + notes)
-        record["files"] = {
-            name: {
-                "sha256": _file_digest(stage / name),
+        checksum = _pixel_digest(rgba)
+        image = Image.fromarray(rgba)
+        try:
+            image.save(stage / "transparent_RGBA8_VIEW.png", icc_profile=srgb_profile())
+        finally:
+            image.close()
+            del rgba
+        _verify_framed_png(stage / "transparent_RGBA8_VIEW.png", "RGBA", (width, height), checksum)
+    if "editable" in variants and record["mode"] == "native":
+        _write_editable(project, stage, revision, state, foreground, alpha, manifest)
+    (stage / "recipe.toml").write_bytes(recipe)
+    (stage / "README.txt").write_bytes(_delivery_notes(record))
+    files = {
+        name: {
+            **metadata,
+            "sha256": _file_digest(stage / name),
+            "bytes": (stage / name).stat().st_size,
+        }
+        for name, metadata in members.items()
+    }
+    (stage / "manifest.json").write_bytes(
+        _json_bytes(
+            {
+                **record,
                 **(
-                    {
-                        "dimensions_wh": [width, height],
-                        "precision_bits": 16 if name.endswith(".tif") else 8,
-                    }
-                    if name in variants
+                    {"editable_companion": companion_binding}
+                    if companion_binding is not None
                     else {}
                 ),
+                "files": files,
             }
-            for name in sorted(names - {"manifest.json"})
-        }
-        (stage / "manifest.json").write_bytes(_json_bytes(record))
-        _check_flat_delivery(stage, names)
-        if any(_asset(project, name).read_bytes() != value for name, value in captured.items()):
-            raise ProjectError("Stale framed export state or saved inputs")
-        final_state = read_project(project)
-        final_manifest = read_revision(project, revision, state["master_id"])
-        if (
-            final_state != state
-            or final_manifest != manifest
-            or any(_asset(project, name).read_bytes() != value for name, value in captured.items())
-        ):
-            raise ProjectError("Stale framed export state or saved inputs")
-        if destination.exists() or destination.is_symlink():
-            _check_flat_delivery(destination, names)
+        )
+    )
+    _validate_delivery(stage, record, members, companion_binding=companion_binding)
+    recheck()
+    for path in stage.iterdir():
+        with path.open("rb") as stream:
+            os.fsync(stream.fileno())
+    _sync_directory(stage)
+    recheck()
+    late_reuse = destination.exists() or destination.is_symlink()
+    try:
+        if late_reuse:
+            _validate_delivery(destination, record, members, companion_binding=companion_binding)
             if any(
-                (destination / name).stat().st_size != (stage / name).stat().st_size
-                for name in names
+                _file_digest(destination / name) != _file_digest(stage / name)
+                for name in (*members, "manifest.json")
             ):
-                raise ProjectError("Output collision: differing existing file sizes preserved")
-        try:
-            publish_artifacts(stage, destination)
-            if reused:
-                # A prior exclusive rename may have succeeded before its parent sync
-                # failed. Identical retry also confirms that directory publication.
-                _sync_directory(destination.parent)
-        except OSError as error:
-            if not stage.exists() or reused:
-                raise ProjectError(
-                    f"Framed delivery is visible at {destination}, but publication durability "
-                    f"is unconfirmed; preserve it and retry identical export: {error}"
-                ) from error
-            raise
-        if reused:
-            # Only this verified duplicate is disposable, after publication is durable.
-            try:
-                shutil.rmtree(stage)
-            except OSError as error:
-                raise ProjectError(
-                    f"Framed delivery is durably published at {destination}, but duplicate stage "
-                    f"cleanup failed at {stage}; inspect remaining stage files: {error}"
-                ) from error
-        response = {
-            "revision": revision,
-            "draft": draft,
-            "directory": str(destination),
-            "manifest_file": str(destination / "manifest.json"),
-            "framing": settings_record,
-            "output_dimensions_wh": [width, height],
-            "source_rect_xyxy": list(source_rect),
-        }
-        if sampling is not None:
-            response.pop("framing")
-            response.pop("source_rect_xyxy")
-            response.update({"settings": settings_record, "layout": sampling.layout.to_dict()})
-        if companion is not None:
-            _check_flat_delivery(destination, names)
-            if (destination / "manifest.json").read_bytes() != _json_bytes(record) or any(
-                _file_digest(destination / name) != value["sha256"]
-                for name, value in record["files"].items()
-            ):
-                raise ProjectError(f"Presentation changed after publication at {destination}")
-            verified = _editable_companion_binding(
-                Path(companion["directory"]), manifest, digest(captured[manifest_name]), draft
-            )
-            if verified != companion_binding:
-                raise ProjectError(
-                    f"Native editable companion changed after presentation publication at {companion['directory']}"
-                )
-            response["editable_companion"] = {
-                "directory": companion["directory"],
-                "manifest_file": companion["manifest_file"],
-                "manifest_sha256": verified["manifest_sha256"],
-            }
-        return response
-    except (OSError, ValueError, MemoryError) as error:
-        if companion is not None:
-            presentation = (
-                f" Presentation path: {destination}." if "destination" in locals() else ""
-            )
+                raise ProjectError("Output collision: differing existing files preserved")
+            recheck()
+        else:
+            _publish_new_directory(stage, destination)
+        _sync_directory(destination.parent)
+    except OSError as error:
+        if not stage.exists() or late_reuse:
             raise ProjectError(
-                f"Incomplete framed delivery pair. Native editable folder {companion['directory']} is retained.{presentation} Inspect and retry identical export; {error}"
+                f"Delivery is visible at {destination}, but publication durability is unconfirmed; preserve it and retry identical export: {error}"
             ) from error
         raise
+    if late_reuse:
+        _validate_delivery(destination, record, members, companion_binding=companion_binding)
+        recheck()
+        _validate_delivery(stage, record, members, companion_binding=companion_binding)
+        try:
+            shutil.rmtree(stage)
+        except OSError as error:
+            raise ProjectError(
+                f"Delivery is durably published at {destination}, but duplicate stage cleanup failed at {stage}; inspect remaining stage files: {error}"
+            ) from error
+    _validate_delivery(destination, record, members, companion_binding=companion_binding)
+    recheck()
+    return late_reuse
+
+
+def _write_editable(
+    project: Path,
+    stage: Path,
+    revision: str,
+    state: dict[str, Any],
+    foreground: np.ndarray,
+    alpha: np.ndarray,
+    manifest: dict[str, Any],
+) -> None:
+    """Native independent layers retain the existing precision and replay contracts."""
+    Image.fromarray(alpha).save(stage / "alpha16.png")
+    if "background" in manifest:
+        for saved, delivered in (
+            ("background/background_rgb16.tif", "background_rgb16.tif"),
+            ("background/settings.json", "background_settings.json"),
+        ):
+            (stage / delivered).write_bytes(
+                saved_asset(project, f"revisions/{revision}/{saved}").read_bytes()
+            )
+    write_developed(stage / "foreground_rgb16.tif", foreground)
+    if "local_sharpening" in manifest:
+        unsharpened, _, _ = saved_layers(
+            project,
+            revision,
+            state["developed_id"],
+            sharpening_off=True,
+            exposure_off=True,
+            shadow_fade_off=True,
+        )
+        write_developed(stage / "unsharpened_foreground_rgb16.tif", unsharpened)
+        unexposed, _, _ = saved_layers(
+            project,
+            revision,
+            state["developed_id"],
+            exposure_off=True,
+            shadow_fade_off=True,
+        )
+        write_developed(stage / "unexposed_foreground_rgb16.tif", unexposed)
+        (stage / "base_foreground_rgb16.tif").write_bytes(
+            saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
+        )
+        for name in (
+            "support16.png",
+            "protection16.png",
+            "alpha16.png",
+            "settings.json",
+            "area.json",
+        ):
+            asset = f"effects/sharpening/{name}"
+            if asset in revision_hashes(manifest):
+                (stage / ("sharpening_" + name)).write_bytes(
+                    saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                )
+    if "local_exposure" in manifest:
+        unexposed, _, _ = saved_layers(
+            project, revision, state["developed_id"], exposure_off=True, shadow_fade_off=True
+        )
+        write_developed(stage / "unexposed_foreground_rgb16.tif", unexposed)
+        base = saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif")
+        (stage / "base_foreground_rgb16.tif").write_bytes(base.read_bytes())
+        for name in (
+            "support16.png",
+            "protection16.png",
+            "alpha16.png",
+            "settings.json",
+            "area.json",
+        ):
+            asset = f"effects/exposure/{name}"
+            if asset in revision_hashes(manifest):
+                (stage / ("exposure_" + name)).write_bytes(
+                    saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                )
+    if "shadow_fade" in manifest:
+        unfaded, _, _ = saved_layers(project, revision, state["developed_id"], shadow_fade_off=True)
+        write_developed(stage / "unfaded_foreground_rgb16.tif", unfaded)
+        if "local_exposure" not in manifest:
+            write_developed(stage / "unexposed_foreground_rgb16.tif", unfaded)
+            (stage / "base_foreground_rgb16.tif").write_bytes(
+                saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
+            )
+        for name in (
+            "support16.png",
+            "protection16.png",
+            "alpha16.png",
+            "settings.json",
+            "area.json",
+        ):
+            asset = f"effects/shadow-fade/{name}"
+            if asset in revision_hashes(manifest):
+                (stage / ("shadow_fade_" + name)).write_bytes(
+                    saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                )
+    write_developed(stage / "source_rgb16.tif", load_developed(project, state["developed_id"])[0])
+    if "spatial_fade" in manifest:
+        for name in SPATIAL_FADE_FILES:
+            (stage / ("spatial_fade_" + name)).write_bytes(
+                saved_asset(
+                    project, f"revisions/{revision}/effects/spatial-fade/{name}"
+                ).read_bytes()
+            )
+    for name in ("shadow_weight16.png", "corrected_rgb16.tif", "recipe.toml"):
+        if name in revision_hashes(manifest):
+            (stage / name).write_bytes(
+                saved_asset(project, f"revisions/{revision}/{name}").read_bytes()
+            )
+    for effect, name in (
+        ("color_cleanup", "effects/settings.json"),
+        ("shading", "effects/shading/settings.json"),
+    ):
+        if effect in manifest:
+            (stage / (effect + "_settings.json")).write_bytes(
+                _json_bytes(_delivery_effect_record(manifest[effect]))
+            )
