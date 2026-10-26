@@ -24,6 +24,15 @@ class Recipe:
     background: dict[str, Any] | None = None
     spatial_fade: dict[str, Any] | None = None
 
+    local_sharpening: dict[str, Any] = field(
+        default_factory=lambda: {
+            "enabled": False,
+            "amount": 0.0,
+            "radius_px": 1.0,
+            "noise_threshold": 0.001,
+        }
+    )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": 2,
@@ -36,6 +45,7 @@ class Recipe:
             "shading": self.shading,
             "local_exposure": self.local_exposure,
             "shadow_fade": self.shadow_fade,
+            "local_sharpening": self.local_sharpening,
             **({"background": self.background} if self.background is not None else {}),
             **({"spatial_fade": self.spatial_fade} if self.spatial_fade is not None else {}),
         }
@@ -51,8 +61,10 @@ class Recipe:
     ) -> "Recipe":
         expected = cls(developed_id).to_dict()
         if (
-            set(value) - {"local_exposure", "shadow_fade", "background", "spatial_fade"}
-            != set(expected) - {"local_exposure", "shadow_fade", "background", "spatial_fade"}
+            set(value)
+            - {"local_exposure", "shadow_fade", "background", "spatial_fade", "local_sharpening"}
+            != set(expected)
+            - {"local_exposure", "shadow_fade", "background", "spatial_fade", "local_sharpening"}
             or type(value.get("schema_version")) is not int
             or value["schema_version"] != 2
             or value["developed_id"] != developed_id
@@ -63,7 +75,9 @@ class Recipe:
         from .effects import validate_cleanup, validate_shading
         from .exposure import validate_exposure
         from .shadow_fade import validate_shadow_fade
+        from .sharpening import validate_local_sharpening
 
+        validate_local_sharpening(value.get("local_sharpening", cls(developed_id).local_sharpening))
         validate_shadow_fade(value.get("shadow_fade", cls(developed_id).shadow_fade))
         if "background" in value:
             from .background import validate_background
@@ -144,4 +158,5 @@ class Recipe:
             dict(value.get("shadow_fade", cls(developed_id).shadow_fade)),
             dict(value["background"]) if "background" in value else None,
             dict(value["spatial_fade"]) if "spatial_fade" in value else None,
+            dict(value.get("local_sharpening", cls(developed_id).local_sharpening)),
         )

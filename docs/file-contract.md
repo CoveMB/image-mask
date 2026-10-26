@@ -74,6 +74,40 @@ after recognition stay errors, including later unsupported-operation errors.
 Ordinary TIFF precision/compression/profile rules are unchanged. Known DNG/CFA
 containers that LibRaw cannot decode cannot be imported as a developed TIFF.
 
+## Explicit SDR-primary JPEG import
+
+`open SOURCE --project NEW_PROJECT --jpeg-sdr-primary` and configured library
+`import SOURCE --subject NAME --jpeg-sdr-primary` explicitly select the ordinary
+SDR primary of a supported gain-map JPEG. The default continues to reject
+multi-image input. No gain map is applied, no HDR image is reconstructed, and
+the complete original JPEG, including its auxiliary payload, remains unchanged.
+The master has the primary's original 8-bit precision in an RGB16 container;
+ordinary ICC conversion and EXIF orientation still apply exactly once.
+
+This bounded route requires two MPF entries with non-overlapping, complete JPEG
+payloads, a baseline primary entry and an auxiliary entry, gain-map namespace
+version `1.0` in both XMP packets, and explicit `BaseRenditionIsHDR="False"` in
+the auxiliary packet. Missing, contradictory or malformed metadata is rejected.
+Each image must have one standard XMP packet; duplicate and extended packets
+are unsupported. Pillow-recognized gain-map JPEGs using the conventional `hdrgm`
+prefix are supported; other namespace-prefix spellings may be rejected as MPO.
+Unlike the general format's optional default, absent SDR-base declaration is not
+assumed here. Generic MPO, animation and HDR-base input remain unsupported.
+This is SDR selection, not complete HDR-format validation or HDR support.
+
+API callers supply Boolean `development["jpeg_sdr_primary"] = True`.
+The option and `metadata.jpeg_sdr_primary` (selected image `0`, image count `2`,
+base rendition `SDR`, gain map applied `false`) enter the developed identity and
+saved `source.json`. Without the option, existing defaults and identities stay
+unchanged. Reopening uses the saved master without decoding again. No saved
+project is migrated or redeveloped. Import recovery retains its frozen original
+development options; it cannot retrofit this choice into an earlier failed
+reservation. Preserve that transaction and use a new standalone project or a
+separate configured library for a different development.
+
+The format's primary/auxiliary metadata meanings are defined by the
+[Ultra HDR format specification](https://developer.android.com/media/platform/hdr-image-format).
+
 ## RAW as-shot white balance
 
 `white_balance="camera"` first uses the existing finite, positive RGB multipliers
@@ -632,7 +666,7 @@ repaired by the existing derivative owner, with failure reported as pending.
 
 The additive `effects_reuse` record in an effects manifest and its hash-bound
 `result.json` contains `schema_version=1`, `execution`, `request`, `inputs` and
-the current `spatial_fade` output binding (null when absent).
+the current `spatial_fade` and `local_sharpening` output bindings (null when absent).
 It records the finite effects execution version, Python/package/algorithm versions,
 effective request settings/scope/mode/candidate semantics, captured input hashes,
 source/native/guides/base-recipe/lock identities. Locator names alone never prove
@@ -647,16 +681,18 @@ execution identity can create a meaningful small revision even if pixels agree.
 There is no historical request search, registry or new cache engine. The explicit
 effects execution version must change when equivalence, validation or arithmetic
 semantics change. Existing native model/tile cache invalidation stays independent.
-Current `validated-effects-v3` covers all six effects, including Fade into background's
+Current `validated-effects-v4` covers all seven effects, including Fade into background's
 validated nested settings, algorithm, actual explicit protection bytes and all four
 saved spatial operands. Its output binding includes OFF and inherited spatial state;
 new output is bound only after generation, allowing the first equivalent repeat to
-reuse it. Native recipe identity excludes all six appearance sections. Mandatory cold
+reuse it. Native recipe identity excludes all seven appearance sections. Mandatory cold
 saved-geometry validation may rasterize W; a hit performs no additional result/effect/W
 generation, while existing warm validation caches retain their fresh-hash safeguards.
 Omitted shading-disable geometry still resolves from validated saved settings before
 comparison and generation; the original request remains unchanged in diagnostics.
-Older v1/v2 proof computes normally once.
+Older v1/v2/v3 proof computes normally once.
+The sharpening binding includes its complete saved operands and the cleanup-selected
+input: base/corrected RGB, alpha, cleanup record and cleanup dependencies.
 Successful reused Reset synchronizes only its matching submitted effect controls
 to the returned settings; unrelated controls and independent area drafts remain.
 Matching reused spatial Apply clears only its submitted draft; Disable still uses
@@ -666,7 +702,7 @@ An actual computation miss captures its request, root input bytes and
 `inputs/effects.json` identities/hashes in the existing `.effects-*` stage before
 generation; failure retains diagnostics and prior accepted data. This diagnostic
 record identifies consumed inputs; the final reuse proof additionally binds generated
-spatial output. It is not a separate archive of every external
+spatial and sharpening output. It is not a separate archive of every external
 file or a resumable execution checkpoint.
 This adds no effects-resume API. Early invalid submissions return errors without
 publishing a result or silently consuming drafts.
@@ -870,7 +906,7 @@ shapes as `C=max(amount*G)` and quantize once, `W16=round(65535*C)` ties-to-even
 Master OFF does not erase W. Generation holds one W16 plus 64-row geometry scratch,
 not full-frame fields for each arc. A weaker arc cannot subtract from an oval.
 
-Selected foreground F includes applicable cleanup, exposure and independent Shadow
+Selected foreground F includes applicable cleanup, sharpening, exposure and independent Shadow
 fade. For alpha-positive, unprotected pixels, `q=W16/65535*(1-p*h(F))`: p is this
 feature's highlight setting, h is cubic linear-sRGB luminance weighting using
 .2126/.7152/.0722 and thresholds .10/.75. Alpha gates eligibility only. Master OFF,
@@ -903,7 +939,7 @@ With spatial fade OFF, q is zero; if inward shading is enabled, use delivered
 `shadow_weight16.png` and its opacity to calculate `H=1-opacity*W16/65535` and
 `round(F*A*H+B*(1-A))`. Otherwise H is 1. The native manifest/README formula
 describes the active mode even when inactive spatial operands are retained.
-Do not apply exposure/Shadow fade again to selected foreground. For series, use
+Do not apply sharpening/exposure/Shadow fade again to selected foreground. For series, use
 compact layout/sampling/background metadata and the applicable premultiplied
 procedure above; include native H in P before sampling when inward shading is active.
 Native recipe and README are editable-handoff material, distinct from compact notes.
@@ -977,8 +1013,8 @@ dimensions, categorical protection and authored geometry are validated even OFF.
 Request, draft, source, parent, area and protection inputs are rechecked before
 atomic publication under the canonical writer lock. Accepted state is unchanged.
 
-Selection order is original saved foreground, optional saved cleanup, local
-exposure, optional Shadow fade, then either inward shading or
+Selection order is original saved foreground, optional saved cleanup, Local
+sharpening, local exposure, optional Shadow fade, then either inward shading or
 [Fade into background](#optional-fade-into-background), and alpha composition. For eligible pixels,
 decode sRGB to linear RGB, multiply by `2 ** (ev * support16 / 65535)`, clamp to
 [0,1], encode to sRGB and quantize once with float64/ties-to-even RGB16.
@@ -986,7 +1022,7 @@ The sRGB thresholds are .04045 (decode) and .0031308 (encode). Alpha does not
 scale the exposure gain. Zero-alpha, zero-support and protected RGB are exact;
 alpha never changes. OFF and 0 EV take exact identity paths. Exposure always
 starts from the unexposed saved layers and cannot compound on repeated requests.
-Saved RGB locks snapshot selected pre-shading RGB, including exposure and fade,
+Saved RGB locks snapshot selected pre-shading RGB, including sharpening, exposure and fade,
 and exclude those pixels from subsequent exposure and fade. Prepare/matte/repair retain operands; changed alpha makes
 enabled exposure stale until explicit rebuild or disable. Any stale enabled
 effect produces a labelled BASE comparison; acceptance/export is blocked.
@@ -1007,7 +1043,7 @@ When exposure is present, native exports with `--variant editable` retain select
 `exposure_support16.png`, `exposure_protection16.png`,
 `exposure_alpha16.png`, `exposure_settings.json`, and authored
 `exposure_area.json` where present. Shading W16/opacity remain independent.
-The unexposed export remains cleanup-selected RGB before both exposure and fade.
+The unexposed export includes selected sharpening after cleanup, before exposure and fade.
 Reconstruct by applying exposure once, then optional fade once, then the existing
 shading/alpha renderer. The selected foreground already
 contains exposure; applying it again would be incorrect. Reduced-precision
@@ -1040,7 +1076,7 @@ rejects replacement fields. Enabled selections need nonempty eligible pixels,
 even at amount 0. Explicit disable works without a previous area and with stale
 alpha; it retains saved operands. UI whole-adjustment requests use full-image scope.
 
-Fade follows cleanup and local exposure, before encoded-sRGB shading and alpha.
+Fade follows cleanup, local sharpening and local exposure, before encoded-sRGB shading and alpha.
 Start every render from unfaded RGB16, never from flattened or previously faded
 pixels. Decode normalized sRGB with threshold .04045. In float64, compute linear
 luminance `Y = .2126 R + .7152 G + .0722 B`, `t = clip((Y-.10)/.65,0,1)`,
@@ -1067,7 +1103,7 @@ caches retain no image arrays and never bypass current asset hashing.
 
 Prepare retains operands; matte/repair recompute alpha staleness and union new RGB
 locks into protection. RGB locks save the selected pre-shading appearance and
-cannot receive fade twice. Changed upstream cleanup/exposure settings recompute
+cannot receive fade twice. Changed upstream cleanup/sharpening/exposure settings recompute
 luminance from current unfaded RGB; there is no cached tonal mask to rebind.
 Changed alpha makes enabled fade stale until explicit rebuild or disable.
 Any stale enabled effect disables all optional effects in labelled BASE comparisons
@@ -1078,14 +1114,14 @@ pointer replacement. Interrupted pointer replacement may retain a complete orpha
 only state is authoritative. Explicit restore/retry preserves accepted work.
 
 `shadow_fade_off=true` in layer selection and `/image/.../shadow-fade-off` in
-review retain cleanup, exposure and shading. Exposure-OFF retains fade and
+review retain cleanup, sharpening, exposure and shading. Exposure-OFF retains fade and
 recomputes its weighting from exposure-OFF RGB. BASE disables all optional effects.
 The UI selects one comparison at a time. Comparison writes no revision.
 Reset saves fade OFF / amount 0, retaining area, other effects and pending area edits.
 
 Exports retain selected `foreground_rgb16.tif` (exposure and fade applied once),
-`unfaded_foreground_rgb16.tif` (cleanup+exposure),
-`unexposed_foreground_rgb16.tif` (cleanup before both exposure and fade),
+`unfaded_foreground_rgb16.tif` (cleanup+sharpening+exposure),
+`unexposed_foreground_rgb16.tif` (cleanup+sharpening before exposure and fade),
 `base_foreground_rgb16.tif`, source/alpha and all existing exposure/shading operands.
 Fade operands are `shadow_fade_support16.png`, `shadow_fade_protection16.png`,
 `shadow_fade_alpha16.png`, `shadow_fade_settings.json`, optional
@@ -1130,7 +1166,7 @@ once to RGB16. Zero variation copies RGB8*257; black is exact zero at all streng
 There is no crop/viewport normalization, seed or random pattern.
 
 Final Result is encoded-sRGB float64 `round(F*A*H + B*(1-A))`, ties-to-even,
-where F is selected RGB16 after cleanup/exposure/fade, A=alpha16/65535,
+where F is selected RGB16 after cleanup/sharpening/exposure/fade, A=alpha16/65535,
 H=1-p*W16/65535 and B is the saved RGB16 backdrop. p is saved opacity only when
 shading is enabled, otherwise zero (including absent shading). H applies only to F;
 alpha applies once, with no earlier rounding. Black compatibility keeps the
@@ -1190,7 +1226,7 @@ Native editable includes selected pre-shading `foreground_rgb16.tif`, `alpha16.p
 `source_rgb16.tif`, saved corrected RGB and W16/settings where present, independent
 background B/settings, and saved exposure/fade source, unexposed/unfaded, support,
 protection, alpha, area and settings operands where present. F already contains
-local exposure/Shadow fade; never apply either twice. Spatial F remains pre-spatial,
+local sharpening/exposure/Shadow fade; never apply them twice. Spatial F remains pre-spatial,
 with all four saved spatial operands retained even OFF; use the
 [active-mode reconstruction](#optional-fade-into-background). Delivered F/A/W/opacity/B reproduce Result
 without the project, original, models or cache using the saved float64 ties-to-even
@@ -1199,7 +1235,7 @@ Recovery uses the saved opacity only when the delivered shading record is enable
 disabled or absent shading means effective opacity zero, regardless of retained
 nonzero W/opacity. A missing W means zero. Keep retained editing settings unchanged.
 
-Schema-2 manifests identify `export_version=requested-result-v3`, selected revision,
+Schema-2 manifests identify `export_version=requested-result-v4`, selected revision,
 raw source/revision-manifest hashes, effective recipe hash, explicit draft status,
 mode/settings/geometry/algorithm, requested variants, native asset/effect identities,
 actual Python/NumPy/Pillow/tifffile encoding versions and profile digest. The
@@ -1273,7 +1309,7 @@ before staging or expanded raster allocation. Native dimensions, editing
 coordinates, saved layers, acceptance and project schema do not change.
 
 The canonical saved renderer completes the native Result once, including selected
-cleanup/exposure/fade, shading and alpha. Framing copies those RGB16 samples without
+cleanup/sharpening/exposure/fade, shading and alpha. Framing copies those RGB16 samples without
 resampling at `(left, top)`. Outside that rectangle, only the saved native backdrop's
 nearest edge/corner pixels extend outwards; legacy backdrop absence means black.
 No foreground edge is stretched and no larger analytic backdrop is regenerated.
@@ -1427,7 +1463,7 @@ the continuous transformed original bounds, not the first nonzero filtered pixel
 Height-limited fits report wider sides. Source-edge contact warns about clipped
 detail; no outlier removal, subject detection, rotation or new photographed detail occurs.
 
-Canonical saved-layer selection supplies cleanup, exposure and Shadow fade;
+Canonical saved-layer selection supplies cleanup, sharpening, exposure and Shadow fade;
 saved shading and alpha apply once. Stale enabled effects block. The renderer uses
 encoded-sRGB float64 contribution arithmetic, then separable Pillow scalar `F`
 (float32 storage) Lanczos passes over explicit transparent support. All colour/
@@ -1485,3 +1521,58 @@ Resource geometry/coefficient/allocation checks precede staging or expanded allo
 with the existing 10 GiB reserve plus pending-write allowance. Estimates include
 retained inputs, output, alpha, scalar intermediate, strip/coefficient and encoding
 scratch. They are not RAM reservations or guarantees that every valid size fits.
+
+
+## Optional local sharpening
+
+Schema-2 recipes may contain `local_sharpening` with exactly `enabled` (boolean),
+`amount` [0,1], `radius_px` [0.5,8] and `noise_threshold` [0,0.02].
+Numbers are finite int/float, excluding booleans. Absence reads as OFF with defaults
+false/0/1/0.001 without rewriting old bytes. Schema-1 policy is unchanged.
+
+A schema-2 `kind:"effects"` request uses the common developed/base/draft identities,
+scope and candidate-comparison fields. Local sharpening is exclusive. Enabled
+replacement requires exactly `sharpening_area` (typed regions and hard protection)
+or `support_file` plus `sharpening_protection_file`. `sharpening_amount_only:true`
+uses saved geometry; disable and amount-only cannot replace it. Scope contains both
+old and replacement support. Saved guide/RGB protections are merged, never dropped.
+
+The schema-2 `local_sharpening` record binds enabled/settings/stale/developed ID,
+algorithm `linear-srgb-local-sharpening-v1`, full alpha/support/protection/optional
+area SHA-256, scope and candidate-comparison status. `effects/sharpening/` contains
+support16.png, categorical protection16.png, alpha16.png, settings.json and optional
+area.json. Registered asset shapes bind native dimensions. All dependencies and
+authored/scalar equivalence are validated even OFF; unbound area files are rejected
+before warm validation. Unsupported versions and algorithms fail explicitly.
+
+Rendering starts from current cleanup-selected RGB16, decodes float64 linear sRGB,
+and forms Y=0.2126R+0.7152G+0.0722B. The mean is G(Y*A)/G(A), A=alpha16/65535,
+with Gaussian sigma radius_px, reflect boundaries and integer radius ceil(4*sigma).
+Soft-thresholded detail is multiplied by amount and support16/65535. Only nonzero
+alpha/support, unprotected pixels are writable. Target Y is bounded by valid
+nonzero-alpha 3×3 luminance extrema, then a common RGB gain is limited to gamut.
+Y=0, zero denominator/adjustment, OFF and zero Amount preserve exact samples.
+Alpha weights context, not write strength. Changed RGB encodes/quantizes once with
+float64 ties-to-even. Full-width strips retain the full kernel halo and write only
+core rows; previews crop the native result and use this same kernel.
+
+Order is cleanup → sharpening → exposure → Shadow fade → shading or spatial fade →
+alpha/background composition. New selected-RGB locks are protected from reapplication;
+their captured values become part of subsequent neighborhood context. Alpha changes
+make enabled sharpening stale, blocking acceptance/export until whole-adjustment
+rebuild or Reset. Prepare/matte/repair, restore, processing-cache context and gallery
+use the same validated inherited records. Effects publication retains writer locking,
+input rechecks, complete staged revisions and state-last pointers.
+
+Editable native deliveries add `unsharpened_foreground_rgb16.tif` (cleanup-selected)
+and `sharpening_support16.png`, `sharpening_protection16.png`,
+`sharpening_alpha16.png`, `sharpening_settings.json`, plus
+`sharpening_area.json` when authored. Unexposed RGB includes sharpening; unfaded RGB
+includes sharpening/exposure; selected foreground includes all three. Replay from
+one appropriate starting layer; never sharpen selected RGB twice. Framed/series
+editable companions bind these same native operands. Export variants stay independent.
+
+New sharpening records require the updated reader. Older binaries have validation
+bypasses and are not guaranteed to reject or correctly render them. Preserve
+pre-feature projects/exports for older applications; no automatic stripping,
+migration, cleanup or photographic acceptance is performed.

@@ -6,6 +6,7 @@ import struct
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 import numpy as np
 import numpy.typing as npt
@@ -67,6 +68,80 @@ def _orient(pixels: RGB16, orientation: int) -> RGB16:
     elif orientation == 8:
         pixels = np.rot90(pixels, 1)
     return np.ascontiguousarray(pixels, dtype=np.uint16)
+
+
+def _gain_map_property(image: Image.Image, name: str) -> list[str | None]:
+    """Read only the declared gain-map namespace, without accepting XML entities."""
+    # Pillow keeps only the last standard packet in info["xmp"]. Do not let it
+    # hide an earlier declaration or an unsupported extended packet.
+    packets = [
+        payload
+        for marker, payload in getattr(image, "applist", [])
+        if marker == "APP1"
+        and payload.startswith(
+            (b"http://ns.adobe.com/xap/1.0/\x00", b"http://ns.adobe.com/xmp/extension/\x00")
+        )
+    ]
+    if len(packets) != 1 or not packets[0].startswith(b"http://ns.adobe.com/xap/1.0/\x00"):
+        raise IngestError("Gain-map JPEG requires one standard XMP packet per image")
+    packet = image.info.get("xmp", b"")
+    if (
+        not isinstance(packet, bytes)
+        or len(packet) > 65533
+        or b"\x00" in packet
+        or b"<!DOCTYPE" in packet.upper()
+        or b"<!ENTITY" in packet.upper()
+    ):
+        raise IngestError("Invalid gain-map JPEG XMP metadata")
+    try:
+        document = ElementTree.fromstring(packet)
+    except ElementTree.ParseError as error:
+        raise IngestError("Invalid gain-map JPEG XMP metadata") from error
+    key = "{http://ns.adobe.com/hdr-gain-map/1.0/}" + name
+    return [node.attrib[key] for node in document.iter() if key in node.attrib] + [
+        node.text for node in document.iter(key)
+    ]
+
+
+def _sdr_primary_selection(
+    data: bytes, image: JpegImagePlugin.JpegImageFile, multi_picture: dict[int, Any]
+) -> dict[str, Any]:
+    """Admit only the first SDR image of a bounded, recognized two-image gain map."""
+    entries = multi_picture[0xB002]
+    if multi_picture[0xB001] != 2 or len(entries) != 2:
+        raise IngestError("SDR primary requires a two-image gain-map JPEG")
+    primary, auxiliary = entries
+    primary_size = primary["Size"]
+    offset = image.info["mpoffset"] + auxiliary["DataOffset"]
+    end = offset + auxiliary["Size"]
+    if (
+        primary["DataOffset"] != 0
+        or primary["Attribute"]["MPType"] != "Baseline MP Primary Image"
+        or auxiliary["Attribute"]["MPType"] != "Undefined"
+        or not 2 < primary_size <= offset < end <= len(data)
+        or data[primary_size - 2 : primary_size] != b"\xff\xd9"
+        or data[offset : offset + 2] != b"\xff\xd8"
+        or data[end - 2 : end] != b"\xff\xd9"
+        or _gain_map_property(image, "Version") != ["1.0"]
+    ):
+        raise IngestError("Invalid SDR-primary gain-map JPEG layout or version")
+    if _gain_map_property(image, "BaseRenditionIsHDR") not in ([], ["False"]):
+        raise IngestError("Gain-map JPEG must explicitly identify an SDR base")
+    # Only inspect the auxiliary header: its pixels never become a master or a mask.
+    with Image.open(io.BytesIO(data[offset:end])) as gain_map:
+        if (
+            gain_map.format != "JPEG"
+            or getattr(gain_map, "n_frames", 1) != 1
+            or _gain_map_property(gain_map, "Version") != ["1.0"]
+            or _gain_map_property(gain_map, "BaseRenditionIsHDR") != ["False"]
+        ):
+            raise IngestError("Gain-map JPEG must explicitly identify an SDR base")
+    return {
+        "selected_image": 0,
+        "image_count": 2,
+        "base_rendition": "SDR",
+        "hdr_gain_map_applied": False,
+    }
 
 
 def _decode_raw(data: bytes, settings: dict[str, Any]) -> tuple[RGB16, dict[str, Any]]:
@@ -161,10 +236,16 @@ def _decode_raw(data: bytes, settings: dict[str, Any]) -> tuple[RGB16, dict[str,
 
 def decode_source(data: bytes, development: dict[str, Any]) -> tuple[RGB16, dict[str, Any]]:
     """Detect signatures; never let a multichannel PNG16 enter Pillow's RGB8 route."""
-    if set(development) - {"assume_srgb", "white_balance"}:
+    if set(development) - {"assume_srgb", "white_balance", "jpeg_sdr_primary"}:
         raise IngestError("Unknown development option")
     if type(development.get("assume_srgb", False)) is not bool:
         raise IngestError("assume_srgb must be a boolean")
+    if type(development.get("jpeg_sdr_primary", False)) is not bool:
+        raise IngestError("jpeg_sdr_primary must be a boolean")
+    sdr_primary = development.get("jpeg_sdr_primary", False)
+    if sdr_primary and not data.startswith(b"\xff\xd8"):
+        raise IngestError("SDR primary requires a gain-map JPEG")
+    selection = None
     if development.get("white_balance", "camera") not in {"camera", "daylight"}:
         raise IngestError("white_balance must be camera or daylight")
     assumption = development.get("assume_srgb", False)
@@ -238,13 +319,18 @@ def decode_source(data: bytes, development: dict[str, Any]) -> tuple[RGB16, dict
                     try:
                         multi_picture = image._getmp()
                         if multi_picture is not None and multi_picture[0xB001] != 1:
-                            raise IngestError(
-                                f"Multi-image JPEG (including Ultra HDR gain maps) is unsupported; {recovery}"
-                            )
+                            if not sdr_primary:
+                                raise IngestError(
+                                    "Multi-image JPEG (including Ultra HDR gain maps) is "
+                                    f"unsupported without explicit --jpeg-sdr-primary; {recovery}"
+                                )
+                            selection = _sdr_primary_selection(data, image, multi_picture)
                     except (SyntaxError, TypeError, IndexError, KeyError) as error:
                         raise IngestError(
                             f"Invalid JPEG multi-picture metadata; {recovery}"
                         ) from error
+                if sdr_primary and selection is None:
+                    raise IngestError("SDR primary requires a two-image gain-map JPEG")
                 profile = image.info.get("icc_profile")
                 if profile and normalize_profile(profile) != srgb_profile():
                     try:
@@ -290,6 +376,8 @@ def decode_source(data: bytes, development: dict[str, Any]) -> tuple[RGB16, dict
     ):
         raise IngestError("Decoder did not return a nonempty RGB16 image")
     pixels = np.ascontiguousarray(pixels, dtype=np.uint16)
+    if selection is not None:
+        metadata["jpeg_sdr_primary"] = selection
     metadata.update(
         {
             "width": pixels.shape[1],

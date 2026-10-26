@@ -21,6 +21,24 @@ def run(*arguments):
     )
 
 
+def test_open_sdr_primary_is_explicit_and_keeps_the_complete_original(tmp_path):
+    from test_ingest import multi_image_jpeg
+
+    source = tmp_path / "gain-map.jpg"
+    original = multi_image_jpeg(gain_map=True)
+    source.write_bytes(original)
+    project = tmp_path / "sdr-project"
+    result = run(
+        "open", source, "--project", project, "--jpeg-sdr-primary", "--headless", "--assume-srgb"
+    )
+    assert result.returncode == 0, result.stderr
+    record = json.loads((project / "source.json").read_text())
+    assert record["metadata"]["jpeg_sdr_primary"]["hdr_gain_map_applied"] is False
+    assert source.read_bytes() == original
+    reopened = run("open", "--project", project, "--headless")
+    assert reopened.returncode == 0, reopened.stderr
+
+
 def test_cache_cli_inspect_confirmation_and_busy_writer(tmp_path):
     from test_cache_management import inventory, predictions
     from test_project import create

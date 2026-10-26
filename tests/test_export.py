@@ -343,7 +343,9 @@ print('standalone saved native operands reconstructed without application/projec
 
 
 @pytest.mark.parametrize("mode", ["native", "add-margins", "match-series"])
-@pytest.mark.parametrize("prior_version", ["requested-result-v1", "requested-result-v2"])
+@pytest.mark.parametrize(
+    "prior_version", ["requested-result-v1", "requested-result-v2", "requested-result-v3"]
+)
 def test_corrected_notes_use_new_identity_preserving_prior_version(
     tmp_path, monkeypatch, mode, prior_version
 ):
@@ -356,8 +358,8 @@ def test_corrected_notes_use_new_identity_preserving_prior_version(
     preserved = hashes(Path(prior["directory"]))
     output = export_project(project, variants=("transparent",), **arguments)
     record = json.loads(Path(output["manifest_file"]).read_bytes())
-    assert record["export_version"] == "requested-result-v3"
-    assert record["encoding"]["version"] == "requested-result-v3"
+    assert record["export_version"] == "requested-result-v4"
+    assert record["encoding"]["version"] == "requested-result-v4"
     assert output["directory"] != prior["directory"] and not output["reused"]
     assert hashes(Path(prior["directory"])) == preserved
     with tifffile.TiffFile(Path(prior["directory"]) / "result_rgb16.tif") as old_image:
@@ -525,7 +527,7 @@ def test_prior_format_deliveries_are_preserved_without_legacy_lookup(tmp_path, m
     before = hashes(exports)
     output = export_project(project, **mode_arguments(mode))
     record = json.loads(Path(output["manifest_file"]).read_bytes())
-    assert record["export_version"] == "requested-result-v3" and not output["reused"]
+    assert record["export_version"] == "requested-result-v4" and not output["reused"]
     assert all(hashes(exports)[name] == value for name, value in before.items())
     assert export_project(project, **mode_arguments(mode))["reused"]
 

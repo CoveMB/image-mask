@@ -38,6 +38,48 @@ def configuration(tmp_path):
     return path, tmp_path / "photo library"
 
 
+def test_sdr_primary_cli_import_and_resume_retain_original_and_decision(tmp_path):
+    from test_ingest import multi_image_jpeg
+
+    config_path, destination = configuration(tmp_path)
+    config = storage.load_storage_config(config_path)
+    storage.ensure_library(config)
+    source = destination / "Inbox/gain-map.jpg"
+    original = multi_image_jpeg(gain_map=True)
+    source.write_bytes(original)
+    result = command(
+        "--config",
+        config_path,
+        "import",
+        source,
+        "--subject",
+        "synthetic",
+        "--jpeg-sdr-primary",
+        "--assume-srgb",
+    )
+    assert result.returncode == 0, result.stderr
+    project = Path(json.loads(result.stdout)["project"])
+    record = json.loads((project / "source.json").read_text())
+    assert record["metadata"]["development_options"]["jpeg_sdr_primary"] is True
+    assert (project.parent / "original/gain-map.jpg").read_bytes() == original
+    pending = next((destination / "Inbox/.imports").glob("*/import.json"))
+    assert storage.resume_import(config, pending) == project
+    assert json.loads((project / "source.json").read_text()) == record
+
+
+def test_sdr_primary_import_option_rejects_non_boolean_before_writes(tmp_path):
+    _, destination = configuration(tmp_path)
+    config = storage.StorageConfig(destination)
+    with pytest.raises(ProjectError, match="Invalid import development"):
+        storage.import_photo(
+            config,
+            destination / "Inbox/absent.jpg",
+            subject="synthetic",
+            development={"jpeg_sdr_primary": 1},
+        )
+    assert not destination.exists()
+
+
 @pytest.mark.parametrize("development", [{}, {"white_balance": "daylight"}])
 def test_dng_import_resume_and_duplicate_keep_saved_white_balance_and_originals(
     tmp_path, development

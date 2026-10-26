@@ -71,6 +71,11 @@ def main() -> int:
     imported.add_argument("--sidecar", type=Path, action="append", default=[])
     imported.add_argument("--assume-srgb", action="store_true")
     imported.add_argument("--white-balance", choices=("camera", "daylight"), default="camera")
+    imported.add_argument(
+        "--jpeg-sdr-primary",
+        action="store_true",
+        help="Use only the verified SDR primary of a gain-map JPEG; omit HDR brightness",
+    )
     imported_resume = commands.add_parser("import-resume", help="Resume one exact pending import")
     imported_resume.add_argument("pending", type=Path)
     opened = commands.add_parser(
@@ -91,6 +96,11 @@ def main() -> int:
     )
     opened.add_argument("--assume-srgb", action="store_true")
     opened.add_argument("--white-balance", choices=("camera", "daylight"), default="camera")
+    opened.add_argument(
+        "--jpeg-sdr-primary",
+        action="store_true",
+        help="Use only the verified SDR primary of a gain-map JPEG; omit HDR brightness",
+    )
     accepted = commands.add_parser(
         "accept", help="Record trimap/final-photo approval or optional legacy development review"
     )
@@ -245,6 +255,7 @@ def main() -> int:
                         development={
                             "assume_srgb": arguments.assume_srgb,
                             "white_balance": arguments.white_balance,
+                            **({"jpeg_sdr_primary": True} if arguments.jpeg_sdr_primary else {}),
                         },
                         sidecars=tuple(arguments.sidecar),
                     )
@@ -261,6 +272,7 @@ def main() -> int:
                 development = {
                     "assume_srgb": arguments.assume_srgb,
                     "white_balance": arguments.white_balance,
+                    **({"jpeg_sdr_primary": True} if arguments.jpeg_sdr_primary else {}),
                 }
                 create_project(arguments.source, arguments.project, development)
             result = dict(

@@ -749,6 +749,25 @@ def _validate_shadow_fade_semantics(project: Path, directory: Path, manifest_byt
 
 
 @lru_cache(maxsize=128)
+def _validate_local_sharpening_semantics(
+    project: Path, directory: Path, manifest_bytes: bytes
+) -> None:
+    """Bound successful checks only; callers must rehash every operand before reuse."""
+    from .assets import revision_asset
+    from .repair import scalar16
+    from .sharpening import read_local_sharpening
+
+    read_local_sharpening(
+        project,
+        directory,
+        json.loads(manifest_bytes),
+        scalar16(
+            revision_asset(project, directory, json.loads(manifest_bytes), "base_alpha16.png")
+        ),
+    )
+
+
+@lru_cache(maxsize=128)
 def _validate_background_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
     from .background import read_background
 
@@ -801,6 +820,13 @@ def _validate_revision_directory(
         and _asset(project, f"{directory}/effects/shadow-fade/area.json").exists()
     ):
         raise ProjectError("Unbound saved Shadow fade authored area")
+    record = manifest.get("local_sharpening")
+    if (
+        isinstance(record, dict)
+        and record.get("area_sha256") is None
+        and _asset(project, f"{directory}/effects/sharpening/area.json").exists()
+    ):
+        raise ProjectError("Unbound saved Local sharpening authored area")
     from .background import validate_background_bindings
     from .spatial_fade import validate_spatial_bindings
 
@@ -899,6 +925,24 @@ def _validate_revision_directory(
         ):
             raise ProjectError("Missing bound Shadow fade authored area")
         _validate_shadow_fade_semantics(project, _asset(project, directory), _json_bytes(manifest))
+    if "local_sharpening" in manifest:
+        record = manifest["local_sharpening"]
+        from .sharpening import SHARPENING_FILES
+
+        required_fade = {"base_alpha16.png"} | {
+            f"effects/sharpening/{name}" for name in SHARPENING_FILES
+        }
+        if not required_fade <= set(revision_hashes(manifest)):
+            raise ProjectError("Incomplete Local sharpening assets")
+        if (
+            isinstance(record, dict)
+            and record.get("area_sha256") is not None
+            and "effects/sharpening/area.json" not in manifest["files"]
+        ):
+            raise ProjectError("Missing bound Local sharpening authored area")
+        _validate_local_sharpening_semantics(
+            project, _asset(project, directory), _json_bytes(manifest)
+        )
     if "spatial_fade" in manifest:
         _validate_spatial_fade_semantics(project, _asset(project, directory), _json_bytes(manifest))
     if (

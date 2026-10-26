@@ -142,6 +142,13 @@ class ReviewServer(ThreadingHTTPServer):
                             self.project, f"revisions/{path.name}/effects/shadow-fade/area.json"
                         ).read_bytes()
                     )
+                sharpening_area = None
+                if manifest.get("local_sharpening", {}).get("area_sha256"):
+                    sharpening_area = json.loads(
+                        saved_asset(
+                            self.project, f"revisions/{path.name}/effects/sharpening/area.json"
+                        ).read_bytes()
+                    )
                 exposure = dict(manifest.get("local_exposure", {"enabled": False, "stale": False}))
                 if "local_exposure" in manifest and manifest["final_acceptable"]:
                     saved_review = json.loads(
@@ -172,6 +179,10 @@ class ReviewServer(ThreadingHTTPServer):
                             "shadow_fade", {"enabled": False, "stale": False}
                         ),
                         "shadow_fade_area": fade_area,
+                        "local_sharpening": manifest.get(
+                            "local_sharpening", {"enabled": False, "stale": False}
+                        ),
+                        "sharpening_area": sharpening_area,
                         "spatial_fade": manifest.get("spatial_fade"),
                         "background": manifest.get("background"),
                         "tile_summary": {
@@ -465,9 +476,13 @@ class ReviewServer(ThreadingHTTPServer):
                 "exposure_protection_file",
                 "exposure_amount_only",
                 "shadow_fade",
+                "local_sharpening",
                 "shadow_fade_area",
+                "sharpening_area",
                 "shadow_fade_protection_file",
+                "sharpening_protection_file",
                 "shadow_fade_amount_only",
+                "sharpening_amount_only",
                 "spatial_fade",
                 "spatial_fade_protection_file",
                 "background",
@@ -675,9 +690,13 @@ class ReviewServer(ThreadingHTTPServer):
                         "exposure_protection_file",
                         "exposure_amount_only",
                         "shadow_fade",
+                        "local_sharpening",
                         "shadow_fade_area",
+                        "sharpening_area",
                         "shadow_fade_protection_file",
+                        "sharpening_protection_file",
                         "shadow_fade_amount_only",
+                        "sharpening_amount_only",
                         "spatial_fade",
                         "spatial_fade_protection_file",
                         "background",
@@ -714,7 +733,7 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/shadow-fade-off|/p(?:0|0.12|0.24))?",
+            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -743,6 +762,7 @@ class ReviewServer(ThreadingHTTPServer):
                 identity,
                 state["developed_id"],
                 effects_off=bool(base == "/base" or stale),
+                sharpening_off=base == "/sharpening-off",
                 exposure_off=base == "/exposure-off",
                 shadow_fade_off=base == "/shadow-fade-off",
             )

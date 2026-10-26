@@ -33,6 +33,11 @@ documented CLI commands can run in another terminal.
 
 ## Source appearance
 
+For a supported SDR-base gain-map JPEG, add `--jpeg-sdr-primary` when creating
+the project with `open`, or importing with `import`. This selects the ordinary
+SDR image and omits HDR brightness while preserving the complete original.
+See the [supported inputs and saved decision](file-contract.md#explicit-sdr-primary-jpeg-import).
+
 Source-development approval is not required. Open a project and start authoring
 mask guides. Choose **View → Source** to inspect its RGB8 viewing approximation;
 a new project has no Result yet. The saved RGB16 master remains authoritative.
@@ -261,11 +266,11 @@ correction is warranted, record that limitation rather than changing good detail
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
    success in computation alone does not mean the photograph improved.
-7. If cleanup, shading, Local exposure or Shadow fade was enabled, changed alpha can make it
+7. If cleanup, shading, Local sharpening, Local exposure or Shadow fade was enabled, changed alpha can make it
    **STALE** and switch comparisons to labelled BASE views. Before accepting or
    exporting the current appearance, rebuild each stale effect from its reviewed
    support/protection or explicitly disable it: **Explicitly disable cleanup**,
-   **Explicitly disable shading**, **Reset exposure**, or **Reset Shadow fade**. Follow the existing
+   **Explicitly disable shading**, **Reset Local sharpening**, **Reset exposure**, or **Reset Shadow fade**. Follow the existing
    [cleanup recovery](#compare-accept-and-export),
    [shading recovery](#protected-inward-shading) and
    [exposure recovery](#local-exposure) and [fade recovery](#shadow-fade) instructions; an amount/opacity change alone
@@ -319,7 +324,7 @@ Compare the same native crop at 0%, 12% and 24% with the preview selector. Label
 show the displayed revision, effective opacity, encoded sRGB, width, cleanup
 and baked RGB8 preview precision. BASE and stale views label all optional effects OFF. These are
 comparison strengths, not defaults or photographic approval. The BASE checkbox
-turns cleanup, local exposure, Shadow fade and shading off. The global opacity button reuses saved W
+turns all optional effects off. The global opacity button reuses saved W
 without a model or mask rebuild; it does not change geometry/protection. Explicit
 disable preserves saved layers. Rebuilding one effect never rebuilds the other.
 
@@ -511,7 +516,7 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
    successful application/reset or explicit reload clears the settings draft.
    These controls are frozen during writers; area/protection drafts remain separate.
    Settings apply afresh without compounding.
-4. **Compare Shadow fade OFF** retains cleanup, exposure and shading. **Compare
+4. **Compare Shadow fade OFF** retains cleanup, sharpening, exposure and shading. **Compare
    exposure OFF** retains fade, recalculated from exposure-OFF RGB. BASE disables
    every optional effect; selecting a comparison clears the others. [Hide authoring
    marks](#compare-accept-and-export), then inspect the
@@ -730,3 +735,45 @@ presentation together; its manifest freezes the chosen settings and byte binding
 Repeating an intact delivery validates its
 actual files and current source/revision authorization before returning without rendering.
 See [preservation and recovery](troubleshooting.md#series-framing-recovery).
+
+
+## Local sharpening
+
+Use Local sharpening to enhance existing captured detail in hair, feathers, petals,
+fabric, eyes or translucent regions. It cannot restore missed focus or remove
+captured contamination. Start gently and inspect at native scale.
+
+1. Select the current complete revision and **Canvas authoring mode → Local
+   sharpening area**. Draw Apply regions with Brush or Rectangle, or enter numeric
+   rectangle coordinates. Brush radius and inward feather use native pixels.
+   Add hard Protect regions around areas that must remain exact.
+2. Set **Amount** (0–100%), **Detail size** (Gaussian sigma, 0.5–8 native pixels;
+   distinct from brush radius), and **Noise guard** (0–2% linear luminance).
+   Defaults are OFF, 0%, 1 pixel and 0.1%. Noise guard suppresses small differences;
+   it is not a denoiser. Larger radii affect wider structures.
+3. **Apply / replace sharpening area** replaces the whole adjustment. **Apply
+   sharpening amount to saved area** uses the saved geometry and current settings.
+   Pending area edits and unrelated effect drafts remain separate. On an unaccepted
+   draft, explicitly enable candidate comparison.
+4. **Compare Local sharpening OFF** retains cleanup, exposure, Shadow fade,
+   shading/spatial fade and background, recalculating downstream RGB from the
+   unsharpened input. Source and alpha stay unchanged. Compare creates no revision.
+   Inspect black, gray and white diagnostics for halos or noise amplification.
+5. **Reset Local sharpening** saves OFF / 0% and retains recoverable operands.
+   Changed alpha makes enabled sharpening stale; rebuild the whole area or Reset.
+   A new saved RGB lock preserves its selected pixels exactly and changes the
+   filtering context for neighboring unprotected pixels. Inspect that boundary.
+   Restore retains prior revisions and never grants acceptance.
+
+One settings tuple applies to all authored regions. Cleanup changes recompute
+sharpening from the current cleanup-selected input; repeated Apply does not compound
+it. Overshoot guards limit new luminance extrema, but do not guarantee invisible halos.
+
+For portable editing, explicitly request editable export. It includes the unsharpened
+cleanup-selected RGB and independent support, protection, alpha, settings and authored
+area. Replay sharpening, exposure, Shadow fade, then shading/spatial fade and
+alpha/background composition. Selected foreground already includes sharpening;
+do not apply it twice. Framed and match-series exports bind a complete native companion:
+keep both folders together. See the [saved contract](file-contract.md#optional-local-sharpening).
+New sharpening records require the updated application; retain pre-feature projects
+and exports for older applications. Photographic acceptance remains your decision.

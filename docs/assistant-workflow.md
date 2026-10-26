@@ -285,3 +285,22 @@ Appearance settings are descriptive recipes, not an automatic preset loader.
 A supported portable series preset can be loaded through **Match series → Load
 preset file**. Keep references local; do not upload or include them in distributions.
 Ignored references need their own backup; Git does not back them up.
+
+
+## Local sharpening assistance
+
+Use only the supported Local sharpening controls or the
+[typed effects request](file-contract.md#optional-local-sharpening). Obtain the
+user's requested target/protected scope and preserve source, alpha, crop, colour,
+exposure, fade and background settings. Author explicit support and hard Protect
+areas; start with a mild Amount and appropriate native Detail size. This is one
+generic captured-detail operation, not subject detection or invented texture.
+
+Preserve the previous draft and inspect matching native source/alpha/black/gray/white
+and Local sharpening OFF comparisons. Stop on halos, amplified noise, ambiguity or
+no improvement. At most two candidates are permitted in a bounded assisted trial;
+a stronger second candidate requires clear improvement from the first. Never choose
+additional private photographs without authority. Export a clearly labelled DRAFT
+with complete editable layers, including unsharpened input and sharpening operands,
+and verify saved-only replay. Human photographic acceptance remains separate from
+engineering checks and assistant judgment.

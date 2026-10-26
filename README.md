@@ -65,6 +65,11 @@ and exposure-only comparison. Shadow fade independently darkens soft subject are
 in linear light, with Amount, Preserve highlights, explicit protection and a
 fade-only comparison.
 
+**Local sharpening** enhances captured detail in authored areas, with Amount,
+Detail size (0.5–8 native pixels), Noise guard, hard protection and an OFF comparison.
+It runs after cleanup and before exposure; it never changes alpha or invents detail.
+See [Local sharpening](docs/workflow.md#local-sharpening) for limits and recovery.
+
 **Fade into background** blends subject colour toward the chosen background using
 an editable oval, independently directed arcs, or both. It preserves alpha and
 keeps Shadow fade independent. See the [offline walkthrough](docs/workflow.md#fade-into-background)
@@ -130,8 +135,12 @@ require a trusted sRGB TIFF export; this is a deliberately conservative limit.
 Opaque RGB JPEG/PNG8 profiles are converted through LittleCMS when necessary;
 8-bit captures gain no precision by entering the 16-bit container. Alpha-bearing
 images, compressed TIFF, RGB16 PNG and non-RGB input are rejected. Multi-frame
-PNG/MPO and multi-image JPEGs (including Ultra HDR gain maps) are rejected;
-export one SDR JPEG/PNG8 or a trusted uncompressed sRGB RGB16 TIFF first.
+PNG/MPO and multi-image JPEGs are rejected by default. For a supported SDR-base
+gain-map JPEG, explicitly add `--jpeg-sdr-primary` to `open` or `import` to use
+only its ordinary SDR image. The complete original stays intact; HDR brightness
+is omitted. Other multi-image files remain unsupported. See the
+[SDR-primary import contract](docs/file-contract.md#explicit-sdr-primary-jpeg-import),
+or export one SDR JPEG/PNG8 or a trusted uncompressed sRGB RGB16 TIFF first.
 
 RAW/DNG uses LibRaw, full-size AHD and explicit sRGB gamma/WB/brightness settings.
 LibRaw identifies TIFF-container RAW before ordinary TIFF import; an RGB8 preview
@@ -188,6 +197,7 @@ for explicit model setup, typed preparation and human review.
 | Native review evidence and explicit focused comparison sheets | `src/blackmask/review.py` |
 | Canonical precision renderer and accepted/draft exports | `src/blackmask/export.py` |
 | Source cleanup, protected inward W16 and independent effect publication | `src/blackmask/effects.py` |
+| Alpha-aware linear-luminance local sharpening and saved operands | `src/blackmask/sharpening.py` |
 | Independent native area and linear-sRGB local exposure | `src/blackmask/exposure.py` |
 | Independent linear-sRGB Shadow fade and saved operands | `src/blackmask/shadow_fade.py` |
 | Native oval/arc fields and background-targeted colour blend | `src/blackmask/spatial_fade.py` |

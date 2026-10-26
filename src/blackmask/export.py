@@ -257,12 +257,14 @@ def validated_layer_inputs(
     from .effects import read_cleanup, saved_shading, saved_spatial_fade
     from .exposure import read_exposure
     from .shadow_fade import read_shadow_fade
+    from .sharpening import read_local_sharpening
 
     read_cleanup(project, revision, foreground, alpha, manifest)
     saved_shading(project, revision, alpha, manifest)
     directory = saved_asset(project, f"revisions/{revision}")
     read_exposure(project, directory, manifest, alpha)
     read_shadow_fade(project, directory, manifest, alpha)
+    read_local_sharpening(project, directory, manifest, alpha)
     read_background(project, directory, manifest)
     saved_spatial_fade(project, revision, alpha, manifest)
     return foreground, alpha, manifest
@@ -274,6 +276,7 @@ def saved_layers(
     developed_id: str,
     *,
     effects_off: bool = False,
+    sharpening_off: bool = False,
     exposure_off: bool = False,
     shadow_fade_off: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -287,6 +290,7 @@ def saved_layers(
         alpha,
         manifest,
         effects_off=effects_off or effects_stale(manifest),
+        sharpening_off=sharpening_off,
         exposure_off=exposure_off,
         shadow_fade_off=shadow_fade_off,
     )
@@ -374,7 +378,7 @@ def _check_flat_delivery(directory: Path, names: set[str]) -> None:
         raise ProjectError("Output collision: unexpected delivery members preserved")
 
 
-EXPORT_VERSION = "requested-result-v3"
+EXPORT_VERSION = "requested-result-v4"
 
 
 def _delivery_effect_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -438,9 +442,20 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         else:
             text += "Editable layers were not requested.\n"
     if "editable" in record["requested_variants"] and mode == "native":
-        text += "Native editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
+        text += "Native editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
         if "spatial_fade" in record:
             text += "With enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\n"
+    if "local_sharpening" in record and "editable" in record["requested_variants"]:
+        text += (
+            "Replay Local sharpening from unsharpened_foreground_rgb16.tif (cleanup-selected RGB), "
+            "sharpening_support16.png/protection16.png/alpha16.png and sharpening_settings.json. "
+            "Apply linear-srgb-local-sharpening-v1 once, then exposure, Shadow fade, shading or "
+            "spatial fade, then alpha/background composition. Unexposed RGB already includes "
+            "sharpening; unfaded RGB includes sharpening and exposure; foreground includes all "
+            "three. These are alternative starting points: never sharpen them twice. "
+            "Optional sharpening_area.json retains authored geometry. Older applications cannot "
+            "reliably read new sharpening records; keep pre-feature projects/exports for them.\n"
+        )
     if "result_compositing" in record:
         text += "Saved compositing: " + record["result_compositing"] + "\n"
     return text.encode()
@@ -480,12 +495,15 @@ def _delivery_members(
         if "background" in manifest:
             names.update({"background_rgb16.tif", "background_settings.json"})
         for section, directory, prefix in (
+            ("local_sharpening", "sharpening", "sharpening"),
             ("local_exposure", "exposure", "exposure"),
             ("shadow_fade", "shadow-fade", "shadow_fade"),
         ):
             if section not in manifest:
                 continue
             names.update({"unexposed_foreground_rgb16.tif", "base_foreground_rgb16.tif"})
+            if section == "local_sharpening":
+                names.add("unsharpened_foreground_rgb16.tif")
             if section == "shadow_fade":
                 names.add("unfaded_foreground_rgb16.tif")
             for name in (
@@ -812,6 +830,7 @@ def _delivery_request_record(
             for name in (
                 "color_cleanup",
                 "shading",
+                "local_sharpening",
                 "local_exposure",
                 "shadow_fade",
                 "spatial_fade",
@@ -822,7 +841,14 @@ def _delivery_request_record(
             name: (
                 _delivery_effect_record(manifest[name]) if name != "background" else manifest[name]
             )
-            for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade", "background")
+            for name in (
+                "color_cleanup",
+                "shading",
+                "local_sharpening",
+                "local_exposure",
+                "shadow_fade",
+                "background",
+            )
             if name in manifest
         },
     }
@@ -850,7 +876,14 @@ def _delivery_request_record(
         if margins_settings is not None:
             record["margins"] = settings
     if mode != "native":
-        for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade", "spatial_fade"):
+        for name in (
+            "color_cleanup",
+            "shading",
+            "local_sharpening",
+            "local_exposure",
+            "shadow_fade",
+            "spatial_fade",
+        ):
             record.pop(name, None)
         if "background" in manifest:
             record["background"] = {
@@ -1386,6 +1419,39 @@ def _write_editable(
                 saved_asset(project, f"revisions/{revision}/{saved}").read_bytes()
             )
     write_developed(stage / "foreground_rgb16.tif", foreground)
+    if "local_sharpening" in manifest:
+        unsharpened, _, _ = saved_layers(
+            project,
+            revision,
+            state["developed_id"],
+            sharpening_off=True,
+            exposure_off=True,
+            shadow_fade_off=True,
+        )
+        write_developed(stage / "unsharpened_foreground_rgb16.tif", unsharpened)
+        unexposed, _, _ = saved_layers(
+            project,
+            revision,
+            state["developed_id"],
+            exposure_off=True,
+            shadow_fade_off=True,
+        )
+        write_developed(stage / "unexposed_foreground_rgb16.tif", unexposed)
+        (stage / "base_foreground_rgb16.tif").write_bytes(
+            saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
+        )
+        for name in (
+            "support16.png",
+            "protection16.png",
+            "alpha16.png",
+            "settings.json",
+            "area.json",
+        ):
+            asset = f"effects/sharpening/{name}"
+            if asset in revision_hashes(manifest):
+                (stage / ("sharpening_" + name)).write_bytes(
+                    saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                )
     if "local_exposure" in manifest:
         unexposed, _, _ = saved_layers(
             project, revision, state["developed_id"], exposure_off=True, shadow_fade_off=True

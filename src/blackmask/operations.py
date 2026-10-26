@@ -465,6 +465,7 @@ def _prepare(
     from .effects import (
         inherit_cleanup,
         inherit_exposure,
+        inherit_local_sharpening,
         inherit_shading,
         inherit_shadow_fade,
         inherit_spatial_fade,
@@ -487,6 +488,11 @@ def _prepare(
     )
     fade = (
         inherit_shadow_fade(project, parent, stage, state["developed_id"], assets=assets)
+        if parent
+        else None
+    )
+    sharpening = (
+        inherit_local_sharpening(project, parent, stage, state["developed_id"], assets=assets)
         if parent
         else None
     )
@@ -627,6 +633,7 @@ def _prepare(
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
         **({"shadow_fade": fade} if fade is not None else {}),
+        **({"local_sharpening": sharpening} if sharpening is not None else {}),
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
     }
@@ -1243,7 +1250,7 @@ def _matte(
     applicable_parent_foreground = foreground
     if repairing and any(
         manifest.get(name, {}).get("enabled")
-        for name in ("color_cleanup", "local_exposure", "shadow_fade")
+        for name in ("color_cleanup", "local_sharpening", "local_exposure", "shadow_fade")
     ):
         from .effects import saved_effect_lock_layers
 
@@ -1269,7 +1276,7 @@ def _matte(
             values = tifffile.imread(saved_asset(project, f"revisions/{rev}/{name}"))
             if any(
                 locked_manifest.get(name, {}).get("enabled")
-                for name in ("color_cleanup", "local_exposure", "shadow_fade")
+                for name in ("color_cleanup", "local_sharpening", "local_exposure", "shadow_fade")
             ):
                 from .effects import saved_effect_lock_layers
 
@@ -1434,6 +1441,7 @@ def _matte(
         effects_stale,
         inherit_cleanup,
         inherit_exposure,
+        inherit_local_sharpening,
         inherit_shading,
         inherit_shadow_fade,
         inherit_spatial_fade,
@@ -1457,6 +1465,9 @@ def _matte(
     fade = inherit_shadow_fade(
         project, parent, stage, state["developed_id"], alpha, rgb_protection, assets=assets
     )
+    sharpening = inherit_local_sharpening(
+        project, parent, stage, state["developed_id"], alpha, rgb_protection, assets=assets
+    )
     spatial = inherit_spatial_fade(
         project, parent, stage, state["developed_id"], alpha, rgb_protection, assets=assets
     )
@@ -1478,6 +1489,7 @@ def _matte(
     for name, inherited in (
         ("color_cleanup", cleanup),
         ("shading", shading),
+        ("local_sharpening", sharpening),
         ("local_exposure", exposure),
         ("shadow_fade", fade),
         ("spatial_fade", spatial),
@@ -1505,6 +1517,7 @@ def _matte(
         {
             "color_cleanup": cleanup or {},
             "shading": shading or {},
+            "local_sharpening": sharpening or {},
             "local_exposure": exposure or {},
             "shadow_fade": fade or {},
             "spatial_fade": spatial or {},
@@ -1521,6 +1534,20 @@ def _matte(
         review_foreground = tifffile.imread(
             stage_asset(project, stage, assets, "corrected_rgb16.tif")
         )
+    from .sharpening import selected_local_sharpening
+
+    review_foreground = selected_local_sharpening(
+        project,
+        stage,
+        review_foreground,
+        alpha,
+        {
+            "developed_id": state["developed_id"],
+            "assets": assets,
+            **({"local_sharpening": sharpening} if sharpening else {}),
+        },
+        sharpening_off=stale_effects,
+    )
     from .exposure import selected_exposure
 
     review_foreground, clipping = selected_exposure(
@@ -1674,6 +1701,17 @@ def _matte(
                 else f"; Shadow fade {'ON' if fade['enabled'] else 'OFF'}"
             )
             path.write_bytes(_json_bytes(record))
+    if sharpening:
+        for review_name in ("review", "review-before") if repairing else ("review",):
+            path = stage / review_name / "manifest.json"
+            record = json.loads(path.read_bytes())
+            record["local_sharpening"] = sharpening
+            record["label"] += (
+                "; Local sharpening OFF; BASE comparison"
+                if stale_effects
+                else f"; Local sharpening {'ON' if sharpening['enabled'] else 'OFF'}"
+            )
+            path.write_bytes(_json_bytes(record))
     if spatial:
         for review_name in ("review", "review-before") if repairing else ("review",):
             path = stage / review_name / "manifest.json"
@@ -1713,6 +1751,7 @@ def _matte(
         **({"shading": shading} if shading is not None else {}),
         **({"local_exposure": exposure} if exposure is not None else {}),
         **({"shadow_fade": fade} if fade is not None else {}),
+        **({"local_sharpening": sharpening} if sharpening is not None else {}),
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
     }

@@ -618,7 +618,7 @@ def test_unrecognized_dng_cannot_be_imported_as_ordinary_rgb16_tiff():
         decode_source(buffer.getvalue(), {})
 
 
-def multi_image_jpeg(*, gain_map=False):
+def multi_image_jpeg(*, gain_map=False, base_hdr="False", orientation=1, extra_auxiliary_xmp=None):
     """Build two actual JPEG payloads and an MPF directory, without photo assets."""
     buffer = io.BytesIO()
     options = {}
@@ -628,11 +628,34 @@ def multi_image_jpeg(*, gain_map=False):
             b'<rdf:Description xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" '
             b'hdrgm:Version="1.0"/></x:xmpmeta>'
         )
+    auxiliary = Image.new("RGB", (8, 6), (100, 100, 100))
+    if gain_map:
+        base = "" if base_hdr is None else f' hdrgm:BaseRenditionIsHDR="{base_hdr}"'
+        auxiliary.encoderinfo = {
+            "xmp": (
+                '<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+                '<rdf:Description xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+                'xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" '
+                f'hdrgm:Version="1.0"{base}/></x:xmpmeta>'
+            ).encode()
+        }
+        if extra_auxiliary_xmp is not None:
+            auxiliary.encoderinfo["extra"] = (
+                b"\xff\xe1" + struct.pack(">H", len(extra_auxiliary_xmp) + 2) + extra_auxiliary_xmp
+            )
+        # Namespace declarations must be valid for the application XMP reader.
+        options["xmp"] = options["xmp"].replace(
+            b"<rdf:Description ",
+            b'<rdf:Description xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" ',
+        )
+    exif = Image.Exif()
+    exif[274] = orientation
     Image.new("RGB", (8, 6), (20, 80, 160)).save(
         buffer,
         format="MPO",
         save_all=True,
-        append_images=[Image.new("RGB", (8, 6), (100, 100, 100))],
+        append_images=[auxiliary],
+        exif=exif,
         **options,
     )
     return buffer.getvalue()
@@ -655,6 +678,67 @@ def test_gain_map_jpeg_cannot_silently_become_an_sdr_master():
         IngestError, match="Multi-image JPEG.*Ultra HDR.*single-image SDR JPEG/PNG8"
     ):
         decode_source(data, {"assume_srgb": True})
+
+
+@pytest.mark.parametrize("orientation", [1, 6])
+def test_explicit_sdr_primary_preserves_primary_pixels_orientation_and_precision(orientation):
+    data = multi_image_jpeg(gain_map=True, orientation=orientation)
+    with Image.open(io.BytesIO(data)) as image:
+        expected = np.array(image, dtype=np.uint16) * 257
+    if orientation == 6:
+        expected = np.rot90(expected, -1)
+    pixels, metadata = decode_source(data, {"assume_srgb": True, "jpeg_sdr_primary": True})
+    np.testing.assert_array_equal(pixels, expected)
+    assert metadata["source_precision_bits"] == 8
+    assert metadata["jpeg_sdr_primary"] == {
+        "selected_image": 0,
+        "image_count": 2,
+        "base_rendition": "SDR",
+        "hdr_gain_map_applied": False,
+    }
+    assert metadata["development_options"]["jpeg_sdr_primary"] is True
+
+
+@pytest.mark.parametrize("base_hdr", ["True", None, "unknown"])
+def test_sdr_primary_requires_explicit_sdr_base_metadata(base_hdr):
+    with pytest.raises(IngestError, match="SDR base"):
+        decode_source(
+            multi_image_jpeg(gain_map=True, base_hdr=base_hdr),
+            {"assume_srgb": True, "jpeg_sdr_primary": True},
+        )
+
+
+def test_sdr_primary_rejects_truncated_auxiliary_payload():
+    data = multi_image_jpeg(gain_map=True)
+    with pytest.raises(IngestError, match="gain-map JPEG"):
+        decode_source(data[:-4], {"assume_srgb": True, "jpeg_sdr_primary": True})
+
+
+@pytest.mark.parametrize("namespace", [b"xap/1.0/", b"xmp/extension/"])
+def test_sdr_primary_rejects_duplicate_or_extended_xmp(namespace):
+    # Pillow's last standard XMP packet would otherwise hide this HDR-base claim.
+    packet = (
+        b'<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+        b'<rdf:Description xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        b'xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" '
+        b'hdrgm:Version="1.0" hdrgm:BaseRenditionIsHDR="True"/></x:xmpmeta>'
+    )
+    data = multi_image_jpeg(
+        gain_map=True, extra_auxiliary_xmp=b"http://ns.adobe.com/" + namespace + b"\x00" + packet
+    )
+    with pytest.raises(IngestError, match="XMP"):
+        decode_source(data, {"assume_srgb": True, "jpeg_sdr_primary": True})
+
+
+@pytest.mark.parametrize("value", [1, "true", None])
+def test_sdr_primary_option_requires_boolean(value):
+    with pytest.raises(IngestError, match="jpeg_sdr_primary must be a boolean"):
+        decode_source(multi_image_jpeg(gain_map=True), {"jpeg_sdr_primary": value})
+
+
+def test_sdr_primary_does_not_enable_generic_mpo():
+    with pytest.raises(IngestError, match="Multi-frame MPO"):
+        decode_source(multi_image_jpeg(), {"assume_srgb": True, "jpeg_sdr_primary": True})
 
 
 @pytest.mark.parametrize("disposal", [0, 1, 2])

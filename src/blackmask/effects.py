@@ -53,6 +53,12 @@ from .shadow_fade import (
     selected_shadow_fade,
     validate_shadow_fade,
 )
+from .sharpening import (
+    SHARPENING_FILES,
+    read_local_sharpening,
+    selected_local_sharpening,
+    validate_local_sharpening,
+)
 from .spatial_fade import (
     SPATIAL_FADE_ALGORITHM,
     SPATIAL_FADE_FILES,
@@ -63,7 +69,7 @@ from .spatial_fade import (
 )
 
 # Bump when validation, request equivalence or effect arithmetic changes.
-EFFECTS_EXECUTION_VERSION = "validated-effects-v3"
+EFFECTS_EXECUTION_VERSION = "validated-effects-v4"
 
 
 def _effects_execution_identity() -> dict[str, Any] | None:
@@ -83,6 +89,7 @@ def _effects_execution_identity() -> dict[str, Any] | None:
             "color_cleanup": "nearest-confirmed-empty-inverse-mixture-v1",
             "shading": "inward-smoothstep-thickness-direction-highlight-v1",
             "local_exposure": "linear-srgb-local-exposure-v1",
+            "local_sharpening": "linear-srgb-local-sharpening-v1",
             "shadow_fade": "linear-srgb-shadow-fade-v1",
             "background": ALGORITHM,
             "spatial_fade": SPATIAL_FADE_ALGORITHM,
@@ -116,6 +123,7 @@ def _effects_request_identity(
         normalized[name] = {"sha256": checksum}
     if "color_cleanup" in operation or not set(operation) & {
         "shading",
+        "local_sharpening",
         "local_exposure",
         "shadow_fade",
         "background",
@@ -145,7 +153,14 @@ def _effects_request_identity(
             oval=normalized_shape(spatial["oval"]),
             arcs=[normalized_shape(shape) for shape in spatial["arcs"]],
         )
-    for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade", "background"):
+    for name in (
+        "color_cleanup",
+        "shading",
+        "local_sharpening",
+        "local_exposure",
+        "shadow_fade",
+        "background",
+    ):
         if name in normalized:
             normalized[name] = {
                 key: float(value) if type(value) in {int, float} else value
@@ -165,6 +180,25 @@ def _spatial_reuse_binding(
         "files": {
             f"effects/spatial-fade/{name}": hashes[f"effects/spatial-fade/{name}"]
             for name in SPATIAL_FADE_FILES
+        },
+    }
+
+
+def _sharpening_reuse_binding(
+    manifest: dict[str, Any], hashes: dict[str, str]
+) -> dict[str, Any] | None:
+    if "local_sharpening" not in manifest:
+        return None
+    return {
+        "record": manifest["local_sharpening"],
+        "cleanup": manifest.get("color_cleanup"),
+        "files": {
+            name: checksum
+            for name, checksum in hashes.items()
+            if name.startswith("effects/sharpening/")
+            or name.startswith("effects/")
+            and name.count("/") == 1
+            or name in {"foreground_rgb16.tif", "corrected_rgb16.tif", "base_alpha16.png"}
         },
     }
 
@@ -215,6 +249,7 @@ def _reused_effects_result(
         for name in (
             "color_cleanup",
             "shading",
+            "local_sharpening",
             "local_exposure",
             "shadow_fade",
             "background",
@@ -421,7 +456,14 @@ SHADING_FILES = (
 def effects_stale(manifest: dict[str, Any]) -> bool:
     return any(
         manifest.get(name, {}).get("enabled") and manifest[name].get("stale")
-        for name in ("color_cleanup", "shading", "local_exposure", "shadow_fade", "spatial_fade")
+        for name in (
+            "color_cleanup",
+            "shading",
+            "local_sharpening",
+            "local_exposure",
+            "shadow_fade",
+            "spatial_fade",
+        )
     )
 
 
@@ -581,6 +623,56 @@ def inherit_shadow_fade(
     return record
 
 
+def inherit_local_sharpening(
+    project: Path,
+    parent: str,
+    stage: Path,
+    developed_id: str,
+    alpha: np.ndarray | None = None,
+    rgb_protection: np.ndarray | None = None,
+    *,
+    assets: dict[str, Any],
+) -> dict[str, Any] | None:
+    manifest = read_revision(project, parent, developed_id)
+    previous = manifest.get("local_sharpening")
+    if previous is None:
+        return None
+    record = dict(previous)
+    directory = stage / "effects/sharpening"
+    directory.mkdir(parents=True, exist_ok=True)
+    inherit_revision_files(
+        project,
+        parent,
+        stage,
+        assets,
+        tuple(
+            "effects/sharpening/" + name
+            for name in (*SHARPENING_FILES, *(("area.json",) if record["area_sha256"] else ()))
+        ),
+    )
+    if alpha is not None:
+        record["stale"] = bool(
+            record["enabled"]
+            and not np.array_equal(
+                scalar16(stage_asset(project, stage, assets, "effects/sharpening/alpha16.png")),
+                alpha,
+            )
+        )
+    if rgb_protection is not None:
+        protection = scalar16(
+            stage_asset(project, stage, assets, "effects/sharpening/protection16.png")
+        )
+        protection[rgb_protection] = 65535
+        Image.fromarray(protection).save(directory / "protection16.png")
+        record["protection_sha256"] = digest(
+            (
+                stage_asset(project, stage, assets, "effects/sharpening/protection16.png")
+            ).read_bytes()
+        )
+    (directory / "settings.json").write_bytes(_json_bytes(record))
+    return record
+
+
 def inherit_spatial_fade(
     project: Path,
     parent: str,
@@ -733,6 +825,7 @@ def selected_foreground(
     manifest: dict[str, Any],
     *,
     effects_off: bool = False,
+    sharpening_off: bool = False,
     exposure_off: bool = False,
     shadow_fade_off: bool = False,
 ) -> np.ndarray:
@@ -746,6 +839,14 @@ def selected_foreground(
         and not effects_off
         and not record["stale"]
         else foreground
+    )
+    unexposed = selected_local_sharpening(
+        project,
+        saved_asset(project, f"revisions/{revision}"),
+        unexposed,
+        alpha,
+        manifest,
+        sharpening_off=sharpening_off or effects_off,
     )
     exposed = selected_exposure(
         project,
@@ -789,6 +890,12 @@ def saved_effect_lock_layers(project: Path, revision: str, developed_id: str):
             if name.startswith("effects/shadow-fade/") or name == "base_alpha16.png"
         ):
             raise ProjectError("Prepared lock must retain inherited Shadow fade and alpha")
+        if manifest.get("local_sharpening") != parent.get("local_sharpening") or any(
+            revision_hashes(manifest).get(name) != revision_hashes(parent).get(name)
+            for name in revision_hashes(parent)
+            if name.startswith("effects/sharpening/") or name == "base_alpha16.png"
+        ):
+            raise ProjectError("Prepared lock must retain inherited Local sharpening and alpha")
         if manifest.get("spatial_fade") != parent.get("spatial_fade") or any(
             manifest["files"].get(name) != parent["files"].get(name)
             for name in parent["files"]
@@ -827,6 +934,7 @@ def run_effects(
             "shading",
             "shading_protection_file",
             "opacity_only",
+            "local_sharpening",
             "local_exposure",
             "exposure_area",
             "exposure_protection_file",
@@ -835,6 +943,9 @@ def run_effects(
             "shadow_fade_area",
             "shadow_fade_protection_file",
             "shadow_fade_amount_only",
+            "sharpening_area",
+            "sharpening_protection_file",
+            "sharpening_amount_only",
             "spatial_fade",
             "spatial_fade_protection_file",
         }
@@ -857,6 +968,33 @@ def run_effects(
         validate_background(operation["background"])
         if set(operation) != required | {"background"}:
             raise ProjectError("Background must be an exclusive effects operation")
+    sharpening_changed = "local_sharpening" in operation
+    sharpening_fields = {"sharpening_area", "sharpening_protection_file", "sharpening_amount_only"}
+    if sharpening_changed:
+        validate_local_sharpening(operation["local_sharpening"])
+        if set(operation) - required - sharpening_fields - {"local_sharpening", "support_file"}:
+            raise ProjectError("Local sharpening must be an exclusive effects operation")
+        if type(operation.get("sharpening_amount_only", False)) is not bool:
+            raise ProjectError("sharpening_amount_only must be boolean")
+        sharpening_reuse = (
+            operation.get("sharpening_amount_only", False)
+            or not operation["local_sharpening"]["enabled"]
+        )
+        if sharpening_reuse and set(operation) & {
+            "support_file",
+            "sharpening_area",
+            "sharpening_protection_file",
+        }:
+            raise ProjectError("Sharpening amount-only/disable cannot replace area or protection")
+        if not sharpening_reuse and not (
+            "sharpening_area" in operation
+            and not set(operation) & {"support_file", "sharpening_protection_file"}
+            or "sharpening_area" not in operation
+            and {"support_file", "sharpening_protection_file"} <= set(operation)
+        ):
+            raise ProjectError("Sharpening rebuild requires exactly one registered area source")
+    elif set(operation) & sharpening_fields:
+        raise ProjectError("Sharpening fields require local_sharpening settings")
     fade_changed = "shadow_fade" in operation
     exposure_changed = "local_exposure" in operation
     exposure_fields = {"exposure_area", "exposure_protection_file", "exposure_amount_only"}
@@ -895,6 +1033,7 @@ def run_effects(
     elif (
         set(operation) & exposure_fields
         or not fade_changed
+        and not sharpening_changed
         and not background_changed
         and not spatial_changed
         and "support_file" not in operation
@@ -908,6 +1047,7 @@ def run_effects(
             "shading",
             "shading_protection_file",
             "opacity_only",
+            "local_sharpening",
             "local_exposure",
         }:
             raise ProjectError("Shadow fade must be a separate effects operation")
@@ -949,6 +1089,7 @@ def run_effects(
     cleanup_changed = "color_cleanup" in operation or not (
         "shading" in operation
         or exposure_changed
+        or sharpening_changed
         or fade_changed
         or background_changed
         or spatial_changed
@@ -1023,6 +1164,7 @@ def run_effects(
         not in {
             "color_cleanup",
             "shading",
+            "local_sharpening",
             "local_exposure",
             "shadow_fade",
             "spatial_fade",
@@ -1225,6 +1367,79 @@ def run_effects(
             (fade_support != 0) & (alpha != 0) & ~fade_protection
         ):
             raise ProjectError("Enabled Shadow fade requires a nonempty eligible selection")
+    sharpening_record = manifest.get("local_sharpening")
+    sharpening_inputs = {}
+    sharpening_area_bytes = None
+    if sharpening_changed:
+        sharpening_settings = operation["local_sharpening"]
+        saved = read_local_sharpening(
+            project, saved_asset(project, f"revisions/{parent}"), manifest, alpha
+        )
+        if (
+            sharpening_settings["enabled"]
+            and parent != state["accepted_revision"]
+            and not operation["candidate_comparison"]
+        ):
+            raise ProjectError(
+                "Local sharpening requires accepted base or explicit candidate comparison"
+            )
+        if (
+            operation.get("sharpening_amount_only")
+            and sharpening_settings["enabled"]
+            and saved is None
+        ):
+            raise ProjectError("Local sharpening amount-only requires a saved area")
+        if sharpening_reuse:
+            if saved is None:
+                sharpening_support = np.zeros(alpha.shape, dtype=np.uint16)
+                sharpening_protection = protection.copy()
+                sharpening_dependency = alpha.copy()
+            else:
+                sharpening_support, sharpening_protection, old_record = saved
+                sharpening_dependency = scalar16(
+                    saved_asset(project, f"revisions/{parent}/effects/sharpening/alpha16.png")
+                )
+                if sharpening_settings["enabled"] and not np.array_equal(
+                    sharpening_dependency, alpha
+                ):
+                    raise ProjectError("Stale Local sharpening alpha: rebuild or disable")
+                if old_record["area_sha256"]:
+                    sharpening_area_bytes = saved_asset(
+                        project, f"revisions/{parent}/effects/sharpening/area.json"
+                    ).read_bytes()
+        else:
+            if "sharpening_area" in operation:
+                sharpening_support, sharpening_protection = rasterize_effect_area(
+                    operation["sharpening_area"], state["developed_id"], width, height
+                )
+                sharpening_area_bytes = _json_bytes(operation["sharpening_area"])
+            else:
+                assert support_path is not None
+                sharpening_inputs[support_path] = support_bytes
+                sharpening_support = support
+                path = _input_file(project, operation["sharpening_protection_file"])
+                sharpening_inputs[path] = path.read_bytes()
+                explicit = read_shading_protection(path)
+                if explicit.shape != alpha.shape or not np.isin(explicit, [0, 65535]).all():
+                    raise ProjectError(
+                        "Local sharpening protection must be aligned categorical scalar16/8"
+                    )
+                sharpening_protection = explicit != 0
+            sharpening_dependency = alpha.copy()
+        sharpening_protection |= protection
+        # Replacing A with B removes A as well: both areas must be inside the declared scope.
+        combined = (sharpening_support != 0) | (saved[0] != 0 if saved else False)
+        x0, y0, x1, y1 = scope
+        outside = combined.copy()
+        outside[y0:y1, x0:x1] = False
+        if outside.any():
+            raise ProjectError(
+                "Local sharpening scope must contain both previous and replacement area"
+            )
+        if sharpening_settings["enabled"] and not np.any(
+            (sharpening_support != 0) & (alpha != 0) & ~sharpening_protection
+        ):
+            raise ProjectError("Enabled Local sharpening requires a nonempty eligible selection")
     if not spatial_changed and current_recipe.get("spatial_fade") != parent_recipe.get(
         "spatial_fade"
     ):
@@ -1259,6 +1474,9 @@ def run_effects(
         )
 
     def recheck():
+        for path, data in sharpening_inputs.items():
+            if path.read_bytes() != data:
+                raise ProjectError("Stale Local sharpening input")
         for path, data in spatial_inputs.items():
             if path.read_bytes() != data:
                 raise ProjectError("Stale spatial fade protection input")
@@ -1300,6 +1518,7 @@ def run_effects(
     input_hashes: dict[str, str] = {}
     request_inputs: dict[str, bytes] = {}
     for name in (
+        "sharpening_protection_file",
         "support_file",
         "shading_protection_file",
         "exposure_protection_file",
@@ -1312,7 +1531,11 @@ def run_effects(
                 support_bytes
                 if name == "support_file"
                 else shading_inputs.get(
-                    path, exposure_inputs.get(path, fade_inputs.get(path, spatial_inputs.get(path)))
+                    path,
+                    sharpening_inputs.get(
+                        path,
+                        exposure_inputs.get(path, fade_inputs.get(path, spatial_inputs.get(path))),
+                    ),
                 )
             )
             if captured is None:
@@ -1333,6 +1556,7 @@ def run_effects(
                 not in {
                     "color_cleanup",
                     "shading",
+                    "local_sharpening",
                     "local_exposure",
                     "shadow_fade",
                     "background",
@@ -1361,6 +1585,7 @@ def run_effects(
         manifest,
         dict(
             identity,
+            local_sharpening=_sharpening_reuse_binding(manifest, revision_hashes(manifest)),
             spatial_fade=_spatial_reuse_binding(
                 manifest.get("spatial_fade"), revision_hashes(manifest)
             ),
@@ -1371,7 +1596,9 @@ def run_effects(
         return reused_result
     check_space(
         project,
-        source.nbytes * (47 if background_changed or "background" in manifest else 45) + 1024**2,
+        source.nbytes * (47 if background_changed or "background" in manifest else 45)
+        + (alpha.nbytes * 3 if sharpening_changed else 0)
+        + 1024**2,
     )
     revisions = saved_asset(project, "revisions")
     existing = [
@@ -1663,6 +1890,47 @@ def run_effects(
             },
         }
         (directory / "settings.json").write_bytes(_json_bytes(fade_record))
+    sharpening_record = inherit_local_sharpening(
+        project, parent, stage, state["developed_id"], assets=assets
+    )
+    if sharpening_changed:
+        directory = stage / "effects/sharpening"
+        directory.mkdir(parents=True, exist_ok=True)
+        for name, value in (
+            ("support16", sharpening_support),
+            ("protection16", sharpening_protection.astype(np.uint16) * 65535),
+            ("alpha16", sharpening_dependency),
+        ):
+            Image.fromarray(value).save(directory / (name + ".png"))
+        if sharpening_area_bytes is not None:
+            (directory / "area.json").write_bytes(sharpening_area_bytes)
+        elif (directory / "area.json").exists():
+            # Stage is new; omit inherited authored geometry when replacing with scalar inputs.
+            (directory / "area.json").unlink()
+        sharpening_record = {
+            "schema_version": 2,
+            "enabled": sharpening_settings["enabled"],
+            "settings": sharpening_settings,
+            "stale": bool(
+                sharpening_settings["enabled"] and not np.array_equal(sharpening_dependency, alpha)
+            ),
+            "developed_id": state["developed_id"],
+            "algorithm": "linear-srgb-local-sharpening-v1",
+            "scope_xyxy": scope,
+            "candidate_comparison": operation["candidate_comparison"],
+            "area_sha256": digest(sharpening_area_bytes)
+            if sharpening_area_bytes is not None
+            else None,
+            **{
+                key: digest((directory / name).read_bytes())
+                for name, key in (
+                    ("support16.png", "support_sha256"),
+                    ("protection16.png", "protection_sha256"),
+                    ("alpha16.png", "alpha_sha256"),
+                )
+            },
+        }
+        (directory / "settings.json").write_bytes(_json_bytes(sharpening_record))
     from .background import inherit_background, save_background
 
     background_record: dict[str, Any] | None
@@ -1681,6 +1949,8 @@ def run_effects(
             assets=assets,
         )
     effect_records = {}
+    if sharpening_record is not None:
+        effect_records["local_sharpening"] = sharpening_record
     if background_record is not None:
         effect_records["background"] = background_record
     if record is not None:
@@ -1710,6 +1980,7 @@ def run_effects(
             and spatial_settings["enabled"]
             and shading_record is not None,
         ),
+        ("local_sharpening", sharpening_changed),
         ("local_exposure", exposure_changed),
         ("shadow_fade", fade_changed),
         (
@@ -1740,6 +2011,14 @@ def run_effects(
     (stage / "recipe.toml").write_bytes(effective_recipe_bytes)
     stale = effects_stale(effect_records)
     appearance = corrected if enabled and not stale else foreground
+    appearance = selected_local_sharpening(
+        project,
+        stage,
+        appearance,
+        alpha,
+        dict(effect_records, developed_id=state["developed_id"], assets=assets),
+        sharpening_off=stale,
+    )
     appearance, clipping = selected_exposure(
         project,
         stage,
@@ -1797,6 +2076,12 @@ def run_effects(
         opacity=opacity,
     )
     review.update(effect_records)
+    if sharpening_record is not None:
+        review["label"] += (
+            "; Local sharpening ON"
+            if sharpening_record["enabled"] and not stale
+            else "; Local sharpening OFF"
+        )
     if exposure_record is not None:
         review["local_exposure_clipping"] = clipping
         review["label"] += (
@@ -1825,6 +2110,22 @@ def run_effects(
     (stage / "review/manifest.json").write_bytes(_json_bytes(review))
     # Input snapshots remain consumed-input evidence. Bind the new output only
     # after its actual record and all four operands exist, so first repeats hit.
+    identity["local_sharpening"] = _sharpening_reuse_binding(
+        effect_records,
+        {
+            **{name: reference["sha256"] for name, reference in assets.items()},
+            **{
+                str(path.relative_to(stage)): digest(path.read_bytes())
+                for path in stage.rglob("*")
+                if path.is_file()
+                and (
+                    str(path.relative_to(stage)).startswith("effects/")
+                    or path.name
+                    in {"foreground_rgb16.tif", "corrected_rgb16.tif", "base_alpha16.png"}
+                )
+            },
+        },
+    )
     identity["spatial_fade"] = _spatial_reuse_binding(
         spatial_record,
         {

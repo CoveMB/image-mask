@@ -552,6 +552,10 @@ def _review_project_locked(
         "shadow_fade"
     ].get("stale"):
         stale.append("shadow_fade_stale")
+    if revision_manifest.get("local_sharpening", {}).get("enabled") and revision_manifest[
+        "local_sharpening"
+    ].get("stale"):
+        stale.append("local_sharpening_stale")
     from .exposure import selected_exposure
 
     unexposed = saved_layers(
@@ -583,6 +587,13 @@ def _review_project_locked(
             "; Shadow fade OFF"
             if effects_stale(revision_manifest) or not revision_manifest["shadow_fade"]["enabled"]
             else "; Shadow fade ON"
+        )
+    if "local_sharpening" in revision_manifest:
+        record["label"] += (
+            "; Local sharpening OFF"
+            if effects_stale(revision_manifest)
+            or not revision_manifest["local_sharpening"]["enabled"]
+            else "; Local sharpening ON"
         )
     if "spatial_fade" in revision_manifest:
         record["spatial_fade"] = revision_manifest["spatial_fade"]
@@ -642,6 +653,9 @@ def _review_project_locked(
             and not base_comparison
             and not effects_stale(revision_manifest)
             else str(saved_asset(project, f"{prefix}/foreground_rgb16.tif").relative_to(project)),
+            "local_sharpening": f"{prefix}/effects/sharpening/settings.json"
+            if "local_sharpening" in revision_manifest
+            else None,
             "local_exposure": f"{prefix}/effects/exposure/settings.json"
             if "local_exposure" in revision_manifest
             else None,
@@ -653,7 +667,7 @@ def _review_project_locked(
                 if "spatial_fade" in revision_manifest
                 else {}
             ),
-            "foreground_selection": "base, optional cleanup, local exposure once, Shadow fade once; shading at render",
+            "foreground_selection": "base, optional cleanup, local sharpening once, local exposure once, Shadow fade once; shading at render",
             "base_foreground_rgb16": str(
                 saved_asset(project, f"{prefix}/foreground_rgb16.tif").relative_to(project)
             ),
@@ -665,6 +679,9 @@ def _review_project_locked(
         qa=_read_json(project, f"{prefix}/qa.json"),
         effects={
             "available": True,
+            "local_sharpening": revision_manifest.get(
+                "local_sharpening", {"enabled": False, "stale": False}
+            ),
             "shadow_fade": revision_manifest.get("shadow_fade", {"enabled": False, "stale": False}),
             **(
                 {"spatial_fade": revision_manifest["spatial_fade"]}

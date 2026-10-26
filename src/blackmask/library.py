@@ -169,8 +169,9 @@ def _development_settings(value: object) -> dict[str, Any]:
     # Actual decoding and photographic conversion remain exclusively in ingest.
     if (
         not isinstance(value, dict)
-        or set(value) - {"assume_srgb", "white_balance"}
+        or set(value) - {"assume_srgb", "white_balance", "jpeg_sdr_primary"}
         or type(value.get("assume_srgb", False)) is not bool
+        or type(value.get("jpeg_sdr_primary", False)) is not bool
         or value.get("white_balance", "camera") not in ("camera", "daylight")
     ):
         raise ProjectError("Invalid import development options")
