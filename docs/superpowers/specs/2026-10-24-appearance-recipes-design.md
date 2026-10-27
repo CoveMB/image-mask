@@ -1,5 +1,7 @@
 # Named appearance recipes design
 
+Publication status (2026-10-26): reviewed proposal only; implementation is not authorized or claimed. Dated baseline inspection and proposed commands below must be reconciled in a later authorized preparation.
+
 Status: revised planning design; implementation is not authorized. On 2026-10-25 the user chose “most flexible and resilient.” The proposal therefore retains settings-only reuse and adds **optional editable spatial-layout transfer**, with explicit placement review, Add/Replace semantics and recovery. Masks, protection and reduction brushes never transfer. The detailed conversion choices below are engineering proposals, not an inferred approval to implement.
 
 ## Purpose and baseline
@@ -8,7 +10,7 @@ The user repeatedly reuses a named dark-fog look while varying background and pr
 
 Inspected 2026-10-24: latest located local I18 candidate `9b01987581680bbce6d503661f3f997e2d0325b5`, tree `1ac4d7d6f413c8aa28e3d522f7613e10596e6cb0`, clean detached. This includes requested exports, result reuse, current result gallery, retained comparisons, shared assets and oval/arc fade. The writing checkout is separately `docs/named-local-references` at `df7921d31aa4d3a84596856d8f0b164ae4292c7d`, with unrelated planning changes. Local refs were not fetched. Re-resolve the settled successor and reconcile I19/cache changes before implementation. Do not implement against the older planning tree or modify the ongoing delivery.
 
-2026-10-25 independent-review refresh: inspected the clean local checkout at `local/reviews/coderabbit-pass/inspectable-processing-cache-preparation/implementation`, HEAD `ed86ca84478846271c9f4da09c02ddbe5a38d2bd`, tree `ead610dced94b17aa6718da8e95405be0300135f`, on I19 parent `2edae84a58a9bd2d9e6e51ac4f118a0122b7cfc0`. This includes canonical permanent revision/delivery validation and the subsequent native-review staging correction. The current handoff records parent2eda as published and ed86 as a local correction awaiting publication; remote state was not refreshed for this review. Preserve those canonical paths and reconcile the settled successor before implementation. Earlier partial-candidate/parser-decision records are historical; no delivery authority or photographic acceptance is inferred.
+2026-10-25 independent-review refresh: inspected the clean local checkout at `<private execution reference retained locally>`, HEAD `ed86ca84478846271c9f4da09c02ddbe5a38d2bd`, tree `ead610dced94b17aa6718da8e95405be0300135f`, on I19 parent `2edae84a58a9bd2d9e6e51ac4f118a0122b7cfc0`. This includes canonical permanent revision/delivery validation and the subsequent native-review staging correction. The current handoff records parent2eda as published and ed86 as a local correction awaiting publication; remote state was not refreshed for this review. Preserve those canonical paths and reconcile the settled successor before implementation. Earlier partial-candidate/parser-decision records are historical; no delivery authority or photographic acceptance is inferred.
 
 This feature does not depend on soft fade reduction. If reduction already exists at execution, loading a recipe must preserve its target-local saved and draft operands. Such operands never enter a portable appearance recipe.
 

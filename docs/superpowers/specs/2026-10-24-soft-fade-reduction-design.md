@@ -1,5 +1,7 @@
 # Soft fade reduction design
 
+Publication status (2026-10-26): reviewed proposal only; implementation is not authorized or claimed. Dated baseline inspection and proposed commands below must be reconciled in a later authorized preparation.
+
 Status: reviewed planning design; implementation is not authorized. On 2026-10-25 the user chose “most flexible” for target scope: retain separately selectable reduction for **Fade into background** and **Shadow fade**, each with its own saved brush area. This confirms the planned target scope, not implementation or saved-format approval.
 
 ## Purpose and evidence
@@ -14,7 +16,7 @@ Inspected 2026-10-24: latest located local I18 candidate `9b01987581680bbce6d503
 
 Local refs were not fetched; this is local source evidence, not hosted/merge readiness. Before execution locate the settled current successor, confirm the above features remain present, reconcile any I19/cache changes, inspect current instructions/status and renew only affected plan assumptions. Do not copy application files into the planning checkout or alter the ongoing I18/I19 work. This plan requires no merge, commit, setup, photo edit or external action during planning.
 
-2026-10-25 independent-review refresh: inspected the clean local checkout at `local/reviews/coderabbit-pass/inspectable-processing-cache-preparation/implementation`, HEAD `ed86ca84478846271c9f4da09c02ddbe5a38d2bd`, tree `ead610dced94b17aa6718da8e95405be0300135f`, on I19 parent `2edae84a58a9bd2d9e6e51ac4f118a0122b7cfc0`. This includes cache inspection/clear, permanent-context validation and the subsequent native-review staging correction. The current handoff records I19 parent2eda as published and ed86 as a local correction awaiting publication; remote state was not refreshed for this review. Review connected behaviour against this source, then reconcile its settled successor before implementation. Earlier partial-candidate/parser-decision records are historical; no delivery authority or photographic acceptance is inferred.
+2026-10-25 independent-review refresh: inspected the clean local checkout at `<private execution reference retained locally>`, HEAD `ed86ca84478846271c9f4da09c02ddbe5a38d2bd`, tree `ead610dced94b17aa6718da8e95405be0300135f`, on I19 parent `2edae84a58a9bd2d9e6e51ac4f118a0122b7cfc0`. This includes cache inspection/clear, permanent-context validation and the subsequent native-review staging correction. The current handoff records I19 parent2eda as published and ed86 as a local correction awaiting publication; remote state was not refreshed for this review. Review connected behaviour against this source, then reconcile its settled successor before implementation. Earlier partial-candidate/parser-decision records are historical; no delivery authority or photographic acceptance is inferred.
 
 ## Approaches
 

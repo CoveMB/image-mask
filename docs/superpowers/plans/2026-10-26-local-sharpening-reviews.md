@@ -1,5 +1,7 @@
 # Local sharpening plan review
 
+Publication status (2026-10-26): this implementation is delivered and merged through MR29. The tasks and permission boundaries below record its earlier plan; unchecked boxes do not reopen completed work. See [current delivery and remaining obligations](../../incremental-plans/single-photo-black-background-qa/plan.md#current-delivery-and-remaining-obligations).
+
 ## Reviewed candidate and decision
 
 The user requested a plan update, independent review and one new implementation chat with routine work preapproved. The actual grant is message `01a17761-556f-7a82-957c-4fc5f911f865` in chat `01a160cd-a395-7511-80aa-c71111bad696`.

@@ -1,5 +1,7 @@
 # Local sharpening design
 
+Publication status (2026-10-26): this implementation is delivered and merged through MR29. The tasks and permission boundaries below record its earlier plan; unchecked boxes do not reopen completed work. See [current delivery and remaining obligations](../../incremental-plans/single-photo-black-background-qa/plan.md#current-delivery-and-remaining-obligations).
+
 Status: updated for independent review before the user-requested preapproved implementation. This document specifies proposed application behaviour; it is not evidence that the control exists.
 
 ## Goal and scope

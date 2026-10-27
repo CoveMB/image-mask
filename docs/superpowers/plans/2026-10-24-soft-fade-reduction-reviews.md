@@ -1,5 +1,7 @@
 # Soft fade reduction — planning reviews
 
+Publication status (2026-10-26): reviewed proposal only; implementation is not authorized or claimed. Dated baseline inspection and proposed commands below must be reconciled in a later authorized preparation.
+
 Date: 2026-10-24. Scope: [design](../specs/2026-10-24-soft-fade-reduction-design.md) and [implementation plan](2026-10-24-soft-fade-reduction.md), independently reviewed from the appearance-recipes feature. This is planning evidence, not implementation or photographic acceptance.
 
 Latest amendment: **2026-10-25**, recorded below. The 2026-10-24 hashes/reports remain historical evidence for unchanged scope; current hashes are in the amendment.

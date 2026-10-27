@@ -1,5 +1,7 @@
 # Local Sharpening Implementation Plan
 
+Publication status (2026-10-26): this implementation is delivered and merged through MR29. The tasks and permission boundaries below record its earlier plan; unchecked boxes do not reopen completed work. See [current delivery and remaining obligations](../../incremental-plans/single-photo-black-background-qa/plan.md#current-delivery-and-remaining-obligations).
+
 > **For agentic workers:** Use superpowers:executing-plans for the single persistent implementation owner. The user explicitly selected a new native implementation chat with preapproved routine work. Read the reviewed design and private handoff first; use read-only specialists only for bounded independent review, with no recursive fan-out. Steps use checkbox syntax. Do not ask the user to choose the execution method again.
 
 **Goal:** A generic, reversible local sharpening control for selected captured detail, with complete offline recovery and editable delivery.

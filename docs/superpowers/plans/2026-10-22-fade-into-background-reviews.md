@@ -1,5 +1,7 @@
 # Fade into background plan reviews
 
+Publication status (2026-10-26): retained planning-review history. Current delivery and remaining work are recorded in [the reconciled plan](../../incremental-plans/single-photo-black-background-qa/plan.md#current-delivery-and-remaining-obligations).
+
 Scope: [implementation plan](2026-10-22-fade-into-background.md) and [design](../specs/2026-10-22-fade-into-background-design.md), checked against current repository behavior. This record concerns planning only.
 
 The user requested two sequential independent passes: Ponytail first, then a fresh review after material findings are addressed. Reviewers are read-only and do not modify application files or authorize implementation. Coordinator owns fixes and verifies decision-relevant findings against the repository.

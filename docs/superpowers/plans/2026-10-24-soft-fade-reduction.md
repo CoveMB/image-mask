@@ -1,5 +1,7 @@
 # Soft Fade Reduction Implementation Plan
 
+Publication status (2026-10-26): reviewed proposal only; implementation is not authorized or claimed. Dated baseline inspection and proposed commands below must be reconciled in a later authorized preparation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (recommended for these coupled paths), or superpowers:subagent-driven-development if the user selects that method. Steps use checkbox (`- [ ]`) syntax for tracking. This document authorizes no implementation or Git writes.
 
 **Goal:** Let the photographer softly reduce either existing fade in selected areas while preserving the source, matte, categorical protection and editable recovery.
@@ -13,7 +15,7 @@
 ## Global Constraints
 
 - The user's 2026-10-25 “most flexible” answer confirms independent reduction for both `spatial_fade` and `shadow_fade`. The concrete design/saved-record compatibility and execution remain unapproved; this is a scope clarification only.
-- Latest inspected local candidate: clean `ed86ca84478846271c9f4da09c02ddbe5a38d2bd`, tree `ead610dced94b17aa6718da8e95405be0300135f`, at `/Users/CoveMB/Code/CoveMB/image-mask/local/reviews/coderabbit-pass/inspectable-processing-cache-preparation/implementation`. This supersedes the earlier I18-only inspection baseline. No remote refresh or hosted-readiness claim.
+- Latest inspected local candidate: clean `ed86ca84478846271c9f4da09c02ddbe5a38d2bd`, tree `ead610dced94b17aa6718da8e95405be0300135f`, at `<private execution reference retained locally>`. This supersedes the earlier I18-only inspection baseline. No remote refresh or hosted-readiness claim.
 - The planning checkout is `docs/named-local-references` at `df7921d31aa4d3a84596856d8f0b164ae4292c7d`; it is not the application baseline. Before execution use the settled successor of the candidate, reconcile I19/cache work and preserve all ongoing delivery and dirty work. Do not guess a branch or copy source files into this older tree.
 - 2026-10-25 independent-review refresh: ed86 includes I19 on parent `2edae84a58a9bd2d9e6e51ac4f118a0122b7cfc0` plus the native-review staging correction. The current handoff records parent2eda as published and ed86 as local awaiting publication; this is handoff context, not a fresh provider check. Preserve canonical permanent-context validation and reconcile the settled successor before execution, without borrowing another chat's authority.
 - Source RGB16, alpha16, guides, background, framing and unrelated effect operands remain unchanged. Categorical locks remain absolute, including partial-alpha samples. No invented photographic detail.

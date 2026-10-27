@@ -1,5 +1,7 @@
 # Named appearance recipes — planning reviews
 
+Publication status (2026-10-26): reviewed proposal only; implementation is not authorized or claimed. Dated baseline inspection and proposed commands below must be reconciled in a later authorized preparation.
+
 Date: 2026-10-24. Scope: [design](../specs/2026-10-24-appearance-recipes-design.md) and [implementation plan](2026-10-24-appearance-recipes.md), independently reviewed from the brush feature. This is planning evidence, not implementation/runtime or photographic acceptance.
 
 Latest amendment: **2026-10-25**, recorded below. It expands the scope and supersedes the historical one-increment recommendation. Earlier findings and valid unaffected review remain retained; current hashes are in the amendment.

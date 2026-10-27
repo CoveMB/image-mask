@@ -1,5 +1,7 @@
 # Named Appearance Recipes Implementation Plan
 
+Publication status (2026-10-26): reviewed proposal only; implementation is not authorized or claimed. Dated baseline inspection and proposed commands below must be reconciled in a later authorized preparation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (recommended for this coupled workflow), or superpowers:subagent-driven-development if the user selects that method. Steps use checkbox (`- [ ]`) syntax for tracking. This document authorizes no implementation or Git writes.
 
 **Goal:** Save chosen appearance settings, optionally a reference and editable spatial layout, and safely reuse selected parts on another photo.
@@ -13,7 +15,7 @@
 ## Global Constraints
 
 - The user's 2026-10-25 “most flexible and resilient” answer expands the selected direction to optional editable layout transfer while retaining settings-only use. Detailed design/execution approval remains pending. This feature does not depend on soft fade reduction; preserve its target-local saved/draft operands if present.
-- Latest inspected local baseline is clean `ed86ca84478846271c9f4da09c02ddbe5a38d2bd`, tree `ead610dced94b17aa6718da8e95405be0300135f`, at `/Users/CoveMB/Code/CoveMB/image-mask/local/reviews/coderabbit-pass/inspectable-processing-cache-preparation/implementation`. It retains the earlier oval/arcs, shared assets and requested exports, and supersedes the I18-only inspection baseline. No remote refresh or hosted-readiness claim.
+- Latest inspected local baseline is clean `ed86ca84478846271c9f4da09c02ddbe5a38d2bd`, tree `ead610dced94b17aa6718da8e95405be0300135f`, at `<private execution reference retained locally>`. It retains the earlier oval/arcs, shared assets and requested exports, and supersedes the I18-only inspection baseline. No remote refresh or hosted-readiness claim.
 - The writing checkout `docs/named-local-references` at `df7921d31aa4d3a84596856d8f0b164ae4292c7d` is older. Before execution resolve the settled successor, reconcile I19/cache changes and preserve current delivery/dirty work. Do not implement in the old tree by copying application files.
 - 2026-10-25 independent-review refresh: ed86 includes I19 on parent `2edae84a58a9bd2d9e6e51ac4f118a0122b7cfc0` plus the native-review staging correction. The current handoff records parent2eda as published and ed86 as local awaiting publication; this is handoff context, not a fresh provider check. Preserve canonical permanent-data validation and reconcile the settled successor before implementation.
 - Portable root keys are exactly `schema_version`, `kind:"appearance-recipe"`, `name`, `sections`, `reference`. Increment 1 writes/reads version1; increment 2 reads1/2 and writes2 only for layout-bearing recipes. Name 1–80 trimmed Unicode characters without control characters; reference is null or the exact PNG object in the spec.
