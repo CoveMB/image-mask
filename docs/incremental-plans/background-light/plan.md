@@ -1,10 +1,10 @@
 # Background light — incremental plan
 
-Status: **BL1 Gate3 accepted; upstream integration and publication pending**. Created 2026-10-27. Accepted increments: **1/1**. Supplementary QA is **on**; [qa-plan.md](qa-plan.md) and [handoff.md](handoff.md) form one candidate with this plan. The preparation reports below remain historical evidence; current implementation progress is recorded next.
+Status: **BL1 and parent integration accepted; publication authorized**. Created 2026-10-27. Accepted increments: **1/1**. Supplementary QA is **on**; [qa-plan.md](qa-plan.md) and [handoff.md](handoff.md) form one candidate with this plan. The preparation reports below remain historical evidence; current implementation progress is recorded next.
 
 ## Current execution record
 
-The owning orchestrator approved Gate2 against plan `16544c4e624896e39761acd29827836cb84247ec3cb0d5025668cc316201341f`, QA `44187818630be6a4923af17d51740198c334ffddee5e718a87ed70743002ebc6` and handoff `c0a35059c58f4967145b89c954497696ee81b0aada5a791341d2f8499b4b50c1`. Complete local BL1 implementation/checks/reviews are authorized. Root retains Gate3 and all Git/provider/publication actions; no human decision is pending.
+The owning orchestrator approved Gate2 against plan `16544c4e624896e39761acd29827836cb84247ec3cb0d5025668cc316201341f`, QA `44187818630be6a4923af17d51740198c334ffddee5e718a87ed70743002ebc6` and handoff `c0a35059c58f4967145b89c954497696ee81b0aada5a791341d2f8499b4b50c1`. Complete local BL1 implementation/checks/reviews are authorized. Root accepted the original Gate3 and retains all Git/provider/publication actions; no human decision is pending.
 
 Evidence root E is ignored `local/evaluations/background-light/20261027-bl1/`. Its initially absent ordinary parents were checked, with approximately 117 GB free. The retained Python imports this checkout; Pillow module/core both report 13.0.0. No dependency installation, model download or private photograph was used.
 
@@ -61,7 +61,7 @@ Inspected repository `image-mask`, branch `background-light`, clean starting HEA
 
 **Active Preapproved orchestration:** actual human message `01a17ba9-9f58-7303-b9f5-57a66c05db20`, turn `01a17ba9-9c90-7f93-ac2d-9eb16b5fa21c`, in owning chat `01a17ba9-9112-7a52-b8da-547737b178e3` (“Orchestrate three feature deliveries”) was read directly. It authorizes sequential feature chats, incremental conversion, implementation, reviews including Ponytail, fixes, commits/pushes/open MRs, with routine approvals delegated to root and final human GitHub review. The later human message `01a17d09-0614-7b63-87d2-da6187580323` preapproves Git reconciliation and favors Pillow 13. This supersedes historical planning-only restrictions within the selected feature, without accepting unseen results. Root explicitly assigned this owner **preparation only until its concrete Gate 2 decision** and retains Gate 3, Git/provider/publication actions. Return ordinary packets; root polls, so no outbound parent message or human relay is needed. New material choices remain human-owned; none is proposed here.
 
-Root supplies settled predecessor acceptance/publication: [Fade PR34](https://github.com/CoveMB/image-mask/pull/34), then [Appearance PR35](https://github.com/CoveMB/image-mask/pull/35). Current files confirm both reduction targets, appearance v1/v2 layouts and saved-reference rendering are present. Root owns provider correspondence; its dispatch records PR35 CodeRabbit automatic review disabled on non-default targets, with no manual review required, and GitGuardian passed. This owner has not repeated provider inspection. Future publication targets `appearance-recipes` unless root reconciles an actual human merge.
+Root supplies settled predecessor acceptance/publication: [Fade PR34](https://github.com/CoveMB/image-mask/pull/34), then [Appearance PR35](https://github.com/CoveMB/image-mask/pull/35). Current files confirm both reduction targets, appearance v1/v2 layouts and saved-reference rendering are present. Root owns provider correspondence. Its current inspection records the actual human-requested CodeRabbit review on 8238f6f (4217568..8238f6f, all 18 files) completed, with four findings fixed by af2044a81f745992967e9ee2aad6e913c638e3db. At exact af2044, automatic CodeRabbit was skipped for the non-default base and GitGuardian succeeded. This owner has not repeated provider inspection. Future publication targets `appearance-recipes` unless root reconciles an actual human merge.
 
 Exclude portable-light recipe transfer, B toggle, automatic exposure, alpha/source/protection edits, generated photographic detail, multiple lights, contour glow, image migration, dependency/model/backend changes, private-photo trials, new infrastructure, unrelated cleanup and speculative abstractions. Keep implementation names domain-based (`background_light`, `saved_backgrounds`, observable test names), never delivery IDs. IDs belong only in planning/provenance; preserve existing public names and raw history.
 
@@ -172,7 +172,7 @@ Recovery preserves all previous revisions, assets, accepted pointers, root draft
 
 | Increment | Status | Gates / next actor |
 | --- | --- | --- |
-| BL1 | Implementation, engineering checks and RESULT reviews complete | Gate2 approved. Original full run plus targeted renewal, payload, self-review, three RESULT reports and affected Q9 renewal complete. Root Gate3 pending; accepted 0/1. |
+| BL1 | Original Gate3 accepted; integration verification complete | Accepted 1/1. Original evidence and distinct RESULT reports retained; exact parent delta, 199 page cases, refreshed packages and existing verifier renewal complete. Root owns final merge/publication. |
 
 One coordinated plan candidate receives three distinct fresh read-only assignments: source fidelity (including selected-A preservation), architecture/simplicity (including lifecycle/compatibility/delivery coupling), verification/evidence (including recovery/UI and independent oracles). This covers and strengthens the source's two review topics without a fourth generic pass. No Ponytail run is claimed at plan stage. At RESULT stage the architecture assignment must actually run the human-requested `ponytail:ponytail-review` on `8238f6f…` → entire owned BL1 candidate; missing capability or permission holds that named duty for root, never silently substitutes. Other RESULT scopes remain separate.
 
@@ -224,7 +224,7 @@ The targeted Q6/Q10 renewal verified all three B hashes and unchanged baseline/r
 
 No files changed, product imports/tests/builds/browser trials/private-photo access or external mutations occurred. Runtime/core agreement, baseline captures, mixed-version operations, causal controls, browser behavior, native sandbox feasibility, completed replay/payload checks, representative performance and human acceptance remain unverified. Root retains Gate2; these are plan-adequacy reports, not result approval.
 
-Root subsequently reported that authorized Appearance follow-up advanced its remote branch to af2044a81f745992967e9ee2aad6e913c638e3db. This owner did not fetch or independently review that delta. The complete BL1 candidate and evidence remain bound to original base 8238f6f710c559f41e95831a2c013e882976f197. Root owns preserving the accepted feature, inspecting/integrating that exact delta and renewing only affected verification before publication; no integration claim is made here.
+The original RESULT reports below remain bound to base 8238f6f710c559f41e95831a2c013e882976f197. Root subsequently accepted/committed BL1 and supplied the authorized af2044a81f745992967e9ee2aad6e913c638e3db parent merge. The separate current integration record below binds its exact delta and affected verification without rewriting original evidence.
 
 ## Actual RESULT reports and disposition
 
@@ -245,7 +245,7 @@ The reviewers performed read-only source/evidence/hash checks; none reran tests 
 
 ## Final scope reconciliation
 
-R1–R22 map to the completed Q1–Q12 execution correspondence above; the single RESULT evidence gap is repaired and independently renewed. R23 human photographic, usability/accessibility and representative-photo performance limits remain open. R24 PLAN/RESULT reviews and Gate2 are complete; root Gate3 remains pending. R25 retention measurement and final source/delivery correspondence are complete below. No I10 live/backend/regular-use closure is claimed.
+R1–R22 map to the completed Q1–Q12 execution correspondence above; the single RESULT evidence gap is repaired and independently renewed. R23 human photographic, usability/accessibility and representative-photo performance limits remain open. R24 PLAN/RESULT reviews and original Gate2/Gate3 are complete; the existing verifier also renewed the narrow parent integration. R25 retention measurement and final source/delivery correspondence are complete below. No I10 live/backend/regular-use closure is claimed.
 
 ### Evidence retention and cleanup review
 
@@ -260,8 +260,32 @@ Measured after required checks and RESULT/Q9 renewal: **133,433,358 apparent reg
 
 The first inventory classifier stopped on a FIFO named .DS_Store before writing its report; the completed inventory explicitly distinguishes nonregular fixtures. All required evidence paths remain retained. No deletion, compaction, cleanup or extra copies of the checkout/runtime occurred. Future storage choices remain separate from product verification.
 
-Next actor: the owning orchestrator evaluates the complete Gate3 packet and owns Git/provider/publication decisions. Accepted increments remain 0/1 until that decision. No user question or manual relay is pending. [Current handoff](handoff.md).
+Next actor: the owning orchestrator completes the verified parent merge and owns Git/provider/publication decisions. Original BL1 remains accepted 1/1. No user question or manual relay is pending. [Current handoff](handoff.md).
 
 ## Controller Gate3 acceptance — original candidate
 
-The owning orchestrator accepted BL1 under the direct preapproval after reading all three RESULT reports and the actual Q9 renewal. Packet `2f9f3ccac405e8ff0def302464f12ddba60c7359bc072aef29838d87c6fb5eaa` binds the reviewed candidate on `8238f6f710c559f41e95831a2c013e882976f197`. Controller checks matched all 23 current files (including three disclosed administrative updates), all 34 evidence hashes, 92 package inputs and actual 37/100 wheel/sdist members and bytes. No unowned changes or private markers were found. The combined-suite qualification and human/I10 limits above remain. This accepts the original implementation; integrating `af2044a81f745992967e9ee2aad6e913c638e3db` and renewing affected UI/package evidence remain publication prerequisites.
+The owning orchestrator accepted BL1 under the direct preapproval after reading all three RESULT reports and the actual Q9 renewal. Packet `2f9f3ccac405e8ff0def302464f12ddba60c7359bc072aef29838d87c6fb5eaa` binds the reviewed candidate on `8238f6f710c559f41e95831a2c013e882976f197`. Controller checks matched all 23 current files (including three disclosed administrative updates), all 34 evidence hashes, 92 package inputs and actual 37/100 wheel/sdist members and bytes. No unowned changes or private markers were found. The combined-suite qualification and human/I10 limits above remain. This accepted the original implementation. The parent-integration checks that remained at that decision are completed in the current record below; root still owns final merge/publication.
+
+## Parent integration — verified current checkout
+
+Original BL1 Gate3 remains **accepted, 1/1**. Root preserved it in commit `de91d308f0645ae1e8cf58c9ea8a6e366b49a6d9`, then started a clean `--no-commit --no-ff` merge of authorized Appearance follow-up `af2044a81f745992967e9ee2aad6e913c638e3db`. This owner verified HEAD/MERGE_HEAD, no conflicts, and the exact staged upstream delta: five files, 63 additions/16 deletions. The index remains unchanged; root owns completing the merge and publication.
+
+Only three Appearance UI lines now use the existing `backgroundPercentage` helper, nine regression cases were added, and three Appearance planning documents received readability/status corrections. The owner made no product/test changes. The package source differences from the original BL1 inspection are exactly `src/blackmask/ui/review.html` and `tests/test_viewer_page.py`; dependency, math, persistence and export implementations are unchanged.
+
+| Affected verification | Actual evidence |
+| --- | --- |
+| Full page suite on combined checkout | E/`integration-af2044/page-suite.log`: **199 passed in 23.78 s**, child 0, capture closed successfully. Retained Python 3.12.14 ARM64, Pillow module/core 13.0.0, Node 24.19.0 and `PYTHONPATH=src` resolving this checkout. |
+| Static and staged diff | Changed-test Ruff check and format plus staged diff check: all child 0, complete captures. |
+| Input correspondence | All **98** source/test/config/runtime metadata inputs match. The index listing was saved before test dispatch. An initial metadata preflight used nonexistent `core.pillow_version`; its failure is retained. The 92 source inputs were reconstructed from the saved index blob identities and compared byte-for-byte; six unchanged metadata inputs remain bound to the original snapshot. The real `Image.core.PILLOW_VERSION` reports 13.0.0. No source edit or unnecessary test restart occurred. |
+| Refreshed actual payloads | Both wheel and sdist built fresh in E/`package-integration/`, with **37/100** exact allowed members, 92 current source inputs, exact declarations and actual-byte/private-marker exclusions. Build and inspection child 0/captures closed. All prior packages remain. |
+| Narrow independent renewal | Existing verification reviewer `/root/background_light_verify_result`, thread `01a17f73-4e85-71c0-8c7e-b4a46182ab1a`, turn `01a17f8b-3a0f-7983-bf59-67654239e496`: **“No material improvements recommended.”** Read-only inspection checked the exact delta, 98 inputs, unchanged index/original packet, actual archives and recorded page result. No tests/browser actions or mutations by reviewer. Report: E/`integration-af2044/verification-review.md`. |
+
+The original full run plus 30-case expectation renewal, native delivered-only replay, actual browser/Q9 evidence, source RESULT and actual Ponytail RESULT remain applicable to unaffected behavior. No generic full suite, unaffected browser run or new generic review was added. The 199-case page run is affected coverage, not a new full-repository green invocation. Original packet SHA-256 `2f9f3ccac405e8ff0def302464f12ddba60c7359bc072aef29838d87c6fb5eaa` remains unchanged.
+
+Current retention after integration checks/review is E/`integration-af2044/retention-review.json`: **138,828,089 apparent regular-file bytes / 128,173 files**, **503,177,216 allocated bytes**, about 115.5 GB free. Keep: 138,688,495 bytes; hold: 139,594 bytes; no cleanup candidates. Ten FIFO fixtures were not opened and 629 symlinks were not followed. All original/integration evidence remains available; no deletion or compaction.
+
+E/`integration-af2044/integration-packet.json` binds this integration's exact staged candidate, evidence, reviewer route/turn, package hashes and final administrative document hashes separately from the accepted original packet. Human photographic/accessibility/performance and I10 limits remain unchanged. Root owns the final merge commit, publication and provider checks. No human input or outbound parent notice is required.
+
+## Controller acceptance of parent integration
+
+The owning orchestrator read the actual scoped renewal (turn `01a17f8b-3a0f-7983-bf59-67654239e496`) and accepted packet `f3fc49b6b9ce471ae0faa8f0e920c2592da2f9fc8ec565f24dcb7d5f605ea35c`. Independent controller checks matched all 98 current inputs, 19 packet evidence hashes, three administrative document hashes, exact added/removed upstream lines and actual refreshed package members/bytes. Differences between retained patches are only Git blob identities and line offsets caused by BL1. No material findings remain. Completing the merge, pushing and opening the stacked Background light PR are authorized. GitHub owns subsequent publication/provider status; human review and the recorded I10/photographic limits remain separate.

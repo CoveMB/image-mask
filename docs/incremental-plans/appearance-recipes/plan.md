@@ -11,7 +11,7 @@ has SHA256 `cd34d6fd60d17ec16d0cd3a3173a037bfa2fd42ac4cbe97e562af0c1c6b048ce`;
 the corresponding 11-file diff is
 `1c2af7aa1de559f3ff663dee5d17877c7d1a3ad019b029f7a9de93ea91630058`.
 All three raw sources remain unchanged. The settled full suite completed with
-2457 passed,7 skipped,exit0 and no changed source/test hashes. These three planning
+2,457 passed, 7 skipped, exit 0 and no changed source/test hashes. These three planning
 documents record evidence/status and are excluded from installable packages.
 
 The [current QA execution record](qa-plan.md#ar2-execution-record--current) owns
@@ -23,7 +23,7 @@ root accepted the earlier token-free localhost search as a disclosed automation
 navigation error, with the qualification retained below.
 
 All three fresh read-only result scopes report **No material improvements
-recommended**, verifying all11 candidate and three raw-source hashes before and
+recommended**, verifying all 11 candidate and three raw-source hashes before and
 after. Architecture actually performed the expressly requested
 `ponytail:ponytail-review`; its bounded Ship verdict is not Gate3. Verification
 inspected the completed suite, native browser records, isolated reconstruction,
@@ -40,7 +40,7 @@ All reports were collected before final synthesis. The owner checked applicable
 code/contract/evidence correspondence; no material finding required repair or
 renewal. No reviewer edits, product execution, provider action or recursive
 delegation occurred. Terminal retention review is complete below, with no deletion.
-Accepted `ar2-gate3-candidate.json` binds the11 unchanged reviewed files, three
+Accepted `ar2-gate3-candidate.json` binds the 11 unchanged reviewed files, three
 pre-acceptance planning records, three raw sources and retained evidence. The
 actual root Gate3 decision below supersedes its proposed status without rewriting
 that frozen evidence. Only these three planning documents receive the acceptance
