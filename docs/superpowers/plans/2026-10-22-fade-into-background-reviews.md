@@ -1,6 +1,6 @@
 # Fade into background plan reviews
 
-Scope: [implementation plan](2026-10-22-fade-into-background.md) and [design](../specs/2026-10-22-fade-into-background-design.md), checked against current repository behavior. Original planning reviews are preserved below; the final section records subsequent authorized implementation reviews.
+Scope: [implementation plan](2026-10-22-fade-into-background.md) and [design](../specs/2026-10-22-fade-into-background-design.md), checked against current repository behavior. This record concerns planning only.
 
 The user requested two sequential independent passes: Ponytail first, then a fresh review after material findings are addressed. Reviewers are read-only and do not modify application files or authorize implementation. Coordinator owns fixes and verifies decision-relevant findings against the repository.
 
@@ -136,94 +136,3 @@ Coordinator verification: the amendment matches the user's selected separate-com
 The user's subsequent request to ensure proper feature documentation strengthened Task 6 and the completion criteria: a discoverable practical offline guide for oval/arcs/both, actual control/overlay/export/recovery steps, assisted-use guidance, canonical asset contracts, and observed evidence/limitations in `docs/validation.md`. Written steps must be checked during the already-required browser/offline and paired-replay verification, avoiding duplicate expensive runs. Task 7 cannot declare completion with those documentation deliverables outstanding.
 
 This clarification changes documentation obligations only; geometry, rendering, persisted settings and paired-delivery semantics remain unchanged. Prior independent reports remain applicable to those scopes; no additional independent review of this documentation clarification was run. The updated plan SHA-256 is `f0e23e211adaf627357fc217410c161b5b8fd8a57f92a795bd114814721e966a`; the independently reviewed design hash remains unchanged. The plan remains a seven-task Superpowers implementation plan, not a separately structured feature-increment delivery plan.
-
-## Implementation execution
-
-The subsequent user instruction authorized the bounded seven-task implementation,
-documentation and verification in an isolated worktree with one persistent owner.
-A later instruction selected the existing environment and authorized an MR after
-implementation, followed by waiting for CodeRabbit and addressing appropriate
-findings. No merge, model download, private upload or recovery deletion is authorized.
-
-The implementation was isolated from the original dirty checkout. The first
-review covered all 28 tracked/untracked feature files against baseline `df7921d`;
-after repair, the owner checkpoint was integrated with current main `1704b8e`.
-The second review covered the complete committed plus worktree candidate against
-that main, including connected callers and documentation, rather than HEAD alone.
-Settled checks passed: Ruff lint/format, mypy (22 source files), pytest 923 passed /
-3 optional model-cache skips, exit 0, and whitespace checks. Exact environment
-limitation: Pillow 12.3.0 versus the repository pin 13.0.0, as selected by the user.
-The [validation record](../../validation.md#fade-into-background--implementation-evidence)
-separates synthetic/reconstruction checks, real browser observations, private photo
-evaluation, measured resources and pending human/branching-photo acceptance.
-
-### Implementation stage 1 — explicit Ponytail review
-
-Fresh read-only `fade_ponytail_review` used `ponytail:ponytail-review` and checked
-the complete implementation and connected behavior. Two concrete material findings:
-
-1. Spatial OFF comparisons checked only the viewed revision for stale effects,
-   unlike the ordinary image route's working-or-viewed policy. An earlier accepted
-   revision could show unrelated effects while labelled BASE. Owner reproduced
-   and unified foreground, shading, background and effective-map stale handling,
-   with working manifest identity rechecks and earlier-revision regressions.
-2. Reusing a native companion left a new complete duplicate staging folder after
-   each successful export. Owner reproduced and added cleanup of only the current
-   verified duplicate after durable reuse. Failed, uncertain and older evidence
-   remains preserved; repeated-layout/retry and injected-failure tests cover it.
-
-Both findings were verified and repaired; RED 5 failed, focused GREEN 2 stale
-comparison tests and 6 reuse/recovery tests passed. No finding was rejected or
-deferred. The full integrated suite above includes these fixes.
-
-### Implementation stage 2 — different regular engineering review
-
-Fresh read-only `fade_engineering_review` formed its own conclusions without
-reading the Ponytail report. One P2 finding: after switching from spatial fade
-back to inward shading, retained disabled spatial metadata replaced native
-manifest/README reconstruction instructions with a formula omitting H. Actual
-pixels were correct, but following those instructions differed by up to 3425
-channel levels at four pixels.
-
-Owner verified and fixed selection of instructions by active mode and clarified
-the file contract, including H before series sampling. New native/margin/series
-regressions copy delivered folders, make the original project unavailable, and
-follow the actual delivered formula with nonempty affected partial-alpha pixels.
-RED 3 failed; GREEN 3 passed. The affected export/reconstruction suite then passed
-280 tests, exit 0, with no warnings; Ruff lint/format and mypy22source also passed.
-
-The same regular reviewer independently rechecked only this repair and concluded:
-**“F1 is resolved. No material improvements recommended.”** No other material
-finding remained and none was rejected or deferred. Unchanged scopes were not
-repeated. Review reports, exact inventories, patches, raw logs and dispositions
-remain in ignored local evidence.
-
-These reviews establish code-review outcomes, not exact-pin certification,
-real-model inference, full HTTP/export memory measurements, accessibility
-certification, editable branching-photo evaluation or human photographic acceptance.
-
-### Hosted CodeRabbit follow-up
-
-[MR #25](https://github.com/CoveMB/image-mask/pull/25) received a completed hosted
-review of all 28 changed files through commit `605a548`. The owner verified both
-actionable findings and fixed them:
-
-- Native RGBA8 preserves straight RGB at zero quantized alpha; Add margins keeps
-  that native rectangle and zeros only the added outside area. The file contract
-  now distinguishes this from Match-series hidden-RGB zeroing. No pixels changed.
-- Disable fade had submitted pending geometry. It now clones current saved
-  settings and changes only the master switch. Unapplied geometry remains local,
-  including invalid/stale drafts; raw revision identity remains writer-checked.
-
-Four new handler cases demonstrated failure before repair. After repair,
-82 shipped-page checks and 47 connected viewer/coordinate checks passed, exit 0.
-The existing regular reviewer independently rechecked only the three-file delta
-and connected action/refresh/identity handling: **“No material improvements
-recommended.”** No remaining material finding was retained. Browser rendering,
-accessibility and photographs were not repeated for this focused UI delta.
-
-The provider's generic 80% docstring-coverage suggestion was declined: no material
-defect or repository-required threshold was evidenced, and bulk changes across
-148 touched functions would add unrelated churn. This does not weaken any test
-or documented behavior requirement. Provider review status is separate from
-human acceptance and from any subsequently throttled automatic follow-up.
