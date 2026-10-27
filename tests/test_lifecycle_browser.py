@@ -135,6 +135,16 @@ def browser_session(playwright, server, workspace, name, receipt):
 def test_browser_controls_restart_and_offline_recovery(tmp_path):
     if os.environ.get("BLACKMASK_BROWSER") != "1":
         pytest.skip("Real browser evidence not selected; use tests/run_browser.py after setup")
+    missing_variables = [
+        name for name in ("TMPDIR", "MAC_CHROMIUM_TMPDIR") if not os.environ.get(name)
+    ]
+    if missing_variables:
+        pytest.fail(
+            "Missing browser runner environment: "
+            + ", ".join(missing_variables)
+            + ". Use tests/run_browser.py.",
+            pytrace=False,
+        )
     # Explicit browser runs fail, rather than skip, if setup or isolation is missing.
     from playwright.sync_api import expect, sync_playwright
 

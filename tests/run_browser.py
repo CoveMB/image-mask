@@ -2,9 +2,11 @@
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -43,6 +45,7 @@ def main():
         "(deny network-outbound)"
         '(allow network-outbound (remote ip "localhost:*"))'
     )
+    timeout_seconds = 1800
     command = [
         "/usr/bin/sandbox-exec",
         "-D",
@@ -70,19 +73,44 @@ def main():
                 "python": sys.executable,
                 "native_temp": str(native_temp),
                 "package_path": str(packages),
+                "timeout_seconds": timeout_seconds,
             },
             indent=2,
         )
     )
     print(f"Browser evidence: {workspace}", flush=True)
-    with (workspace / "pytest.log").open("w") as log:
-        result = subprocess.run(
-            command, check=False, cwd=root, env=environment, stdout=log, stderr=subprocess.STDOUT
-        )
-    (workspace / "exit.json").write_text(json.dumps({"exit_code": result.returncode}))
+    with (
+        (workspace / "pytest.log").open("w") as log,
+        subprocess.Popen(
+            command,
+            cwd=root,
+            env=environment,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        ) as process,
+    ):
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            exit_code = 124
+            log.write(f"\nBrowser lane timed out after {timeout_seconds} s\n")
+            log.flush()
+            # Let pytest and the browser driver close their children before
+            # terminating any remaining members of this test-owned process group.
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGINT)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=10)
+    (workspace / "exit.json").write_text(json.dumps({"exit_code": exit_code}))
     print((workspace / "pytest.log").read_text(), end="")
-    print(f"Exit {result.returncode}; logs and test-owned data retained in {workspace}")
-    return result.returncode
+    print(f"Exit {exit_code}; logs and test-owned data retained in {workspace}")
+    return exit_code
 
 
 if __name__ == "__main__":
