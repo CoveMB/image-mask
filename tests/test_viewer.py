@@ -1,5 +1,6 @@
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from http.client import HTTPConnection
 from pathlib import Path
@@ -825,6 +826,67 @@ def http(server, path="/api/state", method="GET", data=None, **headers):
     result = response.status, response.read(), dict(response.getheaders())
     connection.close()
     return result
+
+
+@pytest.mark.parametrize("reader", ["snapshot", "cache"])
+def test_status_observation_does_not_reject_overlapping_viewer_writer(
+    tmp_path, monkeypatch, reader
+):
+    import fcntl
+
+    from test_project import create
+
+    from blackmask.viewer import ReviewServer
+
+    _, project = create(tmp_path)
+    retained = {
+        path.relative_to(project): path.read_bytes()
+        for path in project.rglob("*")
+        if path.is_file() and path.name != "state.json"
+    }
+    observed = threading.Event()
+    release = threading.Event()
+    reader_thread = None
+
+    def pause_after_observation(function):
+        def observe(*arguments):
+            result = function(*arguments)
+            if threading.get_ident() == reader_thread:
+                observed.set()
+                assert release.wait(10), "Status observation was not released"
+            return result
+
+        return observe
+
+    with ReviewServer(project) as server, ThreadPoolExecutor(max_workers=1) as executor:
+        snapshot = server.snapshot()
+        data = {key: snapshot[key] for key in ("developed_id", "inputs_digest", "authoring_digest")}
+        data.update(action="development", base_revision=None)
+
+        def poll():
+            nonlocal reader_thread
+            reader_thread = threading.get_ident()
+            return (
+                server.snapshot()
+                if reader == "snapshot"
+                else operations.inspect_processing_cache(project)
+            )
+
+        # Keep real OS calls: suspend immediately after the observation so the
+        # writer deterministically overlaps any lock accidentally held by it.
+        monkeypatch.setattr(fcntl, "flock", pause_after_observation(fcntl.flock))
+        monkeypatch.setattr(fcntl, "fcntl", pause_after_observation(fcntl.fcntl))
+        pending = executor.submit(poll)
+        try:
+            assert observed.wait(10), "Reader did not observe the writer lock"
+            result = server.execute(data)
+            assert result["development_approved"] is True
+        finally:
+            release.set()
+            status = pending.result(timeout=10)
+        assert status["writer_busy"] is False
+        assert read_project(project)["accepted_revision"] is None
+        assert all((project / name).read_bytes() == raw for name, raw in retained.items())
 
 
 def test_new_viewer_serves_only_authenticated_project_and_packaged_page(tmp_path):

@@ -49,6 +49,10 @@ Trimap and final-photo acceptance are still explicit; neither is inferred.
 
 All writers use `project.project_lock`: stable `.writer.lock`, exclusive
 nonblocking OS flock; a competing process gets busy, and readers remain unlocked.
+Status and processing-cache inspection use `project.project_writer_busy` to query
+the existing flock through macOS `F_GETLK`, without acquiring a lock, creating a
+missing lock file or changing its permissions. `writer_busy` is a momentary
+observation, not a reservation; every writer still acquires the exclusive flock.
 Creation reserves 10 GiB plus estimated writes, stages/syncs/reloads the master,
 publishes saved assets and publishes state last. Approval writes/syncs a temporary
 JSON and replaces state atomically. No initial assets are overwritten. State temps
