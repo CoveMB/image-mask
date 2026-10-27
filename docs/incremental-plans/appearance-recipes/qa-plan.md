@@ -226,9 +226,14 @@ Source-required human usefulness/appearance acceptance and repository usability/
 
 ## Reviews, readiness and embedded preparation handoff
 
+The following preparation handoff is historical: it records the checkpoint after
+AR1 acceptance and before AR2 Gate 2. AR2 implementation and Gate 3 acceptance
+are now complete; the [current execution record](#ar2-execution-record--current)
+and [decision record](plan.md#decisions-and-remaining-obligations) own that status.
+
 Plan-stage source, architecture/simplicity and verification reports are settled on coordinated C1 with targeted C2 renewal. The sole shading-ceiling omission is repaired in Q3/R4/handoff; all three scopes report no remaining material finding. Actual identities/routes, candidate hashes, dispositions and the verification reviewer's late cross-review exposure limitation are recorded in plan.md. On 2026-10-27 the owning orchestrator approved the exact returned packet for AR1 under the verified human delegation; the actual decision and approved hashes are in plan.md. Those plan-stage records did not supply result evidence: Q1–Q6/Q10/Q12 execution and three fresh result scopes were still required at that checkpoint. Their later evidence and actual Gate 3 acceptance are recorded below. AR2 preparation now reuses that unaffected coverage and adds the targeted Q11 renewal; AR2 implementation awaits root Gate 2.
 
-**Current execution handoff:** AR1 is accepted and committed. Feature owner `01a17cb4-1217-7043-a2c5-71b7ecec038a` returns this concrete AR2 preparation, the targeted Q11 review disposition and exact three-document hashes to orchestrator `01a17ba9-9112-7a52-b8da-547737b178e3` for actual Gate 2. Root polls and must return the decision here; no parent message or Git/provider action. Runtime, product/tests, raw sources and accepted evidence remain unchanged during preparation. Before later authorized execution, recheck the exact candidate/baseline and relevant runtime correspondence; do not repeat unchanged successful AR1 checks solely to establish the new increment.
+**Historical preparation handoff:** AR1 is accepted and committed. Feature owner `01a17cb4-1217-7043-a2c5-71b7ecec038a` returns this concrete AR2 preparation, the targeted Q11 review disposition and exact three-document hashes to orchestrator `01a17ba9-9112-7a52-b8da-547737b178e3` for actual Gate 2. Root polls and must return the decision here; no parent message or Git/provider action. Runtime, product/tests, raw sources and accepted evidence remain unchanged during preparation. Before later authorized execution, recheck the exact candidate/baseline and relevant runtime correspondence; do not repeat unchanged successful AR1 checks solely to establish the new increment.
 
 Before Gate2, bind relevant declared/resolved/observed runtime versions, inspect current official version-applicable API/security/deprecation guidance, record still-valid/amend/blocked and affected work, without upgrades/installs. Use current code/contracts and raw source-derived expectations, not status labels. Resolve missing prerequisite/correspondence evidence before dependent work. Concrete names describe domain/behavior across code, tests, docs/examples and generated surfaces; retain specific provenance/source/history and compatibility names, not increment identifiers in software.
 
@@ -320,4 +325,4 @@ On 2026-10-27, owning orchestrator `01a17ba9-9112-7a52-b8da-547737b178e3` accept
 
 ## Evidence retention and cleanup review
 
-**Planned** after selected verification/reviews, outside the feature count. Reconcile the owned evidence's usable contents/references and keep/hold/cleanup-candidate/unknown reasons, sizes where measured, active consumers and review events. No deletion/compaction or cleanup-performed claim follows; source-required proof remains held until its actual obligation is resolved.
+**Completed 2026-10-27 at 19:59 UTC**, after the settled suite and all three AR2 result reports, outside the feature count. The [retention record](plan.md#evidence-retention-and-cleanup-review) records measured contents, retention reasons and active consumers. All owned AR1/AR2 evidence and fixtures were retained; no cleanup candidate, deletion or compaction was authorized or performed. Earlier HOLD/planned statements in the AR1 records describe their historical checkpoints.

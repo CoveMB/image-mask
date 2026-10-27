@@ -6,23 +6,24 @@ Frozen AR2 product/test/maintained-doc manifest:
 `local/evaluations/appearance-recipes/ar2-20261027T184703Z/ar2-result-review-candidate.json`,
 SHA256 `cd34d6fd60d17ec16d0cd3a3173a037bfa2fd42ac4cbe97e562af0c1c6b048ce`.
 All three result scopes are complete with no material findings, including actual
-Ponytail architecture. The settled suite passed2457/skipped7/exit0 with unchanged
-source/test inputs; complete static records and actual packages are retained.
+Ponytail architecture. The settled suite completed with 2,457 passed, 7 skipped,
+exit 0 and unchanged source/test inputs; complete static records and actual
+packages are retained.
 Q10 off-canvas
-rejection/fallback renewal left all195 target files exact; its owned server
+rejection/fallback renewal left all 195 target files exact; its owned server
 closed and the user's private window returned to `about:blank`. The earlier
 token-free localhost query sent to Google remains disclosed. Root accepted it as
-an automation navigation error, with no application network defect or required
-rerun/product change. Retain its bounded impact and no-wholly-offline/browser-wide
+an automation navigation error, with no application network defect. No rerun or
+product change was required. Retain its bounded impact and no-wholly-offline/browser-wide
 isolation qualification, separate from application CSP and native subprocess proof.
 
 Accepted packet: `local/evaluations/appearance-recipes/ar2-20261027T184703Z/ar2-gate3-candidate.json`,
 SHA256 `3a1d7b05063b9874751a9fc862d0e0eee12e400fd5b452870ced7b4c33c5709b`;
 accepted final diff `4bdcd4e47282f77847c9d0da9b2698a1c2cb210907db777e77361e0e6f0a7480`.
-It records the11 unchanged reviewed product/test/maintained-doc files, three
+It records the 11 unchanged reviewed product/test/maintained-doc files, three
 pre-acceptance planning records, raw sources and applicable evidence/reports.
-Root independently verified14 final files,11 reviewed files,3 sources,73 evidence
-entries,74 full-suite inputs and the actual reviews/checks/packages/retention.
+Root independently verified 14 final files, 11 reviewed files, 3 sources, 73 evidence
+entries, 74 full-suite inputs and the actual reviews/checks/packages/retention.
 Only the three incremental documents now record that actual acceptance;
 product/test/evidence bytes and the frozen manifest remain unchanged. Terminal retention
 review retained all measured AR1/AR2 evidence; no cleanup candidate or deletion.

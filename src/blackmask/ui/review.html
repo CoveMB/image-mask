@@ -833,8 +833,8 @@
       if (section === "background") return values.color_srgb + " · variation " + backgroundPercentage(values.variation) + "%";
       if (section === "local_exposure") return values.ev + " EV";
       if (section === "color_cleanup") return "Strength " + values.strength;
-      if (section === "shading") return "Width " + values.width_px + " px · direction " + values.direction_degrees + "° · opacity " + values.opacity * 100 + "%";
-      return (section === "spatial_fade" ? "Transition " + values.transition_width + " px · " : "") + "amount " + values.amount * 100 + "% · preserve highlights " + values.preserve_highlights * 100 + "%";
+      if (section === "shading") return "Width " + values.width_px + " px · direction " + values.direction_degrees + "° · opacity " + backgroundPercentage(values.opacity) + "%";
+      return (section === "spatial_fade" ? "Transition " + values.transition_width + " px · " : "") + "amount " + backgroundPercentage(values.amount) + "% · preserve highlights " + backgroundPercentage(values.preserve_highlights) + "%";
     }
     function renderAppearanceRecipe() {
       if (!state) return;
@@ -936,7 +936,7 @@
       for (const section of sectionNames) {
         const values = result.sections[section];
         if (section === "local_exposure") {$("exposureEV").value = values.ev; $("exposureRange").value = values.ev;}
-        else if (section === "shadow_fade") {$("fadeAmount").value = values.amount * 100; $("fadeRange").value = $("fadeAmount").value; $("fadePreserve").value = values.preserve_highlights * 100; $("fadePreserveRange").value = $("fadePreserve").value;}
+        else if (section === "shadow_fade") {$("fadeAmount").value = backgroundPercentage(values.amount); $("fadeRange").value = $("fadeAmount").value; $("fadePreserve").value = backgroundPercentage(values.preserve_highlights); $("fadePreserveRange").value = $("fadePreserve").value;}
         else if (section === "color_cleanup") $("cleanupStrength").value = String(values.strength);
         else if (section === "shading") {$("shadingWidth").value = values.width_px; $("shadingDirection").value = values.direction_degrees; $("shadingOpacity").value = values.opacity;}
         else if (section === "background") {$("backgroundHex").value = values.color_srgb; $("backgroundColor").value = values.color_srgb.toLowerCase(); $("backgroundVariation").value = backgroundPercentage(values.variation); $("backgroundRange").value = $("backgroundVariation").value;}

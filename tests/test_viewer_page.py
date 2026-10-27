@@ -385,6 +385,47 @@ def test_appearance_recipe_loads_selected_scalars_without_geometry_or_jobs():
     )
 
 
+@pytest.mark.parametrize(
+    "fraction,percentage",
+    [(0, "0"), (0.29, "29"), (0.55, "55"), (0.07, "7"), (0.125, "12.5"), (1, "100")],
+)
+def test_appearance_shadow_percentages_display_cleanly_and_apply_unchanged(fraction, percentage):
+    run_page(
+        APPEARANCE_SETUP
+        + f"const fraction={fraction!r},percentage={json.dumps(percentage)};"
+        + r"""
+ appearanceValue.sections.shadow_fade={amount:fraction,preserve_highlights:fraction};
+ appearanceConverted.shadow_fade={amount:fraction,preserve_highlights:fraction};
+ await ready();await loadAppearanceRecipeFile(appearanceFile());
+ await loadAppearanceRecipeSections(['shadow_fade']);
+ for(const field of ['fadeAmount','fadeRange','fadePreserve','fadePreserveRange'])
+  assert.equal(String($(field).value),percentage);
+ assert.equal(posts.length,0);
+ await $('fadeAmountApply').onclick();
+ assert.deepEqual(posts.at(-1).shadow_fade,{enabled:true,amount:fraction,preserve_highlights:fraction});
+ """
+    )
+
+
+@pytest.mark.parametrize("section", ["shading", "shadow_fade", "spatial_fade"])
+def test_appearance_summaries_display_clean_percentages(section):
+    run_page(
+        APPEARANCE_SETUP
+        + f"const section={json.dumps(section)};"
+        + r"""
+ appearanceValue.sections={
+  [section]:section==='shading'?{width_subject_fraction:.0125,direction_degrees:37,opacity:.29}
+   :{amount:.55,preserve_highlights:.07,...(section==='spatial_fade'?{transition_subject_fraction:.02}:{})}};
+ for(const key of Object.keys(appearanceConverted))delete appearanceConverted[key];
+ appearanceConverted[section]=section==='shading'?{width_px:1.25,direction_degrees:37,opacity:.29}
+  :{amount:.55,preserve_highlights:.07,...(section==='spatial_fade'?{transition_width:2}:{})};
+ await ready();await loadAppearanceRecipeFile(appearanceFile());
+ const percentages=$('appearanceValues-'+section).textContent.match(/[\d.]+%/g);
+ assert.deepEqual(percentages,section==='shading'?['29%']:['55%','7%']);
+ """
+    )
+
+
 def test_appearance_fractional_background_survives_load_and_colour_edit():
     run_page(
         APPEARANCE_SETUP
