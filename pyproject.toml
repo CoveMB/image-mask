@@ -24,7 +24,10 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-markers = ["integration: real explicitly installed model inference"]
+markers = [
+    "integration: real explicitly installed model inference",
+    "browser: real installed Chrome with isolated Playwright setup",
+]
 
 [tool.ruff]
 line-length = 100
