@@ -152,8 +152,8 @@ class SeriesLayout:
         return json.loads(json.dumps(asdict(self), allow_nan=False))
 
 
-def compute_series_layout(alpha16: np.ndarray, settings: SeriesSettings) -> SeriesLayout:
-    settings = validate_series_settings(settings.to_dict())
+def nonzero_alpha_bounds(alpha16: np.ndarray) -> tuple[int, int, int, int] | None:
+    """Return complete half-open bounds, retaining even alpha1 samples."""
     if (
         not isinstance(alpha16, np.ndarray)
         or alpha16.dtype != np.uint16
@@ -170,10 +170,18 @@ def compute_series_layout(alpha16: np.ndarray, settings: SeriesSettings) -> Seri
         if len(columns):
             x0, x1 = min(x0, int(columns[0])), max(x1, int(columns[-1]) + 1)
             y0, y1 = min(y0, start + int(rows[0])), max(y1, start + int(rows[-1]) + 1)
-    if x1 == 0:
+    return None if x1 == 0 else (x0, y0, x1, y1)
+
+
+def compute_series_layout(alpha16: np.ndarray, settings: SeriesSettings) -> SeriesLayout:
+    settings = validate_series_settings(settings.to_dict())
+    bounds = nonzero_alpha_bounds(alpha16)
+    if bounds is None:
         raise ValueError(
             "Series framing needs positive alpha; review the native mask before framing"
         )
+    x0, y0, x1, y1 = bounds
+    height, width = alpha16.shape
     output_width, output_height = settings.output_width_px, settings.output_height_px
     width_scale = (
         output_width * (1000 - 2 * settings.side_margin_tenths_percent) / (1000 * (x1 - x0))

@@ -303,6 +303,40 @@ def saved_layers(
     return foreground, alpha, manifest
 
 
+def render_saved_result(project: Path, revision: str, developed_id: str) -> np.ndarray:
+    """Compose one explicitly selected saved Result without publishing a preview."""
+    from .background import read_background
+    from .effects import saved_shading, saved_spatial_fade
+
+    foreground, alpha, manifest = saved_layers(project, revision, developed_id)
+    weight, opacity = saved_shading(project, revision, alpha, manifest)
+    spatial = saved_spatial_fade(project, revision, alpha, manifest)
+    background = read_background(project, saved_asset(project, f"revisions/{revision}"), manifest)
+    check_space(project, foreground.nbytes * 8 + 16 * 1024**2)
+    target = (
+        background
+        if background is not None
+        else np.zeros_like(foreground)
+        if spatial is not None
+        else None
+    )
+    return (
+        render_black(
+            foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
+        )
+        if background is None
+        else render_background(
+            foreground,
+            alpha,
+            background,
+            weight,
+            opacity,
+            spatial_fade=spatial,
+            fade_background16=target,
+        )
+    )
+
+
 def publish_artifacts(stage: Path, destination: Path) -> None:
     """Validate identical reuse; differing or incomplete existing deliveries are preserved."""
     for path in stage.rglob("*"):

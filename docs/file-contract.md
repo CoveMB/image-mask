@@ -1598,6 +1598,83 @@ retained inputs, output, alpha, scalar intermediate, strip/coefficient and encod
 scratch. They are not RAM reservations or guarantees that every valid size fits.
 
 
+## Portable appearance recipes
+
+`appearance_recipes.py` owns a standalone UTF-8 JSON file. V1 root keys are exactly
+`schema_version:1`, `kind:"appearance-recipe"`, `name`, `sections`, `reference`.
+The name is trimmed to 1–80 Unicode characters and rejects controls. Sections
+must be nonempty and contain only the following exact field sets. All numbers
+must be finite, nonboolean JSON numbers; native scalar validators apply.
+
+| Section | Fields and bounds |
+| --- | --- |
+| `shadow_fade` | `amount`, `preserve_highlights`, each [0,1] |
+| `local_exposure` | `ev` in [-3,3] |
+| `color_cleanup` | `strength` in [0,1] |
+| `background` | `color_srgb` as `#RRGGBB` (normalized uppercase), `variation` in [0,1] |
+| `shading` | positive `width_subject_fraction`, `direction_degrees` in [0,360), `opacity` in [0,1] |
+| `spatial_fade` | positive `transition_subject_fraction`, `amount` and `preserve_highlights` in [0,1] |
+
+Shading and spatial defaults are mutually exclusive. V1 contains no layout,
+enabled state, project/revision/shape identifiers, paths, source development,
+mask/area/protection/reduction data, framing or acceptance. A saved OFF section
+can supply explicitly selected values. Missing saved settings cannot be invented.
+Spatial defaults come from one explicitly chosen saved oval/arc; its geometry
+and identity are excluded.
+
+`reference` is null or exactly `{mime:"image/png",width,height,png_base64}`.
+It must decode to one opaque RGB8 PNG, at most 1,048,576 encoded PNG bytes,
+1–512 pixels per side and 262,144 pixels total. The whole JSON is limited to
+1,572,864 UTF-8 bytes and nesting depth 8. Invalid UTF-8, duplicate/unknown keys,
+unsupported versions/types, nonfinite numbers and malformed images are rejected.
+Bounded PNG header/chunk checks precede decoding; verified pixels are re-encoded
+without text, EXIF, ICC or other source metadata. Unchecked reference creation
+does not render. A checked reference uses the selected complete revision's saved
+native Result composition, reduced to RGB8 and at most 512 pixels per side,
+without framing or gallery footer. Its label is **Reference from saved source
+photo — not a target preview**. Photographed content remains private content even
+after metadata removal.
+
+Widths divide by the source nonzero-alpha bounds' maximum side and multiply by
+the target's corresponding side, without integer rounding. Bounds are half-open
+and include alpha=1. For target native extent `M=max(width,height)`, shading
+requires `0 < width <= M`; spatial transition requires `[0.5,2*M]`. Only portable
+conversion may correct a just-outside closed endpoint within
+`4*(ulp(product)+ulp(endpoint))`. Interior values remain exact, shading zero or
+negative never receives correction, and native validators are unchanged.
+Missing/empty target alpha or invalid converted width is reported under
+`unavailable.<section>` while independent valid sections remain in `sections`.
+Malformed portable input rejects the whole recipe before form assignment.
+
+Authenticated same-origin POST `/api/appearance-recipe-create` accepts exactly
+`developed_id, revision, revision_manifest_sha256, name, sections,
+reference_shape_id, include_reference`. The revision must be complete and match
+its raw manifest hash; the response contains `recipe_json` and the binding.
+`/api/appearance-recipe-validate` accepts exactly `recipe_json, developed_id,
+revision, revision_manifest_sha256`; it returns the sanitized `recipe`, converted
+`sections`, `unavailable` and binding. Both responses also echo
+`working_revision, inputs_digest, authoring_digest`. Only validation permits a
+null revision/hash pair, and only when there is no working revision. Partial
+pairs are invalid. The outer request limit remains 2,000,000 bytes.
+
+Both routes are read-only, share the nonblocking preview guard, validate source,
+selected assets and raw manifest, and recheck state/source/manifest/draft bindings
+before returning. They launch no action or writer. Source and target identifiers
+are transport-local and are not serialized into portable files.
+
+The viewer binds scalar drafts to current developed/revision/input/authoring
+identity and an edit version. Loading is selective and explicit; it neither
+applies effects nor transfers enable state. Recipe previews survive per-effect
+Apply; remaining sections require explicit reload after identity changes.
+Completion clears only the matching submitted identity/version/settings/result.
+Exposure and Shadow area/protection drafts retain independent bindings and edit
+versions: scalar reload cannot rebind them, stale replace-area writes reject,
+and amount-only uses saved current geometry without discarding the pending area.
+Spatial defaults retain the existing whole-draft binding. Late replies and
+cancelled replacement cannot overwrite newer edits. Background numeric
+percentages preserve fractional values through Apply/reload and colour edits;
+programmatic range synchronization does not quantize them.
+
 ## Optional local sharpening
 
 Schema-2 recipes may contain `local_sharpening` with exactly `enabled` (boolean),

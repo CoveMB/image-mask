@@ -294,7 +294,13 @@ combined when requested. Current user choices override example values; preserve
 source development, protected detail and unrelated settings, adapt native-pixel
 widths and protection to the target, and use fresh identities with existing controls.
 
-Appearance settings are descriptive recipes, not an automatic preset loader.
+Named reference cards remain descriptive guidance. A supported portable v1
+appearance file can be opened through **Appearance recipes → Open recipe file**;
+see [the manual workflow](workflow.md#reuse-appearance-settings). Load only the
+requested scalar sections, then use the existing per-effect Apply controls with
+fresh target identities. Loading does not transfer geometry, protection, fade
+reduction, enable switches, source development or photographic acceptance. A source
+thumbnail is optional private photo content, not a prediction for the target.
 A supported portable series preset can be loaded through **Match series → Load
 preset file**. Keep references local; do not upload or include them in distributions.
 Ignored references need their own backup; Git does not back them up.

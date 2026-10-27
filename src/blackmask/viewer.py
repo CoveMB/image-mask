@@ -223,6 +223,122 @@ class ReviewServer(ThreadingHTTPServer):
         return manifest, raw
 
     @_validation_scope()
+    def create_appearance_recipe(self, data: Any) -> dict[str, Any]:
+        return self._appearance_recipe(data, create=True)
+
+    @_validation_scope()
+    def validate_appearance_recipe(self, data: Any) -> dict[str, Any]:
+        return self._appearance_recipe(data, create=False)
+
+    def _appearance_recipe(self, data: Any, *, create: bool) -> dict[str, Any]:
+        """Bounded read-only recipe transport with the same saved-target guard as previews."""
+        from .appearance_recipes import (
+            appearance_recipe_form_values,
+            appearance_recipe_from_revision,
+            parse_appearance_recipe,
+        )
+        from .export import validated_layer_inputs
+        from .series_framing import nonzero_alpha_bounds
+
+        required = {"developed_id", "revision", "revision_manifest_sha256"} | (
+            {"name", "sections", "reference_shape_id", "include_reference"}
+            if create
+            else {"recipe_json"}
+        )
+        if not isinstance(data, dict) or set(data) != required:
+            raise ValueError("Invalid appearance recipe structured fields")
+        revision, manifest_hash = data["revision"], data["revision_manifest_sha256"]
+        if (
+            (revision is None) != (manifest_hash is None)
+            or create
+            and revision is None
+            or revision is not None
+            and (
+                not isinstance(revision, str)
+                or re.fullmatch(r"rev-[0-9]{3,}", revision) is None
+                or not isinstance(manifest_hash, str)
+                or re.fullmatch(r"[a-f0-9]{64}", manifest_hash) is None
+            )
+            or not create
+            and not isinstance(data["recipe_json"], str)
+        ):
+            raise ValueError("Invalid appearance recipe revision/hash pair or JSON text")
+        if not self.framing_preview_lock.acquire(blocking=False):
+            raise ProjectError("Appearance preview busy; retry after the current preview")
+        try:
+            captured = {
+                name: saved_asset(self.project, name).read_bytes()
+                for name in ("state.json", "source.json")
+            }
+            state = read_project(self.project, validate_drafts=False)
+            if data["developed_id"] != state["developed_id"]:
+                raise ProjectError("Stale appearance recipe source")
+            binding = {
+                "developed_id": state["developed_id"],
+                "revision": revision,
+                "revision_manifest_sha256": manifest_hash,
+                "working_revision": state["working_revision"],
+                "inputs_digest": operations.draft_digest(self.project),
+                "authoring_digest": operations.guidance_draft_digest(self.project),
+            }
+            if revision is None:
+                if state["working_revision"] is not None:
+                    raise ProjectError("Stale appearance target: select the current saved revision")
+            else:
+                _, raw = self._validated_revision(revision, state["developed_id"])
+                if digest(raw) != manifest_hash:
+                    raise ProjectError("Stale appearance recipe revision manifest")
+                captured[f"revisions/{revision}/manifest.json"] = raw
+            result: dict[str, Any]
+            if create:
+                assert revision is not None
+                result = {
+                    "recipe_json": appearance_recipe_from_revision(
+                        self.project,
+                        revision,
+                        manifest_hash,
+                        data["name"],
+                        data["sections"],
+                        data["reference_shape_id"],
+                        data["include_reference"],
+                    ).decode("utf-8")
+                }
+            else:
+                try:
+                    recipe = parse_appearance_recipe(data["recipe_json"].encode("utf-8"))
+                except (ValueError, UnicodeError) as error:
+                    raise ValueError(str(error)) from error
+                master, _ = _validate_assets(self.project, state, validate_drafts=False)
+                height, width = master.shape[:2]
+                bounds = None
+                if revision is not None:
+                    _, alpha, _ = validated_layer_inputs(
+                        self.project, revision, state["developed_id"]
+                    )
+                    bounds = nonzero_alpha_bounds(alpha)
+                result = {
+                    "recipe": recipe,
+                    **appearance_recipe_form_values(recipe, bounds, (width, height)),
+                }
+            read_project(self.project, validate_drafts=False)
+            if revision is not None:
+                self._validated_revision(revision, state["developed_id"])
+            if (
+                any(
+                    saved_asset(self.project, name).read_bytes() != raw
+                    for name, raw in captured.items()
+                )
+                or operations.draft_digest(self.project) != binding["inputs_digest"]
+                or operations.guidance_draft_digest(self.project) != binding["authoring_digest"]
+            ):
+                raise ProjectError(
+                    "Stale appearance recipe target or drafts changed during validation"
+                )
+            return {**binding, **result}
+        finally:
+            self.framing_preview_lock.release()
+
+    @_validation_scope()
     def preview_framing(self, data: Any, *, series_mode: bool = False) -> dict[str, Any]:
         """Read-only final-result preview; never author or publish native assets."""
         if (
@@ -1020,6 +1136,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
             "/api/series-preset-validate",
             "/api/spatial-preview",
             "/api/fade-reduction-preview",
+            "/api/appearance-recipe-create",
+            "/api/appearance-recipe-validate",
         }:
             self.error(404, "Unknown route")
             return
@@ -1039,14 +1157,32 @@ class ReviewHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(size)
             if len(body) != size:
                 raise ValueError("Incomplete body")
+            from .appearance_recipes import _unique_object as appearance_unique_object
+
             data = json.loads(
                 body,
-                object_pairs_hook=_unique_object
+                object_pairs_hook=appearance_unique_object
+                if self.path.startswith("/api/appearance-recipe-")
+                else _unique_object
                 if self.path.startswith(("/api/series-", "/api/spatial-", "/api/fade-reduction-"))
                 else None,
                 parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Nonfinite JSON")),
             )
-            if self.path == "/api/fade-reduction-preview":
+            if self.path == "/api/appearance-recipe-create":
+                self.reply(
+                    200,
+                    json.dumps(
+                        self.server.create_appearance_recipe(data), allow_nan=False
+                    ).encode(),
+                )
+            elif self.path == "/api/appearance-recipe-validate":
+                self.reply(
+                    200,
+                    json.dumps(
+                        self.server.validate_appearance_recipe(data), allow_nan=False
+                    ).encode(),
+                )
+            elif self.path == "/api/fade-reduction-preview":
                 result = self.server.preview_fade_reduction(data)
                 self.reply(200, json.dumps(result, allow_nan=False).encode())
             elif self.path == "/api/spatial-preview":
@@ -1090,6 +1226,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     "/api/series-preview",
                     "/api/spatial-preview",
                     "/api/fade-reduction-preview",
+                    "/api/appearance-recipe-create",
+                    "/api/appearance-recipe-validate",
                 }
                 and isinstance(error, ProjectError)
             )

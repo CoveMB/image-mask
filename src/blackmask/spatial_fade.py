@@ -36,6 +36,14 @@ def _number(value: Any, lower: float, upper: float, *, upper_open: bool = False)
     )
 
 
+def validate_spatial_transition_width(value: Any, width: int, height: int) -> None:
+    """The native interval stays strict; portable roundoff handling belongs to its converter."""
+    if any(type(item) is not int or item <= 0 for item in (width, height)):
+        raise ProjectError("Spatial fade requires positive native image dimensions")
+    if not _number(value, 0.5, 2 * max(width, height)):
+        raise ProjectError("Invalid spatial fade shape geometry, strength or switch")
+
+
 def validate_spatial_fade(settings: Any, width: int, height: int) -> None:
     """Validate inactive shapes too; never clamp or discard authored settings."""
     if any(type(value) is not int or value <= 0 for value in (width, height)):
@@ -102,10 +110,10 @@ def validate_spatial_fade(settings: Any, width: int, height: int) -> None:
             or not _number(centre[0], 0, width)
             or not _number(centre[1], 0, height)
             or not _number(shape["rotation_degrees"], 0, 360, upper_open=True)
-            or not _number(shape["transition_width"], 0.5, limit)
             or not _number(shape["amount"], 0, 1)
         ):
             raise ProjectError("Invalid spatial fade shape geometry, strength or switch")
+        validate_spatial_transition_width(shape["transition_width"], width, height)
 
 
 def _smoothstep(value: np.ndarray) -> np.ndarray:

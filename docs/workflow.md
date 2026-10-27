@@ -769,6 +769,56 @@ actual files and current source/revision authorization before returning without 
 See [preservation and recovery](troubleshooting.md#series-framing-recovery).
 
 
+## Reuse appearance settings
+
+Open **Appearance recipes** in the local viewer. Choose a complete saved source
+revision, give the recipe a name, and check each setting you want to save. The
+labels show saved ON/OFF status; even an OFF effect needs explicit selection.
+Pending form edits and the current editable recipe are excluded. For fade-shape
+defaults, choose one saved oval or arc. Choose either inward shading or fade-shape
+defaults in one file.
+
+**Include a small source-photo reference** is unchecked. If selected, the file
+contains a sanitized RGB8 thumbnail of that revision's saved Result, including
+its saved background and effects. It contains photographed content: keep it local
+or share only deliberately. It is not a target preview or an editable source.
+**Save recipe file** initiates a browser download; check that the file was saved.
+
+On another photo, choose **Open recipe file**, inspect the name, included values
+and optional reference, then select the sections to load. All selections start
+unchecked. Loading changes controls only. It preserves effect switches, masks,
+areas, protection, both fade-reduction drafts, source development, framing and
+acceptance. Confirming replacement affects only the selected unapplied scalar
+settings; Cancel keeps them. The portable [v1 file contract](file-contract.md#portable-appearance-recipes)
+defines the accepted fields and limits.
+
+Widths scale by the maximum side of the saved nonzero-alpha subject bounds,
+including faint pixels. They remain fractional native pixels. A missing/empty
+matte or an out-of-range width makes that section unavailable; independent
+sections remain usable. Fade-shape defaults require an explicit current target
+shape, change only transition width, strength and highlight preservation, and
+never create geometry or enable its switches. Recover a stale spatial draft
+before loading these defaults.
+
+Apply effects individually through their existing controls. For example, after
+loading Shadow fade, exposure and shading, Apply Shadow fade first. The recipe
+preview and other loaded values remain visible, but their bindings become stale.
+Use **Reload exposure settings** before applying exposure, then **Reload shading
+settings** against that new revision. Review each result; a loaded recipe never
+supplies photographic acceptance.
+
+Exposure and Shadow area/protection drafts have independent bindings. Reloading
+their recipe values does not make an older area safe to apply. A stale area blocks
+replace-area Apply; amount-only Apply uses the current saved area and preserves
+the older draft. Use the section's **Reload saved area** control to recover it
+explicitly, or re-author against current inputs. The main Reload discards pending
+controls explicitly; saved revisions remain recoverable through Restore.
+
+Background variation accepts fractional percentages: saved `0.125` appears as
+`12.5%` and survives a colour-only edit. Synchronizing the slider does not round
+the number; moving the slider deliberately sets its chosen percentage. Closing
+the recipe preview leaves already loaded values in their controls.
+
 ## Local sharpening
 
 Use Local sharpening to enhance existing captured detail in hair, feathers, petals,

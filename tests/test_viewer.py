@@ -13,6 +13,301 @@ from blackmask import operations
 from blackmask.project import ProjectError, load_developed, project_lock, read_project
 
 
+def test_appearance_recipe_endpoints_are_read_only_and_bound(tmp_path):
+    from test_appearance_recipes import project_inventory
+    from test_background import background_request
+    from test_effects import fixture_project
+
+    project, _, _ = fixture_project(tmp_path)
+    selected = operations.apply_operation(project, background_request(project, variation=0.125))
+    with running(project) as server:
+        state = server.snapshot()
+        row = next(item for item in state["revisions"] if item["revision"] == selected["revision"])
+        binding = {
+            "developed_id": state["developed_id"],
+            "revision": selected["revision"],
+            "revision_manifest_sha256": row["revision_manifest_sha256"],
+        }
+        create = dict(
+            binding,
+            name="<img> saved look",
+            sections=["background"],
+            reference_shape_id=None,
+            include_reference=False,
+        )
+        before = project_inventory(project)
+        status, body, _ = http(server, "/api/appearance-recipe-create", "POST", create)
+        assert status == 200, body
+        created = json.loads(body)
+        assert all(created[key] == value for key, value in binding.items())
+        value = json.loads(created["recipe_json"])
+        assert value["sections"]["background"]["variation"] == 0.125
+        assert value["reference"] is None
+        validate = dict(binding, recipe_json=created["recipe_json"])
+        status, body, _ = http(server, "/api/appearance-recipe-validate", "POST", validate)
+        assert status == 200, body
+        imported = json.loads(body)
+        assert imported["recipe"] == value
+        assert imported["sections"] == {"background": {"color_srgb": "#120708", "variation": 0.125}}
+        assert imported["unavailable"] == {}
+        assert imported["inputs_digest"] == state["inputs_digest"]
+        assert imported["authoring_digest"] == state["authoring_digest"]
+        assert server.action == {"running": False, "error": None, "result": None}
+        assert project_inventory(project) == before
+        for route, data in [("create", create), ("validate", validate)]:
+            path = f"/api/appearance-recipe-{route}"
+            for headers in (
+                {"Origin": "null"},
+                {"Host": "example.com"},
+                {"X-Blackmask-Token": "wrong"},
+            ):
+                assert http(server, path, "POST", data, **headers)[0] == 403
+            assert http(server, path, "POST", dict(data, path="/tmp"))[0] == 400
+            assert (
+                http(server, path, "POST", dict(data, revision_manifest_sha256="0" * 64))[0] == 409
+            )
+            assert http(server, path, "POST", dict(data, developed_id="0" * 64))[0] == 409
+            with server.framing_preview_lock:
+                assert http(server, path, "POST", data)[0] == 409
+            duplicate = json.dumps(data).replace(
+                '"developed_id":', '"developed_id":"duplicate","developed_id":'
+            )
+            connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+            connection.request(
+                "POST",
+                path,
+                duplicate.encode(),
+                {
+                    "Origin": server.origin,
+                    "Content-Type": "application/json",
+                    "X-Blackmask-Token": server.token,
+                },
+            )
+            response = connection.getresponse()
+            assert response.status == 400
+            response.read()
+            connection.close()
+        for bad in (None, {}, "{broken", " " * 1572865):
+            assert (
+                http(
+                    server,
+                    "/api/appearance-recipe-validate",
+                    "POST",
+                    dict(validate, recipe_json=bad),
+                )[0]
+                == 400
+            )
+        assert project_inventory(project) == before
+
+
+def test_appearance_recipe_no_matte_binding_and_outer_size_limit(tmp_path):
+    from test_appearance_recipes import recipe_bytes, recipe_value
+
+    _, project = opened(tmp_path)
+    with running(project) as server:
+        state = server.snapshot()
+        value = recipe_value(
+            local_exposure={"ev": 1},
+            shading={"width_subject_fraction": 0.1, "direction_degrees": 0, "opacity": 0.3},
+        )
+        data = {
+            "developed_id": state["developed_id"],
+            "revision": None,
+            "revision_manifest_sha256": None,
+            "recipe_json": recipe_bytes(value).decode(),
+        }
+        status, body, _ = http(server, "/api/appearance-recipe-validate", "POST", data)
+        assert status == 200, body
+        result = json.loads(body)
+        assert result["revision"] is None and result["revision_manifest_sha256"] is None
+        assert result["sections"] == {"local_exposure": {"ev": 1}}
+        assert set(result["unavailable"]) == {"shading"}
+        for change in ({"revision": "rev-001"}, {"revision_manifest_sha256": "0" * 64}):
+            assert (
+                http(server, "/api/appearance-recipe-validate", "POST", dict(data, **change))[0]
+                == 400
+            )
+        create = {
+            key: data[key] for key in ("developed_id", "revision", "revision_manifest_sha256")
+        }
+        assert (
+            http(
+                server,
+                "/api/appearance-recipe-create",
+                "POST",
+                dict(
+                    create,
+                    name="No matte",
+                    sections=["background"],
+                    reference_shape_id=None,
+                    include_reference=False,
+                ),
+            )[0]
+            == 400
+        )
+        raw = json.dumps(data).encode()
+        raw += b" " * (2000000 - len(raw))
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        headers = {
+            "Origin": server.origin,
+            "Content-Type": "application/json",
+            "X-Blackmask-Token": server.token,
+        }
+        connection.request("POST", "/api/appearance-recipe-validate", raw, headers)
+        response = connection.getresponse()
+        assert response.status == 200
+        response.read()
+        connection.close()
+        assert (
+            http(
+                server,
+                "/api/appearance-recipe-validate",
+                "POST",
+                data,
+                **{"Content-Length": "2000001"},
+            )[0]
+            == 413
+        )
+
+
+@pytest.mark.parametrize(
+    "changed", ["state.json", "source.json", "manifest", "recipe.toml", "viewer-draft.json"]
+)
+def test_appearance_recipe_validation_rechecks_target_and_draft_identity(
+    tmp_path, monkeypatch, changed
+):
+    from test_appearance_recipes import recipe_bytes, recipe_value
+    from test_effects import fixture_project
+
+    from blackmask import appearance_recipes
+
+    project, _, selected = fixture_project(tmp_path)
+    with running(project) as server:
+        state = server.snapshot()
+        row = next(item for item in state["revisions"] if item["revision"] == selected["revision"])
+        data = {
+            "developed_id": state["developed_id"],
+            "revision": selected["revision"],
+            "revision_manifest_sha256": row["revision_manifest_sha256"],
+            "recipe_json": recipe_bytes(recipe_value()).decode(),
+        }
+        original = appearance_recipes.appearance_recipe_form_values
+
+        def racing_conversion(*args):
+            result = original(*args)
+            relative = (
+                f"revisions/{selected['revision']}/manifest.json"
+                if changed == "manifest"
+                else changed
+            )
+            path = saved_raster(project / relative)
+            path.write_bytes((path.read_bytes() if path.exists() else b"") + b"\n")
+            return result
+
+        monkeypatch.setattr(appearance_recipes, "appearance_recipe_form_values", racing_conversion)
+        assert http(server, "/api/appearance-recipe-validate", "POST", data)[0] == 409
+        assert server.framing_preview_lock.acquire(blocking=False)
+        server.framing_preview_lock.release()
+        assert not server.action["running"] and server.action["result"] is None
+
+
+def test_appearance_fractional_background_real_http_save_reload_and_colour_only_edit(tmp_path):
+    from test_effects import fixture_project
+
+    from blackmask.project import read_revision
+
+    project, _, parent = fixture_project(tmp_path)
+    with running(project) as server:
+        for color in ("#14283C", "#445566"):
+            result = perform(
+                server,
+                "effects",
+                scope_xyxy=[0, 0, 6, 4],
+                background={"color_srgb": color, "variation": 0.125},
+                candidate_comparison=True,
+            )
+            manifest = read_revision(
+                project, result["revision"], read_project(project)["developed_id"]
+            )
+            assert manifest["background"]["settings"] == {"color_srgb": color, "variation": 0.125}
+            state = json.loads(http(server)[1])
+            assert state["accepted_revision"] == parent["revision"]
+            row = next(row for row in state["revisions"] if row["revision"] == result["revision"])
+            assert row["background"]["settings"] == manifest["background"]["settings"]
+            status, body, _ = http(
+                server,
+                "/api/appearance-recipe-create",
+                "POST",
+                {
+                    "developed_id": state["developed_id"],
+                    "revision": result["revision"],
+                    "revision_manifest_sha256": row["revision_manifest_sha256"],
+                    "name": "Fractional",
+                    "sections": ["background"],
+                    "reference_shape_id": None,
+                    "include_reference": False,
+                },
+            )
+            assert status == 200, body
+            assert json.loads(json.loads(body)["recipe_json"])["sections"]["background"] == {
+                "color_srgb": color,
+                "variation": 0.125,
+            }
+
+
+def test_appearance_disconnect_releases_shared_preview_guard_without_writing(tmp_path, monkeypatch):
+    from test_appearance_recipes import project_inventory, recipe_bytes, recipe_value
+    from test_effects import fixture_project
+
+    from blackmask import appearance_recipes
+
+    project, _, selected = fixture_project(tmp_path)
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    original = appearance_recipes.appearance_recipe_form_values
+
+    def paused(*args):
+        entered.set()
+        assert release.wait(5)
+        try:
+            return original(*args)
+        finally:
+            finished.set()
+
+    with running(project) as server:
+        state = server.snapshot()
+        row = next(row for row in state["revisions"] if row["revision"] == selected["revision"])
+        data = {
+            "developed_id": state["developed_id"],
+            "revision": selected["revision"],
+            "revision_manifest_sha256": row["revision_manifest_sha256"],
+            "recipe_json": recipe_bytes(recipe_value()).decode(),
+        }
+        before = project_inventory(project)
+        monkeypatch.setattr(appearance_recipes, "appearance_recipe_form_values", paused)
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        connection.request(
+            "POST",
+            "/api/appearance-recipe-validate",
+            json.dumps(data),
+            {
+                "Origin": server.origin,
+                "Content-Type": "application/json",
+                "X-Blackmask-Token": server.token,
+            },
+        )
+        assert entered.wait(5)
+        assert http(server, "/api/appearance-recipe-validate", "POST", data)[0] == 409
+        connection.close()
+        release.set()
+        assert finished.wait(5)
+        assert server.framing_preview_lock.acquire(timeout=5)
+        server.framing_preview_lock.release()
+        monkeypatch.setattr(appearance_recipes, "appearance_recipe_form_values", original)
+        assert http(server, "/api/appearance-recipe-validate", "POST", data)[0] == 200
+        assert project_inventory(project) == before
+        assert server.action == {"running": False, "error": None, "result": None}
+
+
 @pytest.mark.parametrize("target", ["spatial_fade", "shadow_fade"])
 def test_fade_reduction_viewer_save_snapshot_and_saved_comparisons(tmp_path, target):
     import base64
