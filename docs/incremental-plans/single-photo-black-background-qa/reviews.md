@@ -1,6 +1,10 @@
-> **Current addition (2026-10-19):** the Shadow fade planning review below is current for I11. Original conversion reports and I01-only readiness remain verbatim historical records.
-
 # Planning reviews and comparison
+
+This public planning record preserves dated proposals and review history. Private execution receipts, machine-specific paths and photo locations are retained locally; they are not public runtime dependencies. Earlier hashes identify the historical candidates, not this edited public copy. Dated instructions below do not grant new execution or provider authority.
+
+Current status and remaining obligations are owned by [the plan reconciliation](plan.md#current-delivery-and-remaining-obligations). The dated material below preserves earlier preparation, verification and review context; it is not the current next-action queue.
+
+## Dated planning record
 
 Date: 2026-10-18. Candidate: new plan/QA/handoff, proposed documents only.
 
@@ -77,7 +81,7 @@ The terminal Evidence retention and cleanup review remains planned for actual se
 
 ## 2026-10-19 Shadow fade planning review
 
-One coordinated candidate covers the private [design](../../../local/plans/shadow-fade/design.md), [concrete implementation plan](../../../local/plans/shadow-fade/implementation-plan.md), and dated I11 plan/QA/current-handoff extensions. [Detailed candidate identities, reports and dispositions](../../../local/plans/shadow-fade/plan-review.md) own the final five substantive hashes, superseded-draft identities and exact correction record. Original substantive blocks and complete prior bodies are preserved; no retrospective implementation or acceptance claim.
+One coordinated candidate covers the private design (private planning reference retained locally), concrete implementation plan (private planning reference retained locally), and dated I11 plan/QA/current-handoff extensions. Detailed candidate identities, reports and dispositions (private planning reference retained locally) own the final five substantive hashes, superseded-draft identities and exact correction record. Original substantive blocks and complete prior bodies are preserved; no retrospective implementation or acceptance claim.
 
 | Independent fresh-context assignment | Inspected scope / disposition |
 | --- | --- |
@@ -93,13 +97,13 @@ No application/test/import/model/photo/browser execution, installation, Git muta
 
 ## 2026-10-19 — I12 Background appearance planning review
 
-The user explicitly requested two background controls, Superpowers planning, independent review, additive integration, and main-controller dispatch after Shadow fade followed by implementation review/MR, one flower example and continued orchestration. The reviewed [design](../../../local/plans/background-appearance/design.md), [implementation plan](../../../local/plans/background-appearance/implementation-plan.md) and exact coordinated append blocks are identified in [plan-review.md](../../../local/plans/background-appearance/plan-review.md).
+The user explicitly requested two background controls, Superpowers planning, independent review, additive integration, and main-controller dispatch after Shadow fade followed by implementation review/MR, one flower example and continued orchestration. The reviewed design (private planning reference retained locally), implementation plan (private planning reference retained locally) and exact coordinated append blocks are identified in plan-review.md (private planning reference retained locally).
 
 Fresh read-only reviewer `/root/background_plan_review` returned **No material improvements recommended**, covering source fidelity, architecture/substitute simplicity and verification. **Substitute simplicity review; Ponytail not run.** This is one report under the current supplied AGENTS reviewer cap, not three reports; original I11 obligations/history remain unchanged. No product execution or photographic assessment occurred. The author integrated the reviewed blocks verbatim, preserving old bodies and updating only first-line routing notices plus administrative dispositions. I12 is reviewed/queued; predecessor completion, actual implementation/review/MR, controller example and human acceptance remain separate.
 
 ### I12 implementation review disposition — 2026-10-19 (administrative)
 
-One fresh independent read-only reviewer `/root/background_final_review` assessed the frozen 16-file candidate. One material P2 preservation finding was reproduced and fixed with a shipped-page regression; controller inspected the exact correction, final 17-file identity and 554-pass suite. No second independent review was claimed. Original report and disposition are retained at `/private/tmp/image-mask-background-appearance/local/evidence/background-appearance/independent-review.md`. Draft MR #14 is published and verified; direct browser remainder, real flower example and human acceptance remain incomplete.
+One fresh independent read-only reviewer `/root/background_final_review` assessed the frozen 16-file candidate. One material P2 preservation finding was reproduced and fixed with a shipped-page regression; controller inspected the exact correction, final 17-file identity and 554-pass suite. No second independent review was claimed. Original report and disposition are retained at `<private execution reference retained locally>`. Draft MR #14 is published and verified; direct browser remainder, real flower example and human acceptance remain incomplete.
 
 ## Photo library incremental conversion — coordinated review
 
@@ -155,7 +159,7 @@ The user explicitly requested `ponytail-review`. This is an author-run pass unde
 
 Inspected source ownership and connected tests for import/publication, exact saved-state validation, effective recipes, unchanged-result reuse, export/crop evidence, interrupted operations and cache ownership. Relevant tests were read as source, including actual process-lock/interruption cases, mutable-asset rejection after cached validation, saved export round trips and export-collision refusal. Checked the applicable [Python 3.12 filesystem contracts](https://docs.python.org/3.12/library/os.html#os.stat_result), including file identity/link counts and replacement semantics. These support the proposed bounded filesystem checks; no new API/dependency is proposed.
 
-Candidate identities at this pass: plan `695a353643b71c05479f5a5a0a4163e18ea6770c875fdd28de90aa1fb3f725f4`; QA `91f695905fb6c34df74d889d21c18e2792ebcb22b25669e921faf6bdec60c889`; handoff `4f3cd4c0ad0ff65c45adc56e7873f93cee014ac648328324fd089279eb8406e9`. Both raw-source hashes still match the preceding record. All 52 recorded source-baseline files match at `/private/tmp/image-mask-background-appearance`, HEAD `037e8fb4f62774fc85e4fe63e5029bcca832d877`. Also inspected relevant locally available source/doc drift to `origin/background-appearance` at `0443b15bee5fec4a0b2080f57163a34f9ad17c70`, including the review-settings projection change; it does not invalidate the planned canonical recipe reconciliation. No fetch or live stack claim.
+Candidate identities at this pass: plan `695a353643b71c05479f5a5a0a4163e18ea6770c875fdd28de90aa1fb3f725f4`; QA `91f695905fb6c34df74d889d21c18e2792ebcb22b25669e921faf6bdec60c889`; handoff `4f3cd4c0ad0ff65c45adc56e7873f93cee014ac648328324fd089279eb8406e9`. Both raw-source hashes still match the preceding record. All 52 recorded source-baseline files match at `<private execution reference retained locally>`, HEAD `037e8fb4f62774fc85e4fe63e5029bcca832d877`. Also inspected relevant locally available source/doc drift to `origin/background-appearance` at `0443b15bee5fec4a0b2080f57163a34f9ad17c70`, including the review-settings projection change; it does not invalidate the planned canonical recipe reconciliation. No fetch or live stack claim.
 
 **Not checked:** implementation of the proposed storage behavior, running tests, actual disk savings, photo quality, live provider/CI status or human acceptance. Existing dirty files are preserved. This administrative report is the only file change; plan/QA/handoff and application code remain unchanged. No orchestrator message, Git write, photo operation or cleanup was performed. Earlier statements that Ponytail was not run describe earlier reviews; this explicit invocation applies only to this plan pass and grants no automatic future invocation.
 
@@ -214,3 +218,37 @@ The verification reviewer independently closed the correction on these substanti
 | `handoff.md` | `8374f40013a71c642ed53d47adc1662b204cb7efdef7365902c6d6ad774536b0` |
 
 Subsequent edits only record reviewed readiness and this report. No material planning finding remains. Plan preparation is conditional on the actual settled series predecessor, applicable evidence, current authority and writer release; no implementation/runtime/photographic acceptance is claimed. Existing three-scope implementation reviews, Gate 2/Gate 3 evidence, provider settlement and human photographic ownership remain. The earlier Ponytail pass remains valid only for its earlier candidate; this amendment used ordinary independent simplicity review under the explicit-only policy.
+
+## 2026-10-21 — Cache publication repair and preapproved export
+
+Direct request: repair the preceding Ponytail plan finding, independently review the repaired plan, and return a starting prompt with preapprovals. Scope is the selected plan/QA/handoff and this review record only. The earlier no-further-controller-message hold remains. Preapproved orchestration is a proposed export for I13–I19, inactive until human submission/adoption; no execution, message, Git mutation, provider action, photo processing or deletion was performed.
+
+Baseline: clean local `main` at `846adf10652280b55bb28f6b75719e459a52a9fc`, recording the series-framing PR #17 merge. Remote freshness, current CI/provider settlement and writer release were not inferred or refreshed. Raw storage plan/design remain unchanged at their recorded `613f230c…` / `f0c27e4d…` full hashes above. No increment was added: ten reading parts, 19 total cards, seven pending library cards; QA stays ON.
+
+### Amendment and evidence
+
+The repaired I19 prevents redundant names during new successful tile publication using the existing native exclusive-rename approach and directory sync. It removes the planned device/inode group-recognition and alias-deletion branch. Older/multiply linked/unknown/failed entries remain protected, including caches written by preceding cards. Existing lock/digest/request guards, permanent-data protection and separately authorized explicit clearing remain. It does not change generic initial asset/state publication, invent migration, or promise physical space savings.
+
+Evidence inspected: `matte.py:161–222` validation/miss/publication, `project.py:134–158` publication helpers, `tests/test_matte.py:103–129`, resume tests and `docs/file-contract.md:143–152`. The complete public [Apple exclusive-renaming Markdown](https://developer.apple.com/documentation/foundation/urlresourcevalues/volumesupportsexclusiverenaming.md) was read on 2026-10-21: it supports the file-facing API applicability, not runtime durability or support on every filesystem. All application tests and failure checks in Q43 are proposed evidence, not executed results.
+
+The portable handoff separates proposed Gate 2/Gate 3 delegation from active authority, preserves mandatory evidence/material decisions/human acceptance, and scopes future Git/MR and CodeRabbit actions. Its conditional explicit Ponytail request stays within the architecture report. No additional controller, monitor, reviewer layer or permission ledger is introduced.
+
+### Independent assignments and correction
+
+Three distinct fresh-context read-only reviewers received the same frozen candidate, raw sources, accepted amendment, current code and exact comparison against the local baseline. No inherited author conversation, other current verdicts, writes, recursive delegation or application execution. The first two independent tracks ran concurrently; the verification assignment followed when capacity became available. All initial reports were collected before the author changed the candidate.
+
+| Reviewer / scope | Initial report and disposition |
+|---|---|
+| `/root/cache_plan_source_review` — requirements/source fidelity | **No material improvements recommended.** Source preservation, bounded amendment and inactive-until-adopted grant checked; unaffected coverage retained. |
+| `/root/cache_plan_architecture_review` — architecture/reviewability/simplicity | **Substitute simplicity review; Ponytail not run.** One P2: broad collision-failure wording could make a pre-existing corrupt cache entry fatal instead of a recoverable miss. Author confirmed the current contract/test, repaired the wording and cases; focused recheck: **P2 closed. No material improvements recommended.** |
+| `/root/cache_plan_verification_review` — verification quality/evidence | Initial **No material improvements recommended.** After the architecture finding, independently rechecked the changed corrupt-cache expectations and sensitivity; **No material improvements recommended**, with unaffected coverage retained. |
+
+The repair explicitly retains successful recomputation without publishing over a pre-existing corrupt regular named entry, preserves its bytes and attempt diagnostics, and distinguishes skipped publication from processing failure. Q43 requires successful expected pixels, one additional inference and unchanged corrupt bytes, retaining the existing regression expectation. A raced destination during an actual exclusive publication attempt remains a separate no-overwrite failure. Unsupported rename and post-rename directory-sync uncertainty remain visible; no fallback deletion or new recovery mechanism was added. One stale active-owner phrase was made explicitly historical.
+
+| Artifact | Initial reviewed SHA-256 | Corrected substantive SHA-256 |
+|---|---|---|
+| `plan.md` | `9820113ce00df2ff6375f1375f60f9a7185acc419fe6571becd1077073dd1b9a` | `cd3aacd1651b06fa948f98d5b71a6d2afb4d9f2386074e25fd98893c190829c3` |
+| `qa-plan.md` | `f1fa5d4ef6e3397cc752ea4ecb711cfb11e3b7567da1bceff3cdd2568cb51e45` | `40643090537e308910ba991ca5704eb5bb70445fb9ad0879aa5947e5de59fe89` |
+| `handoff.md` | `a9618c04a24c1d0a50872f30be97132766e4aa0e043416ad9844c5894fd91620` | `029720de7df1486930ee675e8577b36272c0e0c58e1cbdf409afb415844bf507` |
+
+Architecture and verification confirmed the corrected hashes in their focused returns. Subsequent changes add only the plan's administrative readiness sentence and this report. All material findings are resolved at the planning level. Current local predecessor/routing, three independent implementation reports per card, meaningful verification, current required CI/CodeRabbit, spider example and human photographic/regular-use ownership remain required. The proposed launcher is returned to the user, not sent to the orchestrator.
