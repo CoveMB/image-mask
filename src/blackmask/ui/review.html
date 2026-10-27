@@ -223,7 +223,7 @@
         <canvas
           id="canvas"
           tabindex="0"
-          aria-label="Source and result; native-coordinate guides, Local sharpening, Local exposure, Shadow fade, Fade shapes or Fade reduction authoring. Numeric alternatives in each section."
+          aria-label="Source and result; native-coordinate guides, Background light, Local sharpening, Local exposure, Shadow fade, Fade shapes or Fade reduction authoring. Numeric alternatives in each section."
         ></canvas>
       </div>
     </section>
@@ -419,7 +419,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -455,6 +455,38 @@
         <button id="backgroundApply">Apply background</button>
         <p id="backgroundStatus" role="status" class="small"></p>
         <p id="backgroundDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset id="backgroundLightControls">
+        <legend>Background light</legend>
+        <p class="small">One light behind the saved subject. Apply saves only this light. Draft outlines do not change the image; applying another shape replaces the saved light shape.</p>
+        <label><input id="backgroundLightEnabled" type="checkbox" /> Light ON</label>
+        <label>Brightness (%) <input id="backgroundLightRange" type="range" min="0" max="100" step="1" value="10" /></label>
+        <label>Brightness (numeric %) <input id="backgroundLightBrightness" type="number" min="0" max="100" step="any" value="10" /></label>
+        <p class="small">Peak light level on black with a white tint. Lower brightness preserves variation on a bright backdrop. Subject exposure is a separate adjustment.</p>
+        <label>Light colour <input id="backgroundLightColor" type="color" value="#ffffff" /></label>
+        <label>Light #RRGGBB <input id="backgroundLightHex" type="text" value="#FFFFFF" maxlength="7" /></label>
+        <label>Light shape <select id="backgroundLightShape"><option value="oval">Soft oval</option><option value="directional">Broad directional gradient</option></select></label>
+        <label>Centre X (native pixels) <input id="backgroundLightCenterX" type="number" min="0" step="any" /></label>
+        <label>Centre Y (native pixels) <input id="backgroundLightCenterY" type="number" min="0" step="any" /></label>
+        <label>Rotation (clockwise degrees, 0 to below 360) <input id="backgroundLightRotation" type="number" min="0" max="359.999999" step="any" /></label>
+        <div id="backgroundLightOval">
+          <label>Outer horizontal radius (native pixels) <input id="backgroundLightRadiusX" type="number" min="0.5" step="any" /></label>
+          <label>Outer vertical radius (native pixels) <input id="backgroundLightRadiusY" type="number" min="0.5" step="any" /></label>
+          <label>Softness (0.05–1) <input id="backgroundLightSoftness" type="number" min="0.05" max="1" step="any" /></label>
+        </div>
+        <div id="backgroundLightDirectional" hidden>
+          <label>Transition width (native pixels) <input id="backgroundLightTransition" type="number" min="0.5" step="any" /></label>
+          <button id="backgroundLightReverse">Reverse gradient direction</button>
+        </div>
+        <label><input id="backgroundLightHide" type="checkbox" /> Hide light outlines and handles</label>
+        <p class="small">Choose Background light in Canvas authoring mode to move, rotate or resize its handles. All handles have numeric controls above. Escape reloads saved light. The directional arrow points from light toward dark.</p>
+        <label><input id="backgroundLightCandidate" type="checkbox" /> Explicitly compare light on an unaccepted candidate</label>
+        <button id="backgroundLightApply">Apply Background light</button>
+        <button id="backgroundLightOff">Turn light OFF</button>
+        <button id="backgroundLightReload">Reload saved light</button>
+        <label><input id="backgroundLightCompare" type="checkbox" /> Compare Background light OFF</label>
+        <p id="backgroundLightStatus" role="status" class="small"></p>
+        <p id="backgroundLightDraftStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>Local sharpening</legend>
@@ -689,6 +721,9 @@
     let comparisonViewKey = "", comparisonViewUrls = [];
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
     let backgroundDirty = false, backgroundPublished = false;
+    let backgroundLightDraft = null, backgroundLightSubmitted = null;
+    const backgroundLightGeometries = new Map();
+    const backgroundLightControlIds = ["backgroundLightEnabled", "backgroundLightRange", "backgroundLightBrightness", "backgroundLightColor", "backgroundLightHex", "backgroundLightShape", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition", "backgroundLightReverse", "backgroundLightCandidate", "backgroundLightApply", "backgroundLightOff", "backgroundLightReload"];
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let sharpeningArea = {regions: [], protection: []}, sharpeningDirty = false, sharpeningAreaPublished = false;
     let exposureControlsIdentity = null, exposureControlsSubmitted = null;
@@ -1420,7 +1455,7 @@
     $("reductionTarget").onchange = guarded(() => {selectedReductionId = ""; syncFadeReduction(); draw(); return loadImage();});
     $("reductionView").onchange = guarded(() => {
       if ($("reductionView").value !== "none") {
-        for (const id of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare"]) $(id).checked = false;
+        for (const id of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare", "backgroundLightCompare"]) $(id).checked = false;
         $("spatialMap").value = "none"; $("shadingPreview").value = "";
       }
       return loadImage();
@@ -1789,6 +1824,19 @@
         if (draft?.identity === reductionSubmission.identity && draft.version === reductionSubmission.version) draft.dirty = false;
       }
       if (completed) fadeReductionSubmitted = null;
+      const lightSubmission = backgroundLightSubmitted;
+      const lightCompleted = completed && !a.error && lightSubmission && a.name === "effects"
+        && state.developed_id === lightSubmission.developed_id && current?.revision === a.result?.revision
+        && (a.result?.reused ? a.result.revision === lightSubmission.base_revision : a.result?.parent === lightSubmission.base_revision);
+      if (lightCompleted && !lightSubmission.preserveDraft && backgroundLightDraft.version === lightSubmission.version
+        && backgroundLightDraft.identity === lightSubmission.identity
+        && fadeReductionAreaIdentity(a.result?.background_light?.settings) === lightSubmission.settings
+        && fadeReductionAreaIdentity(current?.background_light?.settings) === lightSubmission.settings) {
+        reloadBackgroundLight(true);
+      }
+      if (completed) backgroundLightSubmitted = null;
+      if (reload || !backgroundLightDraft || (!backgroundLightDraft.dirty && !backgroundLightSubmitted && backgroundLightDraft.identity !== backgroundLightIdentity())) reloadBackgroundLight(!reload);
+      else backgroundLightDraftStatus();
       const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && (a.result?.reused===true ? a.result.revision===spatialSubmitted.base_revision : a.result?.parent===spatialSubmitted.base_revision) && state.developed_id===spatialSubmitted.developed_id;
       if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && fadeReductionAreaIdentity(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && fadeReductionAreaIdentity(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
       if(reload || completed) spatialSubmitted=null;
@@ -1873,7 +1921,7 @@
       const backgroundCompleted = scalarCompletedSection === "background";
       // A background submission never owns pending subject controls, even when a
       // newer scalar edit prevents that submission from clearing its own draft.
-      const preserveSubjectDrafts = (completed && backgroundPublished) || !!spatialCompleted || !!reductionCompleted;
+      const preserveSubjectDrafts = (completed && backgroundPublished) || !!spatialCompleted || !!reductionCompleted || !!lightCompleted;
       if (reload || backgroundCompleted) backgroundDirty = false;
       if (completed) backgroundPublished = false;
       const savedBackground = current?.background?.settings || {color_srgb: "#000000", variation: 0};
@@ -2040,6 +2088,8 @@
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
         $(id).disabled = authoringBusy();
       for(const id of spatialControlIds) $(id).disabled=authoringBusy();
+      for (const id of backgroundLightControlIds) $(id).disabled = authoringBusy();
+      backgroundLightDraftStatus();
       if(spatialDraft) renderSpatialControls();
       renderFadeReduction();
       $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.developed_id || !!state?.series_error;
@@ -2076,11 +2126,12 @@
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
       const sharpening = $("sharpeningCompare").checked ? "OFF comparison" : viewed?.local_sharpening?.enabled ? "ON" : "OFF";
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
+      const lightLabel = " · Background light " + (["black", "gray", "white"].includes(panel) ? "excluded from diagnostic" : $("backgroundLightCompare").checked ? "OFF comparison" : viewed?.background_light?.settings?.enabled ? "ON" : "OFF");
       const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
-      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF";
+      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel;
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
-      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup;
+      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup + lightLabel;
     }
     async function loadImage() {
       if (!state || !crop) return;
@@ -2104,6 +2155,7 @@
         $("sharpeningCompare").checked,
         $("fadeCompare").checked,
         $("spatialCompare").checked,
+        $("backgroundLightCompare").checked,
         spatialMap,
         reductionView,
         reductionTarget(),
@@ -2133,7 +2185,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = reductionView === "off" && !["source", "alpha"].includes(panel)
           ? await spatialBitmap("off", revision, requestedCrop, panel, true)
           : $("spatialCompare").checked && !["source","alpha"].includes(panel)
@@ -2261,6 +2313,7 @@
         }
       }
       drawSpatialShapes(scale);
+      drawBackgroundLight(scale);
       if (appearanceLayoutProposal) drawSpatialShapes(scale, appearanceLayoutProposal.settings, true);
       ctx.restore();
     }
@@ -2448,6 +2501,161 @@
       try { return await action("effects", fields); }
       catch(error) { sharpeningAreaPublished = false; sharpeningControlsSubmitted = null; throw error; }
     }
+    function backgroundLightIdentity() {
+      const revision = state?.revisions.find(row => row.revision === state.working_revision);
+      return JSON.stringify({...effectCurrentIdentity(), manifest: revision?.revision_manifest_sha256});
+    }
+    function defaultLightGeometry(type) {
+      const [width, height] = state.dimensions_wh;
+      const geometry = {type, center_xy: [(width - 1) / 2, (height - 1) / 2], rotation_degrees: 0};
+      return type === "oval" ? {...geometry, radii_xy: [Math.max(.5, width * .35), Math.max(.5, height * .35)], softness: 1}
+        : {...geometry, transition_width: Math.max(width, height)};
+    }
+    function validateLightSettings(settings) {
+      const [width, height] = state.dimensions_wh, limit = 2 * Math.max(width, height);
+      const range = (value, low, high) => typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
+      const geometry = settings?.geometry;
+      if (!settings || typeof settings.enabled !== "boolean" || !range(settings.brightness, 0, 1) || !/^#[0-9A-F]{6}$/.test(settings.color_srgb))
+        throw Error("Use a finite brightness from 0 to 100% and a light colour #RRGGBB");
+      if (!geometry || !["oval", "directional"].includes(geometry.type) || !range(geometry.center_xy[0], 0, width) || !range(geometry.center_xy[1], 0, height) || !range(geometry.rotation_degrees, 0, 360) || geometry.rotation_degrees === 360)
+        throw Error("Use finite light centres inside native bounds and rotation from 0 to below 360");
+      if (geometry.type === "oval" ? !geometry.radii_xy.every(value => range(value, .5, limit)) || !range(geometry.softness, .05, 1) : !range(geometry.transition_width, .5, limit))
+        throw Error("Use light radii or transition width from 0.5 to " + limit + " native pixels, and oval softness from 0.05 to 1");
+    }
+    function backgroundLightSettings() {
+      validateLightSettings(backgroundLightDraft?.settings);
+      return structuredClone(backgroundLightDraft.settings);
+    }
+    function backgroundLightDraftStatus() {
+      if (!backgroundLightDraft) return;
+      const stale = backgroundLightDraft.identity !== backgroundLightIdentity();
+      let invalid = ""; try {backgroundLightSettings();} catch (error) {invalid = " · " + error.message;}
+      $("backgroundLightDraftStatus").textContent = (stale ? "Stale unapplied light · Reload saved light before Apply"
+        : backgroundLightDraft.dirty ? "Unapplied light · outlines only; image still shows saved light" : "Controls match saved light") + invalid;
+      const current = state.revisions.find(row => row.revision === state.working_revision);
+      const saved = current?.background_light?.settings;
+      $("backgroundLightStatus").textContent = saved ? "Saved light " + (saved.enabled ? "ON" : "OFF") + " · " + saved.geometry.type + " · " + backgroundPercentage(saved.brightness) + "%"
+        : "No saved light · starts OFF; Apply to save";
+      $("backgroundLightOff").disabled = authoringBusy() || !saved;
+    }
+    function renderBackgroundLightControls() {
+      if (!backgroundLightDraft) return;
+      const settings = backgroundLightDraft.settings, geometry = settings.geometry;
+      $("backgroundLightEnabled").checked = settings.enabled;
+      $("backgroundLightHex").value = settings.color_srgb;
+      if (/^#[0-9A-F]{6}$/.test(settings.color_srgb)) $("backgroundLightColor").value = settings.color_srgb.toLowerCase();
+      $("backgroundLightBrightness").value = Number.isFinite(settings.brightness) ? backgroundPercentage(settings.brightness) : "";
+      $("backgroundLightRange").value = $("backgroundLightBrightness").value;
+      $("backgroundLightShape").value = geometry.type;
+      $("backgroundLightOval").hidden = geometry.type !== "oval";
+      $("backgroundLightDirectional").hidden = geometry.type !== "directional";
+      const fields = {backgroundLightCenterX: geometry.center_xy[0], backgroundLightCenterY: geometry.center_xy[1], backgroundLightRotation: geometry.rotation_degrees,
+        ...(geometry.type === "oval" ? {backgroundLightRadiusX: geometry.radii_xy[0], backgroundLightRadiusY: geometry.radii_xy[1], backgroundLightSoftness: geometry.softness} : {backgroundLightTransition: geometry.transition_width})};
+      for (const [id, value] of Object.entries(fields)) $(id).value = Number.isFinite(value) ? String(value) : "";
+      backgroundLightDraftStatus();
+    }
+    function reloadBackgroundLight(preserveGeometries = false) {
+      if (!state) return;
+      const saved = state.revisions.find(row => row.revision === state.working_revision)?.background_light?.settings;
+      const settings = structuredClone(saved || {enabled: false, brightness: .1, color_srgb: "#FFFFFF", geometry: defaultLightGeometry("oval")});
+      const geometryIdentity = JSON.stringify([state.developed_id, state.dimensions_wh]);
+      if (!preserveGeometries || backgroundLightDraft?.geometryIdentity !== geometryIdentity) backgroundLightGeometries.clear();
+      for (const type of ["oval", "directional"]) backgroundLightGeometries.set(type, type === settings.geometry.type ? settings.geometry : backgroundLightGeometries.get(type) || defaultLightGeometry(type));
+      backgroundLightDraft = {settings, dirty: false, identity: backgroundLightIdentity(), geometryIdentity, version: (backgroundLightDraft?.version || 0) + 1};
+      backgroundLightSubmitted = null; $("backgroundLightCandidate").checked = false;
+      renderBackgroundLightControls(); draw();
+    }
+    function markBackgroundLightDirty() {
+      if (!backgroundLightDraft) return;
+      backgroundLightDraft.dirty = true; backgroundLightDraft.version++;
+      $("authorMode").value = "background-light";
+      backgroundLightDraftStatus(); draw();
+    }
+    function editBackgroundLightNumber(id) {
+      const text = String($(id).value).trim(), value = text === "" ? NaN : Number(text);
+      const settings = backgroundLightDraft.settings, geometry = settings.geometry;
+      if (id === "backgroundLightBrightness") {
+        const [coefficient, exponent = "0"] = text.toLowerCase().split("e");
+        settings.brightness = text === "" ? NaN : Number(coefficient + "e" + (Number(exponent) - 2));
+        $("backgroundLightRange").value = text;
+      } else {
+        const setters = {backgroundLightCenterX: () => geometry.center_xy[0] = value, backgroundLightCenterY: () => geometry.center_xy[1] = value,
+          backgroundLightRotation: () => geometry.rotation_degrees = value, backgroundLightRadiusX: () => geometry.radii_xy[0] = value,
+          backgroundLightRadiusY: () => geometry.radii_xy[1] = value, backgroundLightSoftness: () => geometry.softness = value,
+          backgroundLightTransition: () => geometry.transition_width = value};
+        setters[id]();
+      }
+      markBackgroundLightDirty();
+    }
+    async function applyBackgroundLight(savedOnly = false) {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const revision = state.revisions.find(row => row.revision === state.working_revision);
+      if (savedOnly && !revision?.background_light) return;
+      if (dirty) throw Error("Save or reload pending matting guides before applying light");
+      if (!savedOnly && backgroundLightDraft.identity !== backgroundLightIdentity()) throw Error("Stale light settings; Reload saved light before Apply");
+      if (!savedOnly && (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision)) throw Error("Load the matching working native view before Apply Background light");
+      const settings = savedOnly ? {...structuredClone(revision.background_light.settings), enabled: false} : backgroundLightSettings();
+      validateLightSettings(settings);
+      if (!revision?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
+      const preserveDraft = savedOnly && backgroundLightDraft.dirty;
+      backgroundLightDraft.dirty = true;
+      backgroundLightSubmitted = {settings: fadeReductionAreaIdentity(settings), version: backgroundLightDraft.version, identity: backgroundLightDraft.identity,
+        base_revision: state.working_revision, developed_id: state.developed_id, preserveDraft};
+      try {await action("effects", {scope_xyxy: [0, 0, ...state.dimensions_wh], background_light: settings,
+        candidate_comparison: $("backgroundLightCandidate").checked, revision_manifest_sha256: revision.revision_manifest_sha256});}
+      catch (error) {backgroundLightSubmitted = null; throw error;}
+    }
+    function backgroundLightHandles(geometry) {
+      const distance = geometry.type === "oval" ? geometry.radii_xy[0] : geometry.transition_width / 2;
+      const handles = [{name: "center", local: [0, 0]}, {name: "rotation", local: [distance + Math.max(12, distance / 4), 0]}];
+      if (geometry.type === "oval") handles.push({name: "radius-x", local: [geometry.radii_xy[0], 0]}, {name: "radius-y", local: [0, geometry.radii_xy[1]]});
+      else handles.push({name: "width", local: [distance, 0]});
+      return handles.map(handle => ({name: handle.name, point: spatialToNative(handle.local, geometry)}));
+    }
+    function drawBackgroundLight(scale) {
+      if (!backgroundLightDraft || $("authorMode").value !== "background-light" || $("backgroundLightHide").checked || $("viewRevision").value !== state.working_revision) return;
+      try {backgroundLightSettings();} catch {return;}
+      const geometry = backgroundLightDraft.settings.geometry;
+      const point = local => {const p = spatialToNative(local, geometry); return [p[0] - crop[0], p[1] - crop[1]];};
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, image.width, image.height); ctx.clip();
+      ctx.strokeStyle = "#55ffff"; ctx.fillStyle = "#55ffff"; ctx.lineWidth = 2 / scale;
+      if (geometry.type === "oval") {
+        for (const factor of [1, 1 - geometry.softness]) if (factor > 0) {
+          ctx.beginPath(); ctx.ellipse(geometry.center_xy[0] - crop[0], geometry.center_xy[1] - crop[1], geometry.radii_xy[0] * factor, geometry.radii_xy[1] * factor, geometry.rotation_degrees * Math.PI / 180, 0, 2 * Math.PI); ctx.stroke();
+        }
+      } else {
+        const width = geometry.transition_width, length = 2 * Math.max(...state.dimensions_wh);
+        for (const offset of [-width / 2, 0, width / 2]) {ctx.beginPath(); ctx.moveTo(...point([offset, -length])); ctx.lineTo(...point([offset, length])); ctx.stroke();}
+        ctx.beginPath(); ctx.moveTo(...point([-width / 2, 0])); ctx.lineTo(...point([width / 2, 0])); ctx.stroke();
+        for (const sign of [-1, 1]) {ctx.beginPath(); ctx.moveTo(...point([width / 2, 0])); ctx.lineTo(...point([width / 2 - 8 / scale, sign * 5 / scale])); ctx.stroke();}
+      }
+      for (const handle of backgroundLightHandles(geometry)) {ctx.beginPath(); ctx.arc(handle.point[0] - crop[0], handle.point[1] - crop[1], 4 / scale, 0, 2 * Math.PI); ctx.fill();}
+      ctx.restore();
+    }
+    function dragBackgroundLight(active, point) {
+      const geometry = backgroundLightDraft.settings.geometry, initial = active.lightInitial, [u, v] = spatialToLocal(point, initial);
+      const bound = value => Math.max(.5, Math.min(2 * Math.max(...state.dimensions_wh), value));
+      if (active.lightHandle === "center") geometry.center_xy = point.map((value, index) => Math.max(0, Math.min(state.dimensions_wh[index], initial.center_xy[index] + value - active.points[0][index])));
+      else if (active.lightHandle === "rotation") geometry.rotation_degrees = (Math.atan2(point[1] - geometry.center_xy[1], point[0] - geometry.center_xy[0]) * 180 / Math.PI + 360) % 360;
+      else if (active.lightHandle === "radius-x") geometry.radii_xy[0] = bound(Math.abs(u));
+      else if (active.lightHandle === "radius-y") geometry.radii_xy[1] = bound(Math.abs(v));
+      else if (active.lightHandle === "width") geometry.transition_width = bound(2 * Math.abs(u));
+      markBackgroundLightDirty(); renderBackgroundLightControls();
+    }
+    for (const id of ["backgroundLightBrightness", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition"])
+      $(id).oninput = () => editBackgroundLightNumber(id);
+    $("backgroundLightRange").oninput = () => {$("backgroundLightBrightness").value = $("backgroundLightRange").value; editBackgroundLightNumber("backgroundLightBrightness");};
+    $("backgroundLightEnabled").oninput = () => {backgroundLightDraft.settings.enabled = $("backgroundLightEnabled").checked; markBackgroundLightDirty();};
+    $("backgroundLightColor").oninput = () => {$("backgroundLightHex").value = $("backgroundLightColor").value.toUpperCase(); $("backgroundLightHex").oninput();};
+    $("backgroundLightHex").oninput = () => {backgroundLightDraft.settings.color_srgb = $("backgroundLightHex").value.toUpperCase(); if (/^#[0-9A-F]{6}$/.test(backgroundLightDraft.settings.color_srgb)) $("backgroundLightColor").value = backgroundLightDraft.settings.color_srgb; markBackgroundLightDirty();};
+    $("backgroundLightShape").onchange = () => {backgroundLightDraft.settings.geometry = backgroundLightGeometries.get($("backgroundLightShape").value); markBackgroundLightDirty(); renderBackgroundLightControls();};
+    $("backgroundLightReverse").onclick = guarded(() => {const geometry = backgroundLightDraft.settings.geometry; geometry.rotation_degrees = (geometry.rotation_degrees + 180) % 360; markBackgroundLightDirty(); renderBackgroundLightControls();});
+    $("backgroundLightCandidate").oninput = markBackgroundLightDirty;
+    $("backgroundLightHide").onchange = draw;
+    $("backgroundLightApply").onclick = guarded(() => applyBackgroundLight());
+    $("backgroundLightOff").onclick = guarded(() => applyBackgroundLight(true));
+    $("backgroundLightReload").onclick = guarded(() => {if (!authoringBusy()) reloadBackgroundLight();});
+    $("backgroundLightControls").onkeydown = event => {if (event.key === "Escape" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight();}};
     function backgroundPercentage(fraction) {
       // Shift the saved decimal text, avoiding both integer rounding and 0.55*100 noise.
       const [coefficient, exponent = "0"] = String(fraction).split("e");
@@ -2537,13 +2745,14 @@
     $("sharpeningCandidate").onchange = markSharpeningControlsDirty;
     function compareChanged(id) {
       $("reductionView").value = "none";
-      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare"]) if (other !== id) $(other).checked = false;
+      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare", "backgroundLightCompare"]) if (other !== id) $(other).checked = false;
       if (id !== "shadingPreview") $("shadingPreview").value = "";
       imageKey = ""; return loadImage();
     }
     $("sharpeningCompare").onchange = guarded(() => compareChanged("sharpeningCompare"));
     $("fadeCompare").onchange = guarded(() => compareChanged("fadeCompare"));
     $("spatialCompare").onchange = guarded(() => compareChanged("spatialCompare"));
+    $("backgroundLightCompare").onchange = guarded(() => compareChanged("backgroundLightCompare"));
     $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
     $("exposureRemove").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
@@ -3128,9 +3337,10 @@
     });
     canvas.onpointerdown = (event) => {
       const spatialMode=$("authorMode").value==="spatial";
+      const lightMode = $("authorMode").value === "background-light";
       const effectMode = ["exposure", "fade", "sharpening", "reduction"].includes($("authorMode").value) ? $("authorMode").value : null;
-      const panMode = event.shiftKey || (!effectMode && !spatialMode && $("shape").value === "pan");
-      const point = nativePosition(event,spatialMode);
+      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && $("shape").value === "pan");
+      const point = nativePosition(event,spatialMode || lightMode);
       if (!panMode && (authoringBusy() || imageLoading)) {
         message(
           "Guide not started while a writer is active or the native view is loading",
@@ -3138,6 +3348,16 @@
         return;
       }
       if (!panMode && !point) return;
+      if (lightMode && !panMode) {
+        if ($("backgroundLightHide").checked || $("viewRevision").value !== state.working_revision) return;
+        try {
+          const geometry = backgroundLightSettings().geometry;
+          const handle = hitSpatialHandle(point, backgroundLightHandles(geometry), 9 / transform.scale);
+          if (!handle) return;
+          gesture = {panMode: false, lightHandle: handle.name, lightInitial: geometry, points: [point]};
+          canvas.setPointerCapture(event.pointerId); return;
+        } catch (error) {message(error.message); return;}
+      }
       if(spatialMode && !panMode) {
         if($("viewRevision").value!==state.working_revision){message("Choose the working revision before editing fade shapes");return;}
         try {
@@ -3158,7 +3378,7 @@
       canvas.setPointerCapture(event.pointerId);
     };
     canvas.onpointermove = (event) => {
-      const point = nativePosition(event,!!gesture?.spatialId);
+      const point = nativePosition(event,!!gesture?.spatialId || !!gesture?.lightHandle);
       $("coordinate").textContent = point
         ? "Native " + point.map(Math.floor).join(", ")
         : "Outside image";
@@ -3169,7 +3389,8 @@
           gesture.pan[1] + event.clientY - gesture.start[1],
         ];
         draw();
-      } else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
+      } else if (point && gesture.lightHandle) dragBackgroundLight(gesture, point);
+      else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
       else if (point && gesture.shape === "stroke")
         gesture.points.push(point);
     };
@@ -3178,7 +3399,7 @@
       const g = gesture;
       gesture = null;
       if (g.panMode) return;
-      if(g.spatialId) return;
+      if(g.spatialId || g.lightHandle) return;
       if (authoringBusy() || imageLoading) {
         message(
           "Guide cancelled because a writer or native view changed; nothing saved",
@@ -3207,6 +3428,7 @@
     };
     canvas.onpointercancel = () => (gesture = null);
     canvas.onkeydown = (event) => {
+      if (event.key === "Escape" && $("authorMode").value === "background-light" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight(); return;}
       if (event.key === "Escape" && $("authorMode").value === "reduction") {event.preventDefault(); gesture = null; reloadFadeReduction(); return;}
       if(event.key==="Escape" && $("authorMode").value==="spatial") {event.preventDefault();gesture=null;if(spatialAdding){spatialAdding=false;spatialDraftStatus();draw();}else resetSpatialFromSaved();return;}
       if (

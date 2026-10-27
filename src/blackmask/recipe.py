@@ -32,6 +32,7 @@ class Recipe:
             "noise_threshold": 0.001,
         }
     )
+    background_light: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +49,11 @@ class Recipe:
             "local_sharpening": self.local_sharpening,
             **({"background": self.background} if self.background is not None else {}),
             **({"spatial_fade": self.spatial_fade} if self.spatial_fade is not None else {}),
+            **(
+                {"background_light": self.background_light}
+                if self.background_light is not None
+                else {}
+            ),
         }
 
     @classmethod
@@ -62,9 +68,23 @@ class Recipe:
         expected = cls(developed_id).to_dict()
         if (
             set(value)
-            - {"local_exposure", "shadow_fade", "background", "spatial_fade", "local_sharpening"}
+            - {
+                "local_exposure",
+                "shadow_fade",
+                "background",
+                "spatial_fade",
+                "local_sharpening",
+                "background_light",
+            }
             != set(expected)
-            - {"local_exposure", "shadow_fade", "background", "spatial_fade", "local_sharpening"}
+            - {
+                "local_exposure",
+                "shadow_fade",
+                "background",
+                "spatial_fade",
+                "local_sharpening",
+                "background_light",
+            }
             or type(value.get("schema_version")) is not int
             or value["schema_version"] != 2
             or value["developed_id"] != developed_id
@@ -86,6 +106,12 @@ class Recipe:
         validate_exposure(value.get("local_exposure", {"enabled": False, "ev": 0.0}))
         validate_cleanup(value["color_cleanup"])
         validate_shading(value["shading"])
+        if "background_light" in value:
+            from .background_light import validate_background_light
+
+            if dimensions_wh is None:
+                raise ValueError("Native dimensions required to validate background light recipe")
+            validate_background_light(value["background_light"], *dimensions_wh)
         if "spatial_fade" in value:
             from .spatial_fade import validate_spatial_fade
 
@@ -159,4 +185,5 @@ class Recipe:
             dict(value["background"]) if "background" in value else None,
             dict(value["spatial_fade"]) if "spatial_fade" in value else None,
             dict(value.get("local_sharpening", cls(developed_id).local_sharpening)),
+            dict(value["background_light"]) if "background_light" in value else None,
         )

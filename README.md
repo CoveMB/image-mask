@@ -84,6 +84,11 @@ master effect switches stay local. Layout imports have explicit Add/Replace and
 Undo controls. See [reuse appearance settings](docs/workflow.md#reuse-appearance-settings)
 for privacy, sequential Apply and stale-draft recovery.
 
+**Background light** adds one independent Soft oval or Broad directional gradient
+behind the saved matte. It starts OFF, preserves the foreground and keeps the
+unlit base as the fade target. Native editable exports retain its separate field,
+including OFF. See the [light and gentle exposure walkthrough](docs/workflow.md#background-light).
+
 Background appearance saves a tone and broad variation behind the matte. New
 projects start warm near-black (`#120708`, variation 55%); schema-2 recipes without background settings stay
 black until explicitly changed. The [background instructions](docs/workflow.md#background-appearance)
@@ -212,6 +217,7 @@ for explicit model setup, typed preparation and human review.
 | Native oval/arc fields and background-targeted colour blend | `src/blackmask/spatial_fade.py` |
 | Bounded, editable local fade reduction geometry | `src/blackmask/fade_reduction.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
+| Independent backdrop light field, bindings and B0/B1 composition | `src/blackmask/background_light.py` |
 | Shared immutable raster references and role validation | `src/blackmask/assets.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | Portable appearance recipes and subject-relative scalar/layout conversion | `src/blackmask/appearance_recipes.py` |

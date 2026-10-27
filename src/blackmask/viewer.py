@@ -200,6 +200,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "spatial_fade": manifest.get("spatial_fade"),
                         "fade_reduction_areas": reduction_areas,
                         "background": manifest.get("background"),
+                        "background_light": manifest.get("background_light"),
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
                             for k in ("inferred_tiles", "reused_tiles")
@@ -558,10 +559,12 @@ class ReviewServer(ThreadingHTTPServer):
             view = data["view"]
             label = "Saved geometric strength; protection and highlights excluded"
             if view == "off":
-                from .background import read_background
+                from .background_light import saved_backgrounds
                 from .spatial_fade import SpatialFadeOperands
 
-                background = None if stale else read_background(self.project, directory, manifest)
+                base_background, background = (
+                    (None, None) if stale else saved_backgrounds(self.project, directory, manifest)
+                )
                 weight, opacity = saved_shading(
                     self.project, data["revision"], alpha, manifest, effects_off=stale
                 )
@@ -578,8 +581,8 @@ class ReviewServer(ThreadingHTTPServer):
                     else None
                 )
                 target = (
-                    background[y0:y1, x0:x1]
-                    if background is not None
+                    base_background[y0:y1, x0:x1]
+                    if base_background is not None
                     else np.zeros_like(foreground[y0:y1, x0:x1])
                 )
                 pixels = review_panels(
@@ -763,9 +766,12 @@ class ReviewServer(ThreadingHTTPServer):
                 "spatial_fade_protection_file",
                 "fade_reduction",
                 "background",
+                "background_light",
             }
             fields["effects"] |= set(data) & optional
-            if "spatial_fade" in data or "fade_reduction" in data:
+            if any(
+                field in data for field in ("spatial_fade", "fade_reduction", "background_light")
+            ):
                 fields["effects"].add("revision_manifest_sha256")
         if action not in fields or set(data) != fields[action] | {
             "action",
@@ -978,6 +984,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "spatial_fade_protection_file",
                         "fade_reduction",
                         "background",
+                        "background_light",
                     )
                     if k in data
                 }
@@ -989,14 +996,16 @@ class ReviewServer(ThreadingHTTPServer):
             request["support_file"] = (
                 f"revisions/{state['working_revision']}/supports/support16.png"
             )
-        bound_fade_action = "spatial_fade" in data or "fade_reduction" in data
-        expected_manifest = data.get("revision_manifest_sha256") if bound_fade_action else None
-        if bound_fade_action and (
+        bound_action = any(
+            field in data for field in ("spatial_fade", "fade_reduction", "background_light")
+        )
+        expected_manifest = data.get("revision_manifest_sha256") if bound_action else None
+        if bound_action and (
             not isinstance(expected_manifest, str)
             or re.fullmatch(r"[a-f0-9]{64}", expected_manifest) is None
         ):
-            raise ProjectError("Invalid spatial action raw revision manifest identity")
-        if bound_fade_action:
+            raise ProjectError("Invalid effect action raw revision manifest identity")
+        if bound_action:
             return operations.apply_operation(
                 self.project,
                 request,
@@ -1012,7 +1021,7 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
+            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/background-light-off|/exposure-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -1055,19 +1064,22 @@ class ReviewServer(ThreadingHTTPServer):
 
             if base and base.startswith("/p") and weight is not None:
                 opacity = float(base[2:])
-            from .background import read_background
+            from .background_light import saved_backgrounds
 
-            background = (
-                read_background(
-                    self.project, saved_asset(self.project, f"revisions/{identity}"), manifest
+            base_background, background = (
+                saved_backgrounds(
+                    self.project,
+                    saved_asset(self.project, f"revisions/{identity}"),
+                    manifest,
+                    light_off=base == "/background-light-off",
                 )
                 if (panel == "result" or spatial is not None)
                 and not (base == "/base" or stale or effects_stale(manifest))
-                else None
+                else (None, None)
             )
             target = (
-                background
-                if background is not None
+                base_background
+                if base_background is not None
                 else np.zeros_like(foreground)
                 if spatial is not None
                 else None
@@ -1295,7 +1307,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
                         "series-export",
                     }
                     or data.get("action") == "effects"
-                    and ("spatial_fade" in data or "fade_reduction" in data)
+                    and any(
+                        field in data
+                        for field in ("spatial_fade", "fade_reduction", "background_light")
+                    )
                 ):
                     data = json.loads(
                         body,

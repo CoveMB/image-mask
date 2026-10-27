@@ -2,6 +2,7 @@ include .editorconfig .gitattributes .gitignore .python-version
 include AGENTS.md README.md THIRD_PARTY_NOTICES.md requirements-macos-arm64.lock
 include requirements-browser-macos-arm64.lock
 include tests/run_browser.py tests/storage_journey_process.py
+include tests/fixtures/background-light-v4.json
 include docs/file-contract.md docs/model-provenance.md docs/troubleshooting.md docs/validation.md
 
 include docs/guidance.md

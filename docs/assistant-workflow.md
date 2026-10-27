@@ -249,6 +249,29 @@ effects or imply photographic acceptance. See the [manual steps](workflow.md#bac
 and [saved contract](file-contract.md#saved-background-appearance).
 
 
+## Explicit Background light
+
+Use Background light only for explicit backdrop-light intent. Follow the
+[manual light workflow](workflow.md#background-light) and
+[saved contract](file-contract.md#saved-background-light). Submit one exclusive
+schema2 effects request with complete `background_light` settings, full native
+scope and current source/base/draft identities; viewer actions additionally bind
+the raw revision manifest. Do not enable Local exposure automatically.
+
+Keep the base B0 and saved light L16 separate. Light changes the displayed
+backdrop B1, while foreground contribution and the B0 fade target remain unchanged.
+Protected partial-alpha composites can change without changing protected RGB or
+alpha. Compare saved light OFF, with authoring marks hidden, before presenting a
+result for human acceptance. Lower brightness if the backdrop clips.
+
+Turn OFF from validated saved settings, retaining pending edits and exact L16;
+Apply explicitly saves visible settings even OFF. Preserve unrelated base,
+foreground, reduction and layout drafts. No-record OFF creates nothing. Light is
+not a portable appearance-recipe section. For final assisted deliveries request
+editable and retain the native companion for margins/series; native replay uses
+saved fields, while series analytically evaluates light through its saved transform.
+Human photographic acceptance remains separate from completed processing.
+
 ## Presentation framing
 
 Framing is a separate composition decision. Use the saved source and current

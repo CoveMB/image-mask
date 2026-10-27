@@ -575,7 +575,7 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 2. Under **Background appearance**, choose **Background tone** or enter a six-digit
    `#RRGGBB` colour. **Pure black** selects `#000000`; **Warm dark** selects
    `#120708`. Shortcuts keep the variation slider unchanged.
-3. Set **Background variation** with the slider or whole numeric percentage.
+3. Set **Background variation** with the slider or a fractional numeric percentage.
    Zero is uniform; 55% gives up to ±0.55 stops and 100% up to ±1 stop over one
    fixed broad wash. Pure black stays exactly black at every strength. New
    projects explicitly start at warm dark / 55%; older saved projects remain
@@ -610,6 +610,78 @@ and saved; crops slice those same pixels and screen resizing happens afterward.
 No model, internet, noise generation or photographed-detail synthesis is involved.
 RGB8 previews may band; inspect native RGB16 in a suitable colour-managed viewer.
 A processed sRGB RGB16 TIFF is not sensor RAW. See the [saved contract](file-contract.md#saved-background-appearance).
+
+## Background light
+
+**Background light** adds one reversible light behind the saved matte. It starts
+OFF and is independent of Background appearance's tone and variation. It preserves
+the selected foreground RGB, alpha, protection and foreground-effect settings.
+Partially transparent edges naturally show the changed backdrop, including
+protected translucent pixels; the underlying protected data stays unchanged.
+
+1. Complete the matte and select the current working native view. Use an accepted
+   base, or explicitly select candidate comparison for a draft.
+2. Under **Background light**, select **Light ON** and **Soft oval**. Begin with
+   the neutral white tint and a low brightness; the initial 10% is an example,
+   not a photographic recommendation. Brightness is a peak light level on black,
+   not exposure EV or opacity. Numeric percentages retain fractions.
+3. Choose **Canvas authoring mode → Background light**. Move the centre, resize the
+   two outer radii and rotate with handles or their labelled numeric fields.
+   **Softness** controls the transition inside the outer ellipse. A smaller
+   softness leaves a wider plateau; 1 softens all the way from the centre.
+4. Select **Apply Background light**. Until Apply, only the labelled draft outlines
+   change; the image continues to show saved pixels. Apply saves this control
+   even with Light ON unchecked. It does not consume pending base or subject edits.
+5. Hide the light outlines and use **Compare Background light OFF**. Inspect dark
+   detail and partially transparent edges. This read-only comparison retains
+   the base and foreground effects; Source/Alpha and black/gray/white diagnostics
+   keep their existing meanings.
+6. For a broad side light, switch to **Broad directional gradient**. Set centre,
+   rotation and transition width. The arrow points from light toward dark;
+   **Reverse gradient direction** rotates it by 180 degrees. Each shape retains
+   its own draft geometry while switching in this session. Apply replaces the
+   single saved light; earlier saved shapes remain in revision history.
+7. **Turn light OFF** uses the current saved light with only its enabled flag
+   changed, preserving the exact saved field. It retains even invalid or stale
+   pending light edits. **Reload saved light** explicitly replaces only this
+   control's pending edits. Turn OFF is unavailable before a light has been saved.
+   For a stale draft, reload and re-enter intended edits before Apply.
+
+Pure-black base shortcuts and portable appearance loads affect the base or their
+selected foreground controls; they do not change this light. The light cannot be
+transferred in an appearance recipe. If a bright backdrop clips, lower light
+brightness to preserve its variation. This feature adds no rim detail or missing
+subject detail and does not repair alpha.
+
+Native Result, crops, saved review and gallery use the saved RGB16 light. **Add
+margins** copies that native Result and extends its displayed backdrop at the edge.
+**Match series** regenerates the base on the output canvas and evaluates the light
+with the same subject-relative transform, including outside the native rectangle.
+Its reduced preview is approximate. Black and transparent deliveries omit the
+visible light while retaining the unlit fade target.
+
+For recovery, request **editable**. Native editable delivery keeps the unlit
+`background_rgb16.tif` separately from `background_light_rgb16.tif` and
+`background_light_settings.json`, even OFF. Presentation editable delivery has a
+bound native companion; keep both folders. See the [saved light contract](file-contract.md#saved-background-light)
+for reconstruction. Restore prior revisions through the ordinary workflow;
+restoring never grants photographic acceptance.
+
+### Gentle local exposure on the subject
+
+When captured subject detail itself needs brightening, **Local exposure** is a
+separate, optional adjustment. Complete the matte, choose **Local exposure area**,
+and draw a feathered Apply area over the dark detail with Protect areas over
+highlights or details to retain. An optional +0.1 EV comparison can be a starting
+point; try +0.2 or +0.3 only if useful, within the existing -3 to +3 range.
+Use **Apply / replace exposure area** once, then **Apply amount to saved area**.
+
+Compare exposure OFF with authoring marks hidden. Inspect noise, clipping and
+fine edges. **Reset exposure** retains the saved area. Exposure changes selected
+subject RGB by design, with source and alpha recoverable; it cannot restore
+missing or clipped detail or fix a mask. Downstream fade highlight weighting can
+change because exposure precedes fading, and exposure OFF recalculates that
+weighting. Background light never enables exposure automatically.
 
 ## Add presentation margins
 

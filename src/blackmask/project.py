@@ -811,6 +811,15 @@ def _validate_background_semantics(project: Path, directory: Path, manifest_byte
 
 
 @lru_cache(maxsize=128)
+def _validate_background_light_semantics(
+    project: Path, directory: Path, manifest_bytes: bytes
+) -> None:
+    from .background_light import read_background_light
+
+    read_background_light(project, directory, json.loads(manifest_bytes))
+
+
+@lru_cache(maxsize=128)
 def _validate_spatial_fade_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
     """Replay bound geometry after fresh hashes; ordinary renders reuse saved fields."""
     from .assets import revision_asset
@@ -878,10 +887,12 @@ def _validate_revision_directory(
     ):
         raise ProjectError("Unbound saved Local sharpening authored area")
     from .background import validate_background_bindings
+    from .background_light import validate_background_light_bindings
     from .shadow_fade import validate_shadow_fade_bindings
     from .spatial_fade import validate_spatial_bindings
 
     validate_background_bindings(project, _asset(project, directory), manifest)
+    validate_background_light_bindings(project, _asset(project, directory), manifest)
     validate_shadow_fade_bindings(project, _asset(project, directory), manifest)
     validate_spatial_bindings(project, _asset(project, directory), manifest)
     if "background" in manifest:
@@ -891,6 +902,13 @@ def _validate_revision_directory(
             record.get(n) != metadata[n] for n in ("width", "height")
         ):
             raise ProjectError("Saved background dimensions differ from master")
+    if "background_light" in manifest:
+        record = manifest["background_light"]
+        metadata = _read_json(project, "source.json")["metadata"]
+        if not isinstance(record, dict) or any(
+            record.get(name) != metadata[name] for name in ("width", "height")
+        ):
+            raise ProjectError("Saved background light dimensions differ from master")
     validation = _read_validation.get()
     key = (str(project), directory)
     signature = (
@@ -945,6 +963,7 @@ def _validate_revision_directory(
     } <= set(revision_hashes(manifest)):
         raise ProjectError("Incomplete repair operands")
     _validate_background_semantics(project, _asset(project, directory), _json_bytes(manifest))
+    _validate_background_light_semantics(project, _asset(project, directory), _json_bytes(manifest))
     if "local_exposure" in manifest:
         record = manifest["local_exposure"]
         from .exposure import EXPOSURE_FILES

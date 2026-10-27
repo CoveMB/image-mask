@@ -69,11 +69,12 @@ from .spatial_fade import (
 )
 
 # Bump when validation, request equivalence or effect arithmetic changes.
-EFFECTS_EXECUTION_VERSION = "validated-effects-v6"
+EFFECTS_EXECUTION_VERSION = "validated-effects-v7"
 
 
 def _effects_execution_identity() -> dict[str, Any] | None:
     from .background import ALGORITHM
+    from .background_light import ALGORITHM as LIGHT_ALGORITHM
 
     try:
         packages = {
@@ -92,6 +93,7 @@ def _effects_execution_identity() -> dict[str, Any] | None:
             "local_sharpening": "linear-srgb-local-sharpening-v1",
             "shadow_fade": "linear-srgb-shadow-fade-v1",
             "background": ALGORITHM,
+            "background_light": LIGHT_ALGORITHM,
             "spatial_fade": SPATIAL_FADE_ALGORITHM,
         },
     }
@@ -127,6 +129,7 @@ def _effects_request_identity(
         "local_exposure",
         "shadow_fade",
         "background",
+        "background_light",
         "spatial_fade",
         "fade_reduction",
     }:
@@ -150,18 +153,27 @@ def _effects_request_identity(
         )
     if "shading" in normalized:
         normalized["shading"] = _effective_shading_settings(normalized["shading"], saved_shading)
-    if "spatial_fade" in normalized:
-        # Validation has already distinguished switches from numeric shape fields.
-        def normalized_shape(shape: dict[str, Any]) -> dict[str, Any]:
-            return {
-                name: [float(number) for number in value]
-                if isinstance(value, list)
-                else float(value)
-                if type(value) in {int, float}
-                else value
-                for name, value in shape.items()
-            }
 
+    # Validation has already distinguished switches from numeric shape fields.
+    def normalized_shape(shape: dict[str, Any]) -> dict[str, Any]:
+        return {
+            name: [float(number) for number in value]
+            if isinstance(value, list)
+            else float(value)
+            if type(value) in {int, float}
+            else value
+            for name, value in shape.items()
+        }
+
+    if "background_light" in normalized:
+        light = normalized["background_light"]
+        normalized["background_light"] = dict(
+            light,
+            brightness=float(light["brightness"]),
+            color_srgb=light["color_srgb"].upper(),
+            geometry=normalized_shape(light["geometry"]),
+        )
+    if "spatial_fade" in normalized:
         spatial = normalized["spatial_fade"]
         normalized["spatial_fade"] = dict(
             spatial,
@@ -183,6 +195,18 @@ def _effects_request_identity(
                 for key, value in normalized[name].items()
             }
     return normalized
+
+
+def _background_light_reuse_binding(
+    record: dict[str, Any] | None, hashes: dict[str, str]
+) -> dict[str, Any] | None:
+    from .background_light import BACKGROUND_LIGHT_FILES
+
+    return (
+        {"record": record, "files": {name: hashes[name] for name in BACKGROUND_LIGHT_FILES}}
+        if record is not None
+        else None
+    )
 
 
 def _fade_reuse_binding(
@@ -248,7 +272,7 @@ def _reused_effects_result(
             or any(
                 _json_bytes({target: result.get(target)})
                 != _json_bytes({target: manifest.get(target)})
-                for target in ("spatial_fade", "shadow_fade")
+                for target in ("spatial_fade", "shadow_fade", "background_light")
             )
             or _json_bytes(
                 _effects_request_identity(
@@ -271,6 +295,7 @@ def _reused_effects_result(
             "local_exposure",
             "shadow_fade",
             "background",
+            "background_light",
             "spatial_fade",
         ):
             if name not in identity["request"]:
@@ -946,6 +971,7 @@ def run_effects(
         - required
         - {
             "background",
+            "background_light",
             "support_file",
             "color_cleanup",
             "shading",
@@ -990,6 +1016,9 @@ def run_effects(
     elif "spatial_fade_protection_file" in operation:
         raise ProjectError("Spatial protection requires spatial fade settings")
     background_changed = "background" in operation
+    light_changed = "background_light" in operation
+    if light_changed and set(operation) != required | {"background_light"}:
+        raise ProjectError("Background light must be an exclusive effects operation")
     if background_changed:
         from .background import validate_background
 
@@ -1063,6 +1092,7 @@ def run_effects(
         or not fade_changed
         and not sharpening_changed
         and not background_changed
+        and not light_changed
         and not spatial_changed
         and not reduction_changed
         and "support_file" not in operation
@@ -1123,6 +1153,7 @@ def run_effects(
         or sharpening_changed
         or fade_changed
         or background_changed
+        or light_changed
         or spatial_changed
         or reduction_changed
     )
@@ -1145,6 +1176,16 @@ def run_effects(
     source, _ = load_developed(project, state["developed_id"])
     height, width = alpha.shape
     scope = coordinates(operation["scope_xyxy"], width, height, box=True)
+    if light_changed:
+        from .background_light import validate_background_light
+
+        validate_background_light(operation["background_light"], width, height)
+        if scope != [0, 0, width, height]:
+            raise ProjectError("Background light scope must cover the full native image")
+        if parent != state["accepted_revision"] and not operation["candidate_comparison"]:
+            raise ProjectError(
+                "Background light requires accepted base or explicit candidate comparison"
+            )
     reduction16 = None
     reduction_area_bytes = None
     retained_reduction_bytes = alpha.nbytes * sum(
@@ -1246,6 +1287,7 @@ def run_effects(
             "shadow_fade",
             "spatial_fade",
             "background",
+            "background_light",
             "notes",
         }
     ):
@@ -1637,6 +1679,7 @@ def run_effects(
                     "local_exposure",
                     "shadow_fade",
                     "background",
+                    "background_light",
                     "spatial_fade",
                     "notes",
                 }
@@ -1663,6 +1706,9 @@ def run_effects(
         dict(
             identity,
             local_sharpening=_sharpening_reuse_binding(manifest, revision_hashes(manifest)),
+            background_light=_background_light_reuse_binding(
+                manifest.get("background_light"), revision_hashes(manifest)
+            ),
             spatial_fade=_fade_reuse_binding(
                 "spatial_fade", manifest.get("spatial_fade"), revision_hashes(manifest)
             ),
@@ -1677,6 +1723,11 @@ def run_effects(
     check_space(
         project,
         source.nbytes * (47 if background_changed or "background" in manifest else 45)
+        + (
+            source.nbytes * 4 + min(height, 64) * width * 128
+            if light_changed or "background_light" in manifest
+            else 0
+        )
         + (alpha.nbytes * 3 if sharpening_changed else 0)
         + retained_reduction_bytes
         + (0 if reduction16 is None else reduction16.nbytes)
@@ -2040,6 +2091,11 @@ def run_effects(
         }
         (directory / "settings.json").write_bytes(_json_bytes(sharpening_record))
     from .background import inherit_background, save_background
+    from .background_light import (
+        apply_background_light,
+        combine_background_light,
+        inherit_background_light,
+    )
 
     background_record: dict[str, Any] | None
     if background_changed:
@@ -2056,7 +2112,30 @@ def run_effects(
             parent_recipe.get("background"),
             assets=assets,
         )
+    light_record = (
+        apply_background_light(
+            project,
+            parent,
+            stage,
+            state["developed_id"],
+            (height, width),
+            operation["background_light"],
+            assets=assets,
+        )
+        if light_changed
+        else inherit_background_light(
+            project,
+            parent,
+            stage,
+            state["developed_id"],
+            (height, width),
+            parent_recipe.get("background_light"),
+            assets=assets,
+        )
+    )
     effect_records = {}
+    if light_record is not None:
+        effect_records["background_light"] = light_record
     if sharpening_record is not None:
         effect_records["local_sharpening"] = sharpening_record
     if background_record is not None:
@@ -2099,6 +2178,7 @@ def run_effects(
             and spatial_record is not None,
         ),
         ("background", background_changed),
+        ("background_light", light_changed),
     ):
         if changed:
             effective_recipe[name] = dict(effect_records[name]["settings"])
@@ -2169,6 +2249,16 @@ def run_effects(
         if background_record is not None and not stale
         else None
     )
+    review_base = review_background
+    if light_record is not None and light_record["settings"]["enabled"] and not stale:
+        light_pixels = read_rgb16(
+            stage_asset(project, stage, assets, "background_light/light_rgb16.tif")
+        )
+        review_background = combine_background_light(
+            review_base if review_base is not None else np.zeros_like(light_pixels),
+            light_pixels,
+            enabled=True,
+        )
     review = write_revision_overview(
         stage / "review",
         source,
@@ -2178,8 +2268,8 @@ def run_effects(
         revision=revision,
         background16=review_background,
         spatial_fade=spatial_operands,
-        fade_background16=review_background
-        if review_background is not None
+        fade_background16=review_base
+        if review_base is not None
         else np.zeros_like(appearance)
         if spatial_operands is not None
         else None,
@@ -2254,6 +2344,15 @@ def run_effects(
             if saved_record is not None
             else {},
         )
+    identity["background_light"] = _background_light_reuse_binding(
+        light_record,
+        {
+            name: digest(stage_asset(project, stage, assets, name).read_bytes())
+            for name in ("background_light/light_rgb16.tif", "background_light/settings.json")
+        }
+        if light_record is not None
+        else {},
+    )
     result = {
         "revision": revision,
         "parent": parent,
@@ -2287,7 +2386,7 @@ def run_effects(
 
     recheck()
     destination = revisions / revision
-    if spatial_record is not None:
+    if spatial_record is not None or light_record is not None:
         _validate_revision_directory(
             project, revision, state["developed_id"], str(stage.relative_to(project))
         )

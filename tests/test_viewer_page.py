@@ -52,6 +52,121 @@ globalThis.fetch=async(path,options)=>{
 """
 
 
+LIGHT_SETUP = r"""
+servedState.revisions[0].background_light={settings:{enabled:true,brightness:.12345,color_srgb:'#ABCDEF',
+ geometry:{type:'oval',center_xy:[49.5,49.5],radii_xy:[35.25,30.125],rotation_degrees:37.125,softness:.625}}};
+const lightSaved=structuredClone(servedState.revisions[0].background_light.settings);
+const lightFetch=fetch;globalThis.fetch=async(path,options)=>{
+ if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};
+ return lightFetch(path,options);
+};
+"""
+
+
+def test_background_light_form_fractions_shape_sessions_and_base_independence():
+    run_page(
+        LIGHT_SETUP
+        + r"""
+ await ready();
+ assert.equal(Number($('backgroundLightBrightness').value),12.345);
+ assert.equal(Number($('backgroundLightRadiusX').value),35.25);
+ $('backgroundLightRadiusX').value='27.375';$('backgroundLightRadiusX').oninput();
+ $('backgroundLightShape').value='directional';$('backgroundLightShape').onchange();
+ $('backgroundLightTransition').value='44.125';$('backgroundLightTransition').oninput();
+ await $('backgroundLightReverse').onclick();assert.equal(Number($('backgroundLightRotation').value),180);
+ $('backgroundLightShape').value='oval';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightRadiusX').value),27.375);
+ $('backgroundLightShape').value='directional';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightTransition').value),44.125);
+ const before=backgroundLightSettings();
+ await $('backgroundBlack').onclick();assert.deepEqual(backgroundLightSettings(),before);
+ $('backgroundLightHex').value='#123456';$('backgroundLightHex').oninput();
+ await $('backgroundLightApply').onclick();
+ assert.equal(posts.at(-1).background_light.brightness,.12345);
+ assert.equal(posts.at(-1).background_light.geometry.transition_width,44.125);
+ assert(!('background' in posts.at(-1)));
+ assert.equal(posts.at(-1).revision_manifest_sha256,'a'.repeat(64));
+ assert.equal($('backgroundHex').value,'#000000');
+ const record={...servedState.revisions[0],revision:'rev-002',background_light:{settings:posts.at(-1).background_light}};
+ servedState.revisions.push(record);servedState.working_revision='rev-002';
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-002',parent:'rev-001',background_light:record.background_light}};
+ await refresh();
+ $('backgroundLightShape').value='oval';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightRadiusX').value),27.375,'Apply erased inactive session geometry');
+ $('backgroundLightShape').value='directional';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightTransition').value),44.125);
+ await $('backgroundLightReload').onclick();
+ $('backgroundLightShape').value='oval';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightRadiusX').value),35,'Explicit reload resets inactive drafts');
+ """
+    )
+
+
+@pytest.mark.parametrize("pending", ["invalid", "stale"])
+@pytest.mark.parametrize("reused", [False, True])
+def test_background_light_saved_off_preserves_pending_form_and_base(pending, reused):
+    run_page(
+        LIGHT_SETUP
+        + f"const pending={pending!r},reused={json.dumps(reused)};"
+        + r"""
+ if(reused){lightSaved.enabled=false;servedState.revisions[0].background_light.settings.enabled=false;}
+ await ready();
+ $('backgroundLightRadiusX').value=pending==='invalid'?'':'17.125';$('backgroundLightRadiusX').oninput();
+ if(pending==='stale'){servedState.revisions[0].revision_manifest_sha256='b'.repeat(64);await refresh();}
+ $('backgroundHex').value='#123456';$('backgroundHex').oninput();
+ const input=$('backgroundLightRadiusX').value;
+ await $('backgroundLightOff').onclick();
+ assert.deepEqual(posts.at(-1).background_light,{...lightSaved,enabled:false});
+ assert.equal(posts.at(-1).revision_manifest_sha256,(pending==='stale'?'b':'a').repeat(64));
+ const revision=reused?'rev-001':'rev-002', record={...servedState.revisions[0],revision,
+  background_light:{settings:{...lightSaved,enabled:false}}};
+ if(reused)servedState.revisions[0]=record;else servedState.revisions.push(record);
+ servedState.working_revision=revision;
+ servedState.action={running:false,name:'effects',error:null,result:{revision,parent:'rev-001',reused,background_light:record.background_light}};
+ await refresh();
+ assert.equal($('backgroundLightRadiusX').value,input);
+ assert.match($('backgroundLightDraftStatus').textContent,/Unapplied|Stale/);
+ assert.equal($('backgroundHex').value,'#123456');
+ """
+    )
+
+
+@pytest.mark.parametrize("newer", [False, True])
+def test_background_light_reused_completion_owns_only_submitted_version(newer):
+    run_page(
+        LIGHT_SETUP
+        + f"const newer={json.dumps(newer)};"
+        + r"""
+ await ready();await $('backgroundLightApply').onclick();
+ if(newer){$('backgroundLightBrightness').value='23.456';$('backgroundLightBrightness').oninput();}
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-001',parent:'rev-000',reused:true,background_light:{settings:lightSaved}}};
+ await refresh();
+ assert.equal(Number($('backgroundLightBrightness').value),newer?23.456:12.345);
+ assert.equal(/Unapplied/.test($('backgroundLightDraftStatus').textContent),newer);
+ """
+    )
+
+
+def test_background_light_invalid_busy_no_record_off_and_fractional_canvas():
+    run_page(r"""
+ await ready();assert($('backgroundLightOff').disabled);
+ await $('backgroundLightOff').onclick();assert.equal(posts.length,0);
+ $('backgroundLightBrightness').value='';$('backgroundLightBrightness').oninput();
+ await $('backgroundLightApply').onclick();assert.equal(posts.length,0);
+ assert.match($('message').textContent,/finite|brightness/i);
+ await $('backgroundLightReload').onclick();
+ $('authorMode').value='background-light';$('backgroundLightHide').checked=false;
+ const rect=canvas.getBoundingClientRect(),size=[canvas.width,canvas.height];
+ const eventAt=p=>{const [clientX,clientY]=nativeToScreen(p,rect,size,transform,crop);return {clientX,clientY,pointerId:1,shiftKey:false};};
+ canvas.onpointerdown(eventAt([49.5,49.5]));canvas.onpointermove(eventAt([53.25,44.125]));canvas.onpointerup(eventAt([53.25,44.125]));
+ assert.equal(Number($('backgroundLightCenterX').value),53.25);
+ assert.equal(Number($('backgroundLightCenterY').value),44.125);
+ assert.equal(posts.length,0);
+ servedState.writer_busy=true;await refresh();assert($('backgroundLightApply').disabled);
+ await $('backgroundLightApply').onclick();assert.equal(posts.length,0);
+ """)
+
+
 def run_page(scenario):
     page = Path("src/blackmask/ui/review.html").read_text()
     script = page.split("<script>", 1)[1].split("</script>", 1)[0]

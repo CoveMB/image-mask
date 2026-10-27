@@ -258,6 +258,7 @@ def validated_layer_inputs(
 
         replay_repair(project, revision)
     from .background import read_background
+    from .background_light import read_background_light
     from .effects import read_cleanup, saved_shading, saved_spatial_fade
     from .exposure import read_exposure
     from .shadow_fade import read_shadow_fade
@@ -270,6 +271,7 @@ def validated_layer_inputs(
     read_shadow_fade(project, directory, manifest, alpha)
     read_local_sharpening(project, directory, manifest, alpha)
     read_background(project, directory, manifest)
+    read_background_light(project, directory, manifest)
     saved_spatial_fade(project, revision, alpha, manifest)
     return foreground, alpha, manifest
 
@@ -305,20 +307,18 @@ def saved_layers(
 
 def render_saved_result(project: Path, revision: str, developed_id: str) -> np.ndarray:
     """Compose one explicitly selected saved Result without publishing a preview."""
-    from .background import read_background
+    from .background_light import saved_backgrounds
     from .effects import saved_shading, saved_spatial_fade
 
     foreground, alpha, manifest = saved_layers(project, revision, developed_id)
     weight, opacity = saved_shading(project, revision, alpha, manifest)
     spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    background = read_background(project, saved_asset(project, f"revisions/{revision}"), manifest)
+    base, background = saved_backgrounds(
+        project, saved_asset(project, f"revisions/{revision}"), manifest
+    )
     check_space(project, foreground.nbytes * 8 + 16 * 1024**2)
     target = (
-        background
-        if background is not None
-        else np.zeros_like(foreground)
-        if spatial is not None
-        else None
+        base if base is not None else np.zeros_like(foreground) if spatial is not None else None
     )
     return (
         render_black(
@@ -418,7 +418,7 @@ def _check_flat_delivery(directory: Path, names: set[str]) -> None:
         raise ProjectError("Output collision: unexpected delivery members preserved")
 
 
-EXPORT_VERSION = "requested-result-v4"
+EXPORT_VERSION = "requested-result-v5"
 
 
 def _delivery_effect_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -471,10 +471,15 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
     text = record["label"] + "\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. "
     text += "Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. "
     text += "Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\n"
+    if "background_light" in record:
+        text += "Background light is separate from the unlit base B0. Native editable deliveries retain background_rgb16.tif as B0 (missing means zero), background_light_rgb16.tif as L16, and background_light_settings.json, including OFF. When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)); encode to RGB16 with float64 ties-to-even and copy zero-light pixels exactly. OFF uses B1=B0. Native replay reads saved L16 without generating it. Light never changes the foreground contribution or alpha; it can clip a bright backdrop, so lower brightness to retain variation. Black/transparent diagnostics never display light.\n"
     if mode == "add-margins":
         text += "The native image is copied without resampling; margins extend saved backdrop edge pixels. Optional straight RGBA has zero RGBA margins.\n"
     elif mode == "match-series":
-        text += "This is a resized presentation using existing photographed detail. The saved backdrop recipe is regenerated at final output dimensions. Enlargement adds no captured detail; reduction can hide fine features.\n"
+        if "background_light" in record:
+            text += "This is a resized presentation using existing photographed detail. Regenerate B0 at full output dimensions; evaluate the delivered light settings at native coordinates (X+0.5-tx)/scale-0.5 and (Y+0.5-ty)/scale-0.5, including outside the transformed native rectangle. Combine once into B1; spatial fade still targets B0. The manifest freezes scale/translation and native companion identity. Enlargement adds no captured detail; reduction can hide fine features.\n"
+        else:
+            text += "This is a resized presentation using existing photographed detail. The saved backdrop recipe is regenerated at final output dimensions. Enlargement adds no captured detail; reduction can hide fine features.\n"
     if mode != "native":
         text += "No composition acceptance is recorded.\n"
         companion = record.get("editable_companion_request")
@@ -483,11 +488,17 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         else:
             text += "Editable layers were not requested.\n"
     if "editable" in record["requested_variants"] and mode == "native":
-        text += "Native editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
+        if "background_light" in record:
+            text += "Native editable F/A/W/opacity/B0/L16 reconstruct Result: round(F*A*(1-opacity*W)+B1*(1-A)), float64 ties-to-even after the separate B0/L16 combination above. A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise saved shading.opacity. Missing W or B0 means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
+        else:
+            text += "Native editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
         if record.get("shadow_fade", {}).get("schema_version") == 3:
             text += "Retain shadow_fade_reduction16.png and shadow_fade_reduction.json, including when Shadow fade is OFF. To edit/replay Shadow fade, start from unfaded_foreground_rgb16.tif: multiply its support/highlight exponent weight by (1-reduction16/65535) exactly once before gain=2**(-6*amount*weight). Alpha gates eligibility; explicit protection copies unfaded RGB exactly. Disabled Shadow fade copies unfaded RGB. Selected foreground_rgb16.tif already includes this result: never fade it again. Then recompute downstream spatial highlights from that selected RGB, retaining spatial reduction independently.\n"
         if "spatial_fade" in record:
-            text += "With enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\n"
+            if "background_light" in record:
+                text += "With enabled spatial Fade into background, F is pre-spatial: derive q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B0) in linear light, encode without intermediate rounding, then composite once against B1 with unchanged A. Disabled spatial settings mean q=0; retain all operands. Black/transparent diagnostics keep B0 as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B0 using Q/a, then composite once against B1; zero transparent RGB where output alpha8 rounds to zero. Opaque pixels and protected underlying RGB remain unchanged by light; partial-alpha flattened colour changes naturally.\n"
+            else:
+                text += "With enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\n"
             if record["spatial_fade"]["schema_version"] == 2:
                 text += "Also retain spatial_fade_reduction16.png and spatial_fade_reduction.json. Multiply q by (1-reduction16/65535) exactly once after protection/highlights and before blending or series sampling of A*q. Alpha is eligibility only; zero reduction preserves the original fade, full reduction removes only this effect. The raster is the rounded maximum of amount times each authored support16 field; overlaps never accumulate.\n"
     if "local_sharpening" in record and "editable" in record["requested_variants"]:
@@ -539,6 +550,8 @@ def _delivery_members(
                 names.add(effect + "_settings.json")
         if "background" in manifest:
             names.update({"background_rgb16.tif", "background_settings.json"})
+        if "background_light" in manifest:
+            names.update({"background_light_rgb16.tif", "background_light_settings.json"})
         for section, directory, prefix in (
             ("local_sharpening", "sharpening", "sharpening"),
             ("local_exposure", "exposure", "exposure"),
@@ -906,6 +919,16 @@ def _delivery_request_record(
     }
     if "spatial_fade" in manifest:
         record["spatial_fade"] = manifest["spatial_fade"]
+    if "background_light" in manifest:
+        record["background_light"] = manifest["background_light"]
+        if sampling is not None:
+            record["background_light_transform"] = {
+                "scale": sampling.layout.scale,
+                "translation_xy": list(sampling.layout.translation_xy),
+                "native_dimensions_wh": list(native_dimensions_wh),
+                "output_dimensions_wh": list(sampling.layout.output_dimensions_wh),
+                "sample_coordinates": "native=(output_integer+0.5-translation)/scale-0.5",
+            }
     if sampling is not None:
         record.update(
             {
@@ -957,6 +980,15 @@ def _delivery_request_record(
             if manifest.get("spatial_fade", {}).get("enabled")
             else "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-p*W16/65535, A=alpha16/65535; p is saved opacity only when shading is enabled, otherwise zero; B is saved background RGB16 or zero"
         ) + "; F already includes Local sharpening, local exposure and Shadow fade"
+        if "background_light" in manifest:
+            record["result_compositing"] = (
+                (
+                    "round(blend_linear_srgb(F,B0,q)*A+B1*(1-A)); spatial q retains all saved protection/highlight/reduction operands"
+                    if manifest.get("spatial_fade", {}).get("enabled")
+                    else "encoded-sRGB float64 round ties-to-even(F*A*H+B1*(1-A)); H=1-p*W16/65535; p is saved opacity only when shading is enabled, otherwise zero"
+                )
+                + "; B0 is saved unlit background or zero; enabled B1=RGB16(encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1))), OFF B1=B0; A=alpha16/65535; F already includes Local sharpening, local exposure and Shadow fade"
+            )
         if manifest.get("spatial_fade", {}).get("schema_version") == 2:
             record["result_compositing"] += (
                 "; when spatial fade is enabled, multiply q once by (1-reduction16/65535) after protection/highlights"
@@ -1139,6 +1171,8 @@ def _export_delivery(
         for target, version in (("spatial_fade", 2), ("shadow_fade", 3))
     )
     pending += reduction_bytes
+    if "background_light" in manifest:
+        pending += base.nbytes * 4 + min(64, base.shape[0]) * base.shape[1] * 198
     pending += (16 + (10 if "black" in variants else 0)) * width * height + 2 * 1024**2
     if native_record is not None and binding is None:
         pending += base.nbytes * 22 + 2 * 1024**2
@@ -1155,6 +1189,9 @@ def _export_delivery(
             else 0,
             black_background="black" in variants,
             native_export_peak_bytes=base.nbytes * 22 if native_record is not None else 0,
+            background_light=bool(
+                manifest.get("background_light", {}).get("settings", {}).get("enabled")
+            ),
         )
     foreground = selected_foreground(project, revision, base, alpha, manifest)
     del base
@@ -1266,7 +1303,7 @@ def _write_delivery(
     companion_record: dict[str, Any] | None = None,
     paired_primary: Path | None = None,
 ) -> bool:
-    from .background import read_background
+    from .background_light import saved_backgrounds
     from .effects import saved_shading, saved_spatial_fade
     from .framing import frame_result, frame_transparent
 
@@ -1291,14 +1328,14 @@ def _write_delivery(
     recheck()
     weight, opacity = saved_shading(project, revision, alpha, manifest)
     spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    background = (
-        None
+    base, background = (
+        (None, None)
         if sampling is not None
-        else read_background(project, saved_asset(project, f"revisions/{revision}"), manifest)
+        else saved_backgrounds(project, saved_asset(project, f"revisions/{revision}"), manifest)
     )
     target = (
-        background
-        if background is not None
+        base
+        if base is not None
         else np.zeros_like(foreground)
         if spatial is not None and sampling is None
         else None
@@ -1317,6 +1354,7 @@ def _write_delivery(
                 weight16=weight,
                 opacity=opacity,
                 background_settings=manifest.get("background", {}).get("settings"),
+                background_light_settings=manifest.get("background_light", {}).get("settings"),
                 spatial_fade=spatial,
                 black_background=stem == "black",
             )
@@ -1361,6 +1399,7 @@ def _write_delivery(
                 transparent=True,
                 spatial_fade=spatial,
                 background_settings=manifest.get("background", {}).get("settings"),
+                background_light_settings=manifest.get("background_light", {}).get("settings"),
             )
             if sampling is not None
             else (
@@ -1475,6 +1514,14 @@ def _write_editable(
         for saved, delivered in (
             ("background/background_rgb16.tif", "background_rgb16.tif"),
             ("background/settings.json", "background_settings.json"),
+        ):
+            (stage / delivered).write_bytes(
+                saved_asset(project, f"revisions/{revision}/{saved}").read_bytes()
+            )
+    if "background_light" in manifest:
+        for saved, delivered in (
+            ("background_light/light_rgb16.tif", "background_light_rgb16.tif"),
+            ("background_light/settings.json", "background_light_settings.json"),
         ):
             (stage / delivered).write_bytes(
                 saved_asset(project, f"revisions/{revision}/{saved}").read_bytes()

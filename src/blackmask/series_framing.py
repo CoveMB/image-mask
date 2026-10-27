@@ -345,12 +345,14 @@ def estimate_series_resources(
     spatial_fade_pixels: int = 0,
     native_export_peak_bytes: int = 0,
     black_background: bool = False,
+    background_light: bool = False,
 ) -> dict[str, int]:
     if (
         type(retained_native_bytes) is not int
         or retained_native_bytes < 0
         or type(transparent) is not bool
         or type(black_background) is not bool
+        or type(background_light) is not bool
         or type(spatial_fade_pixels) is not int
         or spatial_fade_pixels < 0
         or type(native_export_peak_bytes) is not int
@@ -387,6 +389,11 @@ def estimate_series_resources(
             spatial_target_rgb16_bytes=6 * width * height
             if black_background and not transparent
             else 0,
+        )
+    if background_light:
+        values.update(
+            background_light_base_rgb16_bytes=6 * width * height,
+            background_light_strip_bytes=min(64, height) * width * 198,
         )
     series_peak = sum(value for key, value in values.items() if key != "output_rgba8_bytes")
     if native_export_peak_bytes:
@@ -483,11 +490,17 @@ def render_series(
     weight16: np.ndarray | None = None,
     opacity: float = 0,
     background_settings: dict[str, Any] | None = None,
+    background_light_settings: dict[str, Any] | None = None,
     transparent: bool = False,
     spatial_fade: SpatialFadeOperands | None = None,
     black_background: bool = False,
 ) -> np.ndarray:
     from .background import LEGACY_BACKGROUND, make_background, sample_background
+    from .background_light import (
+        combine_background_light,
+        sample_background_light,
+        validate_background_light,
+    )
     from .export import _foreground_contribution
 
     if (
@@ -503,6 +516,18 @@ def render_series(
         raise ValueError("Series rendering requires aligned saved RGB16 and alpha16")
     if weight16 is not None and (weight16.dtype != np.uint16 or weight16.shape != alpha16.shape):
         raise ValueError("Series shading requires aligned W16")
+    if background_light_settings is not None:
+        validate_background_light(
+            background_light_settings, foreground.shape[1], foreground.shape[0]
+        )
+    light_enabled = bool(
+        background_light_settings is not None
+        and background_light_settings["enabled"]
+        and background_light_settings["brightness"] != 0
+        and background_light_settings["color_srgb"].upper() != "#000000"
+        and not transparent
+        and not black_background
+    )
     if sampling != series_sampling_plan(
         sampling.layout,
         display_dimensions_wh=None
@@ -539,6 +564,7 @@ def render_series(
         ),
         transparent=transparent,
         black_background=black_background,
+        background_light=light_enabled,
         **({"spatial_fade_pixels": alpha16.size} if active_spatial else {}),
     )
     native_amount = (
@@ -568,6 +594,26 @@ def render_series(
         else:
             output_width, output_height = sampling.layout.output_dimensions_wh
             target = sample_background((output_height, output_width), settings, (width, height))
+    if light_enabled and background_light_settings is not None:
+        # Keep target bound to unlit B0 before constructing a distinct displayed B1.
+        base = result
+        result = np.empty_like(base)
+        output_width, output_height = sampling.layout.output_dimensions_wh
+        full_x = (2 * np.arange(width) + 1) * output_width // (2 * width)
+        full_y = (2 * np.arange(height) + 1) * output_height // (2 * height)
+        scale = sampling.layout.scale
+        tx, ty = sampling.layout.translation_xy
+        native_x = (full_x.astype(np.float64) + 0.5 - tx) / scale - 0.5
+        for start in range(0, height, 64):
+            native_y = (full_y[start : start + 64].astype(np.float64) + 0.5 - ty) / scale - 0.5
+            light_x, light_y = np.broadcast_arrays(native_x[None, :], native_y[:, None])
+            light = sample_background_light(
+                alpha16.shape, background_light_settings, light_x, light_y
+            )
+            result[start : start + 64] = combine_background_light(
+                base[start : start + 64], light, enabled=True
+            )
+        del base
     x, y = sampling.x, sampling.y
     x0, y0, x1, y1 = sampling.layout.subject_bounds_xyxy
     if sampling.identity:

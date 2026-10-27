@@ -1,0 +1,1135 @@
+{
+  "producer_head": "8238f6f710c559f41e95831a2c013e882976f197",
+  "capture_provenance_sha256": "47d56d9fac24135b37fe780db0795c383f4daf5ba8c7f48167e14b6fec3100f8",
+  "deliveries": [
+    {
+      "request_record": {
+        "algorithm": "saved-backdrop-edge-padding-v1",
+        "background": {
+          "background_sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "record_sha256": "dfc18a22c61a4f67427cd098fdb2379fec4ba6711921b98c9102f91de795f182"
+        },
+        "compositing": "encoded-sRGB float64 ties-to-even; alpha once",
+        "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+        "draft": true,
+        "editable_companion": {
+          "directory_name": "rev-004-DRAFT-native-970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86",
+          "files_sha256": {
+            "README.txt": "f94101730b9c494e89d2471d7fcfd6842a32bdaee8e2de3995e0c9e306aa4cc2",
+            "alpha16.png": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+            "background_rgb16.tif": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+            "background_settings.json": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+            "foreground_rgb16.tif": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a",
+            "recipe.toml": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+            "result_RGB8_VIEW.png": "62c8b30a576bf9ca0b4ecc5be8bcc73c66908291f07038da4f4443b86b117aa3",
+            "result_rgb16.tif": "539b84e04b655c11da80242e17a7645e4c89884b713d49efe4b7a346530e8120",
+            "source_rgb16.tif": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a",
+            "spatial_fade_alpha16.png": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+            "spatial_fade_protection16.png": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+            "spatial_fade_settings.json": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185",
+            "spatial_fade_weight16.png": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+          },
+          "manifest_sha256": "f5c6ee7603185c0c852cabd7a5d34c730c90e4a3ac17e1c5549347ea5a2dd954"
+        },
+        "editable_companion_request": {
+          "directory_name": "rev-004-DRAFT-native-970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86",
+          "identity_sha256": "970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86"
+        },
+        "effects": {
+          "color_cleanup": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "local_exposure": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "local_sharpening": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "shading": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "shadow_fade": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "spatial_fade": {
+            "enabled": true,
+            "record_sha256": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185"
+          }
+        },
+        "encoding": {
+          "icc_profile_sha256": "6f6fe5cc53cd24ceeb7997fb24ce2889fdfb88d88ce4fdc5f8e25e0481294953",
+          "packages": {
+            "Pillow": "13.0.0",
+            "numpy": "2.3.5",
+            "tifffile": "2026.10.15"
+          },
+          "png": "uint8-straight-srgb-zlib6-v1",
+          "python": {
+            "implementation": "CPython",
+            "version": "3.12.14 (main, Aug 25 2026, 13:50:33) [Clang 22.1.3 ]"
+          },
+          "rounding": "NumPy float64 ties-to-even",
+          "tiff": "uncompressed-rgb16-srgb-v1",
+          "version": "requested-result-v4"
+        },
+        "export_version": "requested-result-v4",
+        "identity_sha256": "93c8ea67069cb011dfe3c8c17fc7217281bd57bd03014343b9abefad9c152afd",
+        "kind": "framed-presentation",
+        "label": "DRAFT - explicit framed presentation",
+        "margins": {
+          "bottom_px": 1,
+          "left_px": 1,
+          "right_px": 2,
+          "top_px": 2
+        },
+        "mode": "add-margins",
+        "native_assets": {
+          "assets/149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001.png": "149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001",
+          "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "assets/5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b.png": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b",
+          "assets/859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306.tif": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "assets/d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0.png": "d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0",
+          "assets/developed/6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5.tif": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a"
+        },
+        "output_dimensions_wh": [
+          9,
+          7
+        ],
+        "recipe_sha256": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+        "requested_variants": [
+          "editable"
+        ],
+        "revision": "rev-004",
+        "revision_manifest_sha256": "e9808c8267de8a1f4559f32552e6b2ed61f9fe71412be302af430ef93031f15e",
+        "schema_version": 2,
+        "source_dimensions_wh": [
+          6,
+          4
+        ],
+        "source_record_sha256": "a693ee8a4acd1b290034bf9bf85d2749bb645fdd3e25ea6a657c7accd6c7a197",
+        "source_rect_xyxy": [
+          1,
+          2,
+          7,
+          6
+        ],
+        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved foreground already includes Local sharpening, local exposure and Shadow fade; apply none again; baked shading at effective p (saved p when enabled, 0 when disabled or absent); editable W16 plus p retained separately only when requested"
+      },
+      "revision_manifest": {
+        "schema_version": 2,
+        "files": {
+          "background/settings.json": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "effects/spatial-fade/settings.json": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185",
+          "guides.json": "ccd86e47732da7a4feea1c6eaf55d5d591e47cad66e95034ebfcca5e4a9ebddb",
+          "inputs/effects.json": "4ddb663f1b6176bae37f6f0d38a362f13cfbd7f84d0f28e010e5b46d2709c327",
+          "inputs/guides.json": "ccd86e47732da7a4feea1c6eaf55d5d591e47cad66e95034ebfcca5e4a9ebddb",
+          "inputs/recipe.toml": "3970bdaf07e501335379ad57847adeb7365ef26064316f167fdcf07a5d8097ae",
+          "inputs/source.json": "a693ee8a4acd1b290034bf9bf85d2749bb645fdd3e25ea6a657c7accd6c7a197",
+          "inputs/state.json": "72ecd9118e717e291679d2fbc9fc6d5a14c6457e2d44902d45ce5270c1198e6f",
+          "preview.jpg": "13af46410a01e715b33da432c3ce98620d3b6d6f4d3d4b7a64b51b9acdfcb53a",
+          "qa.json": "8d23b68f847be3da3fe114c2b51de75d8583a5e70ee257ee99b00fc3f5e6da3c",
+          "recipe.toml": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+          "request.json": "b700d2be939c43448f65d994d2c093082c4f1cbe0037de5c949f6119ca27b8b5",
+          "result.json": "c5bdcb66789f6dbf35f0b0406195e8b70d495ad0f7a14868509bc2d679e29a36",
+          "review/manifest.json": "2b596590a5e1e5d09cafaf833fd8bd49571a0245dc9d9932690adf52555f84a8",
+          "trimap_approval.json": "da33c8b6bb318e634ae9d0b43b3b489f5a936de34ec3b9e2e880e1f4f325f841"
+        },
+        "assets": {
+          "background/background_rgb16.tif": {
+            "path": "assets/859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306.tif",
+            "sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306"
+          },
+          "base_alpha16.png": {
+            "path": "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png",
+            "sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0"
+          },
+          "effects/spatial-fade/alpha16.png": {
+            "path": "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png",
+            "sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0"
+          },
+          "effects/spatial-fade/protection16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "effects/spatial-fade/weight16.png": {
+            "path": "assets/5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b.png",
+            "sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+          },
+          "foreground_rgb16.tif": {
+            "path": "assets/developed/6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5.tif",
+            "sha256": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a"
+          },
+          "supports/lock_values16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "supports/protection.png": {
+            "path": "assets/d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0.png",
+            "sha256": "d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0"
+          },
+          "supports/support16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "trimap.png": {
+            "path": "assets/149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001.png",
+            "sha256": "149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001"
+          }
+        },
+        "background": {
+          "algorithm": "smooth-tonal-background-v1",
+          "background_sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "height": 4,
+          "schema_version": 2,
+          "settings": {
+            "color_srgb": "#315579",
+            "variation": 0.55
+          },
+          "settings_sha256": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "width": 6
+        },
+        "spatial_fade": {
+          "algorithm": "linear-srgb-oval-arcs-background-fade-v1",
+          "alpha_sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "candidate_comparison": true,
+          "enabled": true,
+          "protection_sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "schema_version": 1,
+          "scope_xyxy": [
+            0,
+            0,
+            6,
+            4
+          ],
+          "settings": {
+            "arcs": [],
+            "arcs_enabled": false,
+            "enabled": true,
+            "oval": {
+              "amount": 0.6,
+              "center_xy": [
+                0,
+                0
+              ],
+              "enabled": true,
+              "inner_radii_xy": [
+                0.5,
+                0.5
+              ],
+              "rotation_degrees": 0.0,
+              "transition_width": 0.5
+            },
+            "preserve_highlights": 0.0
+          },
+          "source_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "stale": false,
+          "weight_sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+        }
+      },
+      "notes": "DRAFT - explicit framed presentation\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\nThe native image is copied without resampling; margins extend saved backdrop edge pixels. Optional straight RGBA has zero RGBA margins.\nNo composition acceptance is recorded.\nKeep this presentation and native editable folder rev-004-DRAFT-native-970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86 together for portable editing. The manifest freezes presentation settings and exact companion hashes.\n",
+      "members": [
+        "README.txt",
+        "manifest.json",
+        "recipe.toml",
+        "result_RGB8_VIEW.png",
+        "result_rgb16.tif"
+      ]
+    },
+    {
+      "request_record": {
+        "algorithm": "saved-native-result-v1",
+        "background": {
+          "algorithm": "smooth-tonal-background-v1",
+          "background_sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "height": 4,
+          "schema_version": 2,
+          "settings": {
+            "color_srgb": "#315579",
+            "variation": 0.55
+          },
+          "settings_sha256": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "width": 6
+        },
+        "compositing": "encoded-sRGB float64 ties-to-even; alpha once",
+        "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+        "draft": true,
+        "effects": {
+          "color_cleanup": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "local_exposure": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "local_sharpening": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "shading": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "shadow_fade": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "spatial_fade": {
+            "enabled": true,
+            "record_sha256": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185"
+          }
+        },
+        "encoding": {
+          "icc_profile_sha256": "6f6fe5cc53cd24ceeb7997fb24ce2889fdfb88d88ce4fdc5f8e25e0481294953",
+          "packages": {
+            "Pillow": "13.0.0",
+            "numpy": "2.3.5",
+            "tifffile": "2026.10.15"
+          },
+          "png": "uint8-straight-srgb-zlib6-v1",
+          "python": {
+            "implementation": "CPython",
+            "version": "3.12.14 (main, Aug 25 2026, 13:50:33) [Clang 22.1.3 ]"
+          },
+          "rounding": "NumPy float64 ties-to-even",
+          "tiff": "uncompressed-rgb16-srgb-v1",
+          "version": "requested-result-v4"
+        },
+        "export_version": "requested-result-v4",
+        "identity_sha256": "80a2fdd41747461d0af6f2f70125b453391b7283d863992162b512de221904b3",
+        "kind": "native-result",
+        "label": "DRAFT - unaccepted explicit export",
+        "mode": "native",
+        "native_assets": {
+          "assets/149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001.png": "149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001",
+          "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "assets/5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b.png": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b",
+          "assets/859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306.tif": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "assets/d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0.png": "d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0",
+          "assets/developed/6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5.tif": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a"
+        },
+        "output_dimensions_wh": [
+          6,
+          4
+        ],
+        "recipe_sha256": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+        "requested_variants": [
+          "black",
+          "transparent",
+          "editable"
+        ],
+        "result_compositing": "round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints; F already includes Local sharpening, local exposure and Shadow fade",
+        "revision": "rev-004",
+        "revision_manifest_sha256": "e9808c8267de8a1f4559f32552e6b2ed61f9fe71412be302af430ef93031f15e",
+        "schema_version": 2,
+        "source_dimensions_wh": [
+          6,
+          4
+        ],
+        "source_record_sha256": "a693ee8a4acd1b290034bf9bf85d2749bb645fdd3e25ea6a657c7accd6c7a197",
+        "source_rect_xyxy": [
+          0,
+          0,
+          6,
+          4
+        ],
+        "spatial_fade": {
+          "algorithm": "linear-srgb-oval-arcs-background-fade-v1",
+          "alpha_sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "candidate_comparison": true,
+          "enabled": true,
+          "protection_sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "schema_version": 1,
+          "scope_xyxy": [
+            0,
+            0,
+            6,
+            4
+          ],
+          "settings": {
+            "arcs": [],
+            "arcs_enabled": false,
+            "enabled": true,
+            "oval": {
+              "amount": 0.6,
+              "center_xy": [
+                0,
+                0
+              ],
+              "enabled": true,
+              "inner_radii_xy": [
+                0.5,
+                0.5
+              ],
+              "rotation_degrees": 0.0,
+              "transition_width": 0.5
+            },
+            "preserve_highlights": 0.0
+          },
+          "source_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "stale": false,
+          "weight_sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+        },
+        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved foreground already includes Local sharpening, local exposure and Shadow fade; apply none again; baked shading at effective p (saved p when enabled, 0 when disabled or absent); editable W16 plus p retained separately only when requested"
+      },
+      "revision_manifest": {
+        "schema_version": 2,
+        "files": {
+          "background/settings.json": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "effects/spatial-fade/settings.json": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185",
+          "guides.json": "ccd86e47732da7a4feea1c6eaf55d5d591e47cad66e95034ebfcca5e4a9ebddb",
+          "inputs/effects.json": "4ddb663f1b6176bae37f6f0d38a362f13cfbd7f84d0f28e010e5b46d2709c327",
+          "inputs/guides.json": "ccd86e47732da7a4feea1c6eaf55d5d591e47cad66e95034ebfcca5e4a9ebddb",
+          "inputs/recipe.toml": "3970bdaf07e501335379ad57847adeb7365ef26064316f167fdcf07a5d8097ae",
+          "inputs/source.json": "a693ee8a4acd1b290034bf9bf85d2749bb645fdd3e25ea6a657c7accd6c7a197",
+          "inputs/state.json": "72ecd9118e717e291679d2fbc9fc6d5a14c6457e2d44902d45ce5270c1198e6f",
+          "preview.jpg": "13af46410a01e715b33da432c3ce98620d3b6d6f4d3d4b7a64b51b9acdfcb53a",
+          "qa.json": "8d23b68f847be3da3fe114c2b51de75d8583a5e70ee257ee99b00fc3f5e6da3c",
+          "recipe.toml": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+          "request.json": "b700d2be939c43448f65d994d2c093082c4f1cbe0037de5c949f6119ca27b8b5",
+          "result.json": "c5bdcb66789f6dbf35f0b0406195e8b70d495ad0f7a14868509bc2d679e29a36",
+          "review/manifest.json": "2b596590a5e1e5d09cafaf833fd8bd49571a0245dc9d9932690adf52555f84a8",
+          "trimap_approval.json": "da33c8b6bb318e634ae9d0b43b3b489f5a936de34ec3b9e2e880e1f4f325f841"
+        },
+        "assets": {
+          "background/background_rgb16.tif": {
+            "path": "assets/859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306.tif",
+            "sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306"
+          },
+          "base_alpha16.png": {
+            "path": "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png",
+            "sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0"
+          },
+          "effects/spatial-fade/alpha16.png": {
+            "path": "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png",
+            "sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0"
+          },
+          "effects/spatial-fade/protection16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "effects/spatial-fade/weight16.png": {
+            "path": "assets/5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b.png",
+            "sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+          },
+          "foreground_rgb16.tif": {
+            "path": "assets/developed/6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5.tif",
+            "sha256": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a"
+          },
+          "supports/lock_values16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "supports/protection.png": {
+            "path": "assets/d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0.png",
+            "sha256": "d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0"
+          },
+          "supports/support16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "trimap.png": {
+            "path": "assets/149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001.png",
+            "sha256": "149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001"
+          }
+        },
+        "background": {
+          "algorithm": "smooth-tonal-background-v1",
+          "background_sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "height": 4,
+          "schema_version": 2,
+          "settings": {
+            "color_srgb": "#315579",
+            "variation": 0.55
+          },
+          "settings_sha256": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "width": 6
+        },
+        "spatial_fade": {
+          "algorithm": "linear-srgb-oval-arcs-background-fade-v1",
+          "alpha_sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "candidate_comparison": true,
+          "enabled": true,
+          "protection_sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "schema_version": 1,
+          "scope_xyxy": [
+            0,
+            0,
+            6,
+            4
+          ],
+          "settings": {
+            "arcs": [],
+            "arcs_enabled": false,
+            "enabled": true,
+            "oval": {
+              "amount": 0.6,
+              "center_xy": [
+                0,
+                0
+              ],
+              "enabled": true,
+              "inner_radii_xy": [
+                0.5,
+                0.5
+              ],
+              "rotation_degrees": 0.0,
+              "transition_width": 0.5
+            },
+            "preserve_highlights": 0.0
+          },
+          "source_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "stale": false,
+          "weight_sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+        }
+      },
+      "notes": "DRAFT - unaccepted explicit export\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\nNative editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\nWith enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\nSaved compositing: round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints; F already includes Local sharpening, local exposure and Shadow fade\n",
+      "members": [
+        "README.txt",
+        "alpha16.png",
+        "background_rgb16.tif",
+        "background_settings.json",
+        "black_RGB8_VIEW.png",
+        "black_rgb16.tif",
+        "foreground_rgb16.tif",
+        "manifest.json",
+        "recipe.toml",
+        "result_RGB8_VIEW.png",
+        "result_rgb16.tif",
+        "source_rgb16.tif",
+        "spatial_fade_alpha16.png",
+        "spatial_fade_protection16.png",
+        "spatial_fade_settings.json",
+        "spatial_fade_weight16.png",
+        "transparent_RGBA8_VIEW.png"
+      ]
+    },
+    {
+      "request_record": {
+        "algorithm": "saved-native-result-v1",
+        "background": {
+          "algorithm": "smooth-tonal-background-v1",
+          "background_sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "height": 4,
+          "schema_version": 2,
+          "settings": {
+            "color_srgb": "#315579",
+            "variation": 0.55
+          },
+          "settings_sha256": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "width": 6
+        },
+        "compositing": "encoded-sRGB float64 ties-to-even; alpha once",
+        "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+        "draft": true,
+        "effects": {
+          "color_cleanup": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "local_exposure": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "local_sharpening": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "shading": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "shadow_fade": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "spatial_fade": {
+            "enabled": true,
+            "record_sha256": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185"
+          }
+        },
+        "encoding": {
+          "icc_profile_sha256": "6f6fe5cc53cd24ceeb7997fb24ce2889fdfb88d88ce4fdc5f8e25e0481294953",
+          "packages": {
+            "Pillow": "13.0.0",
+            "numpy": "2.3.5",
+            "tifffile": "2026.10.15"
+          },
+          "png": "uint8-straight-srgb-zlib6-v1",
+          "python": {
+            "implementation": "CPython",
+            "version": "3.12.14 (main, Aug 25 2026, 13:50:33) [Clang 22.1.3 ]"
+          },
+          "rounding": "NumPy float64 ties-to-even",
+          "tiff": "uncompressed-rgb16-srgb-v1",
+          "version": "requested-result-v4"
+        },
+        "export_version": "requested-result-v4",
+        "identity_sha256": "970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86",
+        "kind": "native-result",
+        "label": "DRAFT - unaccepted explicit export",
+        "mode": "native",
+        "native_assets": {
+          "assets/149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001.png": "149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001",
+          "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "assets/5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b.png": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b",
+          "assets/859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306.tif": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "assets/d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0.png": "d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0",
+          "assets/developed/6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5.tif": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a"
+        },
+        "output_dimensions_wh": [
+          6,
+          4
+        ],
+        "recipe_sha256": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+        "requested_variants": [
+          "editable"
+        ],
+        "result_compositing": "round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints; F already includes Local sharpening, local exposure and Shadow fade",
+        "revision": "rev-004",
+        "revision_manifest_sha256": "e9808c8267de8a1f4559f32552e6b2ed61f9fe71412be302af430ef93031f15e",
+        "schema_version": 2,
+        "source_dimensions_wh": [
+          6,
+          4
+        ],
+        "source_record_sha256": "a693ee8a4acd1b290034bf9bf85d2749bb645fdd3e25ea6a657c7accd6c7a197",
+        "source_rect_xyxy": [
+          0,
+          0,
+          6,
+          4
+        ],
+        "spatial_fade": {
+          "algorithm": "linear-srgb-oval-arcs-background-fade-v1",
+          "alpha_sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "candidate_comparison": true,
+          "enabled": true,
+          "protection_sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "schema_version": 1,
+          "scope_xyxy": [
+            0,
+            0,
+            6,
+            4
+          ],
+          "settings": {
+            "arcs": [],
+            "arcs_enabled": false,
+            "enabled": true,
+            "oval": {
+              "amount": 0.6,
+              "center_xy": [
+                0,
+                0
+              ],
+              "enabled": true,
+              "inner_radii_xy": [
+                0.5,
+                0.5
+              ],
+              "rotation_degrees": 0.0,
+              "transition_width": 0.5
+            },
+            "preserve_highlights": 0.0
+          },
+          "source_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "stale": false,
+          "weight_sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+        },
+        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved foreground already includes Local sharpening, local exposure and Shadow fade; apply none again; baked shading at effective p (saved p when enabled, 0 when disabled or absent); editable W16 plus p retained separately only when requested"
+      },
+      "revision_manifest": {
+        "schema_version": 2,
+        "files": {
+          "background/settings.json": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "effects/spatial-fade/settings.json": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185",
+          "guides.json": "ccd86e47732da7a4feea1c6eaf55d5d591e47cad66e95034ebfcca5e4a9ebddb",
+          "inputs/effects.json": "4ddb663f1b6176bae37f6f0d38a362f13cfbd7f84d0f28e010e5b46d2709c327",
+          "inputs/guides.json": "ccd86e47732da7a4feea1c6eaf55d5d591e47cad66e95034ebfcca5e4a9ebddb",
+          "inputs/recipe.toml": "3970bdaf07e501335379ad57847adeb7365ef26064316f167fdcf07a5d8097ae",
+          "inputs/source.json": "a693ee8a4acd1b290034bf9bf85d2749bb645fdd3e25ea6a657c7accd6c7a197",
+          "inputs/state.json": "72ecd9118e717e291679d2fbc9fc6d5a14c6457e2d44902d45ce5270c1198e6f",
+          "preview.jpg": "13af46410a01e715b33da432c3ce98620d3b6d6f4d3d4b7a64b51b9acdfcb53a",
+          "qa.json": "8d23b68f847be3da3fe114c2b51de75d8583a5e70ee257ee99b00fc3f5e6da3c",
+          "recipe.toml": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+          "request.json": "b700d2be939c43448f65d994d2c093082c4f1cbe0037de5c949f6119ca27b8b5",
+          "result.json": "c5bdcb66789f6dbf35f0b0406195e8b70d495ad0f7a14868509bc2d679e29a36",
+          "review/manifest.json": "2b596590a5e1e5d09cafaf833fd8bd49571a0245dc9d9932690adf52555f84a8",
+          "trimap_approval.json": "da33c8b6bb318e634ae9d0b43b3b489f5a936de34ec3b9e2e880e1f4f325f841"
+        },
+        "assets": {
+          "background/background_rgb16.tif": {
+            "path": "assets/859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306.tif",
+            "sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306"
+          },
+          "base_alpha16.png": {
+            "path": "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png",
+            "sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0"
+          },
+          "effects/spatial-fade/alpha16.png": {
+            "path": "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png",
+            "sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0"
+          },
+          "effects/spatial-fade/protection16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "effects/spatial-fade/weight16.png": {
+            "path": "assets/5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b.png",
+            "sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+          },
+          "foreground_rgb16.tif": {
+            "path": "assets/developed/6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5.tif",
+            "sha256": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a"
+          },
+          "supports/lock_values16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "supports/protection.png": {
+            "path": "assets/d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0.png",
+            "sha256": "d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0"
+          },
+          "supports/support16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "trimap.png": {
+            "path": "assets/149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001.png",
+            "sha256": "149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001"
+          }
+        },
+        "background": {
+          "algorithm": "smooth-tonal-background-v1",
+          "background_sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "height": 4,
+          "schema_version": 2,
+          "settings": {
+            "color_srgb": "#315579",
+            "variation": 0.55
+          },
+          "settings_sha256": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "width": 6
+        },
+        "spatial_fade": {
+          "algorithm": "linear-srgb-oval-arcs-background-fade-v1",
+          "alpha_sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "candidate_comparison": true,
+          "enabled": true,
+          "protection_sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "schema_version": 1,
+          "scope_xyxy": [
+            0,
+            0,
+            6,
+            4
+          ],
+          "settings": {
+            "arcs": [],
+            "arcs_enabled": false,
+            "enabled": true,
+            "oval": {
+              "amount": 0.6,
+              "center_xy": [
+                0,
+                0
+              ],
+              "enabled": true,
+              "inner_radii_xy": [
+                0.5,
+                0.5
+              ],
+              "rotation_degrees": 0.0,
+              "transition_width": 0.5
+            },
+            "preserve_highlights": 0.0
+          },
+          "source_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "stale": false,
+          "weight_sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+        }
+      },
+      "notes": "DRAFT - unaccepted explicit export\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\nNative editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\nWith enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\nSaved compositing: round(blend_linear_srgb(F,B,q)*A+B*(1-A)); q from delivered combined W16, explicit protection and independent highlight preservation; exact q=0/q=1 endpoints; F already includes Local sharpening, local exposure and Shadow fade\n",
+      "members": [
+        "README.txt",
+        "alpha16.png",
+        "background_rgb16.tif",
+        "background_settings.json",
+        "foreground_rgb16.tif",
+        "manifest.json",
+        "recipe.toml",
+        "result_RGB8_VIEW.png",
+        "result_rgb16.tif",
+        "source_rgb16.tif",
+        "spatial_fade_alpha16.png",
+        "spatial_fade_protection16.png",
+        "spatial_fade_settings.json",
+        "spatial_fade_weight16.png"
+      ]
+    },
+    {
+      "request_record": {
+        "algorithm": "series-lanczos-premultiplied-v1",
+        "backend": {
+          "filter": "Lanczos",
+          "mode": "F",
+          "name": "Pillow",
+          "quantization": "NumPy ties-to-even",
+          "reducing_gap": null,
+          "source_box": "float32",
+          "version": "13.0.0"
+        },
+        "background": {
+          "algorithm": "smooth-tonal-background-v1",
+          "background_sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "placement": "recipe-regenerated-at-final-output-size",
+          "record_sha256": "dfc18a22c61a4f67427cd098fdb2379fec4ba6711921b98c9102f91de795f182",
+          "settings": {
+            "color_srgb": "#315579",
+            "variation": 0.55
+          }
+        },
+        "compositing": "encoded-sRGB float64 ties-to-even; alpha once",
+        "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+        "draft": true,
+        "editable_companion": {
+          "directory_name": "rev-004-DRAFT-native-970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86",
+          "files_sha256": {
+            "README.txt": "f94101730b9c494e89d2471d7fcfd6842a32bdaee8e2de3995e0c9e306aa4cc2",
+            "alpha16.png": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+            "background_rgb16.tif": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+            "background_settings.json": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+            "foreground_rgb16.tif": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a",
+            "recipe.toml": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+            "result_RGB8_VIEW.png": "62c8b30a576bf9ca0b4ecc5be8bcc73c66908291f07038da4f4443b86b117aa3",
+            "result_rgb16.tif": "539b84e04b655c11da80242e17a7645e4c89884b713d49efe4b7a346530e8120",
+            "source_rgb16.tif": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a",
+            "spatial_fade_alpha16.png": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+            "spatial_fade_protection16.png": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+            "spatial_fade_settings.json": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185",
+            "spatial_fade_weight16.png": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+          },
+          "manifest_sha256": "f5c6ee7603185c0c852cabd7a5d34c730c90e4a3ac17e1c5549347ea5a2dd954"
+        },
+        "editable_companion_request": {
+          "directory_name": "rev-004-DRAFT-native-970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86",
+          "identity_sha256": "970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86"
+        },
+        "effects": {
+          "color_cleanup": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "local_exposure": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "local_sharpening": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "shading": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "shadow_fade": {
+            "enabled": false,
+            "record_sha256": null
+          },
+          "spatial_fade": {
+            "enabled": true,
+            "record_sha256": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185"
+          }
+        },
+        "encoding": {
+          "icc_profile_sha256": "6f6fe5cc53cd24ceeb7997fb24ce2889fdfb88d88ce4fdc5f8e25e0481294953",
+          "packages": {
+            "Pillow": "13.0.0",
+            "numpy": "2.3.5",
+            "tifffile": "2026.10.15"
+          },
+          "png": "uint8-straight-srgb-zlib6-v1",
+          "python": {
+            "implementation": "CPython",
+            "version": "3.12.14 (main, Aug 25 2026, 13:50:33) [Clang 22.1.3 ]"
+          },
+          "rounding": "NumPy float64 ties-to-even",
+          "tiff": "uncompressed-rgb16-srgb-v1",
+          "version": "requested-result-v4"
+        },
+        "export_version": "requested-result-v4",
+        "identity_sha256": "0f5ce5d4478907919a8c169ce69d52c4dc0c8b67d1d937da62cb1f5839422542",
+        "kind": "series-framed-presentation",
+        "label": "DRAFT - explicit resized series presentation",
+        "layout": {
+          "fit_reason": "side-margins-matched",
+          "geometric_margins_lrtb_px": [
+            2.5500000000000007,
+            2.5500000000000007,
+            4.74,
+            4.74
+          ],
+          "output_dimensions_wh": [
+            17,
+            19
+          ],
+          "scale": 2.38,
+          "source_edge_contact": true,
+          "subject_bounds_xyxy": [
+            1,
+            0,
+            6,
+            4
+          ],
+          "transformed_subject_bounds_xyxy": [
+            2.5500000000000007,
+            4.74,
+            14.45,
+            14.26
+          ],
+          "translation_xy": [
+            0.17000000000000082,
+            4.74
+          ]
+        },
+        "mode": "match-series",
+        "native_assets": {
+          "assets/149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001.png": "149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001",
+          "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "assets/5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b.png": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b",
+          "assets/859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306.tif": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "assets/d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0.png": "d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0",
+          "assets/developed/6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5.tif": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a"
+        },
+        "output_dimensions_wh": [
+          17,
+          19
+        ],
+        "recipe_sha256": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+        "requested_variants": [
+          "editable"
+        ],
+        "revision": "rev-004",
+        "revision_manifest_sha256": "e9808c8267de8a1f4559f32552e6b2ed61f9fe71412be302af430ef93031f15e",
+        "sampling": {
+          "display_dimensions_wh": [
+            17,
+            19
+          ],
+          "horizontal_first": true,
+          "identity": false,
+          "layout": {
+            "fit_reason": "side-margins-matched",
+            "geometric_margins_lrtb_px": [
+              2.5500000000000007,
+              2.5500000000000007,
+              4.74,
+              4.74
+            ],
+            "output_dimensions_wh": [
+              17,
+              19
+            ],
+            "scale": 2.38,
+            "source_edge_contact": true,
+            "subject_bounds_xyxy": [
+              1,
+              0,
+              6,
+              4
+            ],
+            "transformed_subject_bounds_xyxy": [
+              2.5500000000000007,
+              4.74,
+              14.45,
+              14.26
+            ],
+            "translation_xy": [
+              0.17000000000000082,
+              4.74
+            ]
+          },
+          "x": {
+            "box": [
+              4.928571428571428,
+              12.071428571428571
+            ],
+            "coefficient_bytes": 1088,
+            "core_length": 5,
+            "ideal_start": -1.0714285714285718,
+            "maximum_output_phase_error": 6.437301611406098e-07,
+            "output_length": 17,
+            "output_start": 0,
+            "padded_extent": 17,
+            "padding_origin": -6,
+            "spacing": 0.42016806722689076
+          },
+          "y": {
+            "box": [
+              4.008403361344538,
+              11.991596638655462
+            ],
+            "coefficient_bytes": 1216,
+            "core_length": 4,
+            "ideal_start": -1.9915966386554624,
+            "maximum_output_phase_error": 9.694852335506708e-07,
+            "output_length": 19,
+            "output_start": 0,
+            "padded_extent": 16,
+            "padding_origin": -6,
+            "spacing": 0.42016806722689076
+          }
+        },
+        "schema_version": 2,
+        "settings": {
+          "minimum_vertical_margin_tenths_percent": 50,
+          "name": "Portrait series",
+          "output_height_px": 19,
+          "output_width_px": 17,
+          "side_margin_tenths_percent": 150
+        },
+        "source_dimensions_wh": [
+          6,
+          4
+        ],
+        "source_record_sha256": "a693ee8a4acd1b290034bf9bf85d2749bb645fdd3e25ea6a657c7accd6c7a197",
+        "views": "RGB8/RGBA8 reduced color/alpha precision; straight RGB is not alpha-multiplied; selected saved foreground already includes Local sharpening, local exposure and Shadow fade; apply none again; baked shading at effective p (saved p when enabled, 0 when disabled or absent); editable W16 plus p retained separately only when requested"
+      },
+      "revision_manifest": {
+        "schema_version": 2,
+        "files": {
+          "background/settings.json": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "effects/spatial-fade/settings.json": "fc9edce8b86400de3c5b8c85a3ef48680b8b00942a7b65686ea3b52e5766f185",
+          "guides.json": "ccd86e47732da7a4feea1c6eaf55d5d591e47cad66e95034ebfcca5e4a9ebddb",
+          "inputs/effects.json": "4ddb663f1b6176bae37f6f0d38a362f13cfbd7f84d0f28e010e5b46d2709c327",
+          "inputs/guides.json": "ccd86e47732da7a4feea1c6eaf55d5d591e47cad66e95034ebfcca5e4a9ebddb",
+          "inputs/recipe.toml": "3970bdaf07e501335379ad57847adeb7365ef26064316f167fdcf07a5d8097ae",
+          "inputs/source.json": "a693ee8a4acd1b290034bf9bf85d2749bb645fdd3e25ea6a657c7accd6c7a197",
+          "inputs/state.json": "72ecd9118e717e291679d2fbc9fc6d5a14c6457e2d44902d45ce5270c1198e6f",
+          "preview.jpg": "13af46410a01e715b33da432c3ce98620d3b6d6f4d3d4b7a64b51b9acdfcb53a",
+          "qa.json": "8d23b68f847be3da3fe114c2b51de75d8583a5e70ee257ee99b00fc3f5e6da3c",
+          "recipe.toml": "f186fd4ab3f09d2d515a86c10519045e2563db0e85df4f86866426255d52388a",
+          "request.json": "b700d2be939c43448f65d994d2c093082c4f1cbe0037de5c949f6119ca27b8b5",
+          "result.json": "c5bdcb66789f6dbf35f0b0406195e8b70d495ad0f7a14868509bc2d679e29a36",
+          "review/manifest.json": "2b596590a5e1e5d09cafaf833fd8bd49571a0245dc9d9932690adf52555f84a8",
+          "trimap_approval.json": "da33c8b6bb318e634ae9d0b43b3b489f5a936de34ec3b9e2e880e1f4f325f841"
+        },
+        "assets": {
+          "background/background_rgb16.tif": {
+            "path": "assets/859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306.tif",
+            "sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306"
+          },
+          "base_alpha16.png": {
+            "path": "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png",
+            "sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0"
+          },
+          "effects/spatial-fade/alpha16.png": {
+            "path": "assets/2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0.png",
+            "sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0"
+          },
+          "effects/spatial-fade/protection16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "effects/spatial-fade/weight16.png": {
+            "path": "assets/5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b.png",
+            "sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+          },
+          "foreground_rgb16.tif": {
+            "path": "assets/developed/6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5.tif",
+            "sha256": "7b3102a65f33058f30c198720e5c0308d18bc8eccc6c173bdecac840c44c766a"
+          },
+          "supports/lock_values16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "supports/protection.png": {
+            "path": "assets/d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0.png",
+            "sha256": "d7d36636121ad30df7b2ceb1b1b6ea73e6286c80506fdedaa304b9f15d7464c0"
+          },
+          "supports/support16.png": {
+            "path": "assets/8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b.png",
+            "sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b"
+          },
+          "trimap.png": {
+            "path": "assets/149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001.png",
+            "sha256": "149cd7d140f825670fcfb896dc831242845aa38ae77e8437b9eb453cf03a6001"
+          }
+        },
+        "background": {
+          "algorithm": "smooth-tonal-background-v1",
+          "background_sha256": "859d3beaa8d64547f3c611ceef4d217cc3ecde0fcab213e7a564bdef215fa306",
+          "developed_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "height": 4,
+          "schema_version": 2,
+          "settings": {
+            "color_srgb": "#315579",
+            "variation": 0.55
+          },
+          "settings_sha256": "373b5dfd1ebf42f41940e734d47474d35a0e7fa27bb7eb4402289406309c5e99",
+          "width": 6
+        },
+        "spatial_fade": {
+          "algorithm": "linear-srgb-oval-arcs-background-fade-v1",
+          "alpha_sha256": "2c1a839f6bfe651bb42d089ee3d91110ea485a458d30f5d41140e512b9af30f0",
+          "candidate_comparison": true,
+          "enabled": true,
+          "protection_sha256": "8d8aa39a9c0f63bd7a71e161b2574007043a0c50aa6a2ab68332a9f0f426d98b",
+          "schema_version": 1,
+          "scope_xyxy": [
+            0,
+            0,
+            6,
+            4
+          ],
+          "settings": {
+            "arcs": [],
+            "arcs_enabled": false,
+            "enabled": true,
+            "oval": {
+              "amount": 0.6,
+              "center_xy": [
+                0,
+                0
+              ],
+              "enabled": true,
+              "inner_radii_xy": [
+                0.5,
+                0.5
+              ],
+              "rotation_degrees": 0.0,
+              "transition_width": 0.5
+            },
+            "preserve_highlights": 0.0
+          },
+          "source_id": "6031865bbbf1bb3b811b9d27ec5180364bdf5c483d456ed4d6079eec8345aef5",
+          "stale": false,
+          "weight_sha256": "5b03f0b4c61339de3306adb0bb1147ca8292e5bd54baee1ef555f1195dcd1e3b"
+        }
+      },
+      "notes": "DRAFT - explicit resized series presentation\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\nThis is a resized presentation using existing photographed detail. The saved backdrop recipe is regenerated at final output dimensions. Enlargement adds no captured detail; reduction can hide fine features.\nNo composition acceptance is recorded.\nKeep this presentation and native editable folder rev-004-DRAFT-native-970aa0019d9a6d92068f0ee193b3abf77414f2712ae053eb42d2f3d1fc4bca86 together for portable editing. The manifest freezes presentation settings and exact companion hashes.\n",
+      "members": [
+        "README.txt",
+        "manifest.json",
+        "recipe.toml",
+        "result_RGB8_VIEW.png",
+        "result_rgb16.tif"
+      ]
+    }
+  ]
+}

@@ -685,11 +685,13 @@ execution identity can create a meaningful small revision even if pixels agree.
 There is no historical request search, registry or new cache engine. The explicit
 effects execution version must change when equivalence, validation or arithmetic
 semantics change. Existing native model/tile cache invalidation stays independent.
-Current `validated-effects-v6` binds both local fade reduction targets and covers all seven effects, including Fade into background's
+Current `validated-effects-v7` also binds Background light's normalized settings,
+algorithm and both saved fields, including OFF and inherited state. It covers all
+eight appearance sections and both local fade reduction targets, including Fade into background's
 validated nested settings, algorithm, actual explicit protection bytes and all four
 saved spatial operands. Its output binding includes OFF and inherited spatial state;
 new output is bound only after generation, allowing the first equivalent repeat to
-reuse it. Native recipe identity excludes all seven appearance sections. Mandatory cold
+reuse it. Native recipe identity excludes all eight appearance sections. Mandatory cold
 saved-geometry validation may rasterize W; a hit performs no additional result/effect/W
 generation, while existing warm validation caches retain their fresh-hash safeguards.
 Omitted shading-disable geometry still resolves from validated saved settings before
@@ -1240,13 +1242,15 @@ multiply linear RGB by `2**(variation*field)`, clamp, encode and round ties-to-e
 once to RGB16. Zero variation copies RGB8*257; black is exact zero at all strengths.
 There is no crop/viewport normalization, seed or random pattern.
 
-Final Result is encoded-sRGB float64 `round(F*A*H + B*(1-A))`, ties-to-even,
+Without Background light, Result is encoded-sRGB float64 `round(F*A*H + B*(1-A))`, ties-to-even,
 where F is selected RGB16 after cleanup/sharpening/exposure/fade, A=alpha16/65535,
 H=1-p*W16/65535 and B is the saved RGB16 backdrop. p is saved opacity only when
 shading is enabled, otherwise zero (including absent shading). H applies only to F;
 alpha applies once, with no earlier rounding. Black compatibility keeps the
 existing arithmetic order. Protected underlying RGB/alpha remain exact while
 partial-alpha flattened colour changes with B. Clipping diagnostics are independent.
+With light, this saved base is B0; the [light contract](#saved-background-light)
+defines displayed B1 and the independent B0 fade target.
 
 Schema-2 `kind:effects` accepts exclusive `background` settings with all existing
 master/base/draft/candidate identities and full native `scope_xyxy`. It cannot
@@ -1263,7 +1267,7 @@ stale flags still block acceptance/export. Prepared revisions remain non-accepta
 
 Every requested delivery includes `result_rgb16.tif` and `result_RGB8_VIEW.png`.
 Native `--variant editable` also includes `background_rgb16.tif`,
-`background_settings.json` when saved. Result uses B; optional black and transparent
+`background_settings.json` when saved. Without light, Result uses B; optional black and transparent
 views retain their meanings. Selected foreground is pre-shading and already
 exposed/faded: do not replay these twice. Saved F/A/W/opacity/B reconstruct Result
 using the effective-opacity rule above,
@@ -1274,12 +1278,93 @@ reviews are not regenerated on open. Current readers restore prior revisions; ol
 are not promised to understand new records. Retain a prior project/revision for
 recovery rather than stripping fields. No automatic cleanup occurs.
 
+## Saved background light
+
+The optional recipe `background_light` has exactly `enabled` (boolean),
+`brightness` (finite non-bool number in [0,1]), `color_srgb` (six-digit #RRGGBB,
+normalized uppercase) and `geometry`. Absence remains absent until explicit Apply;
+it is not an implicit default or migration. Strict geometry validation also applies
+when OFF. With D=max(native width,height), alternatives are:
+
+- Oval: exactly `type:"oval"`, `center_xy:[x,y]`, `radii_xy:[rx,ry]`,
+  `rotation_degrees`, `softness`. Centre is within [0,width] × [0,height],
+  radii within [0.5,2D], rotation within [0,360), softness within [0.05,1].
+- Directional: exactly `type:"directional"`, `center_xy`, `rotation_degrees`,
+  `transition_width`, with the same centre/rotation bounds and width [0.5,2D].
+
+Initial draft: OFF, brightness 0.10, #FFFFFF, centre [(width-1)/2,(height-1)/2],
+rotation 0; oval radii [max(.5,.35*width),max(.5,.35*height)] and softness 1;
+directional width D. These defaults have no calibrated photographic meaning.
+Numeric UI percentages preserve fractions; slider changes are explicit.
+
+Native sample coordinates x/y are integer pixel centres. Rotate the offset from the
+centre clockwise into u=cos(theta)*dx+sin(theta)*dy and
+v=-sin(theta)*dx+cos(theta)*dy. Let S(t)=clamp(t,0,1)^2*(3-2*clamp(t,0,1)).
+Oval weight is S((1-hypot(u/rx,v/ry))/softness); directional weight is
+1-S(u/transition_width+.5). Decode tint RGB8/255 and brightness separately through
+sRGB. L16=encode_srgb(decoded_tint*decoded_brightness*weight), clamped and
+quantized to RGB16 with float64 ties-to-even. Generation uses at most 64-row
+temporary fields and never depends on alpha, base, crop or viewport. OFF retains
+the generated field; zero brightness or black tint gives exact zero.
+
+The optional manifest record has exactly `schema_version:1`,
+`algorithm:"linear-srgb-background-light-v1"`, `developed_id`, `width`, `height`,
+`settings`, `light_sha256`, `settings_sha256`. Bind
+`background_light/light_rgb16.tif` in assets and
+`background_light/settings.json` in files. Recipe, record and normalized JSON
+settings agree. Native registration/dimensions, source identity, RGB16/sRGB profile,
+hashes and exact inventories are validated even OFF and before warm/repeated reuse.
+Zero settings require an exactly zero raster. Other valid saved pixels are
+authoritative: native reading, comparison and delivery never regenerate L16.
+
+Keep saved base **B0** and light **L16** separate. Missing B0 means zero.
+When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)).
+Zero-light pixels copy B0 exactly; OFF uses B0 exactly. B1 is only the displayed
+backdrop. With foreground contribution P computed by the existing effects using
+**B0** as Fade into background's target, native Result is
+round(P+B1*(1-A)) once in encoded sRGB. Light never changes P or A. Opaque pixels
+remain exact; partially transparent flattened pixels change naturally, including
+protected ones. No alpha threshold, edge recolouring or second fade is introduced.
+BASE/stale comparisons remain all-effects-off black. Foreground-OFF and local
+reduction comparisons retain light. Black/gray/white and transparent diagnostics
+retain B0 as the fade target and exclude light from display.
+
+An exclusive schema 2 effects operation carries `background_light`, full native
+scope and existing master/base/input/authoring/candidate identities. Viewer POST
+also requires the raw `revision_manifest_sha256`, checked under the canonical
+writer lock, and rejects duplicate JSON keys at every depth. Only explicit Apply
+introduces or changes the saved light; enabled-only changes inherit exact field
+bytes. Explicit changed settings regenerate even OFF. Saved-only OFF submits the
+current saved geometry with `enabled=false` and preserves invalid/stale pending forms.
+Unrelated effects inherit light without consuming its root draft. Prepare/matte
+cannot introduce a new or changed light from an unapplied root draft. Same-source
+alpha repair inherits light without staling it; changed source/dimensions reject.
+State-last recovery, complete orphan restore, immutable assets and acceptance
+semantics remain unchanged.
+
+Native editable adds `background_light_rgb16.tif` and
+`background_light_settings.json` whenever a record exists, even OFF; B0 keeps
+`background_rgb16.tif`. Compact/default delivery still has five files.
+Native replay uses saved B0/L16, never the analytic generator. Add margins copies
+native Result and extends B1 edges. Match series generates output B0 and evaluates
+the analytic light from delivered settings using
+x_native=(X+.5-tx)/scale-.5, y_native=(Y+.5-ty)/scale-.5 across the full canvas.
+Reduced preview chooses X=floor((2*i+1)*output_width/(2*display_width)) and
+corresponding Y first. Geometry is not refitted or normalized to the preview.
+This is approximate preview sampling, not exact downsampling of a full render.
+Series metadata binds `background_light_transform` (scale, translation, native/output
+dimensions and sampling convention), the light record and native editable companion.
+Keep the pair; replay the series field from those delivered settings while using
+the existing premultiplied series kernel and B0 fade target. Subject bounds,
+sampling, source, alpha and retained foreground operands are unchanged.
+
 ## Requested Result deliveries
 
 Default export is exactly five regular files: `result_rgb16.tif`,
 `result_RGB8_VIEW.png`, `recipe.toml`, `manifest.json`, `README.txt`. Native output
 keeps the full original pixel dimensions, without upscaling or print sizing.
-Result follows the selected saved backdrop; absent background means black.
+Result follows the selected saved backdrop and optional Background light;
+absence of both means black. See [B0/B1 reconstruction](#saved-background-light).
 The TIFF is uncompressed processed sRGB uint16. The same-size PNG is RGB8; all
 delivered RGB/RGBA rasters embed the canonical sRGB ICC. Scalar16 editing masks
 remain exact and carry no ICC/gamma. A larger file container adds no captured detail.
@@ -1310,7 +1395,7 @@ Recovery uses the saved opacity only when the delivered shading record is enable
 disabled or absent shading means effective opacity zero, regardless of retained
 nonzero W/opacity. A missing W means zero. Keep retained editing settings unchanged.
 
-Schema-2 manifests identify `export_version=requested-result-v4`, selected revision,
+Schema-2 manifests identify `export_version=requested-result-v5`, selected revision,
 raw source/revision-manifest hashes, effective recipe hash, explicit draft status,
 mode/settings/geometry/algorithm, requested variants, native asset/effect identities,
 actual Python/NumPy/Pillow/tifffile encoding versions and profile digest. The
