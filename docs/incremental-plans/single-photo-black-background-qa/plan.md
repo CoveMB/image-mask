@@ -4,42 +4,52 @@ This public planning record preserves dated proposals and review history. Privat
 
 ## Current delivery and remaining obligations
 
-Reconciled 2026-10-26 against merged main `db907cf4603b1a8d40eabb7c32aa0937de1852df`, the maintained contracts and retained result evidence. **The complete implementation plan is not closed: I10 still has required empirical and human evidence gaps.** Feature delivery and photographic acceptance are narrower conclusions.
+Reconciled 2026-10-27 UTC against merged main `51af245e73c540edf367f2baaba204c74c1246f9`, maintained contracts, retained result evidence and the human's direct closure decision. **This implementation is completed within the human-approved revised scope. Remaining I10 elements are skipped for now and carried to the next test plan.** Deferral does not turn missing evidence into a pass or establish whole-program regular-use acceptance.
 
 | Scope | Current disposition | Remaining boundary |
 | --- | --- | --- |
-| I01–I09 and I11–I12 | Implemented feature scope and historical result records retained. | Do not treat component checks as I10 acceptance. |
-| I13–I19; post-I19 behavior/file-lifecycle audit and BA01/BA02 corrections | Qualified engineering delivery settled; human merged MRs18,20,23,24,26,27,28 and29. | The previous native stack is historical; no whole-program certification follows. |
+| I01–I09 and I11–I12 | Implemented feature scope and historical result records retained. | Existing component checks retain their own scope; they do not establish the deferred I10 outcomes. |
+| I13–I19; post-I19 behavior/file-lifecycle audit and BA01/BA02 corrections | Qualified engineering delivery settled; the human merged MRs18,20,23,24,26,27,28 and29. | The previous native stack remains historical. |
 | J11 and accepted pilots | Yellow flower rev-028, spider rev-006 and dragonfly rev-008 are human accepted with verified native and editable delivery. | Acceptance applies only to those revisions. The flower has no visible stem, so stem preservation is not applicable to that photograph. |
 | Generic Local sharpening | Implemented, documented and merged through MR29. | Existing captured detail only; no invented detail or automatic photographic acceptance. |
-| Viewer status-lock correction | [MR30](https://github.com/CoveMB/image-mask/pull/30) is open on signed `a5326d1c5d62e86fea3375595d49c069c5664a58`; three independent result scopes are clear and current-head CodeRabbit content review has no actionable findings. | 2,153 tests passed with three optional model skips. GitGuardian passes; no application Actions runs were observed. Human owns merge. |
-| I10 representative acceptance | **Open.** A real flower DNG and accepted photo results already exist. | Reconcile actual RAW precision, live model/backend outcomes, disconnected manual use, representative resource/timing and recovery/fresh-session evidence, and human regular-use acceptance. Reuse applicable proof rather than restarting pilots. |
-| Appearance Recipes and Soft Fade Reduction | Reviewed planning proposals retained. | No implementation is claimed or newly authorized by publishing these documents; they are not required follow-on work inferred from waiting. |
-| Local photo retention/alignment | A private16-entry picture catalogue is prepared. | Human keep/align/delete choices and an exact dependency-aware preview precede any migration or deletion. This optional storage disposition does not substitute for I10 proof. |
+| Viewer status-lock correction | The human merged [MR30](https://github.com/CoveMB/image-mask/pull/30); its three independent result scopes and no-actionable current-head CodeRabbit review remain retained. | Historical local evidence: 2,153 passed, three optional model skips. This closure adds no new application-test or hosted-CI claim. |
+| I10 representative acceptance | **Remaining elements deferred/skipped for this implementation closure by direct human decision.** A real flower DNG, prior CPU/MPS and recovery evidence, and accepted photo results already exist. | The next test plan owns reconciliation and still-missing technical/empirical/human checks. No regular-use decision or unobserved result is invented. |
+| Planning records | The human merged the14-file public planning reconciliation in [MR31](https://github.com/CoveMB/image-mask/pull/31). | Original unredacted local working records remain preserved; this MR records the later closure decision. |
+| Local photo retention/alignment | Human-selected, exactly previewed local-copy removal and one intact library relocation completed and verified. Already aligned reference cards remain in place; complex legacy/adoption migrations were explicitly skipped. | Original captures, kept complete editable/accepted dependencies and required evidence remain. No blanket cleanup or further migration is queued. |
+| Appearance Recipes and Soft Fade Reduction | Reviewed planning proposals retained. | They remain proposals, not implemented features or required follow-on work for this closure. |
 
 ### Current contract amendments
 
 - [README](../../../README.md), [file contract](../../../docs/file-contract.md), [workflow](../../../docs/workflow.md) and [validation](../../../docs/validation.md) own supported behavior and evidence labels.
-- Source-development approval and trimap confirmation are optional; validate an approval when one is recorded. Final photographic acceptance remains explicit. Earlier mandatory-development/trimap language below is historical.
-- The later approved reversible Local sharpening control supersedes the original general no-sharpening exclusion only within its documented source-detail and preservation contract.
+- Source-development approval and trimap confirmation are optional; validate an approval when recorded. Final photographic acceptance remains explicit. Earlier mandatory-development/trimap language below is historical.
+- The approved reversible Local sharpening control supersedes the original general no-sharpening exclusion only within its documented source-detail and preservation contract.
 - Final assisted exports include a complete editable companion; intermediate edits stay in the preserved project. Manual exports retain their documented opt-in editable mode.
-- Existing private launchers may target older isolated source. Documented merged-main commands are not proof of refreshed launcher or installed activation.
+- Existing private launchers may target older isolated source. Documented merged-main commands do not prove refreshed launcher or installed activation.
 - The separate lifecycle-test-plan review supplied planning feedback only. It did not implement tests or prove application restart, a real browser journey, live models or physical disconnection.
 
-### I10 follow-up and ownership
+### I10 carryover to the next test plan
 
-The orchestrator must first map usable retained results to the [regular-use acceptance runbook](qa-plan.md#regular-use-acceptance-runbook) and [current validation limits](../../../docs/validation.md). Missing technical checks need a concrete, authorized, evidence-bound execution packet; this documentation MR does not launch a new feature or test batch. Missing human observations stay human work.
+The direct human instruction to complete this implementation and skip the remaining I10 elements for now amends their current closure timing. The [regular-use acceptance runbook](qa-plan.md#regular-use-acceptance-runbook), original Q01–Q21/J1–J6 obligations and [validation limits](../../../docs/validation.md) remain available to the next test-plan author. Historical acceptance and useful proof stay intact; only missing or affected evidence needs renewal.
 
-The human must return disconnected manual-use and regular-use observations to the owning orchestration chat. For storage cleanup, the human replies there with catalogue IDs and keep/align, delete-local-copy or unsure choices; the orchestrator then prepares the exact preview. No extra RAW is needed merely because a historical summary called this a RAW gap.
+| Deferred remainder | Future owner and required disposition |
+| --- | --- |
+| RAW precision/development and live model/backend quality, fragile detail and seams | The next test-plan owner reconciles actual retained RAW/CPU/MPS proof and identifies what remains unproven. Do not infer that RAW was never processed or that a backend passed unobserved checks. |
+| Live-assisted-to-manual operation and physically disconnected manual authoring | The next test plan identifies any missing same-project guide/support/partial-lock and assistant-disconnected journey evidence; human observations remain human work. |
+| Representative interruption/recovery, saved-asset replay and resource/timing evidence | Reuse existing native recovery and saved-assets-only proof; scope missing cold/warm load, processing/export, memory-pressure and disk-growth measurements to the actual combined candidate/environment. |
+| Fresh-session documentation, keyboard/status/recovery usability and final combined-workflow review | The next test plan owns still-missing combined evidence and applicable expert/human review; static or stub checks cannot stand in for observed use. |
+| Regular-use acceptance | The human remains the decision-maker after the future plan presents actual evidence and its limits. Current implementation closure supplies no such acceptance. |
 
-### Evidence retention and cleanup review — current disposition
+No new test plan, execution chat, model run or test batch is created or authorized by this record. There is no remaining implementation task queued in this plan. Reopening deferred testing requires the next plan's actual scope and authority.
 
-- **Keep:** original captures, complete accepted/editable dependencies, original unredacted planning records and durable verification/review evidence. These remain available to their current consumers.
-- **Hold:** failure/recovery diagnostics, retained offline runtime/model assets and evidence still serving I10 or the photo-retention decision.
-- **Cleanup-candidate:** none approved. Catalogue choices lead to a separate exact proposal, not automatic deletion.
-- **Unknown:** unclassified local files and synthetic/recovery fixtures retain protection until ownership, references and purpose are established.
+### Evidence retention and cleanup review — final disposition
 
-This is a bounded documentation/retention disposition, not a disk-wide inventory or cleanup result. No photo, model, recovery record or unknown data is removed; no migration, reprocessing, new model run or human observation is inferred.
+- **Keep:** original captures; complete kept editable/accepted dependencies and deliveries; unredacted local planning records; durable verification/review evidence and original/amended obligations for the next test plan.
+- **Hold:** failure/recovery diagnostics and retained offline runtime/model assets for their continuing proof, recovery and future-testing consumers. Deferring I10 does not make them disposable.
+- **Performed:** the separate, explicitly authorized exact local-copy cleanup and verified intact-library relocation. Its detailed private receipts and current photo index remain local; implementation closure grants no additional deletion.
+- **Cleanup-candidate:** no further cleanup is queued under this closure.
+- **Unknown:** unclassified local files and synthetic/recovery fixtures remain protected until ownership and consumers are established.
+
+This terminal retention review is complete for the selected documentation/implementation closure. It is not a disk-wide inventory, broad cleanup result, release certification, new photographic acceptance or proof that the deferred I10 checks passed. The dated records below preserve their original context.
 
 ## Dated planning record
 

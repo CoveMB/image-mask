@@ -2,7 +2,7 @@
 
 This public planning record preserves dated proposals and review history. Private execution receipts, machine-specific paths and photo locations are retained locally; they are not public runtime dependencies. Earlier hashes identify the historical candidates, not this edited public copy. Dated instructions below do not grant new execution or provider authority.
 
-Current status and remaining obligations are owned by [the plan reconciliation](plan.md#current-delivery-and-remaining-obligations). The dated material below preserves earlier preparation, verification and review context; it is not the current next-action queue.
+Current implementation closure, the direct human I10 deferral and future test-plan ownership are recorded once in [the plan reconciliation](plan.md#current-delivery-and-remaining-obligations). **Implementation completed; remaining I10 elements skipped for now and carried to the next test plan.** The detailed checks below remain historical requirements/evidence for reuse, not passed observations or a current execution queue. This record launches no new testing or compatibility work.
 
 ## Dated planning record
 
