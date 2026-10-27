@@ -8,6 +8,7 @@ import numpy as np
 
 from .assets import revision_asset
 from .exposure import highlight_weight, linear_to_rgb16, rasterize_effect_area, srgb_to_linear
+from .fade_reduction import read_fade_reduction
 from .project import ProjectError, digest
 from .repair import scalar16
 
@@ -35,6 +36,7 @@ def apply_shadow_fade(
     support: np.ndarray,
     protection: np.ndarray,
     settings: dict[str, Any],
+    reduction16: np.ndarray | None = None,
 ) -> np.ndarray:
     """Alpha gates eligibility only; excluded and zero-weight RGB are copied exactly."""
     validate_shadow_fade(settings)
@@ -52,6 +54,12 @@ def apply_shadow_fade(
         raise ProjectError(
             "Shadow fade requires aligned RGB16/A16/support16 and boolean protection"
         )
+    if reduction16 is not None and (
+        not isinstance(reduction16, np.ndarray)
+        or reduction16.dtype != np.uint16
+        or reduction16.shape != alpha.shape
+    ):
+        raise ProjectError("Shadow fade reduction requires aligned uint16 samples")
     result = foreground.copy()
     eligible = (alpha != 0) & (support != 0) & ~protection
     if not settings["enabled"] or settings["amount"] == 0 or not eligible.any():
@@ -63,6 +71,8 @@ def apply_shadow_fade(
         / 65535
         * (1 - settings["preserve_highlights"] * highlights)
     )
+    if reduction16 is not None and reduction16.any():
+        weight *= 1 - reduction16[eligible].astype(np.float64) / 65535
     changed = weight != 0
     values = foreground[eligible].copy()
     values[changed] = linear_to_rgb16(
@@ -75,6 +85,48 @@ def apply_shadow_fade(
 SHADOW_FADE_FILES = ("support16.png", "protection16.png", "alpha16.png", "settings.json")
 
 
+def shadow_fade_files(record: dict[str, Any]) -> tuple[str, ...]:
+    """Select the exact inventory of the immutable saved record."""
+    if (
+        not isinstance(record, dict)
+        or type(record.get("schema_version")) is not int
+        or record["schema_version"] not in (2, 3)
+    ):
+        raise ProjectError("Invalid saved Shadow fade identity/schema/status")
+    files: tuple[str, ...] = SHADOW_FADE_FILES
+    if record.get("area_sha256") is not None:
+        files += ("area.json",)
+    if record["schema_version"] == 3:
+        files += ("reduction16.png", "reduction.json")
+    return files
+
+
+def validate_shadow_fade_bindings(project: Path, directory: Path, manifest: dict[str, Any]) -> None:
+    """Reject unbound and extra operands before any cached semantic validation."""
+    from .assets import revision_hashes
+
+    prefix = "effects/shadow-fade/"
+    saved = directory / prefix
+    listed = {name for name in revision_hashes(manifest) if name.startswith(prefix)}
+    if "shadow_fade" not in manifest:
+        if saved.exists() or saved.is_symlink() or listed:
+            raise ProjectError("Unbound saved Shadow fade operands")
+        return
+    required = {prefix + name for name in shadow_fade_files(manifest["shadow_fade"])}
+    if listed != required or "base_alpha16.png" not in revision_hashes(manifest):
+        raise ProjectError("Incomplete Shadow fade assets or extra bound operands")
+    try:
+        if (
+            saved.is_symlink()
+            or {path.name for path in saved.iterdir()}
+            != {Path(name).name for name in manifest.get("files", {}) if name.startswith(prefix)}
+            or any(path.is_symlink() or not path.is_file() for path in saved.iterdir())
+        ):
+            raise ProjectError("Invalid saved Shadow fade inventory")
+    except OSError as error:
+        raise ProjectError("Missing saved Shadow fade operands") from error
+
+
 def read_shadow_fade(
     project: Path, directory: Path, manifest: dict[str, Any], alpha: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]] | None:
@@ -82,6 +134,7 @@ def read_shadow_fade(
     if "shadow_fade" not in manifest:
         return None
     record = manifest["shadow_fade"]
+    shadow_fade_files(record)
     keys = {
         "schema_version",
         "enabled",
@@ -96,11 +149,13 @@ def read_shadow_fade(
         "candidate_comparison",
         "scope_xyxy",
     }
+    if record.get("schema_version") == 3:
+        keys |= {"reduction_sha256", "reduction_area_sha256", "reduction_algorithm"}
     if (
         not isinstance(record, dict)
         or set(record) != keys
         or type(record["schema_version"]) is not int
-        or record["schema_version"] != 2
+        or record["schema_version"] not in (2, 3)
         or type(record["enabled"]) is not bool
         or type(record["stale"]) is not bool
         or type(record["candidate_comparison"]) is not bool
@@ -156,6 +211,7 @@ def read_shadow_fade(
             raise ProjectError("Saved Shadow fade area differs from registered operands")
     elif (saved / "area.json").exists():
         raise ProjectError("Unbound saved Shadow fade authored area")
+    read_fade_reduction(project, directory, manifest, "shadow_fade", alpha)
     return support, protection != 0, record
 
 
@@ -167,6 +223,7 @@ def selected_shadow_fade(
     manifest: dict[str, Any],
     *,
     shadow_fade_off: bool = False,
+    shadow_reduction_off: bool = False,
 ) -> np.ndarray:
     saved = read_shadow_fade(project, directory, manifest, alpha)
     if saved is None:
@@ -175,4 +232,9 @@ def selected_shadow_fade(
     settings = dict(record["settings"])
     if shadow_fade_off or record["stale"]:
         settings["enabled"] = False
-    return apply_shadow_fade(foreground, alpha, support, protection, settings)
+    reduction = (
+        None
+        if shadow_reduction_off
+        else read_fade_reduction(project, directory, manifest, "shadow_fade", alpha)
+    )
+    return apply_shadow_fade(foreground, alpha, support, protection, settings, reduction)

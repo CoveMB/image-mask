@@ -475,8 +475,8 @@ accepted/candidate gate; it retains operands and protection. Invalid or corrupte
 saved assets must be recovered from a valid revision rather than silently repaired.
 Other stale effects require their own recovery. Earlier accepted work remains saved.
 
-To reduce Fade into background in selected areas, first save its settings, then use
-**Reduce fade locally** and **Canvas authoring mode → Fade reduction**. Draw a brush
+To reduce Fade into background or Shadow fade in selected areas, first save that effect's settings, then use
+**Reduce fade locally**, choose its **Target**, and select **Canvas authoring mode → Fade reduction**. Draw a brush
 stroke or enter a half-open native rectangle and choose **Add reduction rectangle**.
 Set the native brush radius, inward feather and reduction amount. Select a saved
 region to edit its amount/feather, update a rectangle or remove it. Overlaps use
@@ -489,8 +489,14 @@ Drawing, numeric changes and **Clear target reduction** only change the draft.
 Choose **Apply reduction** to save a new revision; use an accepted base or explicitly
 select candidate comparison. **Cancel / reload saved reduction** discards this
 target's unapplied edits. Saved coverage displays the stored reduction, while
-**Reduction OFF** shows the original fade strength. **Compare Fade OFF** turns off
-the entire spatial fade for comparison. These views do not save changes.
+**Reduction OFF** shows the selected effect's original fade strength. **Compare Fade OFF** and
+**Compare Shadow fade OFF** turn off their entire effect for comparison. These views do not save changes.
+Each target keeps its own draft. Switching targets, clearing or reloading one does not erase the other's edits;
+a successful save makes an older draft on the other target stale.
+
+Shadow reduction restores its unfaded input by reducing the darkening exponent. It leaves
+Fade into background's settings and reduction unchanged. Its brighter input can change
+downstream highlight preservation, so compare the complete saved result as well as each effect.
 
 A draft retains its original revision identity. If saved inputs change, it stays
 visible as stale and must be reloaded before Apply; failed saves and late responses

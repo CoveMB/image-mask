@@ -60,6 +60,7 @@ def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_r
         scalar_sample,
         scalar_weights,
     )
+    from test_shadow_fade import fade_request, scalar_fade
     from test_spatial_fade import spatial_request, spatial_settings
 
     from blackmask.project import digest
@@ -71,6 +72,7 @@ def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_r
     protected[1, 3] = 65535
     Image.fromarray(protected).save(project / "protected.png")
     settings = spatial_settings(6, 4)
+    settings["preserve_highlights"] = 0.65
     settings["oval"].update(center_xy=[0, 0], inner_radii_xy=[0.5, 0.5], transition_width=0.5)
     operations.apply_operation(
         project, spatial_request(project, settings, spatial_fade_protection_file="protected.png")
@@ -81,6 +83,23 @@ def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_r
     result = operations.apply_operation(project, reduction_request(project, document))
     _, saved = saved_reduction(project, result["revision"])
     assert saved.protection[1, 3] and saved.weight16[1, 3] > 0 and saved.reduction16[1, 3] == 32768
+    from test_exposure import rectangle as effect_rectangle
+
+    operations.apply_operation(
+        project,
+        fade_request(
+            project,
+            amount=0.35,
+            preserve=0.4,
+            area={
+                "regions": [effect_rectangle("all", [0, 0, 6, 4])],
+                "protection": [effect_rectangle("protected", [3, 1, 4, 2])],
+            },
+        ),
+    )
+    result = operations.apply_operation(
+        project, reduction_request(project, document, target="shadow_fade")
+    )
     selected = result["revision"]
     flat = export_project(project, revision=selected, draft=True, variants=("transparent",))
     assert not flat.get("editable_companion")
@@ -135,25 +154,54 @@ from PIL import Image
                 scalar_weights,
                 scalar_matrices,
                 scalar_sample,
+                scalar_fade,
             )
         )
         + r"""
 root=Path(sys.argv[1])
 def scalar(path):
  with Image.open(path) as image: return np.array(image)
-def operands(directory, factor=1):
+def highlights(foreground):
+ result=np.empty(foreground.shape[:2])
+ for y,x in np.ndindex(result.shape):
+  linear=[v/65535/12.92 if v/65535<=0.04045 else ((v/65535+0.055)/1.055)**2.4 for v in foreground[y,x]]
+  luminance=sum(v*c for v,c in zip(linear,(0.2126,0.7152,0.0722)))
+  t=max(0,min(1,(luminance-.10)/.65)); result[y,x]=t*t*(3-2*t)
+ return result
+def operands(directory, factor=1, shadow_factor=1):
  record=json.loads((directory/'manifest.json').read_bytes())
  foreground=tifffile.imread(directory/'foreground_rgb16.tif').astype(float)
+ unfaded=tifffile.imread(directory/'unfaded_foreground_rgb16.tif')
  alpha=scalar(directory/'alpha16.png').astype(float)/65535
+ shadow=json.loads((directory/'shadow_fade_settings.json').read_bytes())
+ assert shadow['schema_version']==3 and shadow['enabled']
+ support=scalar(directory/'shadow_fade_support16.png')
+ shadow_protected=scalar(directory/'shadow_fade_protection16.png')!=0
+ shadow_reduction=scalar(directory/'shadow_fade_reduction16.png').astype(float)/65535
+ assert json.loads((directory/'shadow_fade_reduction.json').read_bytes())['regions']
+ assert np.any(shadow_protected & (alpha>0) & (alpha<1) & (support>0) & (shadow_reduction<1))
+ replay=unfaded.copy(); doubled=foreground.copy()
+ for y,x in np.ndindex(alpha.shape):
+  if alpha[y,x]>0 and support[y,x]>0 and not shadow_protected[y,x]:
+   settings=shadow['settings']; r=(1-(1-shadow_reduction[y,x])**shadow_factor)*65535
+   replay[y,x]=scalar_fade(unfaded[y,x],int(support[y,x]),settings['amount'],settings['preserve_highlights'],r)
+   doubled[y,x]=scalar_fade(foreground[y,x],int(support[y,x]),settings['amount'],settings['preserve_highlights'],shadow_reduction[y,x]*65535)
+ if shadow_factor==1:
+  np.testing.assert_array_equal(replay,foreground)
+  assert np.any(doubled!=foreground),'fixture must detect applying Shadow fade twice'
+ foreground=replay.astype(float)
  weight=scalar(directory/'spatial_fade_weight16.png').astype(float)/65535
  protected=scalar(directory/'spatial_fade_protection16.png')!=0
  reduction=scalar(directory/'spatial_fade_reduction16.png').astype(float)/65535
  assert record['spatial_fade']['schema_version']==2
- assert record['spatial_fade']['settings']['preserve_highlights']==0
+ preserve=record['spatial_fade']['settings']['preserve_highlights']; assert preserve>0
  assert np.any(protected & (alpha>0) & (alpha<1) & (weight>0) & (reduction<1))
  assert json.loads((directory/'spatial_fade_reduction.json').read_bytes())['regions']
- amount=weight*(1-reduction)**factor
+ amount=weight*(1-preserve*highlights(foreground))*(1-reduction)**factor
  amount[protected | (alpha==0)]=0
+ stale_highlights=weight*(1-preserve*highlights(unfaded))*(1-reduction)**factor
+ stale_highlights[protected | (alpha==0)]=0
+ assert np.any(amount!=stale_highlights),'fixture must exercise downstream highlight recalculation'
  return foreground,alpha,amount
 def composite(foreground,alpha,amount,background):
  straight=np.empty_like(foreground)
@@ -174,6 +222,8 @@ for directory in root.iterdir():
  for wrong in (0,2):
   f,a,q=operands(directory,wrong)
   assert np.any(composite(f,a,q,background)[0]!=actual),'fixture must detect dropped/double reduction'
+  f,a,q=operands(directory,shadow_factor=wrong)
+  assert np.any(composite(f,a,q,background)[0]!=actual),'fixture must detect dropped/double Shadow reduction'
  if (directory/'transparent_RGBA8_VIEW.png').exists():
   np.testing.assert_array_equal(rgba,scalar(directory/'transparent_RGBA8_VIEW.png'))
  native_count+=1

@@ -150,17 +150,18 @@ class ReviewServer(ThreadingHTTPServer):
                         ).read_bytes()
                     )
                 reduction_areas = {}
-                if "spatial_fade" in manifest:
-                    reduction_areas["spatial_fade"] = (
-                        json.loads(
-                            saved_asset(
-                                self.project,
-                                f"revisions/{path.name}/effects/spatial-fade/reduction.json",
-                            ).read_bytes()
+                for target, version in (("spatial_fade", 2), ("shadow_fade", 3)):
+                    if target in manifest:
+                        reduction_areas[target] = (
+                            json.loads(
+                                saved_asset(
+                                    self.project,
+                                    f"revisions/{path.name}/effects/{target.replace('_', '-')}/reduction.json",
+                                ).read_bytes()
+                            )
+                            if manifest[target]["schema_version"] == version
+                            else {"schema_version": 1, "regions": []}
                         )
-                        if manifest["spatial_fade"]["schema_version"] == 2
-                        else {"schema_version": 1, "regions": []}
-                    )
                 exposure = dict(manifest.get("local_exposure", {"enabled": False, "stale": False}))
                 if "local_exposure" in manifest and manifest["final_acceptable"]:
                     saved_review = json.loads(
@@ -305,7 +306,7 @@ class ReviewServer(ThreadingHTTPServer):
                 ("off", "coverage") if reduction else ("off", "combined", "effective", "selected")
             )
             or reduction
-            and data.get("target") != "spatial_fade"
+            and data.get("target") not in ("spatial_fade", "shadow_fade")
             or set(data)
             != required
             | ({"shape_id"} if data.get("view") == "selected" else set())
@@ -342,7 +343,13 @@ class ReviewServer(ThreadingHTTPServer):
                 captured[f"revisions/{state['working_revision']}/manifest.json"] = current_raw
             stale = effects_stale(current) or effects_stale(manifest)
             foreground, alpha, loaded = saved_layers(
-                self.project, data["revision"], state["developed_id"], effects_off=stale
+                self.project,
+                data["revision"],
+                state["developed_id"],
+                effects_off=stale,
+                shadow_reduction_off=reduction
+                and data["target"] == "shadow_fade"
+                and data["view"] == "off",
             )
             if loaded != manifest:
                 raise ProjectError("Stale spatial preview layers")
@@ -351,8 +358,8 @@ class ReviewServer(ThreadingHTTPServer):
             x0, y0, x1, y1 = crop
             directory = saved_asset(self.project, f"revisions/{data['revision']}")
             saved = read_spatial_fade(self.project, directory, manifest, alpha)
-            if reduction and saved is None:
-                raise ProjectError("Fade reduction preview requires a saved spatial fade")
+            if reduction and data["target"] not in manifest:
+                raise ProjectError("Fade reduction preview requires a saved selected effect")
             view = data["view"]
             label = "Saved geometric strength; protection and highlights excluded"
             if view == "off":
@@ -365,7 +372,12 @@ class ReviewServer(ThreadingHTTPServer):
                 )
                 comparison_spatial = (
                     SpatialFadeOperands(
-                        saved.weight16[y0:y1, x0:x1], saved.protection[y0:y1, x0:x1], saved.record
+                        saved.weight16[y0:y1, x0:x1],
+                        saved.protection[y0:y1, x0:x1],
+                        saved.record,
+                        saved.reduction16[y0:y1, x0:x1]
+                        if data["target"] == "shadow_fade" and saved.reduction16 is not None
+                        else None,
                     )
                     if reduction and saved is not None and not stale
                     else None
@@ -391,16 +403,27 @@ class ReviewServer(ThreadingHTTPServer):
                     else "Fade OFF; cleanup, local exposure, Shadow fade and selected background retained"
                 )
                 if reduction:
-                    label = "Saved reduction OFF; Fade into background settings and other effects retained"
+                    target_label = (
+                        "Shadow fade" if data["target"] == "shadow_fade" else "Fade into background"
+                    )
+                    label = f"Saved {target_label} reduction OFF; effect settings and other effects retained"
             elif view == "coverage":
+                from .fade_reduction import read_fade_reduction
+
+                reduction16 = read_fade_reduction(
+                    self.project, directory, manifest, data["target"], alpha
+                )
                 pixels = (
                     np.zeros((y1 - y0, x1 - x0), np.uint8)
-                    if saved is None or saved.reduction16 is None
-                    else np.rint(saved.reduction16[y0:y1, x0:x1].astype(np.float64) / 257).astype(
+                    if reduction16 is None
+                    else np.rint(reduction16[y0:y1, x0:x1].astype(np.float64) / 257).astype(
                         np.uint8
                     )
                 )
-                label = "Saved fade reduction coverage; unapplied draft excluded"
+                target_label = (
+                    "Shadow fade" if data["target"] == "shadow_fade" else "Fade into background"
+                )
+                label = f"Saved {target_label} reduction coverage; unapplied draft excluded"
             elif view == "combined":
                 pixels = (
                     np.zeros((y1 - y0, x1 - x0), np.uint8)

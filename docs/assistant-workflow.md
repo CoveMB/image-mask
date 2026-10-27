@@ -56,13 +56,16 @@ human photographic acceptance.
 
 For requested local reduction, use the same brush/rectangle controls or an exclusive
 schema-2 `effects` request containing `fade_reduction:{"target":"spatial_fade","area":...}`
+or the same exclusive field with `target:"shadow_fade"`
 with the common identities, scope and explicit candidate choice. The
 [reduction contract](file-contract.md#local-fade-reduction) defines the bounded
 geometry and saved dependencies. Scope must contain both old and replacement
 nonzero reduction. Do not substitute alpha edits, effect disable or a changed
 oval/arc. The target must have a current saved alpha dependency even while OFF.
 Coverage and reduction-OFF comparisons use saved state; draft outlines are not a
-rendered result. Keep unrelated effects and human photographic acceptance separate.
+rendered result. Shadow reduction changes its exponent weight; downstream spatial highlights
+are recalculated from the changed Shadow result, with spatial settings and reduction retained.
+Keep unrelated effects and human photographic acceptance separate.
 
 ## Inspect and classify
 

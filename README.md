@@ -73,7 +73,7 @@ See [Local sharpening](docs/workflow.md#local-sharpening) for limits and recover
 **Fade into background** blends subject colour toward the chosen background using
 an editable oval, independently directed arcs, or both. It preserves alpha and
 keeps Shadow fade independent. Local **fade reduction** brushes and rectangles can
-reduce this effect without changing the saved oval, arcs or alpha. See the [offline walkthrough](docs/workflow.md#fade-into-background)
+reduce either effect independently without changing saved areas, protection or alpha. See the [offline walkthrough](docs/workflow.md#fade-into-background)
 for shape controls, saved strength maps, recovery and portable two-folder exports.
 
 Background appearance saves a tone and broad variation behind the matte. New

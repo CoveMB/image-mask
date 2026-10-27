@@ -140,6 +140,50 @@ def test_fade_reduction_completion_preserves_newer_or_stale_draft(completion):
     )
 
 
+@pytest.mark.parametrize("target", ["spatial_fade", "shadow_fade"])
+def test_reduction_target_switch_and_late_save_keep_other_draft(target):
+    run_page(
+        "const target="
+        + repr(target)
+        + r""";
+ await ready();
+ const other=target==='spatial_fade'?'shadow_fade':'spatial_fade';
+ servedState.revisions[0].fade_reduction_areas={spatial_fade:{schema_version:1,regions:[]},shadow_fade:{schema_version:1,regions:[]}};
+ await refresh(true);
+ assert.deepEqual($('reductionTarget').options.map(option=>option.value),['spatial_fade','shadow_fade']);
+ $('reductionTarget').value=target;await $('reductionTarget').onchange();
+ assert.equal($('reductionTarget').value,target);
+ $('reductionRadius').value='3';$('reductionFeather').value='0';$('reductionAmount').value='50';
+ $('reductionRectangle').value='10,20,30,40';await $('reductionAddRectangle').onclick();
+ const submittedDraft=fadeReductionDrafts.get(target);
+ const originalFetch=fetch;
+ globalThis.fetch=async(path,options)=>{if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return originalFetch(path,options);};
+ await $('reductionApply').onclick();const sent=posts.at(-1);
+ assert.equal(sent.fade_reduction.target,target);
+ $('reductionTarget').value=other;await $('reductionTarget').onchange();
+ assert.equal($('reductionTarget').value,other);
+ $('reductionRectangle').value='40,40,60,60';await $('reductionAddRectangle').onclick();
+ const otherDraft=fadeReductionDrafts.get(other),otherArea=structuredClone(otherDraft.area);
+ assert(otherDraft.dirty);assert.equal(posts.length,1);
+ servedState.working_revision='rev-002';
+ servedState.revisions.push({...structuredClone(servedState.revisions[0]),revision:'rev-002',revision_manifest_sha256:'b'.repeat(64),
+   fade_reduction_areas:{[target]:structuredClone(sent.fade_reduction.area),[other]:{schema_version:1,regions:[]}}});
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-002',parent:'rev-001',reused:false}};
+ await refresh();
+ assert.equal($('reductionTarget').value,other);
+ assert.equal(fadeReductionDrafts.get(target).dirty,false);
+ assert.deepEqual(fadeReductionDrafts.get(target).area,submittedDraft.area);
+ assert.equal(fadeReductionDrafts.get(other),otherDraft);assert.deepEqual(otherDraft.area,otherArea);
+ assert($('reductionDraftStatus').textContent.includes('Stale'));
+ await $('reductionApply').onclick();assert.equal(posts.length,1);
+ await $('reductionReload').onclick();assert.equal(fadeReductionDrafts.get(other).dirty,false);
+ $('reductionTarget').value=target;await $('reductionTarget').onchange();
+ await $('reductionClear').onclick();assert.equal(fadeReductionDrafts.get(target).area.regions.length,0);
+ assert.equal(fadeReductionDrafts.get(other).area.regions.length,0);assert.equal(posts.length,1);
+ """
+    )
+
+
 def test_spatial_authoring_uses_stable_independent_shapes_and_cancel_preserves_other_drafts():
     run_page(r"""
  servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);

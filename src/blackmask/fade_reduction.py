@@ -88,20 +88,22 @@ def read_fade_reduction(
     """Read bound operands; the project semantic cache owns geometry replay."""
     from .assets import revision_asset
 
-    if effect != "spatial_fade":
+    targets = {"spatial_fade": ("spatial-fade", 1), "shadow_fade": ("shadow-fade", 2)}
+    if effect not in targets:
         raise ProjectError("Unknown fade reduction target")
+    folder, legacy_version = targets[effect]
     record = manifest.get(effect)
-    if record is None or record["schema_version"] == 1:
+    if record is None or record["schema_version"] == legacy_version:
         return None
-    if record.get("reduction_algorithm") != REDUCTION_ALGORITHM:
+    if (
+        type(record.get("schema_version")) is not int
+        or record["schema_version"] != legacy_version + 1
+        or record.get("reduction_algorithm") != REDUCTION_ALGORITHM
+    ):
         raise ProjectError("Invalid saved fade reduction algorithm")
     try:
-        raster = revision_asset(
-            project, directory, manifest, "effects/spatial-fade/reduction16.png"
-        )
-        document = revision_asset(
-            project, directory, manifest, "effects/spatial-fade/reduction.json"
-        )
+        raster = revision_asset(project, directory, manifest, f"effects/{folder}/reduction16.png")
+        document = revision_asset(project, directory, manifest, f"effects/{folder}/reduction.json")
         document_bytes = document.read_bytes()
         if digest(raster.read_bytes()) != record.get("reduction_sha256") or digest(
             document_bytes

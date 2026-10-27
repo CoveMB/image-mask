@@ -685,7 +685,7 @@ execution identity can create a meaningful small revision even if pixels agree.
 There is no historical request search, registry or new cache engine. The explicit
 effects execution version must change when equivalence, validation or arithmetic
 semantics change. Existing native model/tile cache invalidation stays independent.
-Current `validated-effects-v5` includes local fade reduction and covers all seven effects, including Fade into background's
+Current `validated-effects-v6` binds both local fade reduction targets and covers all seven effects, including Fade into background's
 validated nested settings, algorithm, actual explicit protection bytes and all four
 saved spatial operands. Its output binding includes OFF and inherited spatial state;
 new output is bound only after generation, allowing the first equivalent repeat to
@@ -970,8 +970,8 @@ identifies the durably published output and any remaining duplicate-stage files.
 ### Local fade reduction
 
 The exclusive schema-2 `effects` request uses the common identity, scope and
-`candidate_comparison` fields plus exactly `fade_reduction:{"target":"spatial_fade","area":...}`.
-It requires an existing validated spatial effect, a current alpha dependency even
+`candidate_comparison` fields plus exactly `fade_reduction:{"target":"spatial_fade","area":...}`
+or `target:"shadow_fade"` in that same field. It requires an existing validated selected effect, a current alpha dependency even
 when disabled, and an accepted base or explicit candidate comparison. Scope contains
 the union of old and replacement nonzero reduction; the viewer sends full native
 scope. It changes neither the effect switch, geometric W, protection, source,
@@ -986,12 +986,13 @@ points are validated before raster allocation. Using the existing quantized supp
 `S_i16`, compute `R16=round(max_i(amount_i*S_i16))` once, ties-to-even. Empty gives
 zero. Overlap never accumulates. Scratch holds one shape at a time, not all rasters.
 
-Only an explicit reduction edit upgrades the spatial record from 1 to 2. Record 2
-adds exactly `reduction_sha256`, `reduction_area_sha256` and
+Only an explicit reduction edit upgrades the spatial record from 1 to 2 or the Shadow
+record from 2 to 3. Each new version adds exactly `reduction_sha256`, `reduction_area_sha256` and
 `reduction_algorithm:"native-support-max-reduction-v1"`. Its closed inventory adds
-shared `effects/spatial-fade/reduction16.png` and revision-local `reduction.json`.
+shared `effects/spatial-fade/reduction16.png` or `effects/shadow-fade/reduction16.png`
+and revision-local `reduction.json` in that target's directory.
 Legacy records mean zero reduction and are not rewritten. Clear saves zero/empty
-in a new record 2 revision. Readers check hashes, native dimensions and geometry
+in a new revision retaining the new record version. Readers check hashes, native dimensions and geometry
 replay even OFF; missing, extra, unbound, future and inconsistent operands fail
 on cold and warm reads. Cache clear never owns these permanent operands.
 
@@ -1004,12 +1005,22 @@ review and series consumers use the same q. Native editable delivery adds
 add no editing bundle. Standalone reconstruction must apply this factor before
 native blending or series sampling of `A*q`, never interpolate already-faded RGB.
 
+For Shadow fade, multiply its existing support/highlight exponent weight by
+`1-R16/65535` before `gain=2**(-6*amount*weight)`. Exact copy/protection paths and
+alpha eligibility remain unchanged. Native editable delivery adds
+`shadow_fade_reduction16.png` and `shadow_fade_reduction.json`, including OFF.
+Replay Shadow once from `unfaded_foreground_rgb16.tif`; selected foreground already
+includes Shadow and must not be faded again. Recompute downstream spatial highlights
+from that selected RGB, retaining spatial W/protection/settings/reduction independently.
+
 Viewer reduction saves additionally require raw `revision_manifest_sha256`, checked
 under the project writer lock and excluded from the persisted operation. Authenticated
 `POST /api/fade-reduction-preview` takes exactly `developed_id`, `revision`, raw
-`revision_manifest_sha256`, `crop_xyxy`, `target:"spatial_fade"`, and `view` (`coverage`
+`revision_manifest_sha256`, `crop_xyxy`, `target` (`spatial_fade` or `shadow_fade`), and `view` (`coverage`
 or `off`). Only `off` may add `panel` (`result`, `black`, `gray`, `white`). OFF removes
-reduction for comparison while retaining the saved effect switch and settings.
+only the selected reduction for comparison while retaining the saved effect switch and settings.
+Shadow reduction OFF rerenders upstream Shadow, then recomputes downstream spatial
+highlights with the saved spatial reduction. Whole-effect OFF and BASE remain distinct.
 Responses echo the request and bind a labelled PNG8 to the saved crop. Preview/save
 JSON rejects duplicate keys. The existing body cap, preview lock, identity rechecks
 and local authentication apply. Snapshots expose validated `fade_reduction_areas`
@@ -1017,7 +1028,7 @@ per saved target, empty for legacy and omitted for absent targets.
 
 Drafts retain their captured raw identity and version. Only matching target,
 identity, submitted version and saved result can clear a submitted draft; later
-edits and failures retain it. Old readers may reject record 2. Recovery is updated
+edits and failures retain it. Old readers may reject spatial record 2 or Shadow record 3. Recovery is updated
 software or preserved pre-feature revisions/exports, never in-place migration or
 automatic deletion. Human photographic acceptance remains separate.
 
@@ -1142,7 +1153,8 @@ Start every render from unfaded RGB16, never from flattened or previously faded
 pixels. Decode normalized sRGB with threshold .04045. In float64, compute linear
 luminance `Y = .2126 R + .7152 G + .0722 B`, `t = clip((Y-.10)/.65,0,1)`,
 `h = t*t*(3-2*t)`, `w = (support16/65535)*(1-preserve_highlights*h)` and
-`gain = 2**(-6*amount*w)`. Multiply linear RGB by gain, encode at threshold
+`gain = 2**(-6*amount*w)`. With saved [local reduction](#local-fade-reduction), multiply
+`w` by `1-R16/65535` before computing gain. Multiply linear RGB by gain, encode at threshold
 .0031308 and quantize once with ties-to-even RGB16. OFF, amount 0, zero effective
 weight, zero alpha, zero support and protected RGB take exact copy paths. Alpha
 only gates eligibility; partial alpha does not scale the gain and never changes.
@@ -1153,11 +1165,13 @@ No detail synthesis, alpha erosion or new compositing mode occurs.
 Immutable `effects/shadow-fade/` contains `support16.png`, `protection16.png`,
 `alpha16.png`, `settings.json`, and optional `area.json`. Every asset and the
 revision's `base_alpha16.png` are manifest-bound, including prepared revisions.
-The optional manifest `shadow_fade` record has exactly `schema_version=2`,
+The legacy optional manifest `shadow_fade` record has exactly `schema_version=2`,
 `enabled`, `settings`, `stale`, `developed_id`,
 `algorithm="linear-srgb-shadow-fade-v1"`, `scope_xyxy`, `candidate_comparison`,
 `support_sha256`, `protection_sha256`, `alpha_sha256`, `area_sha256` (null for
-scalar input). Settings JSON equals the record. Hashes, types, dimensions,
+scalar input). Explicit local reduction adds the version-3 fields/assets defined
+in [Local fade reduction](#local-fade-reduction); amount/area changes and OFF preserve them.
+Settings JSON equals the record. Hashes, types, dimensions,
 categorical protection, geometry equality and stale/dependency status validate
 even OFF. Unbound area files reject before warm-cache return. Bounded semantic
 caches retain no image arrays and never bypass current asset hashing.

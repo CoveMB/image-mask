@@ -13,18 +13,28 @@ from blackmask import operations
 from blackmask.project import ProjectError, load_developed, project_lock, read_project
 
 
-def test_fade_reduction_viewer_save_snapshot_and_saved_comparisons(tmp_path):
+@pytest.mark.parametrize("target", ["spatial_fade", "shadow_fade"])
+def test_fade_reduction_viewer_save_snapshot_and_saved_comparisons(tmp_path, target):
     import base64
     import io
 
     import numpy as np
     from PIL import Image
     from test_effects import fixture_project
-    from test_fade_reduction import area, rectangle
-    from test_spatial_fade import spatial_request
+    from test_fade_reduction import area, rectangle, reduction_request
+    from test_shadow_fade import fade_request
+    from test_spatial_fade import spatial_request, spatial_settings
 
     project, _, _ = fixture_project(tmp_path)
     legacy = operations.apply_operation(project, spatial_request(project))
+    other_areas = {}
+    if target == "shadow_fade":
+        settings = dict(spatial_settings(6, 4), preserve_highlights=0.8)
+        operations.apply_operation(project, spatial_request(project, settings, candidate=True))
+        spatial_area = area(rectangle(amount=0.4, box=[0, 0, 6, 4]))
+        operations.apply_operation(project, reduction_request(project, spatial_area))
+        legacy = operations.apply_operation(project, fade_request(project, amount=0.4))
+        other_areas["spatial_fade"] = spatial_area
     document = area(rectangle(amount=1, box=[0, 0, 6, 4]))
     with running(project) as server:
         state = server.snapshot()
@@ -36,7 +46,7 @@ def test_fade_reduction_viewer_save_snapshot_and_saved_comparisons(tmp_path):
             revision_manifest_sha256=selected["revision_manifest_sha256"],
             scope_xyxy=[0, 0, 6, 4],
             candidate_comparison=True,
-            fade_reduction={"target": "spatial_fade", "area": document},
+            fade_reduction={"target": target, "area": document},
         )
         status, body, _ = http(server, "/api/action", "POST", data)
         assert status == 202, body
@@ -46,13 +56,13 @@ def test_fade_reduction_viewer_save_snapshot_and_saved_comparisons(tmp_path):
         current = server.action["result"]["revision"]
         state = server.snapshot()
         selected = next(r for r in state["revisions"] if r["revision"] == current)
-        assert selected["fade_reduction_areas"] == {"spatial_fade": document}
+        assert selected["fade_reduction_areas"] == {**other_areas, target: document}
         identity = {
             "developed_id": state["developed_id"],
             "revision": current,
             "revision_manifest_sha256": selected["revision_manifest_sha256"],
             "crop_xyxy": [0, 0, 6, 4],
-            "target": "spatial_fade",
+            "target": target,
         }
         responses = {}
         for view in ("coverage", "off"):
@@ -105,11 +115,13 @@ def test_fade_reduction_viewer_save_snapshot_and_saved_comparisons(tmp_path):
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_reduction_native_previews_reuse_validated_geometry_even_off(tmp_path, enabled):
+@pytest.mark.parametrize("target", ["spatial_fade", "shadow_fade"])
+def test_reduction_native_previews_reuse_validated_geometry_even_off(tmp_path, enabled, target):
     from unittest.mock import patch
 
     from test_effects import fixture_project
     from test_fade_reduction import reduction_request
+    from test_shadow_fade import fade_request
     from test_spatial_fade import spatial_request, spatial_settings
 
     from blackmask import fade_reduction
@@ -117,8 +129,13 @@ def test_reduction_native_previews_reuse_validated_geometry_even_off(tmp_path, e
 
     project, _, _ = fixture_project(tmp_path)
     settings = dict(spatial_settings(6, 4), enabled=enabled)
-    operations.apply_operation(project, spatial_request(project, settings))
-    result = operations.apply_operation(project, reduction_request(project))
+    operations.apply_operation(
+        project,
+        spatial_request(project, settings)
+        if target == "spatial_fade"
+        else fade_request(project, enabled=enabled),
+    )
+    result = operations.apply_operation(project, reduction_request(project, target=target))
     with running(project) as server:
         state = server.snapshot()
         selected = next(r for r in state["revisions"] if r["revision"] == result["revision"])
@@ -127,12 +144,13 @@ def test_reduction_native_previews_reuse_validated_geometry_even_off(tmp_path, e
             "revision": result["revision"],
             "revision_manifest_sha256": selected["revision_manifest_sha256"],
             "crop_xyxy": [0, 0, 6, 4],
-            "target": "spatial_fade",
+            "target": target,
         }
         path = f"/image/result/{result['revision']}/0,0,6,4"
         status, expected, _ = http(server, path)
         assert status == 200
         project_module._validate_spatial_fade_semantics.cache_clear()
+        project_module._validate_shadow_fade_semantics.cache_clear()
         with patch.object(
             fade_reduction,
             "rasterize_fade_reduction",
@@ -341,12 +359,13 @@ def test_spatial_saved_preview_routes_bind_revision_shape_crop_and_preview_guard
         )
 
 
-@pytest.mark.parametrize("reduction", [False, True])
+@pytest.mark.parametrize("reduction", [None, "spatial_fade", "shadow_fade"])
 def test_spatial_viewer_raw_manifest_check_occurs_inside_the_writer_lock(
     tmp_path, monkeypatch, reduction
 ):
     from test_effects import fixture_project
     from test_fade_reduction import reduction_request
+    from test_shadow_fade import fade_request
     from test_spatial_fade import spatial_request, spatial_settings
 
     from blackmask.project import digest
@@ -354,7 +373,10 @@ def test_spatial_viewer_raw_manifest_check_occurs_inside_the_writer_lock(
     project, _, parent = fixture_project(tmp_path)
     if reduction:
         parent = operations.apply_operation(
-            project, spatial_request(project, spatial_settings(6, 4))
+            project,
+            spatial_request(project, spatial_settings(6, 4))
+            if reduction == "spatial_fade"
+            else fade_request(project),
         )
     manifest = project / "revisions" / parent["revision"] / "manifest.json"
     expected = digest(manifest.read_bytes())
@@ -372,7 +394,7 @@ def test_spatial_viewer_raw_manifest_check_occurs_inside_the_writer_lock(
     with pytest.raises(ProjectError, match="Stale"):
         operations.apply_operation(
             project,
-            reduction_request(project)
+            reduction_request(project, target=reduction)
             if reduction
             else spatial_request(project, spatial_settings(6, 4)),
             expected_revision_manifest_sha256=expected,

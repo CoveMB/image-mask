@@ -868,6 +868,7 @@
       return JSON.stringify([state?.developed_id,state?.working_revision,state?.inputs_digest,current?.revision_manifest_sha256]);
     }
     function reductionTarget() { return $("reductionTarget").value || "spatial_fade"; }
+    function reductionLabel() { return reductionTarget() === "shadow_fade" ? "Shadow fade" : "Fade into background"; }
     function reductionDraft() { return fadeReductionDrafts.get(reductionTarget()); }
     function fadeReductionAreaIdentity(area) {
       // Persisted JSON orders object keys; geometry and region array order still matter.
@@ -889,12 +890,14 @@
     }
     function renderFadeReduction() {
       const current = state?.revisions.find(record => record.revision === state.working_revision);
-      const available = !!current?.fade_reduction_areas?.spatial_fade;
-      select("reductionTarget", available ? [["spatial_fade", "Fade into background"]] : [], reductionTarget());
+      const targets = [["spatial_fade", "Fade into background"], ["shadow_fade", "Shadow fade"]]
+        .filter(([target]) => current?.fade_reduction_areas?.[target]);
+      const available = targets.length > 0;
+      select("reductionTarget", targets, reductionTarget());
       const draft = reductionDraft();
       select("reductionSelect", (draft?.area.regions || []).map(region => [region.shape.id,
         region.shape.shape + " · " + Math.round(region.amount * 100) + "% · " + region.shape.id]), selectedReductionId);
-      $("reductionDraftStatus").textContent = !available ? "Save Fade into background settings before adding reduction."
+      $("reductionDraftStatus").textContent = !available ? "Save Fade into background or Shadow fade settings before adding reduction."
         : draft?.dirty ? draft.identity !== spatialCurrentIdentity()
           ? "Stale unapplied reduction · reload saved reduction before Apply; draft retained."
           : "Unapplied reduction · outlines only; images and coverage still show saved reduction."
@@ -903,13 +906,14 @@
       $("reductionReload").disabled = authoringBusy();
     }
     function syncFadeReduction() {
+      renderFadeReduction();
       const draft = reductionDraft();
       if (!draft || !draft.dirty && !fadeReductionSubmitted) reloadFadeReduction();
       else renderFadeReduction();
     }
     function markFadeReductionDirty() {
       const draft = reductionDraft();
-      if (!draft) throw Error("Save Fade into background settings before adding reduction");
+      if (!draft) throw Error("Save " + reductionLabel() + " settings before adding reduction");
       draft.dirty = true;
       draft.version++;
       $("authorMode").value = "reduction";
@@ -926,7 +930,7 @@
     }
     function requireReductionView() {
       const draft = reductionDraft();
-      if (!draft) throw Error("Save Fade into background settings before adding reduction");
+      if (!draft) throw Error("Save " + reductionLabel() + " settings before adding reduction");
       if (draft.identity !== spatialCurrentIdentity()) throw Error("Stale reduction draft; reload saved reduction before Apply");
       if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision)
         throw Error("Load the current working native view before editing reduction");
@@ -948,7 +952,7 @@
       requireSaved();
       const draft = requireReductionView(), target = reductionTarget();
       const current = state.revisions.find(record => record.revision === state.working_revision);
-      if (current?.[target]?.stale) throw Error("Rebuild stale Fade into background before applying reduction");
+      if (current?.[target]?.stale) throw Error("Rebuild stale " + reductionLabel() + " before applying reduction");
       if (state.working_revision !== state.accepted_revision && !$("reductionCandidate").checked)
         throw Error("Use an accepted base or explicitly choose candidate comparison");
       if (!current?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
@@ -994,7 +998,7 @@
     $("reductionClear").onclick = guarded(() => {requireReductionView().area.regions = []; selectedReductionId = ""; markFadeReductionDirty();});
     $("reductionApply").onclick = guarded(applyFadeReduction);
     $("reductionReload").onclick = guarded(() => reloadFadeReduction());
-    $("reductionTarget").onchange = () => {selectedReductionId = ""; syncFadeReduction(); draw();};
+    $("reductionTarget").onchange = guarded(() => {selectedReductionId = ""; syncFadeReduction(); draw(); return loadImage();});
     $("reductionView").onchange = guarded(() => {
       if ($("reductionView").value !== "none") {
         for (const id of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare"]) $(id).checked = false;
@@ -1637,7 +1641,7 @@
       const selectedSaved=selectedSpatialId==="oval" || viewed?.spatial_fade?.settings?.arcs.some(arc=>arc.id===selectedSpatialId);
       const requestedCrop = [...crop],
         workingRevision = state.working_revision,
-        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "") + (reductionView === "none" ? "" : " · Saved reduction " + reductionView + " · draft excluded");
+        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "") + (reductionView === "none" ? "" : " · Saved " + reductionLabel() + " reduction " + reductionView + " · draft excluded");
       const mask =
         $("candidate").value ||
         (!["guides", "none"].includes($("overlay").value)

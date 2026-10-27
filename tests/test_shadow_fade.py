@@ -21,7 +21,7 @@ def fade_settings(amount=0.5, preserve=1.0, enabled=True):
     return {"enabled": enabled, "amount": amount, "preserve_highlights": preserve}
 
 
-def scalar_fade(pixel, support, amount, preserve):
+def scalar_fade(pixel, support, amount, preserve, reduction=0):
     """Scalar oracle: deliberately independent of production transfer helpers."""
     linear = [
         v / 65535 / 12.92 if v / 65535 <= 0.04045 else ((v / 65535 + 0.055) / 1.055) ** 2.4
@@ -30,7 +30,9 @@ def scalar_fade(pixel, support, amount, preserve):
     luminance = sum(v * c for v, c in zip(linear, (0.2126, 0.7152, 0.0722), strict=True))
     transition = max(0, min(1, (luminance - 0.10) / 0.65))
     highlight = transition**2 * (3 - 2 * transition)
-    gain = 2 ** (-6 * amount * support / 65535 * (1 - preserve * highlight))
+    gain = 2 ** (
+        -6 * amount * support / 65535 * (1 - preserve * highlight) * (1 - reduction / 65535)
+    )
     return [
         round(
             65535
@@ -42,6 +44,204 @@ def scalar_fade(pixel, support, amount, preserve):
         )
         for v in linear
     ]
+
+
+@pytest.mark.parametrize("preserve", [0, 0.73])
+def test_shadow_reduction_weights_exponent_once_with_exact_protected_endpoints(preserve):
+    from blackmask.shadow_fade import apply_shadow_fade
+
+    rgb = np.full((1, 7, 3), 30000, np.uint16)
+    alpha = np.array([[65535, 32768, 1, 32768, 0, 32768, 65535]], np.uint16)
+    support = np.array([[65535, 65535, 65535, 65535, 65535, 0, 65535]], np.uint16)
+    protection = np.array([[False, False, False, True, False, False, False]])
+    reduction = np.array([[0, 32768, 65535, 32768, 32768, 32768, 32768]], np.uint16)
+    before = [value.copy() for value in (rgb, alpha, support, protection, reduction)]
+    result = apply_shadow_fade(
+        rgb, alpha, support, protection, fade_settings(0.5, preserve), reduction
+    )
+    expected = rgb.copy()
+    for index in (0, 1, 6):
+        expected[0, index] = scalar_fade(
+            rgb[0, index], 65535, 0.5, preserve, int(reduction[0, index])
+        )
+    np.testing.assert_array_equal(result, expected)
+    np.testing.assert_array_equal(result[0, 1], result[0, 6])
+    assert np.all(result[0, 1] < rgb[0, 1])
+    sensitive = protection & (alpha > 0) & (alpha < 65535) & (support > 0)
+    sensitive &= (reduction > 0) & (reduction < 65535)
+    assert sensitive.any()
+    legacy = np.array(scalar_fade(rgb[0, 1], 65535, 0.5, preserve))
+    wrong_interpolation = np.rint(legacy + (rgb[0, 1] - legacy) * (32768 / 65535))
+    assert not np.array_equal(result[0, 1], wrong_interpolation)
+    assert not np.array_equal(result[0, 1], legacy)
+    wrong_double = scalar_fade(
+        rgb[0, 1], 65535, 0.5, preserve, 65535 * (1 - (1 - 32768 / 65535) ** 2)
+    )
+    assert not np.array_equal(result[0, 1], wrong_double)
+    for original, value in zip(before, (rgb, alpha, support, protection, reduction), strict=True):
+        np.testing.assert_array_equal(value, original)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("bad", [np.zeros((1, 2), float), np.zeros((2, 1), np.uint16)])
+def test_shadow_reduction_rejects_bad_registration_even_off(enabled, bad):
+    from blackmask.shadow_fade import apply_shadow_fade
+
+    with pytest.raises(ProjectError, match="reduction"):
+        apply_shadow_fade(
+            np.full((1, 2, 3), 30000, np.uint16),
+            np.full((1, 2), 32768, np.uint16),
+            np.full((1, 2), 65535, np.uint16),
+            np.zeros((1, 2), bool),
+            fade_settings(enabled=enabled),
+            bad,
+        )
+
+
+def test_shadow_zero_reduction_preserves_legacy_and_off_copies_exactly():
+    from blackmask.shadow_fade import apply_shadow_fade
+
+    rgb = (np.arange(18).reshape(2, 3, 3) * 3001).astype(np.uint16)
+    alpha = np.full((2, 3), 32768, np.uint16)
+    support = np.full_like(alpha, 45001)
+    protection = np.zeros_like(alpha, bool)
+    for settings in (fade_settings(preserve=0.73), fade_settings(enabled=False), fade_settings(0)):
+        legacy = apply_shadow_fade(rgb, alpha, support, protection, settings)
+        np.testing.assert_array_equal(
+            legacy,
+            apply_shadow_fade(rgb, alpha, support, protection, settings, np.zeros_like(alpha)),
+        )
+        if not settings["enabled"] or settings["amount"] == 0:
+            np.testing.assert_array_equal(
+                rgb,
+                apply_shadow_fade(
+                    rgb, alpha, support, protection, settings, np.full_like(alpha, 32768)
+                ),
+            )
+
+
+def test_shadow_reduction_saved_lifecycle_retains_spatial_and_inherited_operands(tmp_path):
+    from test_fade_reduction import area, rectangle, reduction_request
+    from test_spatial_fade import spatial_request
+
+    from blackmask.assets import revision_asset, revision_hashes
+    from blackmask.export import saved_layers
+    from blackmask.fade_reduction import read_fade_reduction
+    from blackmask.repair import scalar16
+
+    project, _, accepted = fixture_project(tmp_path)
+    operations.apply_operation(project, spatial_request(project))
+    spatial = operations.apply_operation(project, reduction_request(project))
+    legacy = operations.apply_operation(project, fade_request(project, preserve=0))
+    master = legacy["developed_id"]
+    before = read_revision(project, legacy["revision"], master)
+    before_files = revision_hashes(before)
+    assert before["shadow_fade"]["schema_version"] == 2
+    document = area(rectangle(amount=0.5, box=[0, 0, 6, 4]))
+    reduced = operations.apply_operation(
+        project, reduction_request(project, document, target="shadow_fade")
+    )
+    selected = read_revision(project, reduced["revision"], master)
+    record = selected["shadow_fade"]
+    assert record["schema_version"] == 3 and record["enabled"]
+    assert record["settings"] == before["shadow_fade"]["settings"]
+    directory = project / "revisions" / reduced["revision"]
+    alpha = scalar16(revision_asset(project, directory, selected, "base_alpha16.png"))
+    np.testing.assert_array_equal(
+        read_fade_reduction(project, directory, selected, "shadow_fade", alpha),
+        np.full((4, 6), 32768, np.uint16),
+    )
+    for name, checksum in before_files.items():
+        if name in {"foreground_rgb16.tif", "base_alpha16.png", "guides.json"} or name.startswith(
+            ("supports/", "effects/spatial-fade/")
+        ):
+            assert revision_hashes(selected)[name] == checksum
+    assert selected["spatial_fade"] == before["spatial_fade"] == spatial["spatial_fade"]
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
+    reduced_pixels = saved_layers(project, reduced["revision"], master)[0]
+    original_pixels = saved_layers(project, legacy["revision"], master)[0]
+    assert np.any(reduced_pixels > original_pixels)
+    np.testing.assert_array_equal(
+        saved_layers(project, reduced["revision"], master, shadow_reduction_off=True)[0],
+        original_pixels,
+    )
+    reused = operations.apply_operation(
+        project, reduction_request(project, document, target="shadow_fade")
+    )
+    assert reused["reused"] and reused["revision"] == reduced["revision"]
+    changed = operations.apply_operation(
+        project,
+        reduction_request(
+            project, area(rectangle(amount=0.75, box=[0, 0, 6, 4])), target="shadow_fade"
+        ),
+    )
+    assert not changed["reused"]
+    settings_changed = operations.apply_operation(
+        project, fade_request(project, amount=0.25, amount_only=True)
+    )
+    disabled = operations.apply_operation(project, fade_request(project, enabled=False))
+    from blackmask.export import export_project
+
+    delivered = Path(
+        export_project(project, revision=disabled["revision"], draft=True, variants=("editable",))[
+            "directory"
+        ]
+    )
+    assert json.loads((delivered / "shadow_fade_reduction.json").read_bytes())["regions"]
+    np.testing.assert_array_equal(
+        scalar16(delivered / "shadow_fade_reduction16.png"), np.full((4, 6), 49151, np.uint16)
+    )
+    assert (
+        json.loads((delivered / "manifest.json").read_bytes())["shadow_fade"]["reduction_sha256"]
+        == changed["shadow_fade"]["reduction_sha256"]
+    )
+    rebuilt = operations.apply_operation(project, fade_request(project, amount=0.6, preserve=0))
+    for result in (settings_changed, disabled, rebuilt):
+        inherited = read_revision(project, result["revision"], master)["shadow_fade"]
+        assert inherited["schema_version"] == 3
+        for key in ("reduction_sha256", "reduction_area_sha256", "reduction_algorithm"):
+            assert inherited[key] == changed["shadow_fade"][key]
+    cleared = operations.apply_operation(
+        project, reduction_request(project, area(), target="shadow_fade")
+    )
+    clear_manifest = read_revision(project, cleared["revision"], master)
+    assert clear_manifest["shadow_fade"]["schema_version"] == 3
+    assert not read_fade_reduction(
+        project, project / "revisions" / cleared["revision"], clear_manifest, "shadow_fade", alpha
+    ).any()
+    assert read_revision(project, legacy["revision"], master) == before
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
+
+
+def test_shadow_reduction_reuse_binds_current_saved_settings_and_operands(tmp_path):
+    from test_fade_reduction import area, rectangle, reduction_request
+
+    from blackmask.fade_reduction import rasterize_fade_reduction
+
+    project, _, _ = fixture_project(tmp_path)
+    operations.apply_operation(project, fade_request(project))
+    result = operations.apply_operation(project, reduction_request(project, target="shadow_fade"))
+    directory = project / "revisions" / result["revision"]
+    manifest = read_revision(project, result["revision"], result["developed_id"])
+    changed_area = area(rectangle(amount=0.75, box=[0, 0, 6, 4]))
+    folder = directory / "effects/shadow-fade"
+    (folder / "reduction.json").write_bytes(_json_bytes(changed_area))
+    Image.fromarray(rasterize_fade_reduction(changed_area, result["developed_id"], 6, 4)).save(
+        folder / "reduction16.png"
+    )
+    for name, key in (
+        ("reduction.json", "reduction_area_sha256"),
+        ("reduction16.png", "reduction_sha256"),
+    ):
+        manifest["shadow_fade"][key] = digest((folder / name).read_bytes())
+        bind_raster(project, directory, manifest, "effects/shadow-fade/" + name)
+    (folder / "settings.json").write_bytes(_json_bytes(manifest["shadow_fade"]))
+    bind_raster(project, directory, manifest, "effects/shadow-fade/settings.json")
+    (directory / "manifest.json").write_bytes(_json_bytes(manifest))
+    read_revision(project, result["revision"], result["developed_id"])
+    repeated = operations.apply_operation(project, reduction_request(project, target="shadow_fade"))
+    assert not repeated["reused"]
+    assert repeated["shadow_fade"]["reduction_sha256"] == result["shadow_fade"]["reduction_sha256"]
 
 
 def test_shadow_fade_identity_and_exact_exclusions():
@@ -284,7 +484,10 @@ def test_legacy_optional_sections_load_independently_without_rewrite(tmp_path, e
 
 @pytest.mark.parametrize("change_alpha", [False, True])
 @pytest.mark.parametrize("repairing", [False, True])
-def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(tmp_path, change_alpha, repairing):
+@pytest.mark.parametrize("reduction", [False, True])
+def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(
+    tmp_path, change_alpha, repairing, reduction
+):
     from unittest.mock import patch
 
     from test_effects import fixture_project
@@ -300,6 +503,12 @@ def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(tmp_path, change_
     project, _, _ = fixture_project(tmp_path)
     operations.apply_operation(project, exposure_request(project, ev=2))
     first = operations.apply_operation(project, fade_request(project, preserve=0))
+    from test_fade_reduction import reduction_request
+
+    if reduction:
+        first = operations.apply_operation(
+            project, reduction_request(project, target="shadow_fade")
+        )
     master = read_project(project)["developed_id"]
     before_rgb, before_alpha, _ = saved_layers(project, first["revision"], master)
     assert 0 < before_alpha[1, 3] < 65535
@@ -317,6 +526,10 @@ def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(tmp_path, change_
         ],
     )
     prepared = operations.apply_operation(project, request(project, guide_edits_file=name))
+    if reduction:
+        prepared_record = read_revision(project, prepared["revision"], master)["shadow_fade"]
+        assert prepared_record["schema_version"] == 3
+        assert prepared_record["reduction_sha256"] == first["shadow_fade"]["reduction_sha256"]
     approve(project, prepared)
     with patch.object(
         StubSession,
@@ -333,6 +546,11 @@ def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(tmp_path, change_
         )
     rgb, alpha, manifest = saved_layers(project, result["revision"], master)
     assert manifest["shadow_fade"]["stale"] is change_alpha
+    if reduction:
+        assert manifest["shadow_fade"]["schema_version"] == 3
+        assert (
+            manifest["shadow_fade"]["reduction_sha256"] == first["shadow_fade"]["reduction_sha256"]
+        )
     np.testing.assert_array_equal(rgb[1, 3], before_rgb[1, 3])
     assert alpha[1, 3] == before_alpha[1, 3]
     if change_alpha:
@@ -345,6 +563,8 @@ def test_fade_prepare_matte_repair_partial_rgb_locks_and_stale(tmp_path, change_
         )
         assert disabled["local_exposure"]["stale"]
         assert not disabled["shadow_fade"]["stale"]
+        with pytest.raises(ProjectError, match="current saved.*alpha"):
+            operations.apply_operation(project, reduction_request(project, target="shadow_fade"))
     else:
         np.testing.assert_array_equal(rgb, before_rgb)
 

@@ -33,6 +33,7 @@ from .project import (
     read_project,
     read_revision,
 )
+from .shadow_fade import shadow_fade_files
 from .spatial_fade import (
     SpatialFadeOperands,
     blend_background_float,
@@ -282,6 +283,7 @@ def saved_layers(
     sharpening_off: bool = False,
     exposure_off: bool = False,
     shadow_fade_off: bool = False,
+    shadow_reduction_off: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     foreground, alpha, manifest = validated_layer_inputs(project, revision, developed_id)
     from .effects import effects_stale, selected_foreground
@@ -296,6 +298,7 @@ def saved_layers(
         sharpening_off=sharpening_off,
         exposure_off=exposure_off,
         shadow_fade_off=shadow_fade_off,
+        shadow_reduction_off=shadow_reduction_off,
     )
     return foreground, alpha, manifest
 
@@ -402,6 +405,9 @@ def _delivery_effect_record(record: dict[str, Any]) -> dict[str, Any]:
         "scope_xyxy",
         "weight_sha256",
         "corrected_sha256",
+        "reduction_sha256",
+        "reduction_area_sha256",
+        "reduction_algorithm",
     }
     return {key: value for key, value in record.items() if key in keys}
 
@@ -444,6 +450,8 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
             text += "Editable layers were not requested.\n"
     if "editable" in record["requested_variants"] and mode == "native":
         text += "Native editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
+        if record.get("shadow_fade", {}).get("schema_version") == 3:
+            text += "Retain shadow_fade_reduction16.png and shadow_fade_reduction.json, including when Shadow fade is OFF. To edit/replay Shadow fade, start from unfaded_foreground_rgb16.tif: multiply its support/highlight exponent weight by (1-reduction16/65535) exactly once before gain=2**(-6*amount*weight). Alpha gates eligibility; explicit protection copies unfaded RGB exactly. Disabled Shadow fade copies unfaded RGB. Selected foreground_rgb16.tif already includes this result: never fade it again. Then recompute downstream spatial highlights from that selected RGB, retaining spatial reduction independently.\n"
         if "spatial_fade" in record:
             text += "With enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\n"
             if record["spatial_fade"]["schema_version"] == 2:
@@ -509,13 +517,18 @@ def _delivery_members(
                 names.add("unsharpened_foreground_rgb16.tif")
             if section == "shadow_fade":
                 names.add("unfaded_foreground_rgb16.tif")
-            for name in (
-                "support16.png",
-                "protection16.png",
-                "alpha16.png",
-                "settings.json",
-                "area.json",
-            ):
+            files = (
+                shadow_fade_files(manifest[section])
+                if section == "shadow_fade"
+                else (
+                    "support16.png",
+                    "protection16.png",
+                    "alpha16.png",
+                    "settings.json",
+                    "area.json",
+                )
+            )
+            for name in files:
                 if f"effects/{directory}/{name}" in saved:
                     names.add(prefix + "_" + name)
         if "spatial_fade" in manifest:
@@ -1087,6 +1100,11 @@ def _export_delivery(
         return {**response, "reused": True}
     # Conservative bound covers retained native operands, both pending deliveries and scratch.
     pending = base.nbytes * (22 if "background" in manifest else 18)
+    reduction_bytes = alpha.nbytes * sum(
+        manifest.get(target, {}).get("schema_version") == version
+        for target, version in (("spatial_fade", 2), ("shadow_fade", 3))
+    )
+    pending += reduction_bytes
     pending += (16 + (10 if "black" in variants else 0)) * width * height + 2 * 1024**2
     if native_record is not None and binding is None:
         pending += base.nbytes * 22 + 2 * 1024**2
@@ -1096,9 +1114,7 @@ def _export_delivery(
 
         estimate_series_resources(
             sampling,
-            retained_native_bytes=base.nbytes
-            + alpha.nbytes
-            + (alpha.nbytes if manifest.get("spatial_fade", {}).get("schema_version") == 2 else 0),
+            retained_native_bytes=base.nbytes + alpha.nbytes + reduction_bytes,
             transparent="transparent" in variants,
             spatial_fade_pixels=alpha.size
             if manifest.get("spatial_fade", {}).get("enabled")
@@ -1490,13 +1506,7 @@ def _write_editable(
             (stage / "base_foreground_rgb16.tif").write_bytes(
                 saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
             )
-        for name in (
-            "support16.png",
-            "protection16.png",
-            "alpha16.png",
-            "settings.json",
-            "area.json",
-        ):
+        for name in shadow_fade_files(manifest["shadow_fade"]):
             asset = f"effects/shadow-fade/{name}"
             if asset in revision_hashes(manifest):
                 (stage / ("shadow_fade_" + name)).write_bytes(

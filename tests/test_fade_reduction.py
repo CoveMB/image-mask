@@ -180,7 +180,7 @@ def reduction_request(project, document=None, **changes):
         scope_xyxy=changes.pop("scope_xyxy", [0, 0, 6, 4]),
         candidate_comparison=True,
         fade_reduction={
-            "target": "spatial_fade",
+            "target": changes.pop("target", "spatial_fade"),
             "area": document
             if document is not None
             else area(rectangle(amount=0.5, box=[0, 0, 6, 4])),
@@ -258,8 +258,10 @@ def test_reduction_saved_lifecycle_preserves_native_inputs_and_reuses_only_same_
     assert saved_reduction(project, legacy["revision"])[0] == before
 
 
-def test_reduction_requires_existing_effect_and_union_scope_without_publication(tmp_path):
+@pytest.mark.parametrize("target", ["spatial_fade", "shadow_fade"])
+def test_reduction_requires_existing_effect_and_union_scope_without_publication(tmp_path, target):
     from test_effects import fixture_project
+    from test_shadow_fade import fade_request
     from test_spatial_fade import spatial_request
 
     from blackmask import operations
@@ -268,24 +270,30 @@ def test_reduction_requires_existing_effect_and_union_scope_without_publication(
     project, _, _ = fixture_project(tmp_path)
     before = read_project(project)
     with pytest.raises(ProjectError, match="saved.*spatial|saved.*fade"):
-        operations.apply_operation(project, reduction_request(project))
+        operations.apply_operation(project, reduction_request(project, target=target))
     assert read_project(project) == before
-    operations.apply_operation(project, spatial_request(project))
-    operations.apply_operation(project, reduction_request(project))
+    operations.apply_operation(
+        project, spatial_request(project) if target == "spatial_fade" else fade_request(project)
+    )
+    operations.apply_operation(project, reduction_request(project, target=target))
     before = read_project(project)
     with pytest.raises(ProjectError, match="scope"):
         operations.apply_operation(
-            project, reduction_request(project, area(), scope_xyxy=[1, 0, 6, 4])
+            project, reduction_request(project, area(), scope_xyxy=[1, 0, 6, 4], target=target)
         )
     assert read_project(project) == before
 
 
+@pytest.mark.parametrize("target", ["spatial_fade", "shadow_fade"])
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("tamper", ["geometry", "missing", "extra", "future", "raster"])
-def test_reduction_saved_validation_rejects_tampering_after_warm_read(tmp_path, enabled, tamper):
+def test_reduction_saved_validation_rejects_tampering_after_warm_read(
+    tmp_path, target, enabled, tamper
+):
     from PIL import Image
     from test_effects import fixture_project
     from test_ingest import bind_raster
+    from test_shadow_fade import fade_request
     from test_spatial_fade import spatial_request, spatial_settings
 
     from blackmask import operations
@@ -293,11 +301,17 @@ def test_reduction_saved_validation_rejects_tampering_after_warm_read(tmp_path, 
 
     project, _, _ = fixture_project(tmp_path)
     settings = dict(spatial_settings(6, 4), enabled=enabled)
-    operations.apply_operation(project, spatial_request(project, settings))
-    result = operations.apply_operation(project, reduction_request(project))
+    operations.apply_operation(
+        project,
+        spatial_request(project, settings)
+        if target == "spatial_fade"
+        else fade_request(project, enabled=enabled),
+    )
+    result = operations.apply_operation(project, reduction_request(project, target=target))
     manifest, _ = saved_reduction(project, result["revision"])
     directory = project / "revisions" / result["revision"]
-    folder = directory / "effects/spatial-fade"
+    prefix = "effects/" + target.replace("_", "-")
+    folder = directory / prefix
     if tamper == "extra":
         (folder / "unexpected.json").write_text("{}")
     elif tamper == "missing":
@@ -306,20 +320,18 @@ def test_reduction_saved_validation_rejects_tampering_after_warm_read(tmp_path, 
         if tamper == "geometry":
             document = area(rectangle(amount=0.75, box=[0, 0, 6, 4]))
             (folder / "reduction.json").write_bytes(_json_bytes(document))
-            manifest["spatial_fade"]["reduction_area_sha256"] = digest(
+            manifest[target]["reduction_area_sha256"] = digest(
                 (folder / "reduction.json").read_bytes()
             )
-            bind_raster(project, directory, manifest, "effects/spatial-fade/reduction.json")
+            bind_raster(project, directory, manifest, prefix + "/reduction.json")
         elif tamper == "raster":
             Image.fromarray(np.zeros((4, 6), np.uint16)).save(folder / "reduction16.png")
-            manifest["spatial_fade"]["reduction_sha256"] = digest(
-                (folder / "reduction16.png").read_bytes()
-            )
-            bind_raster(project, directory, manifest, "effects/spatial-fade/reduction16.png")
+            manifest[target]["reduction_sha256"] = digest((folder / "reduction16.png").read_bytes())
+            bind_raster(project, directory, manifest, prefix + "/reduction16.png")
         else:
-            manifest["spatial_fade"]["schema_version"] = 99
-        (folder / "settings.json").write_bytes(_json_bytes(manifest["spatial_fade"]))
-        bind_raster(project, directory, manifest, "effects/spatial-fade/settings.json")
+            manifest[target]["schema_version"] = 99
+        (folder / "settings.json").write_bytes(_json_bytes(manifest[target]))
+        bind_raster(project, directory, manifest, prefix + "/settings.json")
         (directory / "manifest.json").write_bytes(_json_bytes(manifest))
     for _ in range(2):
         with pytest.raises(ProjectError):
@@ -349,15 +361,21 @@ def test_reduction_limits_accept_boundary_and_bound_total_points():
 
 
 @pytest.mark.parametrize("failure", ["space", "publication"])
-def test_reduction_failed_save_preserves_existing_revision_and_accepted_bytes(tmp_path, failure):
+@pytest.mark.parametrize("effect", ["spatial_fade", "shadow_fade"])
+def test_reduction_failed_save_preserves_existing_revision_and_accepted_bytes(
+    tmp_path, failure, effect
+):
     from test_cache_management import inventory
     from test_effects import fixture_project
+    from test_shadow_fade import fade_request
     from test_spatial_fade import spatial_request
 
     from blackmask import operations
 
     project, _, _ = fixture_project(tmp_path)
-    operations.apply_operation(project, spatial_request(project))
+    operations.apply_operation(
+        project, spatial_request(project) if effect == "spatial_fade" else fade_request(project)
+    )
     before = inventory(project)
     target = (
         "blackmask.effects.check_space"
@@ -368,7 +386,7 @@ def test_reduction_failed_save_preserves_existing_revision_and_accepted_bytes(tm
         patch(target, side_effect=OSError("synthetic bounded failure")),
         pytest.raises(OSError, match="synthetic"),
     ):
-        operations.apply_operation(project, reduction_request(project))
+        operations.apply_operation(project, reduction_request(project, target=effect))
     after = inventory(project)
     assert all(after[name] == value for name, value in before.items())
     if failure == "publication":

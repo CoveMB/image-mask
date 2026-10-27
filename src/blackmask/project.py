@@ -761,17 +761,27 @@ def _validate_exposure_semantics(project: Path, directory: Path, manifest_bytes:
 def _validate_shadow_fade_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
     """Bound successful checks only; callers must rehash every operand before reuse."""
     from .assets import revision_asset
+    from .fade_reduction import rasterize_fade_reduction, read_fade_reduction
     from .repair import scalar16
     from .shadow_fade import read_shadow_fade
 
-    read_shadow_fade(
-        project,
-        directory,
-        json.loads(manifest_bytes),
-        scalar16(
-            revision_asset(project, directory, json.loads(manifest_bytes), "base_alpha16.png")
-        ),
-    )
+    manifest = json.loads(manifest_bytes)
+    alpha = scalar16(revision_asset(project, directory, manifest, "base_alpha16.png"))
+    read_shadow_fade(project, directory, manifest, alpha)
+    reduction = read_fade_reduction(project, directory, manifest, "shadow_fade", alpha)
+    if reduction is not None:
+        area = json.loads(
+            revision_asset(
+                project, directory, manifest, "effects/shadow-fade/reduction.json"
+            ).read_bytes()
+        )
+        if not np.array_equal(
+            reduction,
+            rasterize_fade_reduction(
+                area, manifest["developed_id"], alpha.shape[1], alpha.shape[0]
+            ),
+        ):
+            raise ProjectError("Saved fade reduction geometry differs from its raster")
 
 
 @lru_cache(maxsize=128)
@@ -868,9 +878,11 @@ def _validate_revision_directory(
     ):
         raise ProjectError("Unbound saved Local sharpening authored area")
     from .background import validate_background_bindings
+    from .shadow_fade import validate_shadow_fade_bindings
     from .spatial_fade import validate_spatial_bindings
 
     validate_background_bindings(project, _asset(project, directory), manifest)
+    validate_shadow_fade_bindings(project, _asset(project, directory), manifest)
     validate_spatial_bindings(project, _asset(project, directory), manifest)
     if "background" in manifest:
         record = manifest["background"]
@@ -950,20 +962,6 @@ def _validate_revision_directory(
             raise ProjectError("Missing bound local exposure authored area")
         _validate_exposure_semantics(project, _asset(project, directory), _json_bytes(manifest))
     if "shadow_fade" in manifest:
-        record = manifest["shadow_fade"]
-        from .shadow_fade import SHADOW_FADE_FILES
-
-        required_fade = {"base_alpha16.png"} | {
-            f"effects/shadow-fade/{name}" for name in SHADOW_FADE_FILES
-        }
-        if not required_fade <= set(revision_hashes(manifest)):
-            raise ProjectError("Incomplete Shadow fade assets")
-        if (
-            isinstance(record, dict)
-            and record.get("area_sha256") is not None
-            and "effects/shadow-fade/area.json" not in manifest["files"]
-        ):
-            raise ProjectError("Missing bound Shadow fade authored area")
         _validate_shadow_fade_semantics(project, _asset(project, directory), _json_bytes(manifest))
     if "local_sharpening" in manifest:
         record = manifest["local_sharpening"]
