@@ -1602,6 +1602,9 @@ scratch. They are not RAM reservations or guarantees that every valid size fits.
 
 `appearance_recipes.py` owns a standalone UTF-8 JSON file. V1 root keys are exactly
 `schema_version:1`, `kind:"appearance-recipe"`, `name`, `sections`, `reference`.
+V2 uses the same root keys with `schema_version:2` and permits `spatial_layout`.
+Writing emits v2 only when layout is present; otherwise it emits v1. Reading
+accepts both versions without rewriting existing files.
 The name is trimmed to 1–80 Unicode characters and rejects controls. Sections
 must be nonempty and contain only the following exact field sets. All numbers
 must be finite, nonboolean JSON numbers; native scalar validators apply.
@@ -1621,6 +1624,39 @@ mask/area/protection/reduction data, framing or acceptance. A saved OFF section
 can supply explicitly selected values. Missing saved settings cannot be invented.
 Spatial defaults come from one explicitly chosen saved oval/arc; its geometry
 and identity are excluded.
+
+V2 `spatial_layout` is mutually exclusive with `shading` and `spatial_fade`. Its
+exact keys are `preserve_highlights`, `oval`, `arcs_enabled`, `arcs`. Each shape
+has `enabled`, `center_subject_xy`, `rotation_degrees`,
+`transition_subject_fraction`, `amount`; the oval adds `inner_radii_subject_xy`,
+and each arc adds `half_span_subject_fraction`, `bend_subject_fraction`,
+`end_softness_subject_fraction`, `fade_side`. Switches are strict booleans,
+centres contain two finite values, radii/transition/span/softness are positive,
+rotation is [0,360), amount/highlight preservation [0,1], bend is within ±span,
+softness cannot exceed span, and side is `positive` or `negative`. All shapes,
+including disabled ones, are validated; arc order is retained and count is at
+most 32. No source master switch, native IDs or target-local operands are saved.
+
+For half-open nonzero-alpha bounds, let C be their midpoint and D their maximum
+side. Layout centres encode `(P-C)/D`, lengths encode `length/D`; target centres
+decode as `Ctarget+Dtarget*offset`, lengths as `Dtarget*fraction`. Both axes use
+one scale; rotation, signed bend, side and strength retain their meaning.
+Conversion starts from the original portable values for each proposal. Native
+centres remain inside the image extent; radii, span and transition remain
+`[0.5,2*M]`, softness `[0.5,span]` and bend `[-span,span]`. The multiplication
+endpoint budget below also applies to layout lengths. Centre correction uses
+`4*(ulp(midpoint)+ulp(product)+ulp(sum)+ulp(endpoint))`; relational bounds add
+both operand budgets. Only finite just-outside values within the budget snap to
+the endpoint. Larger violations reject with shape/field context, without fitting
+or dropping shapes or relaxing native validation.
+
+Add validates the target draft before merging, preserves its oval/highlights,
+master switch, arc group and existing IDs, and imports each arc's enabled state
+as source-group AND source-arc. Zero imported arcs or combined count above 32
+rejects. Replace imports layout geometry/internal switches/highlights while
+preserving the target master. Each imported arc receives a canonical lowercase
+UUID-v4, unique and disjoint from every target ID, even IDs removed by Replace.
+The complete result must pass the unchanged native validator.
 
 `reference` is null or exactly `{mime:"image/png",width,height,png_base64}`.
 It must decode to one opaque RGB8 PNG, at most 1,048,576 encoded PNG bytes,
@@ -1651,7 +1687,11 @@ Authenticated same-origin POST `/api/appearance-recipe-create` accepts exactly
 reference_shape_id, include_reference`. The revision must be complete and match
 its raw manifest hash; the response contains `recipe_json` and the binding.
 `/api/appearance-recipe-validate` accepts exactly `recipe_json, developed_id,
-revision, revision_manifest_sha256`; it returns the sanitized `recipe`, converted
+revision, revision_manifest_sha256`, with optional `layout_defaults_shape` only
+for a v2 layout. This explicit fallback chooses `"oval"` or a zero-based integer
+arc index (never boolean), deriving scalar spatial defaults without changing the
+returned portable recipe. Ordinary layout validation makes no scalar assignment.
+Validation returns the sanitized `recipe`, converted
 `sections`, `unavailable` and binding. Both responses also echo
 `working_revision, inputs_digest, authoring_digest`. Only validation permits a
 null revision/hash pair, and only when there is no working revision. Partial
@@ -1661,6 +1701,21 @@ Both routes are read-only, share the nonblocking preview guard, validate source,
 selected assets and raw manifest, and recheck state/source/manifest/draft bindings
 before returning. They launch no action or writer. Source and target identifiers
 are transport-local and are not serialized into portable files.
+
+POST `/api/appearance-layout-preview` shares those authentication, origin, body,
+duplicate-key, lock and identity checks. It accepts exactly `recipe_json,
+developed_id, revision, revision_manifest_sha256, inputs_digest, authoring_digest,
+spatial_draft, spatial_draft_version, mode`. Version is a nonnegative nonboolean
+integer and mode is `add_arcs` or `replace`. It requires the current complete
+working revision and nonempty validated alpha. Its exact response fields are
+`spatial_fade, warnings, developed_id, revision, working_revision,
+revision_manifest_sha256, inputs_digest, authoring_digest, spatial_draft_version,
+mode`. No raster preview, action or saved write occurs. Proposal and one-step
+Undo bind the recipe, target identity, mode, spatial draft/version, selected
+shape, protection/candidate controls and both reduction drafts/raw controls.
+Cancel changes none of those. Load rechecks them and always confirms Replace;
+later edits, identity changes or actions invalidate Undo. Ordinary Apply persists
+native settings and operands, with no project schema migration or recipe dependency.
 
 The viewer binds scalar drafts to current developed/revision/input/authoring
 identity and an edit version. Loading is selective and explicit; it neither

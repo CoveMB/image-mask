@@ -1,14 +1,48 @@
 # Appearance recipes — current handoff
 
-Current action: **AR1 Gate 3 accepted; 1/2 increments accepted; wait while root commits AR1**. Created: 2026-10-27. Owning orchestrator `01a17ba9-9112-7a52-b8da-547737b178e3` delivered its actual acceptance under direct human preapproval after independently checking the final candidate and evidence. The [decision record](plan.md#decisions-and-remaining-obligations) binds the accepted manifest and comparison; [QA acceptance](qa-plan.md#ar1-gate-3-acceptance) retains the evidence limits. All three initial result reports, repair renewals and the targeted browser-evidence renewal are complete; no material findings remain. This administrative update changes only plan.md, qa-plan.md and handoff.md. Return their exact hashes and owned inventory, then wait. Do not start AR2 preparation or implementation, perform Git actions or send outbound parent messages. No further human browser action is needed.
+Current action: **Hold for root's Git/publication/provider work; AR2 Gate3 accepted; 2/2 increments accepted**. Created: 2026-10-27. AR1 is accepted and committed as `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732`. Root's actual AR2 decision and accepted hashes are in [plan.md](plan.md#decisions-and-remaining-obligations). The [current result checkpoint](plan.md#ar2-current-result-checkpoint), [QA execution record](qa-plan.md#ar2-execution-record--current) and [R1–R22 reconciliation](plan.md#final-scope-reconciliation) own current status. Root accepted implementation, settled verification, all three independent result reports, terminal retention and the disclosed browser qualification. Root polls and owns Git/publication/provider follow-up; no parent message or deletion. Preparation-only statements below remain historical.
 
-Old servers PTY3071/24642 and current repaired-code server PTY76808 closed successfully. All four owned in-app-browser tabs closed; the user-created Brave private window was left blank. Synthetic projects, downloads and evidence remain retained under the ignored evidence root; `browser-recovery/verification.json` confirms final inventories, unchanged source/no-matte projects,188 prior saved files and4800 partial-alpha samples. A page-only screenshot shows the saved result without unrelated browser chrome. Root polls this chat; no parent message was sent. Root acts next by committing AR1 and returning its next instruction here. Accepted evidence combines full-suite, isolated native storage and affected repair renewals; no all-green single invocation is claimed. I10, human photographic/usability/accessibility, representative-photo performance and browser/OS-wide traffic limitations remain unchanged.
+Frozen AR2 product/test/maintained-doc manifest:
+`local/evaluations/appearance-recipes/ar2-20261027T184703Z/ar2-result-review-candidate.json`,
+SHA256 `cd34d6fd60d17ec16d0cd3a3173a037bfa2fd42ac4cbe97e562af0c1c6b048ce`.
+All three result scopes are complete with no material findings, including actual
+Ponytail architecture. The settled suite passed2457/skipped7/exit0 with unchanged
+source/test inputs; complete static records and actual packages are retained.
+Q10 off-canvas
+rejection/fallback renewal left all195 target files exact; its owned server
+closed and the user's private window returned to `about:blank`. The earlier
+token-free localhost query sent to Google remains disclosed. Root accepted it as
+an automation navigation error, with no application network defect or required
+rerun/product change. Retain its bounded impact and no-wholly-offline/browser-wide
+isolation qualification, separate from application CSP and native subprocess proof.
+
+Accepted packet: `local/evaluations/appearance-recipes/ar2-20261027T184703Z/ar2-gate3-candidate.json`,
+SHA256 `3a1d7b05063b9874751a9fc862d0e0eee12e400fd5b452870ced7b4c33c5709b`;
+accepted final diff `4bdcd4e47282f77847c9d0da9b2698a1c2cb210907db777e77361e0e6f0a7480`.
+It records the11 unchanged reviewed product/test/maintained-doc files, three
+pre-acceptance planning records, raw sources and applicable evidence/reports.
+Root independently verified14 final files,11 reviewed files,3 sources,73 evidence
+entries,74 full-suite inputs and the actual reviews/checks/packages/retention.
+Only the three incremental documents now record that actual acceptance;
+product/test/evidence bytes and the frozen manifest remain unchanged. Terminal retention
+review retained all measured AR1/AR2 evidence; no cleanup candidate or deletion.
+The owner made no Git/provider changes and did not refresh remote refs.
+
+**Next actor:** the owning orchestrator `01a17ba9-9112-7a52-b8da-547737b178e3`
+handles commit/push/feature PR and provider reconciliation. The owner returns
+the three administrative document hashes and holds; no parent message, Git action
+or further mutation. Root polls this return; no manual human relay or new
+permission request is needed. Final human review remains on GitHub; no merge
+action is authorized here. I10 live/recovery, photographic/usability/accessibility
+acceptance and representative-photo performance remain OPEN.
+
+Accepted AR1 browser state: old servers PTY3071/24642 and repaired-code server PTY76808 closed successfully; all four owned in-app-browser tabs closed and the user-created Brave private window was left blank. Synthetic projects/downloads/evidence remain retained; `browser-recovery/verification.json` records unchanged source/no-matte projects,188 prior saved files and4800 partial-alpha samples. No current browser/server state is inferred from that history. The successful private-window route informs later Q10. Accepted evidence combines full-suite, isolated native storage and affected repair renewals; no all-green single invocation is claimed. I10, human photographic/usability/accessibility, representative-photo performance and browser/OS-wide traffic limitations remain unchanged.
 
 ## Context, ownership and authority
 
 Read [plan.md](plan.md), [qa-plan.md](qa-plan.md), the complete unchanged [primary plan](../../superpowers/plans/2026-10-24-appearance-recipes.md), [design](../../superpowers/specs/2026-10-24-appearance-recipes-design.md) and [historical review record](../../superpowers/plans/2026-10-24-appearance-recipes-reviews.md), repository instructions and affected current contracts. Source hashes/R1–R22 mapping are in plan.md. Supplementary QA is **on**; all three documents form one substantive candidate and one plan-review set.
 
-Checkout: current `image-mask` root, branch `appearance-recipes`, baseline/comparison `42175688041e3ae013d9d395d45f631026adcd94` → proposed AR1. Checkout was clean before these three new planning files; output paths/parents were absent/nonsymlink where required. No branch changes, fetches or Git writes occurred. Later source/product/test/package candidates must include relevant new/generated/dirty inputs, not merely tracked diffs.
+Checkout: current `image-mask` root, branch `appearance-recipes`, AR2 comparison `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732` → the later proposed AR2 result. Checkout was clean before this preparation; the three selected documents and every parent resolve to their existing nonsymlink paths. All 14 nonplanning accepted AR1 files and all three raw sources still match the accepted manifest. Initial AR1 comparison was `42175688041e3ae013d9d395d45f631026adcd94` → AR1; retained sections below describe that history. No branch changes, fetches or owner Git writes occurred. Later result inventories include relevant untracked/generated/configuration/test/package inputs.
 
 Owning orchestrator: `01a17ba9-9112-7a52-b8da-547737b178e3` (“Orchestrate three feature deliveries”). Persistent feature owner: `01a17cb4-1217-7043-a2c5-71b7ecec038a` (“Implement Appearance recipes”), responsible for AR1 then AR2 sequentially. One product/planning writer; read-only native reviewers, no recursive delegation. Root polls this chat and owns ordinary approvals/Git/PR/provider follow-up; return ordinary final packets and do not send parent messages. Preserve the prior owner's auto-review rejection boundary; do not retry outbound messaging or Git escalation from this owner.
 
@@ -18,7 +52,69 @@ Predecessor: [Fade reduction PR #34](https://github.com/CoveMB/image-mask/pull/3
 
 No private-photo processing/uploads, installs/downloads, dependency/model changes, merges, production, destructive cleanup, provider requests/replies or parent notices. Root handles publication after accepted results. Material new scope, public contracts, architecture or compatibility/migration choices go to root for the human; routine implementation choices inside the selected design need no new permission. No such new material choice is currently proposed.
 
-## AR1 concrete scope and owners
+## AR2 concrete preparation
+
+Deliver T5–T6/R13–R18 as one usable v2 layout journey, preserving accepted AR1 behavior. The source's complete format/math/switch/Undo rules remain normative for this scope; Q7–Q12 retain each observable obligation. No new material design decision is proposed. This section supersedes AR1-only preparation instructions below for the current increment; those sections remain historical implementation/evidence context.
+
+| Exact owner | Proposed change / current call path |
+| --- | --- |
+| `src/blackmask/appearance_recipes.py` | Extend `_normalized_recipe` for exact v1/v2 layouts, preserving limits/reference sanitation. Extend selected saved extraction through `manifest["spatial_fade"]["settings"]`, including inactive geometry and excluding native IDs/master/protection/reduction. Keep layout out of `appearance_recipe_form_values`' generic scalar branch. Add the three pure helpers below; reuse converter-only endpoint correction and canonical native validation. |
+| `src/blackmask/viewer.py` | Extend existing creation selection and validation's explicit fallback; add `ReviewServer.preview_appearance_layout(data: Any) -> dict[str, Any]`. Add authenticated route admission, duplicate-key handling, dispatch and conflict classification for `/api/appearance-layout-preview`; preserve the shared bounded preview lock, validation scope, body limits and before/after state/asset checks. |
+| `src/blackmask/ui/review.html` | Add separate immutable layout proposal, explicit Add/Replace/fallback controls, outline-only preview and guarded one-step Undo. Reuse `appearanceTargetKey`, current scalar confirmation/sequence guards, native coordinate mapping/outline drawing and ordinary `applySpatial`. Preserve both independent reduction drafts, raw controls and AR1 scalar/area guards. |
+| `tests/test_appearance_recipes.py`, `tests/test_viewer.py`, `tests/test_viewer_page.py` | New schema/conversion/merge/HTTP/async/Undo cases, retaining accepted AR1 regressions. Existing `tests/test_spatial_fade.py` supplies native/continuous-evaluator contracts; extend only where new integration coverage belongs. |
+| `tests/test_library_storage_journey.py` | Extend the existing both-reduction frozen-delivery journey for actual layout proposal/ordinary Apply and guarded delivered-only replay. Reuse `tests/storage_journey_process.py::install_guard` and existing native-launch controls; helper edits only if concrete current reuse requires them. Existing `test_export.py`/`test_cache_management.py` cover canonical consumers and gain focused assertions only where the combined journey does not cover a required boundary. |
+| `README.md`, `docs/file-contract.md`, `docs/workflow.md`, `docs/assistant-workflow.md` | After implementation, document actual v1/v2 behavior, layout preview/Add/Replace/fallback/Undo and ordinary native persistence. `file-contract.md` remains the portable/native contract owner. Update these three planning docs with actual gates/evidence. |
+
+No changes are planned to native `spatial_fade.py` validation, render engines, project schema, cache ownership, dependency/lock files, models, framing or Background light. A necessary departure requires concrete evidence and root disposition before expansion. `MANIFEST.in`'s current helper/lock inclusions and planning/private exclusions remain adequate; inspect built payloads later rather than restating packaging declarations.
+
+### Codec and proposal contract
+
+```python
+def spatial_layout_from_settings(
+    settings: dict[str, Any], source_subject_bounds: tuple[int, int, int, int]
+) -> dict[str, Any]: ...
+
+def spatial_layout_proposal(
+    layout: dict[str, Any], target_settings: dict[str, Any],
+    target_subject_bounds: tuple[int, int, int, int],
+    target_dimensions_wh: tuple[int, int], mode: str,
+    imported_arc_ids: list[str],
+) -> dict[str, Any]: ...
+
+def spatial_layout_scalar_defaults(
+    layout: dict[str, Any], shape: str | int
+) -> dict[str, Any]: ...
+```
+
+Read v1/v2; emit v1 without layout and v2 with it. Layout has exactly `preserve_highlights,oval,arcs_enabled,arcs`, is mutually exclusive with shading/scalar spatial defaults and validates every disabled shape. The unchanged source design owns exact normalized shape fields. No source master switch, IDs or target-local operands enter JSON. Selected-save `sections` contains `spatial_layout`, with null `reference_shape_id`; no redundant flag. Ordinary v2 validation returns no layout form assignment. Optional `layout_defaults_shape` is admitted only for v2 layout: `"oval"` or valid zero-based integer arc index, never bool. Derive the three scalar spatial defaults into a separate conversion input; return the sanitized original recipe unchanged. No silent fallback, source-project dependency or loss of independent sections.
+
+Use half-open nonzero-alpha bounds including alpha1, midpoint C and maximum side D; normalize `(P-C)/D` and lengths/D, reconstruct `Ctarget+Dtarget*offset` and `Dtarget*fraction`. Recompute from immutable portable input every time. Preserve angle, signed bend, side and strength; do not axis-stretch/fit/drop shapes. Native centres remain `[0,width]`/`[0,height]`, radii/span/transition `[.5,2*M]`, softness `[.5,span]`, bend `[-span,span]`, rotation `[0,360)`. Converter-only correction uses the source's exact multiplication/centre/summed-relational ULP budgets and finite-term checks; inside values stay unchanged, larger violations fail with shape/field context. Native validators remain strict. Q7 pins independent numeric examples and `.5/49` equality across all three conversion paths.
+
+Validate the supplied target draft before merging and the complete output after merging. `add_arcs` preserves target oval/highlights/master/group/IDs, uses source-group AND per-arc enabled for imports and rejects zero imported arcs or combined count above32. `replace` copies source internal layout/highlights while retaining target master and all external operands. Require exactly one canonical lowercase UUID-v4 per source arc, unique and disjoint from every target ID even when Replace removes those arcs. Endpoint generates them once per proposal; pure tests supply deterministic IDs. Neither route renders an appearance image or calls the existing raster spatial preview.
+
+New preview request has exactly `recipe_json,developed_id,revision,revision_manifest_sha256,inputs_digest,authoring_digest,spatial_draft,spatial_draft_version,mode`. Require nonnegative integer nonboolean draft version, `add_arcs|replace`, current complete working revision and nonempty validated target alpha bounds. Return exactly `spatial_fade,warnings,developed_id,revision,revision_manifest_sha256,working_revision,inputs_digest,authoring_digest,spatial_draft_version,mode`; `working_revision` equals `revision`. Echo captured identities, never trust imported target bounds. Recheck captured raw source/state/manifest and current draft digests before return; release admission on every exit. Duplicate-key handling must explicitly include the new route, which falls outside `/api/appearance-recipe-`. Authentication, origin/host, inner/outer limits and no-write/job behavior remain unchanged.
+
+### Client installation, preview and recovery
+
+Keep `appearanceLayoutProposal`, a request sequence and one `appearanceLayoutUndo`; proposed handlers are `previewAppearanceLayout(mode)`, `loadAppearanceLayout()`, `undoAppearanceLayoutImport()` and explicit Cancel. Bind to `appearanceTargetKey()` (developed/current revision/raw manifest plus input AND authoring digest), spatial draft/version, selected recipe and mode. `spatialCurrentIdentity()` alone lacks authoring identity. A local snapshot/fingerprint also covers selected shape, protection/candidate controls, both reduction Map entries and their raw controls, because reduction and some selections do not advance the spatial counter.
+
+Reuse `drawSpatialShapes` with explicit settings/style arguments to show separately labelled **Placement preview — effects not applied** outlines. Do not replace the native draft, selection, author mode or saved overlay state to draw the proposal. Preview/Cancel never call dirty/reset/form synchronization. Stale native draft blocks preview/Load until explicit recovery. Reject Load while a pointer gesture or `spatialAdding` placement is active. At response and after confirmation, recheck sequence, all bindings and local-state fingerprint; discard late proposals/confirmations rather than overwriting newer state.
+
+Add must not call `addSpatialArc`, which enables the group. Replace always confirms affected shapes/dirty data, even with a clean draft. Load installs the validated native proposal once, then increments spatial version; it neither enables the master nor applies. Record the Undo snapshot after the load's normal invalidation/version increment. Snapshot exact prior settings, selected shape, dirty flag, identity, candidate checkbox and raw protection input; restore these with a new monotonic version only when full target binding, post-load version and related state still match. Do not use `resetSpatialFromSaved`, which clears preexisting drafts and controls. Leave both reduction Map entries and raw controls untouched during Load/Undo and prove exact equality; if they changed, Undo is unavailable.
+
+Invalidate proposal/Undo for relevant spatial or reduction edits, raw control/selection changes, resets, either Apply submission, Disable, second Load, imported file/mode or identity change. Use current dirty hooks plus the complete local-state fingerprint to guard independent control changes; never rely only on version increments. Preserve existing submitted-settings/version completion checks so late successes cannot clear newer imported work. Ordinary handles/numeric editing/Apply/reopen/export consume native settings; existing spatial-versus-inward-shading disclosure and accepted-state rules remain intact.
+
+### Verification, review and return
+
+The [AR2 verification preparation](qa-plan.md#ar2-verification-preparation) is the concrete Q7–Q12 execution packet, including actual browser route and combined native/margins/series replay with Python/native file and loopback-network denial controls. Reuse the retained interpreter/command forms below with `PYTHONPATH=src`; preparation rechecked Python3.12.14 ARM64 and all41 lock metadata pins, without product imports. AR1 already verified actual Pillow/core13.0.0. After Gate2, recheck runtime import correspondence before running the new candidate; do not reinstall or downgrade. Q11's delivered-only child deliberately uses narrower runtime/helper access and no application imports.
+
+Run focused behavior-sensitive cases during implementation, then the full relevant suite/static checks once on the settled batch. Proposed focused owners: appearance codec; viewer HTTP; executed page; existing spatial contracts; export/cache/storage journey. Rebuild/inspect actual wheel/sdist and exercise extracted new boundaries. Reuse unchanged accepted evidence only for its unchanged inputs; do not substitute it for AR2 behavior. Retain failed sandbox evidence and use the supported isolated route, never weaken controls or claim a skip passed.
+
+Reuse all three coordinated source/architecture/verification plan reports and original T5–T6 review rationale. Two fresh bounded inspection tracks only mapped committed owners; they are not substitute formal reviews. The concrete Q11 isolation extension received a targeted verification-plan renewal with **No material improvements recommended**; exact reviewed hashes and actual reviewer/report route are in [plan.md](plan.md#progress-and-review-readiness). Its native-network clarification is explicit in QA: use native `ctypes` socket/connect, since Python socket attempts are already intercepted by `install_guard`. Retain unrelated reports and the earlier exposure limitation. Final status/report notes preserve the reviewed scope. Root decides on the returned exact three-document packet under the actual human grant; product execution remains pending.
+
+After implementation, three distinct fresh read-only result scopes compare exact committed AR1 to AR2: raw-source/requirements fidelity; architecture/simplicity with actual user-requested Ponytail review inside that assignment; verification/evidence. Collect all, repair material findings and renew only affected coverage. Final AR2 return includes Q11 proof, complete R1–R22 reconciliation and evidence-retention review; root owns Gate3, combined feature publication/provider settlement and successor readiness. No dependency on Background light is introduced and no adjacent feature work is authorized.
+
+## AR1 concrete scope and owners — retained history
 
 Deliver source T1–T4 as a complete v1 journey: selected saved settings/reference creation, strict portable import, explicit scalar loading and sequential per-effect use with draft protection. Do not implement AR2 layout yet, create a catalog, introduce a multi-effect transaction or transfer enable state, geometry, areas/protection/reduction, source development, framing or acceptance.
 
@@ -73,7 +169,7 @@ The native storage test's own sandbox cannot nest inside the tool sandbox (`sand
 
 Actual browser: use exposed native browser automation on two owned synthetic localhost projects, including real downloads/reload, keyboard/cancel, fractional number/range behavior, sequential Apply and stale-state failures. Keep source/reference files inside owned evidence; no private captures. Record requests observed beyond localhost (must be none), actual form/project outcomes and useful screenshots. Close only owned tabs/servers. Available tooling is not observed browser proof; no OS-network-confinement claim without its actual negative control.
 
-Packaging: inspect/adapt, never run unchanged, the existing bounded procedure `local/evaluations/fade-reduction/packages-1793079570667408000/build.py`. It uses installed `setuptools.build_meta.build_wheel/build_sdist`, `--no-user-cfg`, and task-owned `build-base`, `egg-base` and `dist` paths to avoid changing existing build metadata. Make an Appearance-owned equivalent only when execution is approved, with collision checks and raw capture. Build offline without installation/isolation dependency resolution, compare preexisting metadata before/after, inspect actual wheel/sdist members and extracted source bytes/dependency metadata. Required browser lock/helper inclusions and plan/private/VCS/personal-path exclusions must all hold; use independent inventory expectations, not equality alone. Exercise new feature boundaries from extracted packages. Record exact actual commands/archive hashes/member counts/results at Gate3.
+Packaging: inspect/adapt, never run unchanged against accepted outputs, the actual AR1 procedure `local/evaluations/appearance-recipes/ar1-20261027T101459Z/package_check.py`. Its inherited build uses installed `setuptools.build_meta.build_wheel/build_sdist`, `--no-user-cfg`, and task-owned `build-base`, `egg-base` and `dist` paths to avoid changing existing build metadata. Use collision-safe AR2 paths only after execution approval, retaining the accepted harness/evidence. Build offline without installation/isolation dependency resolution, compare preexisting metadata before/after, inspect actual wheel/sdist members and extracted source bytes/dependency metadata. Required browser lock/helper inclusions and plan/private/VCS/personal-path exclusions must all hold; use independent inventory expectations, not equality alone. Extend extracted boundary probes for AR2 and record exact actual commands/archive hashes/member counts/results at Gate3.
 
 Current official JSON/Pillow13/security/HTML sources and applicability are in QA. Disposition: **amend old execution commands; feature design still valid**. The queried darktable precedents inform interaction only, not enabled-state transfer or geometry correctness. Before Gate2/any drift, bind declared/resolved/observed versions, refresh relevant official API/security/deprecation guidance and record still-valid/amend/blocked with affected checks; no automatic upgrade. Requirements and verification reviewers independently inspect material source support and expected-outcome basis.
 
@@ -91,7 +187,7 @@ Reviewers remain read-only. After all reports, validate findings, repair verifie
 
 Reuse this persistent feature owner for both increments and fixes. Root owns sequential shared-checkout/stack writes and may inspect compact native wait snapshots with latest cursors; use detailed history for decisions/conflicts/completions. No scheduler, duplicate owner, status ledger or per-check task. On resume reread this brief and actual candidate/prerequisite/permission evidence; preserve completed work and renew only affected proof. Unknown active ownership or in-flight review status blocks overlapping writes/replacement review. Use configured model defaults, no recursive fan-out.
 
-Root's broader three-feature orchestration owns titles/counts; this feature now has **1/2 accepted** following actual AR1 Gate 3 acceptance. AR2 preparation and implementation remain on hold while root commits AR1. Current feature owner title remains “Implement Appearance recipes” across both increments by assignment; no chat is created merely for naming. If root chooses stage labels, use factual Prep/G2/Build/Check/Review/G3/PR/Blocked/Close/Done and accepted count only, not test totals as acceptance. Report naming failure as a limitation, not a product blocker.
+Root's broader three-feature orchestration owns titles/counts; this feature has **1/2 accepted**, and AR1 is committed. AR2 preparation is authorized; product execution awaits root Gate2. Current feature owner title remains “Implement Appearance recipes” across both increments; no chat is created merely for naming. If root chooses stage labels, use factual Prep/G2/Build/Check/Review/G3/PR/Blocked/Close/Done and accepted count only, not test totals as acceptance. Report naming failure as a limitation, not a product blocker.
 
 Root alone may commit/push/create the feature PR targeting `fade-reduction` under the human grant. It verifies destination, exact comparison and stacked-PR/base membership and leaves the PR open. Before successor detailed preparation/dispatch, root reconciles current required CI and expected provider content coverage/findings for the exact current head. Prior green/empty/pending/unavailable labels are not passes. No new review request/reply/install is authorized here. Root handles bounded provider waiting/retry only where separately authorized, with actual eligibility/deadline/count and no duplicated active request; unresolved coverage holds affected continuation. Late material feedback returns to this owner after current writers safely yield, renewing only affected descendants/evidence.
 

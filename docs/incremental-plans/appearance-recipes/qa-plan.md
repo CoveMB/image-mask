@@ -1,12 +1,149 @@
 # Appearance recipes — QA plan
 
-Status: **AR1 Gate 3 accepted by root; 1/2 increments accepted**. Created: 2026-10-27. Deterministic, package, native browser and required review evidence is accepted within the recorded limitations. The feature owner waits while root commits AR1; AR2 preparation and implementation remain on hold. Supplementary QA is **on**; this is one coordinated candidate with [plan.md](plan.md) and [handoff.md](handoff.md), not a separate implementation plan or approval route.
+Status: **AR2 Gate3 accepted by root; 2/2 increments accepted**. Created: 2026-10-27. AR1 evidence is accepted within its recorded limits and committed as `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732`. Root's actual AR2 decision, accepted manifest/diff hashes and browser disposition are in [plan.md](plan.md#decisions-and-remaining-obligations). Supplementary QA is **on**; evidence qualifications remain unchanged.
+
+## AR2 execution record — current
+
+The approved T5–T6 implementation and maintained docs are present. Evidence is
+under ignored `local/evaluations/appearance-recipes/ar2-20261027T184703Z/` (paths
+below are relative to that root). Actual runtime is Python 3.12.14 ARM64,
+checkout-owned `blackmask`, Pillow/core 13.0.0; `runtime.json` records the import.
+The retained interpreter and actual command forms remain below. No dependencies,
+native validators, project formats, render engines or cache parsers changed.
+
+| Actual check / log | Exit and result | Meaning / disposition |
+| --- | --- | --- |
+| `layout-codec-red.log` | 1; 32 failed, 18 passed, 57 deselected | Causal unsupported-v2/helper/selection failures before implementation |
+| `layout-codec-green.log`; `layout-fixture-correction.log` | 1:104 passed/3 failed; then 0:3 passed/104 deselected | Three tests incorrectly supplied 300×220 target settings to 100×100 cases; corrected the fixture, retaining strict native validation |
+| `layout-http-red.log` | 1; 8 failed/69 deselected | Missing route/fallback caused failures before implementation |
+| `layout-http-green.log`; `layout-http-draft-fixtures.log` | 1:16 passed/1 failed; then 0:2 passed | Replaced an invented absent draft path with actual `recipe.toml` and `viewer-draft.json` identity races |
+| `layout-page-red.log`; `layout-page-green.log` | 1:16 failed; then 0:16 passed | Missing handlers/save choice, then executed-page Add/Replace/Cancel/Undo/fallback/late-reply cases |
+| `layout-page-regressions.log` | Captured complete pytest total:172 passed | Original wrapper exit was lost during context output truncation; not used as sole final-suite proof |
+| `layout-delivery-first.log` | 1; 1 failed/1 passed | New layout-route disconnect passed; differently sized source fixture initially retained the old helper's 6×4 scope |
+| `layout-delivery-fixture-correction.log` | 1; native child71 | Corrected source scope/native operand paths; tool/native sandbox nesting denied by macOS |
+| `layout-delivery-native.log` | 1 | Supported native route reached denial checks; audit rejected the separately installed Pillow plugin directory |
+| `layout-delivery-native-runtime.log` | 0; 1 passed | Narrow actual PIL/NumPy/tifffile package roots added to child runtime allowlist; native isolation and independent replay passed |
+| `layout-additional-boundaries.log`; subsequent focused empty-alpha command | 1:2 passed/1 failed; then 0:1 passed | Duplicate same-count UUIDs/no-matte passed; empty-alpha rejection correctly uses conflict409, not the initial fixture's expected400 |
+| `layout-poll-red.log`; `layout-poll-green.log` | 1:5 failed/1 passed; then 0:6 passed | Real browser exposed idempotent polling resetting clean spatial/reduction drafts; repair synchronizes only changed saved identities |
+| `layout-poll-page-regressions.log` | 0; 178 passed | Complete page regression renewal after polling repair |
+| `layout-apply-order-red.log`; `layout-apply-order-green.log` | 1:2 failed/2 passed; then 0:18 passed | Real Apply saved correct geometry but JSON member order stranded the draft; reused canonical value comparison, retaining newer-edit/Disable guards |
+| `full-suite.log`, `full-suite-interrupted.json` | Tool exit130; incomplete | Stopped after browser defect discovery. A causal test had been added while active; do not count this as a full pass. Read-only process check confirmed no remaining matching pytest process |
+| `settled-full-suite.log`, `settled-full-suite-status.json` | 0; **2457 passed, 7 skipped in1628.22s** | One settled complete invocation after both browser repairs; before/after source/test hashes matched exactly (`changed_inputs: []`) |
+| Ruff check/format and mypy (`static-check-records.json`) | Global lint1, repaired file0; global format0/66 files; mypy0/28 source files | All four initial lint findings were in `test_library_storage_journey.py`; its repair passed. Later page-test changes passed focused lint/format. Unchanged successful scopes reused; no single all-green global lint invocation claimed |
+
+The whole-tree command is `rtk proxy env PYTHONPATH=src "$APPEARANCE_PYTHON"
+-B -m pytest -q -rs -p no:cacheprovider`, with full raw stdout/stderr captured
+before summaries and actual child status recorded. Native test/full-suite runs
+use the supported escalated route so their own macOS policy remains active.
+Failed logs remain available. No partial, interrupted, skipped or audit-only
+case is promoted to native/runtime success.
+
+`static-check-records.json` preserves 11 actual command-execution records from
+this owner chat's turn `01a17eaf-0f04-78d2-8639-24072154166f`, including exact
+commands, tool IDs, statuses and complete outputs. They were retrieved without
+rerunning successful unchanged checks. The original truncated retrieval of the
+initial lint failure was expanded to its complete four-diagnostic output before
+retaining the record.
+
+**Q10 actual browser.** `browser_check.py` adapts the inspected AR1 observer to
+new 96×64/128×80 synthetic projects; no accepted AR1 fixture is reused for writes.
+Native Brave private controls exercised real v1/v2 downloads/reopen, Add with
+target group OFF, preview/Cancel, mandatory Replace confirmation/Cancel, exact
+visible Undo after polling, explicit fallback, fractional native edit and
+ordinary Apply/reopen. Browser-found polling and JSON-order defects have causal
+coverage and renewed actual-browser results. `browser/native-layout-saved.png`
+and `browser/layout-preview.png` contain only application content. The second
+Apply saves oval transition13.25 in rev-009; accepted rev-007 remains unchanged.
+`browser_verify.py` and `browser-verification.log` exit0 check all115 source files
+unchanged, all155 preexisting target files unchanged except the ordinary
+`state.json`/`recipe.toml` updates, and 195 final target files. The original root
+recipe matches saved rev-007; only its spatial section changes. Both source
+captures, alpha, both reduction JSON/rasters and protection operands are exact.
+
+`browser/verification.json` records 776 local requests, no application-document
+CSP violation, four enforced cross-origin loopback fetch/image reports, and zero
+destination requests. **The browser session was not wholly offline or network
+isolated:** native address typing dropped the initial `h`, sending the exact
+query `ttp://127.0.0.1:56123/__probe` to `google.com/search`. The observed `q` and
+`oq` contain only a loopback port and test path, with no capability token,
+project identifier/path, recipe or image. Normal browser request metadata was
+not inspected; no unrelated history was read. Root accepted this disclosed
+automation navigation error at Gate3; no application network defect, rerun or
+product change was identified. Retain the qualification separately from
+application CSP and Q11 native denial.
+Both owned servers closed (PTY65844 exit0); a disconnected read-only state GET
+reported BrokenPipeError during navigation. The user's private window is blank.
+
+**Q10 narrow off-canvas renewal.** Root identified that the initial native
+observations did not cover the explicit off-canvas row. `browser_off_canvas.py`
+reopened only the retained synthetic target with frozen product bytes. The
+portable oval/arc centres `[2,0]` imply target x314, beyond width128; actual
+Replace placement returned409 with the native-limit diagnostic. Load/Cancel/Undo
+remained disabled and all15 recorded spatial numeric/switch/selection controls
+matched the baseline. Explicit current oval + portable oval settings-only reuse
+changed transition13.25→12.4; other recorded spatial controls were exact and
+the draft remained unapplied. `browser-off-canvas/verification.json` checks all
+195 project files byte-identical and exactly three POSTs: validate, rejected
+placement, fallback validate; no action/job. Sanitized AX records and
+`rejected-placement-fallback.png` retain actual native observations. A stale
+native element index initially clicked Pure black; its draft was restored and
+the page reloaded before the case baseline, with no Apply. The server closed
+exit0 (PTY69951), and the private window returned to `about:blank`. This narrow
+renewal neither repeats the full journey nor erases the earlier search exception.
+
+**Q11 actual combined recovery.** The existing frozen-delivery journey now
+creates a layout from a differently sized saved synthetic source, uses the real
+HTTP proposal and ordinary Apply, checks literal geometry and retained target
+master/candidate/protection/both reductions/accepted history, then freezes native,
+margins and series deliveries. Canonical inspect/clear removes exactly reported
+prediction files; retained project/delivery bytes remain exact. Fresh delivery-only
+replay uses independent existing formulas, including omitted/doubled spatial and
+Shadow reduction sensitivity, with no application imports. Parent/unguarded
+controls read six retained files and reach an owned loopback listener. The guarded
+child proves Python and native `ctypes.open` permission denial for all six and
+native `ctypes.socket/connect` permission denial, with no child connection
+accepted. Project/capture/layout source/recipe/reference delivery/model/cache
+locations are denied; runtime roots are narrow and cannot encompass probes.
+Native/margins equality and established series tolerances pass with actual
+Pillow/core13. This is OS-denial evidence for that subprocess only.
+
+**Q12 actual packages.** Adapted `package_check.py`, `package-build.log` and
+`packages/report.json` exit0. Wheel:36 members/236098 bytes, SHA256
+`bcda0e1caaae790c12d7ee2e765cd4939b63e3f1c6f1a72cc0543c3700edb9e3`.
+Sdist:91 members/631814 bytes, SHA256
+`37b1a1cbb74034bf125dd8ed96ec544902ff367ecbe93fe2c9634835beddc41e`.
+All30 runtime files match current source; required tests/helper/browser lock/docs,
+dependency metadata and privacy exclusions were checked against actual members.
+Forbidden-private-member and missing-runtime-member controls reject. Extracted
+wheel/sdist each pass v1/v2 conversion, explicit fallback, selected saved reference
+and actual authenticated layout HTTP probes. Existing build metadata is unchanged.
+
+The settled full suite completed successfully. Its seven skips remain explicit:
+one opt-in lifecycle-browser runner, mandatory I10 RAW/live-model and accepted-work
+recovery cases, optional local-photo B smoke, and three installed-model cases.
+The actual native recipe browser evidence above is separate from that skipped
+lifecycle-browser runner; no model/photo setup was added. All three independent
+result reports are complete with **No material improvements recommended**;
+verification inspected the final result and exact correspondence. Actual Ponytail
+ran inside architecture. The subsequent terminal retention review retained all
+owned AR1/AR2 evidence with no deletion. Final identities/report paths and the
+complete R1–R22 reconciliation are in plan.md and `ar2-gate3-candidate.json`.
+Actual root Gate3 is accepted on manifest
+`3a1d7b05063b9874751a9fc862d0e0eee12e400fd5b452870ced7b4c33c5709b`
+and diff `4bdcd4e47282f77847c9d0da9b2698a1c2cb210907db777e77361e0e6f0a7480`.
+Root independently matched14 final/11 reviewed files,3 raw sources,73 evidence
+entries and74 full-suite inputs, read the actual reviews and inspected the
+runtime/browser/native reconstruction/package/static/retention evidence described
+above. The frozen evidence remains unchanged; this administrative decision changes
+only the three incremental documents. AR1 accepted evidence and all
+I10/human/performance limits remain. Owner holds for root's Git/publication/provider
+work; final human review remains GitHub, with no merge action here.
 
 ## Source, scope and current evidence
 
 Primary: [source plan](../../superpowers/plans/2026-10-24-appearance-recipes.md), T1–T6/settled gate. Exact format, numeric examples and interaction rules: [design](../../superpowers/specs/2026-10-24-appearance-recipes-design.md). [Historical review corrections](../../superpowers/plans/2026-10-24-appearance-recipes-reviews.md) retain fractional background, fractional transition and independent-area-binding obligations. Source digests and R1–R22 ownership are in plan.md.
 
-Planning baseline: clean `appearance-recipes` at `42175688041e3ae013d9d395d45f631026adcd94`, including Fade reduction and lifecycle packaging. Initial observations below were source/metadata inspection only. The later AR1 execution record at the end distinguishes actual checks and remaining browser limits; predecessor totals are not recipe evidence.
+Current AR2 planning baseline: clean `appearance-recipes` at `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732`. Initial AR1 observations below refer to `42175688041e3ae013d9d395d45f631026adcd94`; the AR1 execution record distinguishes later implementation and proof. AR2 preparation rechecked source/candidate correspondence and all 41 installed lock-version metadata entries without importing the product or rerunning successful checks.
 
 Inspected reusable foundations:
 
@@ -17,7 +154,7 @@ Inspected reusable foundations:
 - `test_library_storage_journey.py::test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_reconstruction`, `test_configured_storage_cache_and_forced_saved_reconstruction`, `storage_journey_process.py`, existing export and cache tests: actual files, frozen deliveries, native read/write negative controls and disconnected reconstruction. Extend the existing owner for AR2 rather than build a parallel lifecycle harness.
 - `MANIFEST.in` now includes `requirements-browser-macos-arm64.lock`, `tests/run_browser.py` and `tests/storage_journey_process.py`; plans/local/private material stay excluded. Inspect produced artifacts, not just these declarations.
 
-Current gaps confirmed in shipped code: background load/status rounds variation and Apply requires integer percentage; exposure/Shadow geometry has dirty flags but no independent draft identity/version; scalar completion lacks same-revision version protection; `loadAuthoring` resets shading/cleanup controls. These are source-required AR1 repairs, not adjacent cleanup. Spatial already has one whole-draft binding/version. Fade reduction owns independent per-target drafts in `fadeReductionDrafts`; preserve those exact values and controls.
+Historical AR1 gaps, now repaired and accepted: fractional background persistence, independent exposure/Shadow geometry bindings, same-revision completion protection and shading/cleanup reset behavior. AR2 must preserve those regressions. Spatial has one whole-draft binding/version; reduction owns independent per-target drafts in `fadeReductionDrafts`, and some raw control/selection changes advance neither counter. Exact AR2 preservation and invalidation must cover both maps and those controls.
 
 The human intends to inspect the final GitHub result. That does not replace behavioral evidence or the three independent result scopes. Human photographic usefulness/appearance, assistive-technology usability and representative large-photo performance remain human/empirical obligations; small synthetic tests cannot establish them. Use domain/behavior names on all new code/tests/docs/UI; AR labels only identify work/provenance.
 
@@ -57,6 +194,30 @@ Disposition: **amend execution commands/environment only; selected feature desig
 
 Native storage tests launch their own macOS sandbox. Nested tool/native sandbox can fail with `sandbox_apply: Operation not permitted` (child71); root's predecessor run used the supported escalated route without weakening negative controls. After Gate2, use that approval route if needed; a rejection stops that run and returns the precise blocker to root. Do not disable the test sandbox or treat an environment failure as a pass.
 
+## AR2 verification preparation
+
+Prepared on 2026-10-27 against committed AR1 `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732`. R13–R18 map without reduction to Q7–Q12 above; Q1–Q6 remain regression obligations. Two bounded read-only inspections mapped actual owners and test gaps; they are not new independent plan reviews or execution evidence. Product implementation, fixture creation and tests wait for root Gate 2.
+
+**Q7/Q8 causal cases.** Extend `tests/test_appearance_recipes.py` and `tests/test_viewer.py`, using their current recipe/saved-project/inventory/native-settings/HTTP helpers. Pin the literal source/target arithmetic in Q7, not values calculated by the converter under test. Add finite interior, within-budget and beyond-budget cases for multiplication, cancellation at zero and both relational operands; strict native rejection is the control against widened validators. Compare v1/layout/fallback `.5/49` results. Supply explicit UUIDs to the pure merger and test wrong version/case/count, duplicates and collisions with removed target IDs. Validate malformed target geometry before Replace so replacement cannot hide it. The actual new HTTP route must reject duplicate envelope keys independently of the existing recipe prefix, release its shared admission lock after error/disconnect, reject before/after identity races and show unchanged project inventories and zero action/render calls. A normal v2 validation leaves layout out of scalar form assignments; only explicit fallback returns derived defaults while preserving original sanitized JSON.
+
+**Q9 executed-page controls.** Extend `tests/test_viewer_page.py::run_page` with a nonempty dirty spatial draft, selected arc, candidate/protection controls, both dirty reduction Map entries, raw reduction controls and another dirty form. Assert exact snapshots before/after preview, Cancel and cancelled Replace; independently expected loaded native settings; Undo restores the prior state while increasing the spatial counter. Delay responses/confirmations across full target-identity changes, recipe/mode change, spatial edit, reduction edit, selection/raw-control edit, second Load, Apply/Disable and reset. Apply submission invalidates even when it does not advance the spatial version. Reject Load during active pointer/arc placement; do not invent transient-gesture restoration. Use existing native Apply/completion tests to retain stale/newer draft guards. Cover untouched reduction maps/control strings, rather than resetting them from saved state to simulate recovery. These tests execute shipped handlers but do not prove browser rendering or accessibility.
+
+**Q10 browser route.** Use the previously successful native controls in a user-authorized empty Brave private window, scoped to new owned tiny localhost fixtures. Do not repeat the in-app-browser confirmation/CDP lock failure or read a normal window containing unrelated private content. If a fresh empty private window is unavailable, request that concrete human action while independent checks continue. Reuse the reviewed AR1 harness approach only after inspecting/adapting it to collision-safe AR2 paths; preserve accepted AR1 fixtures/evidence. Exercise actual v1/v2 downloads/reopen, explicit layout/fallback controls, Add with disabled target group, Replace/Cancel, Undo/invalidation and ordinary edit/Apply/reopen. Use native keyboard for menus and fractional number fields. Record only bounded method/path/server and sanitized CSP reports, never auth headers/private URLs. A test-only same-origin reporting directive may observe application-document policy violations; controlled cross-origin loopback fetch/image probes must demonstrate reporting and zero destination requests. Retain the claim as application-document evidence, not all browser/OS traffic or network isolation. Close only owned servers/tabs.
+
+**Q11 existing owner and exact extension.** Extend `tests/test_library_storage_journey.py::test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_reconstruction`; no new lifecycle harness or recipe-specific cache parser. The current child reconstructs copied deliveries independently, rejects omitted/doubled effects and imports no `blackmask` modules, with original project/capture renamed and empty `PYTHONPATH`. That proves that run did not require those names or application imports; it does not establish denied native reads/network. The separate configured-storage test proves guarded saved-project re-export, which is a different boundary and cannot close delivered-only Q11.
+
+1. After the existing target has nonzero spatial and Shadow reductions, protected partial-alpha samples and an accepted revision, create a portable layout from a differently sized synthetic saved source. Exercise the real recipe/proposal boundary and ordinary target spatial Apply. Assert literal converted native geometry and exact retained target master/candidate choice, both reduction JSON/rasters, protection/alpha, source bytes and accepted history. UI-only preview/Load state is proved by Q9/Q10; do not describe a Python proposal call as a browser Load.
+2. Freeze actual editable native, margins and series deliveries and companions. Use canonical `operations.inspect_processing_cache`/`clear_processing_cache` with the inspected candidate digest. Require project inventory equality minus exactly the reported removals, and byte-identical frozen delivery/permanent-asset inventories. The cache validator remains `operations._validate_cache_context` with canonical saved/delivery readers; no permissive recipe exception.
+3. Copy only delivery assets/companions into a fresh isolated replay directory. Keep the existing independent scalar RGB/alpha/Shadow/spatial/series formulas and omitted/doubled-effect sensitivity controls; preserve exact native/margins equality and existing justified series tolerances. Do not read the frozen reference directory or use product rendering to compute expected replay. Do not import application modules; retain the explicit `sys.modules` assertion.
+4. Reuse `storage_journey_process.install_guard` in this delivered-only child and the existing configured-storage test's `sandbox-exec` launch/profile pattern. Import the guard and required runtime libraries before installing the audit hook; after that, allow data reads only under the replay workspace and necessary interpreter/runtime roots, not broad repository/test/project parents or arbitrary `sys.path` entries. Importing the existing helper is test support, not permission to read application/source assets. Native policy denies network and reads of retained original/renamed project, capture, layout-source project/recipe, frozen reference deliveries, model and cache locations. Confirm allowlisted runtime roots do not encompass forbidden fixture files. No new runtime API or generic helper framework is required; keep launch adaptation in this existing test unless a small shared helper is demonstrably required by both current callers.
+5. Preserve original fixtures as unavailable inputs rather than deleting them. Before child launch, show each data-denial probe exists/readable in the parent; use existing retained fixture files and a tiny synthetic model marker, not real models. Inside the child require Python reads and native `ctypes` opens of those existing probes to fail with permission denial; absent-file failure cannot count. Cache is denied through its retained project root even if clearing leaves no cache file. Prove native network denial with a connection to an owned listening loopback endpoint (parent positive control, child permission-denied result, no child connection accepted), then retain the Python socket fail-fast guard throughout replay. Guard-removal/unguarded controls must reach the otherwise permitted file/socket operation, so unrelated reconstruction/setup errors cannot masquerade as denial. Record exact child/native/audit modes, probes and statuses; Python-audit-only platforms must not claim native isolation.
+
+The existing tool/native sandbox nesting failure may recur. Use the documented supported escalated isolated route after actual approval without weakening controls; retain any rejection/failure and stop that lane for root. All probes concern owned synthetic fixtures and loopback; no model loading, private captures or external traffic. The Q11 extension closes an existing required evidence gap, not an expanded product feature. Targeted verification-plan renewal is complete with **No material improvements recommended**; exact candidate/report identity is in [plan.md](plan.md#progress-and-review-readiness). The reviewer correctly identified that `install_guard` itself denies Python socket events: the native network negative control must therefore use native `ctypes` socket/connect independently of that audit event, with the same unguarded positive control and permission-specific OS result. Python `PermissionError` alone does not prove native network denial. This records the review's execution interpretation; runtime proof remains pending.
+
+**Q12 execution and packaging.** Use the retained Python and `PYTHONPATH=src` command forms in the handoff; `PYTHONPATH=src:tests` only for owned helper-dependent parent fixtures, and the delivered-only child's narrower path/allowlist above. Focused cases precede one settled full suite plus lint/format/mypy. Rebuild wheel/sdist offline with the current setuptools and inspect actual archived members against the final candidate, including `tests/storage_journey_process.py` and browser lock/helper files. Reuse AR1's independent privacy/missing-member negative controls and extracted-package boundary probes, extending them for v2/fallback/new endpoint/UI. Preserve failed runs and every named skip; existing live/model/I10 skips do not pass through this work. No build/test runs occurred in preparation.
+
+Fresh official guidance checked 2026-10-27: [Python 3.12 math](https://docs.python.org/3.12/library/math.html#math.ulp) supports `ulp` and directional `nextafter` fixtures; finite-term checks remain essential. The exact factor-four operation budgets are the selected design's policy, not a general error theorem established by the API documentation. [Python 3.12 UUID](https://docs.python.org/3.12/library/uuid.html) supports `uuid4` generation; parse without the constructor's `version=4` override, then validate actual version/canonical lowercase form and collision sets. Current pages identify 3.12.16; these are API-applicable to retained 3.12.14, not patch-level certification. [MDN CSP report-uri](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/report-uri) marks the observer directive deprecated and reports untrusted; use only the already proven test observer with a renewed negative control, not a new production dependency or universal browser guarantee. Disposition: retain product design/runtime pins; amend concrete test isolation/browser observation only. Same-day AR1 JSON/Pillow/UTF-8/number-input evidence above remains applicable to unchanged boundaries; metadata still matches all 41 pins, and AR1's actual Pillow/core 13 proof is reused rather than relabelled a new runtime probe.
+
 ## Certification assessment
 
 No new separate recipe certification card is warranted: no model/backend/setup change is proposed and the source asks for deterministic/browser/package evidence. Preserve existing **mandatory I10 live journey and accepted-work recovery OPEN** in `tests/test_lifecycle_live.py` and [validation.md](../../validation.md#photo-lifecycle-acceptance-coverage), including its prerequisites, isolation, causal assertions and human closure. Ordinary suite skips, component model probes and recipe Gate3 cannot close it. Optional fixed-photo smoke remains separate. Do not acquire assets or run private-photo work here.
@@ -65,9 +226,9 @@ Source-required human usefulness/appearance acceptance and repository usability/
 
 ## Reviews, readiness and embedded preparation handoff
 
-Plan-stage source, architecture/simplicity and verification reports are settled on coordinated C1 with targeted C2 renewal. The sole shading-ceiling omission is repaired in Q3/R4/handoff; all three scopes report no remaining material finding. Actual identities/routes, candidate hashes, dispositions and the verification reviewer's late cross-review exposure limitation are recorded in plan.md. On 2026-10-27 the owning orchestrator approved the exact returned packet for AR1 under the verified human delegation; the actual decision and approved hashes are in plan.md. Those plan-stage records did not supply result evidence: Q1–Q6/Q10/Q12 execution and three fresh result scopes were still required at that checkpoint. Their later evidence and actual Gate 3 acceptance are recorded below; AR2 remains on hold.
+Plan-stage source, architecture/simplicity and verification reports are settled on coordinated C1 with targeted C2 renewal. The sole shading-ceiling omission is repaired in Q3/R4/handoff; all three scopes report no remaining material finding. Actual identities/routes, candidate hashes, dispositions and the verification reviewer's late cross-review exposure limitation are recorded in plan.md. On 2026-10-27 the owning orchestrator approved the exact returned packet for AR1 under the verified human delegation; the actual decision and approved hashes are in plan.md. Those plan-stage records did not supply result evidence: Q1–Q6/Q10/Q12 execution and three fresh result scopes were still required at that checkpoint. Their later evidence and actual Gate 3 acceptance are recorded below. AR2 preparation now reuses that unaffected coverage and adds the targeted Q11 renewal; AR2 implementation awaits root Gate 2.
 
-**Current execution handoff:** Root has accepted AR1 Gate 3 under the actual human grant referenced in [plan.md](plan.md#decisions-and-remaining-obligations). Feature owner `01a17cb4-1217-7043-a2c5-71b7ecec038a` records the decision in these three incremental documents, returns their exact hashes and owned inventory, then waits while orchestrator `01a17ba9-9112-7a52-b8da-547737b178e3` commits AR1. Do not start AR2 preparation or implementation until root's next instruction. Root polls this chat; send no parent message or Git/provider action. Runtime, tests, raw sources and existing evidence remain unchanged. Any later authorized resumption must reconcile the committed baseline and applicable evidence without repeating unchanged successful checks.
+**Current execution handoff:** AR1 is accepted and committed. Feature owner `01a17cb4-1217-7043-a2c5-71b7ecec038a` returns this concrete AR2 preparation, the targeted Q11 review disposition and exact three-document hashes to orchestrator `01a17ba9-9112-7a52-b8da-547737b178e3` for actual Gate 2. Root polls and must return the decision here; no parent message or Git/provider action. Runtime, product/tests, raw sources and accepted evidence remain unchanged during preparation. Before later authorized execution, recheck the exact candidate/baseline and relevant runtime correspondence; do not repeat unchanged successful AR1 checks solely to establish the new increment.
 
 Before Gate2, bind relevant declared/resolved/observed runtime versions, inspect current official version-applicable API/security/deprecation guidance, record still-valid/amend/blocked and affected work, without upgrades/installs. Use current code/contracts and raw source-derived expectations, not status labels. Resolve missing prerequisite/correspondence evidence before dependent work. Concrete names describe domain/behavior across code, tests, docs/examples and generated surfaces; retain specific provenance/source/history and compatibility names, not increment identifiers in software.
 

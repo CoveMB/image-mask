@@ -116,6 +116,248 @@ function advanceAppearanceRevision(extra={}){
 """
 
 
+LAYOUT_SETUP = (
+    APPEARANCE_SETUP
+    + r"""
+appearanceValue.schema_version=2;
+appearanceValue.sections={spatial_layout:{preserve_highlights:.7,arcs_enabled:false,
+ oval:{enabled:false,center_subject_xy:[.25,-.2],inner_radii_subject_xy:[.2,.1],rotation_degrees:37,transition_subject_fraction:.075,amount:.6},
+ arcs:[{enabled:true,center_subject_xy:[.25,-.2],rotation_degrees:37,transition_subject_fraction:.075,amount:.4,
+ half_span_subject_fraction:.3,bend_subject_fraction:-.1,end_softness_subject_fraction:.02,fade_side:'negative'}]},
+ local_exposure:{ev:1.25}};
+for(const key of Object.keys(appearanceConverted))delete appearanceConverted[key];
+appearanceConverted.local_exposure={ev:1.25};
+const layoutRequests=[];let layoutReplyGate=null, releaseLayoutReply, nextLayoutId=10;
+const layoutFetch=fetch;
+globalThis.fetch=async(path,options)=>{
+ const data=options.body?JSON.parse(options.body):null;
+ if(path==='/api/appearance-layout-preview'){
+  layoutRequests.push(data);
+  const arc={id:'00000000-0000-4000-8000-'+String(++nextLayoutId).padStart(12,'0'),enabled:false,
+   center_xy:[75,30],rotation_degrees:37,transition_width:7.5,amount:.4,half_span:30,bend:-10,end_softness:2,fade_side:'negative'};
+  const proposal=data.mode==='replace'?{enabled:data.spatial_draft.enabled,preserve_highlights:.7,arcs_enabled:false,
+   oval:{enabled:false,center_xy:[75,30],inner_radii_xy:[20,10],rotation_degrees:37,transition_width:7.5,amount:.6},
+   arcs:[{...arc,enabled:true}]}:{...structuredClone(data.spatial_draft),arcs:[...structuredClone(data.spatial_draft.arcs),arc]};
+  const result={spatial_fade:proposal,warnings:data.mode==='add_arcs'?['Target arc group is OFF']:[],
+   developed_id:data.developed_id,revision:data.revision,working_revision:data.revision,
+   revision_manifest_sha256:data.revision_manifest_sha256,inputs_digest:data.inputs_digest,
+   authoring_digest:data.authoring_digest,spatial_draft_version:data.spatial_draft_version,mode:data.mode};
+  if(layoutReplyGate)await layoutReplyGate;
+  return {ok:true,json:async()=>result};
+ }
+ const response=await layoutFetch(path,options);
+ if(path==='/api/appearance-recipe-validate'&&data.layout_defaults_shape!==undefined){
+  const result=await response.json();result.sections={local_exposure:{ev:1.25},spatial_fade:{transition_width:7.5,
+   amount:data.layout_defaults_shape==='oval'?.6:.4,preserve_highlights:.7}};
+  return {ok:true,json:async()=>result};
+ }
+ return response;
+};
+async function readyLayout(){
+ await ready();addSpatialArc();spatialDraft.arcs_enabled=false;markSpatialDirty();
+ $('spatialCandidate').checked=true;$('spatialProtection').value='draft/protected.png';
+ for(const [index,target] of ['spatial_fade','shadow_fade'].entries())fadeReductionDrafts.set(target,{
+  area:{schema_version:1,regions:[{shape:{id:'kept-'+target,role:'support',shape:'rectangle',xyxy:[10,20,30,40],feather_px:0},amount:.4}]},
+  version:index+3,identity:spatialCurrentIdentity(),dirty:true});
+ $('reductionTarget').value='spatial_fade';$('reductionAmount').value='37.50';$('reductionRadius').value='9';
+ $('reductionFeather').value='0';$('reductionRectangle').value='10,20,30,40';$('reductionCandidate').checked=true;
+ selectedReductionId='kept-spatial_fade';$('reductionSelect').value=selectedReductionId;
+ $('exposureEV').value='1.8';$('exposureEV').oninput();
+ await loadAppearanceRecipeFile(appearanceFile());$('appearanceLayoutMode').value='replace';
+}
+function layoutSnapshot(){return JSON.stringify({draft:spatialDraft,dirty:spatialDirty,binding:spatialDraftIdentity,
+ selected:selectedSpatialId,candidate:$('spatialCandidate').checked,protection:$('spatialProtection').value,
+ authorMode:$('authorMode').value,reductions:[...fadeReductionDrafts],selectedReductionId,
+ reductionControls:['reductionTarget','reductionShape','reductionRadius','reductionFeather','reductionAmount','reductionRectangle','reductionSelect','reductionView'].map(id=>[id,$(id).value]),
+ reductionCandidate:$('reductionCandidate').checked,exposure:$('exposureEV').value,exposureDirty:exposureControlsVersion});}
+"""
+)
+
+
+@pytest.mark.parametrize("spatial_dirty", [False, True])
+@pytest.mark.parametrize("reduction_state", ["absent", "clean", "dirty"])
+def test_appearance_layout_survives_unchanged_poll_and_rejects_changed_binding(
+    spatial_dirty, reduction_state
+):
+    run_page(
+        LAYOUT_SETUP
+        + f"\nconst spatialInitiallyDirty={json.dumps(spatial_dirty)}, reductionState={json.dumps(reduction_state)};\n"
+        + r"""
+ await readyLayout();
+ servedState.revisions[0].spatial_fade={enabled:spatialDraft.enabled,settings:structuredClone(spatialDraft)};
+ spatialDirty=spatialInitiallyDirty;
+ if(reductionState==='absent')fadeReductionDrafts.clear();
+ else {
+  servedState.revisions[0].fade_reduction_areas=Object.fromEntries([...fadeReductionDrafts].map(([target,draft])=>[target,structuredClone(draft.area)]));
+  for(const draft of fadeReductionDrafts.values())draft.dirty=reductionState==='dirty';
+ }
+ await refresh(false);
+ const before=layoutSnapshot(), version=spatialDraftVersion;
+ await previewAppearanceLayout('replace');assert(appearanceLayoutProposal);
+ await refresh(false);
+ assert(appearanceLayoutProposal,'Unchanged polling discarded the placement proposal');
+ assert.equal(layoutSnapshot(),before);assert.equal(spatialDraftVersion,version);
+ await loadAppearanceLayout();assert(appearanceLayoutUndo);
+ await refresh(false);assert(appearanceLayoutUndo,'Unchanged polling discarded import Undo');
+ undoAppearanceLayoutImport();assert.equal(layoutSnapshot(),before);
+ await previewAppearanceLayout('replace');assert(appearanceLayoutProposal);
+ servedState.revisions[0].revision_manifest_sha256='f'.repeat(64);
+ await refresh(false);assert.equal(appearanceLayoutProposal,null);
+ assert.equal(appearanceLayoutUndo,null);
+ """
+    )
+
+
+def test_appearance_layout_preview_cancel_and_guarded_undo_preserve_exact_drafts():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();const before=layoutSnapshot(),version=spatialDraftVersion;
+ await previewAppearanceLayout('replace');
+ assert(appearanceLayoutProposal);assert.equal(layoutSnapshot(),before);assert.equal(spatialDraftVersion,version);
+ assert($('appearanceLayoutStatus').textContent.includes('Placement preview — effects not applied'));
+ cancelAppearanceLayout();assert.equal(appearanceLayoutProposal,null);assert.equal(layoutSnapshot(),before);
+ assert.equal(spatialDraftVersion,version);assert.equal(posts.length,0);
+ await previewAppearanceLayout('replace');let confirmed='';globalThis.confirm=text=>{confirmed=text;return false;};
+ await loadAppearanceLayout();assert(confirmed.includes('Replace'));assert.equal(layoutSnapshot(),before);
+ globalThis.confirm=()=>true;await loadAppearanceLayout();
+ assert.equal(spatialDraftVersion,version+1);assert.equal(spatialDraft.enabled,false);
+ assert.deepEqual(spatialDraft.oval.center_xy,[75,30]);assert.equal($('spatialProtection').value,'draft/protected.png');
+ assert.equal([...fadeReductionDrafts][0][1].version,3);assert.equal($('reductionAmount').value,'37.50');
+ assert.equal(posts.length,0);assert(appearanceLayoutUndo);
+ undoAppearanceLayoutImport();assert.equal(layoutSnapshot(),before);assert.equal(spatialDraftVersion,version+2);
+ assert.equal(appearanceLayoutUndo,null);assert.equal(posts.length,0);
+ """
+    )
+
+
+def test_appearance_layout_add_preserves_group_and_existing_ids_then_native_apply():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();$('appearanceLayoutMode').value='add_arcs';
+ const existing=structuredClone(spatialDraft),reductions=JSON.stringify([...fadeReductionDrafts]);
+ await previewAppearanceLayout('add_arcs');await loadAppearanceLayout();
+ assert.equal(spatialDraft.arcs_enabled,false);assert.deepEqual(spatialDraft.oval,existing.oval);
+ assert.equal(spatialDraft.preserve_highlights,existing.preserve_highlights);
+ assert.deepEqual(spatialDraft.arcs.slice(0,-1),existing.arcs);assert.equal(spatialDraft.arcs.at(-1).enabled,false);
+ assert.equal(JSON.stringify([...fadeReductionDrafts]),reductions);
+ $('spatialStrength').value='65';$('spatialStrength').oninput();assert.equal(appearanceLayoutUndo,null);
+ await applySpatial();assert.equal(posts.length,1);assert.equal(posts[0].spatial_fade.arcs.at(-1).amount,.65);
+ assert.equal(posts[0].spatial_fade.arcs_enabled,false);assert.equal(appearanceLayoutUndo,null);
+ """
+    )
+
+
+def test_appearance_layout_replace_confirms_clean_draft_and_second_load_replaces_undo():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();spatialDirty=false;let confirmations=0;globalThis.confirm=()=>{confirmations++;return true;};
+ await previewAppearanceLayout('replace');await loadAppearanceLayout();assert.equal(confirmations,1);
+ const afterFirst=layoutSnapshot(),version=spatialDraftVersion;
+ await previewAppearanceLayout('replace');assert.equal(appearanceLayoutUndo,null);
+ await loadAppearanceLayout();assert.equal(confirmations,2);assert.equal(spatialDraftVersion,version+1);
+ undoAppearanceLayoutImport();assert.equal(layoutSnapshot(),afterFirst);assert.equal(spatialDraftVersion,version+2);
+ """
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "spatial",
+        "reduction",
+        "raw-control",
+        "selection",
+        "mode",
+        "authoring",
+        "file",
+        "apply",
+        "disable",
+        "reset",
+    ],
+)
+def test_appearance_layout_late_preview_and_undo_cannot_overwrite_independent_changes(change):
+    run_page(
+        LAYOUT_SETUP
+        + f"const change={change!r};"
+        + r"""
+ await readyLayout();await previewAppearanceLayout('replace');await loadAppearanceLayout();assert(appearanceLayoutUndo);
+ async function edit(){
+  if(change==='spatial'){$('spatialCenterX').value='44';$('spatialCenterX').oninput();}
+  else if(change==='reduction'){fadeReductionDrafts.get('shadow_fade').version++;markFadeReductionDirty();}
+  else if(change==='raw-control'){$('reductionRectangle').value='20,20,50,50';$('reductionRectangle').oninput();}
+  else if(change==='selection'){$('spatialSelect').value='oval';$('spatialSelect').onchange();}
+  else if(change==='mode'){$('appearanceLayoutMode').value='add_arcs';$('appearanceLayoutMode').onchange();}
+  else if(change==='authoring'){state.authoring_digest+='changed';}
+  else if(change==='file'){await loadAppearanceRecipeFile(appearanceFile());}
+  else if(change==='apply'){await applySpatial();}
+  else if(change==='disable'){await $('spatialDisable').onclick();}
+  else resetSpatialFromSaved();
+ }
+ await edit();const edited=layoutSnapshot();
+ assert.throws(()=>undoAppearanceLayoutImport(),/unavailable|changed|Undo|undo/i);
+ assert.equal(layoutSnapshot(),edited);
+ // A separate pending preview is bound to the same independent change classes.
+ await readyLayout();layoutReplyGate=new Promise(resolve=>releaseLayoutReply=resolve);
+ const pending=previewAppearanceLayout('replace');await Promise.resolve();await edit();
+ const newer=layoutSnapshot();releaseLayoutReply();await pending;
+ assert.equal(appearanceLayoutProposal,null);assert.equal(layoutSnapshot(),newer);
+ """
+    )
+
+
+def test_appearance_layout_late_replace_confirmation_and_active_placement_do_not_load():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();await previewAppearanceLayout('replace');let answer;
+ globalThis.confirm=()=>new Promise(resolve=>answer=resolve);
+ const pending=loadAppearanceLayout();await Promise.resolve();
+ $('reductionCandidate').checked=false;$('reductionCandidate').oninput();const newer=layoutSnapshot();
+ answer(true);await pending;assert.equal(layoutSnapshot(),newer);assert.equal(appearanceLayoutUndo,null);
+ globalThis.confirm=()=>true;await previewAppearanceLayout('replace');spatialAdding=true;
+ await assert.rejects(loadAppearanceLayout(),/placement|gesture|finish/i);
+ assert.equal(layoutSnapshot(),newer);
+ """
+    )
+
+
+def test_appearance_layout_settings_only_fallback_preserves_file_geometry_and_switches():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();const recipe=JSON.stringify(appearanceRecipePreview.recipe),old=structuredClone(spatialDraft);
+ $('appearanceTargetShape').value=selectedSpatialId;$('appearanceLayoutDefaultsShape').value='0';
+ await loadAppearanceLayoutSettingsOnly();
+ assert.equal(recipeRequests.at(-1).data.layout_defaults_shape,0);
+ assert.equal(JSON.stringify(appearanceRecipePreview.recipe),recipe);
+ const selected=spatialDraft.arcs.find(arc=>arc.id===selectedSpatialId);
+ assert.equal(selected.transition_width,7.5);assert.equal(selected.amount,.4);
+ const previous=old.arcs.find(arc=>arc.id===selectedSpatialId);
+ assert.deepEqual(selected.center_xy,previous.center_xy);assert.equal(selected.enabled,previous.enabled);
+ assert.equal(spatialDraft.arcs_enabled,old.arcs_enabled);assert.deepEqual(spatialDraft.oval,old.oval);
+ assert.equal(spatialDraft.preserve_highlights,.7);assert.equal(posts.length,0);
+ spatialDraftIdentity='older';await assert.rejects(loadAppearanceLayoutSettingsOnly(),/Stale/);
+ """
+    )
+
+
+def test_appearance_layout_save_selection_is_explicit_and_exclusive():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();servedState.revisions[0].spatial_fade={enabled:false,settings:structuredClone(spatialDraft)};
+ await refresh();$('appearanceSource').value='rev-001';syncAppearanceSource();
+ assert.equal($('appearanceSave-spatial_layout').checked,false);
+ $('appearanceSaveName').value='Saved layout';$('appearanceSave-spatial_layout').checked=true;
+ const request=appearanceSaveRequest();assert.deepEqual(request.sections,['spatial_layout']);assert.equal(request.reference_shape_id,null);
+ $('appearanceSave-spatial_fade').checked=true;assert.throws(appearanceSaveRequest,/at most one|exclusive/);
+ """
+    )
+
+
 def test_appearance_recipe_loads_selected_scalars_without_geometry_or_jobs():
     run_page(
         APPEARANCE_SETUP
@@ -670,6 +912,40 @@ def test_reused_spatial_apply_clears_only_the_matching_submitted_draft(completio
  assert.equal(spatialDirty,completion!=='match');
  assert.deepEqual(spatialDraft,completion==='match'?saved:expectedDraft);
  assert.equal($('backgroundHex').value,'#AB1234');
+ """
+    )
+
+
+@pytest.mark.parametrize("reused", [False, True])
+@pytest.mark.parametrize("newer_edit", [False, True])
+def test_imported_layout_apply_accepts_saved_key_order_without_consuming_newer_edit(
+    reused, newer_edit
+):
+    run_page(
+        LAYOUT_SETUP
+        + f"\nconst reused={json.dumps(reused)},newerEdit={json.dumps(newer_edit)};\n"
+        + r"""
+ await readyLayout();await previewAppearanceLayout('replace');await loadAppearanceLayout();
+ const priorFetch=fetch;globalThis.fetch=async(path,options)=>{
+  if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};
+  return priorFetch(path,options);
+ };
+ await applySpatial();const submitted=posts.at(-1).spatial_fade;
+ // JSON object member order changes when the server saves a sorted manifest.
+ const reordered={arcs:submitted.arcs,arcs_enabled:submitted.arcs_enabled,enabled:submitted.enabled,
+  oval:{amount:submitted.oval.amount,...submitted.oval},preserve_highlights:submitted.preserve_highlights};
+ assert.notEqual(JSON.stringify(reordered),JSON.stringify(submitted));
+ if(newerEdit){spatialDraft.oval.amount=.23;markSpatialDirty();}
+ const pending=structuredClone(spatialDraft), revision=reused?'rev-001':'rev-002';
+ const record={...servedState.revisions[0],revision,spatial_fade:{enabled:reordered.enabled,settings:reordered}};
+ if(reused)servedState.revisions[0]=record;else servedState.revisions.push(record);
+ servedState.working_revision=revision;
+ servedState.action={running:false,name:'effects',error:null,result:{revision,parent:'rev-001',reused,
+  spatial_fade:{enabled:reordered.enabled,settings:reordered}}};
+ await refresh(false);
+ assert.equal(spatialDirty,newerEdit);
+ assert.deepEqual(spatialDraft,newerEdit?pending:submitted);
+ assert.equal(appearanceLayoutUndo,null);
  """
     )
 

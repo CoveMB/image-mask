@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 from PIL import Image
@@ -230,12 +231,20 @@ class ReviewServer(ThreadingHTTPServer):
     def validate_appearance_recipe(self, data: Any) -> dict[str, Any]:
         return self._appearance_recipe(data, create=False)
 
-    def _appearance_recipe(self, data: Any, *, create: bool) -> dict[str, Any]:
+    @_validation_scope()
+    def preview_appearance_layout(self, data: Any) -> dict[str, Any]:
+        return self._appearance_recipe(data, create=False, layout_preview=True)
+
+    def _appearance_recipe(
+        self, data: Any, *, create: bool, layout_preview: bool = False
+    ) -> dict[str, Any]:
         """Bounded read-only recipe transport with the same saved-target guard as previews."""
         from .appearance_recipes import (
             appearance_recipe_form_values,
             appearance_recipe_from_revision,
             parse_appearance_recipe,
+            spatial_layout_proposal,
+            spatial_layout_scalar_defaults,
         )
         from .export import validated_layer_inputs
         from .series_framing import nonzero_alpha_bounds
@@ -245,12 +254,29 @@ class ReviewServer(ThreadingHTTPServer):
             if create
             else {"recipe_json"}
         )
-        if not isinstance(data, dict) or set(data) != required:
+        if layout_preview:
+            required |= {
+                "inputs_digest",
+                "authoring_digest",
+                "spatial_draft",
+                "spatial_draft_version",
+                "mode",
+            }
+        admitted = [required]
+        if not create and not layout_preview:
+            admitted.append(required | {"layout_defaults_shape"})
+        if not isinstance(data, dict) or set(data) not in admitted:
             raise ValueError("Invalid appearance recipe structured fields")
+        if layout_preview and (
+            type(data["spatial_draft_version"]) is not int
+            or data["spatial_draft_version"] < 0
+            or data["mode"] not in ("add_arcs", "replace")
+        ):
+            raise ValueError("Invalid appearance layout mode or spatial draft version")
         revision, manifest_hash = data["revision"], data["revision_manifest_sha256"]
         if (
             (revision is None) != (manifest_hash is None)
-            or create
+            or (create or layout_preview)
             and revision is None
             or revision is not None
             and (
@@ -281,6 +307,13 @@ class ReviewServer(ThreadingHTTPServer):
                 "inputs_digest": operations.draft_digest(self.project),
                 "authoring_digest": operations.guidance_draft_digest(self.project),
             }
+            if layout_preview and (
+                revision != state["working_revision"]
+                or any(data[key] != binding[key] for key in ("inputs_digest", "authoring_digest"))
+            ):
+                raise ProjectError(
+                    "Stale appearance layout: use the current working revision and drafts"
+                )
             if revision is None:
                 if state["working_revision"] is not None:
                     raise ProjectError("Stale appearance target: select the current saved revision")
@@ -306,6 +339,28 @@ class ReviewServer(ThreadingHTTPServer):
             else:
                 try:
                     recipe = parse_appearance_recipe(data["recipe_json"].encode("utf-8"))
+                    converted_recipe = recipe
+                    if "layout_defaults_shape" in data:
+                        if (
+                            recipe["schema_version"] != 2
+                            or "spatial_layout" not in recipe["sections"]
+                        ):
+                            raise ValueError("Settings-only selection requires a v2 spatial layout")
+                        defaults = spatial_layout_scalar_defaults(
+                            recipe["sections"]["spatial_layout"], data["layout_defaults_shape"]
+                        )
+                        converted_recipe = {
+                            **recipe,
+                            "schema_version": 1,
+                            "sections": {
+                                key: value
+                                for key, value in recipe["sections"].items()
+                                if key != "spatial_layout"
+                            }
+                            | {"spatial_fade": defaults},
+                        }
+                    if layout_preview and "spatial_layout" not in recipe["sections"]:
+                        raise ValueError("Choose a recipe containing a spatial layout")
                 except (ValueError, UnicodeError) as error:
                     raise ValueError(str(error)) from error
                 master, _ = _validate_assets(self.project, state, validate_drafts=False)
@@ -316,10 +371,34 @@ class ReviewServer(ThreadingHTTPServer):
                         self.project, revision, state["developed_id"]
                     )
                     bounds = nonzero_alpha_bounds(alpha)
-                result = {
-                    "recipe": recipe,
-                    **appearance_recipe_form_values(recipe, bounds, (width, height)),
-                }
+                if layout_preview:
+                    if bounds is None:
+                        raise ProjectError(
+                            "A complete saved matte with nonzero alpha is required for layout"
+                        )
+                    layout = recipe["sections"]["spatial_layout"]
+                    proposal = spatial_layout_proposal(
+                        layout,
+                        data["spatial_draft"],
+                        bounds,
+                        (width, height),
+                        data["mode"],
+                        [str(uuid4()) for _ in layout["arcs"]],
+                    )
+                    warnings = []
+                    if data["mode"] == "add_arcs" and not proposal["arcs_enabled"]:
+                        warnings.append("Target arc group is OFF; loading arcs will not enable it.")
+                    result = {
+                        "spatial_fade": proposal,
+                        "warnings": warnings,
+                        "spatial_draft_version": data["spatial_draft_version"],
+                        "mode": data["mode"],
+                    }
+                else:
+                    result = {
+                        "recipe": recipe,
+                        **appearance_recipe_form_values(converted_recipe, bounds, (width, height)),
+                    }
             read_project(self.project, validate_drafts=False)
             if revision is not None:
                 self._validated_revision(revision, state["developed_id"])
@@ -1138,6 +1217,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
             "/api/fade-reduction-preview",
             "/api/appearance-recipe-create",
             "/api/appearance-recipe-validate",
+            "/api/appearance-layout-preview",
         }:
             self.error(404, "Unknown route")
             return
@@ -1163,6 +1243,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 body,
                 object_pairs_hook=appearance_unique_object
                 if self.path.startswith("/api/appearance-recipe-")
+                or self.path == "/api/appearance-layout-preview"
                 else _unique_object
                 if self.path.startswith(("/api/series-", "/api/spatial-", "/api/fade-reduction-"))
                 else None,
@@ -1180,6 +1261,13 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     200,
                     json.dumps(
                         self.server.validate_appearance_recipe(data), allow_nan=False
+                    ).encode(),
+                )
+            elif self.path == "/api/appearance-layout-preview":
+                self.reply(
+                    200,
+                    json.dumps(
+                        self.server.preview_appearance_layout(data), allow_nan=False
                     ).encode(),
                 )
             elif self.path == "/api/fade-reduction-preview":
@@ -1228,6 +1316,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     "/api/fade-reduction-preview",
                     "/api/appearance-recipe-create",
                     "/api/appearance-recipe-validate",
+                    "/api/appearance-layout-preview",
                 }
                 and isinstance(error, ProjectError)
             )

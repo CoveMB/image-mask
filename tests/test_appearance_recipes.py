@@ -86,7 +86,7 @@ def test_appearance_recipe_strict_roundtrip(sections):
     "change",
     [
         {"schema_version": True},
-        {"schema_version": 2},
+        {"schema_version": 3},
         {"kind": "other"},
         {"name": ""},
         {"name": "x" * 81},
@@ -578,3 +578,389 @@ def test_recipe_creation_rejects_missing_sections_stale_hash_and_bad_selection(t
         appearance_module().appearance_recipe_from_revision(
             project, selected["revision"], "0" * 64, "Wrong source", ["background"], None, False
         )
+
+
+def portable_layout():
+    return {
+        "preserve_highlights": 0.7,
+        "oval": {
+            "enabled": False,
+            "center_subject_xy": [0.25, -0.2],
+            "rotation_degrees": 37,
+            "transition_subject_fraction": 0.075,
+            "amount": 0.6,
+            "inner_radii_subject_xy": [0.2, 0.1],
+        },
+        "arcs_enabled": False,
+        "arcs": [
+            {
+                "enabled": True,
+                "center_subject_xy": [0.25, -0.2],
+                "rotation_degrees": 37,
+                "transition_subject_fraction": 0.075,
+                "amount": 0.4,
+                "half_span_subject_fraction": 0.3,
+                "bend_subject_fraction": -0.1,
+                "end_softness_subject_fraction": 0.02,
+                "fade_side": "negative",
+            }
+        ],
+    }
+
+
+def layout_recipe():
+    value = recipe_value(spatial_layout=portable_layout())
+    value["schema_version"] = 2
+    return value
+
+
+def native_layout():
+    # Literal source fixture for bounds (10,20,110,100), independent of converter.
+    return {
+        "enabled": True,
+        "preserve_highlights": 0.7,
+        "oval": {
+            "enabled": False,
+            "center_xy": [85, 40],
+            "rotation_degrees": 37,
+            "transition_width": 7.5,
+            "amount": 0.6,
+            "inner_radii_xy": [20, 10],
+        },
+        "arcs_enabled": False,
+        "arcs": [
+            {
+                "id": "00000000-0000-4000-8000-000000000001",
+                "enabled": True,
+                "center_xy": [85, 40],
+                "rotation_degrees": 37,
+                "transition_width": 7.5,
+                "amount": 0.4,
+                "half_span": 30,
+                "bend": -10,
+                "end_softness": 2,
+                "fade_side": "negative",
+            }
+        ],
+    }
+
+
+def target_layout(width=300, height=220):
+    from test_spatial_fade import spatial_settings
+
+    target = spatial_settings(width, height)
+    target["enabled"] = False
+    return target
+
+
+def layout_proposal(
+    layout=None,
+    target=None,
+    *,
+    mode="replace",
+    ids=None,
+    bounds=(20, 30, 220, 190),
+    dimensions=(300, 220),
+):
+    return appearance_module().spatial_layout_proposal(
+        portable_layout() if layout is None else layout,
+        target_layout(*dimensions) if target is None else target,
+        bounds,
+        dimensions,
+        mode,
+        ["00000000-0000-4000-8000-000000000002"] if ids is None else ids,
+    )
+
+
+def test_layout_codec_preserves_disabled_geometry_and_v1_compatibility():
+    recipes = appearance_module()
+    value = layout_recipe()
+    assert recipes.parse_appearance_recipe(recipes.portable_appearance_recipe(value)) == value
+    assert value["sections"]["spatial_layout"]["oval"]["enabled"] is False
+    scalar = recipe_value()
+    scalar["schema_version"] = 2
+    encoded = recipes.portable_appearance_recipe(scalar)
+    assert json.loads(encoded)["schema_version"] == 1
+    assert recipes.parse_appearance_recipe(recipe_bytes(recipe_value())) == recipe_value()
+    value["schema_version"] = 1
+    with pytest.raises(ValueError):
+        recipes.parse_appearance_recipe(recipe_bytes(value))
+
+
+@pytest.mark.parametrize("section", ["shading", "spatial_fade"])
+def test_layout_rejects_competing_representation(section):
+    value = layout_recipe()
+    value["sections"][section] = (
+        {"width_subject_fraction": 0.1, "direction_degrees": 0, "opacity": 0.5}
+        if section == "shading"
+        else {"transition_subject_fraction": 0.1, "amount": 0.5, "preserve_highlights": 0}
+    )
+    with pytest.raises(ValueError, match="conflicting"):
+        appearance_module().portable_appearance_recipe(value)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("enabled", 0),
+        ("rotation_degrees", 360),
+        ("rotation_degrees", True),
+        ("transition_subject_fraction", 0),
+        ("transition_subject_fraction", float("inf")),
+        ("amount", -0.1),
+        ("center_subject_xy", [0, float("nan")]),
+        ("center_subject_xy", [0]),
+        ("inner_radii_subject_xy", [0.1, 0]),
+        ("id", "private-native-id"),
+        ("protection", {}),
+    ],
+)
+def test_layout_validates_disabled_oval_and_excludes_private_fields(field, value):
+    recipe = layout_recipe()
+    recipe["sections"]["spatial_layout"]["oval"][field] = value
+    with pytest.raises(ValueError):
+        appearance_module().portable_appearance_recipe(recipe)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("half_span_subject_fraction", 0),
+        ("bend_subject_fraction", 0.31),
+        ("end_softness_subject_fraction", 0),
+        ("end_softness_subject_fraction", 0.31),
+        ("fade_side", "both"),
+        ("enabled", 1),
+        ("id", "private"),
+    ],
+)
+def test_layout_validates_arcs_when_group_disabled(field, value):
+    recipe = layout_recipe()
+    recipe["sections"]["spatial_layout"]["arcs"][0][field] = value
+    with pytest.raises(ValueError):
+        appearance_module().portable_appearance_recipe(recipe)
+
+
+def test_layout_uniform_conversion_preserves_values_and_inputs():
+    recipes = appearance_module()
+    native = native_layout()
+    before = copy.deepcopy(native)
+    assert recipes.spatial_layout_from_settings(native, (10, 20, 110, 100)) == portable_layout()
+    assert native == before
+    proposal = layout_proposal()
+    assert proposal["enabled"] is False
+    assert proposal["preserve_highlights"] == 0.7
+    assert proposal["oval"] == {
+        "enabled": False,
+        "center_xy": [170, 70],
+        "rotation_degrees": 37,
+        "transition_width": 15,
+        "amount": 0.6,
+        "inner_radii_xy": [40, 20],
+    }
+    assert proposal["arcs"] == [
+        {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "enabled": True,
+            "center_xy": [170, 70],
+            "rotation_degrees": 37,
+            "transition_width": 15,
+            "amount": 0.4,
+            "half_span": 60,
+            "bend": -20,
+            "end_softness": 4,
+            "fade_side": "negative",
+        }
+    ]
+    proposal["oval"]["center_xy"][0] = 0
+    assert layout_proposal()["oval"]["center_xy"] == [170, 70]
+
+
+def test_layout_continuous_weights_match_corresponding_points_without_axis_stretch():
+    from blackmask.spatial_fade import arc_fade_weight, elliptical_fade_weight
+
+    source, target = native_layout(), layout_proposal()
+    x = np.array([85, 105, 90, 100, 65, 120], dtype=float)
+    y = np.array([40, 50, 70, 40, 70, 70], dtype=float)
+    for key, evaluator in (("oval", elliptical_fade_weight), ("arcs", arc_fade_weight)):
+        old, new = (source[key], target[key]) if key == "oval" else (source[key][0], target[key][0])
+        weights = evaluator(x, y, old)
+        assert np.any(weights > 0) and np.any(weights < 1)
+        np.testing.assert_allclose(evaluator(x * 2, y * 2 - 10, new), weights, atol=2e-14, rtol=0)
+
+
+@pytest.mark.parametrize("source_group", [False, True])
+@pytest.mark.parametrize("target_group", [False, True])
+@pytest.mark.parametrize("source_arc", [False, True])
+def test_layout_add_preserves_target_switches_ids_and_max_contribution(
+    source_group, target_group, source_arc
+):
+    from blackmask.spatial_fade import combined_fade_weight
+
+    target = native_layout()
+    target["arcs_enabled"] = target_group
+    layout = portable_layout()
+    layout["arcs_enabled"] = source_group
+    layout["arcs"][0]["enabled"] = source_arc
+    before = copy.deepcopy(target)
+    result = layout_proposal(layout, target, mode="add_arcs")
+    assert {k: v for k, v in result.items() if k != "arcs"} == {
+        k: v for k, v in target.items() if k != "arcs"
+    }
+    assert result["arcs"][:-1] == target["arcs"]
+    assert result["arcs"][-1]["enabled"] is (source_group and source_arc)
+    assert target == before
+    x, y = np.meshgrid(np.arange(0, 300, 5.0), np.arange(0, 220, 5.0))
+    assert np.all(combined_fade_weight(x, y, result) >= combined_fade_weight(x, y, target))
+
+
+@pytest.mark.parametrize("mode", ["replace", "add_arcs"])
+def test_layout_rejects_invalid_target_before_overwriting_it(mode):
+    target = target_layout()
+    target["oval"]["center_xy"] = [-1, 0]
+    with pytest.raises(ValueError):
+        layout_proposal(target=target, mode=mode)
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [
+        [],
+        ["wrong"],
+        ["00000000-0000-1000-8000-000000000002"],
+        ["00000000-0000-4000-8000-00000000000A"],
+        ["00000000-0000-4000-8000-000000000001"],
+        ["00000000-0000-4000-8000-000000000002"] * 2,
+    ],
+)
+def test_layout_requires_fresh_canonical_uuid4_even_when_replacing(ids):
+    with pytest.raises(ValueError):
+        layout_proposal(target=native_layout(), ids=ids)
+
+
+def test_layout_arc_count_limits_and_empty_add():
+    layout = portable_layout()
+    layout["arcs"] *= 32
+    ids = [f"00000000-0000-4000-8000-{i:012x}" for i in range(2, 34)]
+    with pytest.raises(ValueError):
+        layout_proposal(layout, ids=[ids[0]] * 32)
+    assert len(layout_proposal(layout, ids=ids)["arcs"]) == 32
+    with pytest.raises(ValueError):
+        layout_proposal(layout, native_layout(), ids=ids, mode="add_arcs")
+    layout["arcs"].append(copy.deepcopy(layout["arcs"][0]))
+    with pytest.raises(ValueError):
+        layout_proposal(layout, ids=[*ids, "00000000-0000-4000-8000-000000000034"])
+    layout["arcs"] = []
+    assert layout_proposal(layout, ids=[])["arcs"] == []
+    with pytest.raises(ValueError):
+        layout_proposal(layout, mode="add_arcs", ids=[])
+
+
+def test_layout_fallback_is_explicit_scalar_only_and_fractional_roundtrip_matches_v1():
+    recipes = appearance_module()
+    layout = portable_layout()
+    layout["oval"]["transition_subject_fraction"] = 0.5 / 49
+    recipe = recipe_value(spatial_layout=layout, local_exposure={"ev": 1.25})
+    recipe["schema_version"] = 2
+    original = copy.deepcopy(recipe)
+    forms = recipes.appearance_recipe_form_values(recipe, (0, 0, 49, 49), (100, 100))
+    assert forms["sections"] == {"local_exposure": {"ev": 1.25}}
+    defaults = recipes.spatial_layout_scalar_defaults(layout, "oval")
+    assert defaults == {
+        "transition_subject_fraction": 0.5 / 49,
+        "amount": 0.6,
+        "preserve_highlights": 0.7,
+    }
+    scalar = recipes.appearance_recipe_form_values(
+        recipe_value(spatial_fade=defaults), (0, 0, 49, 49), (100, 100)
+    )["sections"]["spatial_fade"]["transition_width"]
+    result = layout_proposal(layout, bounds=(0, 0, 49, 49), dimensions=(100, 100))
+    assert result["oval"]["transition_width"] == scalar == 0.5
+    assert recipes.spatial_layout_scalar_defaults(layout, 0)["amount"] == 0.4
+    assert recipe == original
+    for selection in (True, False, -1, 1, "0", None):
+        with pytest.raises(ValueError):
+            recipes.spatial_layout_scalar_defaults(layout, selection)
+
+
+@pytest.mark.parametrize("steps,accepted", [(1, True), (32, False)])
+def test_layout_centre_cancellation_corrects_only_within_term_budget(steps, accepted):
+    layout = portable_layout()
+    layout["oval"]["center_subject_xy"][0] = math.nextafter(-0.5, -math.inf, steps=steps)
+    if accepted:
+        result = layout_proposal(layout, bounds=(0, 0, 49, 49), dimensions=(100, 100))
+        assert result["oval"]["center_xy"][0] == 0
+    else:
+        with pytest.raises(ValueError, match="oval.*center"):
+            layout_proposal(layout, bounds=(0, 0, 49, 49), dimensions=(100, 100))
+
+
+def test_layout_relational_endpoints_and_native_validator_stays_strict():
+    from blackmask.spatial_fade import validate_spatial_fade
+
+    layout = portable_layout()
+    for field in (
+        "half_span_subject_fraction",
+        "bend_subject_fraction",
+        "end_softness_subject_fraction",
+    ):
+        layout["arcs"][0][field] = math.nextafter(3, math.inf)
+    result = layout_proposal(layout)
+    assert [result["arcs"][0][field] for field in ("half_span", "bend", "end_softness")] == [
+        600
+    ] * 3
+    result["arcs"][0]["bend"] = math.nextafter(600, math.inf)
+    with pytest.raises(ValueError):
+        validate_spatial_fade(result, 300, 220)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("center_subject_xy", [5, 0]),
+        ("center_subject_xy", [1e308, 0]),
+        ("inner_radii_subject_xy", [1e308, 0.1]),
+        ("transition_subject_fraction", 0.001),
+        ("transition_subject_fraction", math.nextafter(3, math.inf, steps=32)),
+    ],
+)
+def test_layout_rejects_off_canvas_overflow_and_material_native_violations(field, value):
+    layout = portable_layout()
+    layout["oval"][field] = value
+    with pytest.raises(ValueError, match="oval"):
+        layout_proposal(layout)
+
+
+def test_layout_saved_export_includes_disabled_shapes_without_native_identity(tmp_path):
+    from test_effects import fixture_project
+    from test_spatial_fade import arc_settings, spatial_request, spatial_settings
+
+    from blackmask import operations
+
+    project, _, _ = fixture_project(tmp_path)
+    settings = spatial_settings(6, 4)
+    settings["oval"].update(transition_width=0.5, enabled=False)
+    settings["arcs_enabled"] = False
+    settings["arcs"] = [
+        arc_settings(
+            center_xy=[3, 2],
+            half_span=2,
+            bend=-1,
+            end_softness=0.5,
+            transition_width=2,
+            enabled=False,
+        )
+    ]
+    selected = operations.apply_operation(project, spatial_request(project, settings))
+    before = project_inventory(project)
+    recipe = json.loads(saved_recipe(project, selected["revision"], ["spatial_layout"]))
+    assert recipe["schema_version"] == 2
+    layout = recipe["sections"]["spatial_layout"]
+    assert layout["oval"]["transition_subject_fraction"] == 0.1
+    assert layout["oval"]["enabled"] is False
+    assert layout["arcs_enabled"] is False
+    assert layout["arcs"][0]["enabled"] is False
+    assert layout["arcs"][0]["half_span_subject_fraction"] == 0.4
+    assert settings["arcs"][0]["id"] not in json.dumps(recipe)
+    assert "enabled" not in layout
+    assert project_inventory(project) == before

@@ -364,6 +364,7 @@
           <label><input id="appearanceSave-background" type="checkbox" /> Background <span id="appearanceSaved-background"></span></label>
           <label><input id="appearanceSave-shading" type="checkbox" /> Inward shading <span id="appearanceSaved-shading"></span></label>
           <label><input id="appearanceSave-spatial_fade" type="checkbox" /> Selected fade-shape defaults <span id="appearanceSaved-spatial_fade"></span></label>
+          <label><input id="appearanceSave-spatial_layout" type="checkbox" /> Editable oval and arc layout <span id="appearanceSaved-spatial_layout"></span></label>
         </div>
         <label>Saved shape for defaults <select id="appearanceSourceShape"></select></label>
         <label><input id="appearanceIncludeReference" type="checkbox" /> Include a small source-photo reference in the file</label>
@@ -386,6 +387,18 @@
           <label>Current target shape for defaults <select id="appearanceTargetShape"></select></label>
           <p class="small">Shape defaults change transition width, strength and highlight preservation only. Author or recover target geometry in Fade into background first; its switches stay unchanged.</p>
           <button id="appearanceLoadSelected">Load selected values into controls</button>
+          <div id="appearanceLayoutControls" hidden>
+            <p class="small">Optional editable layout. Placement uses one uniform subject-relative scale. Protection, reduction and the target master switch stay unchanged.</p>
+            <label>Layout operation <select id="appearanceLayoutMode"><option value="add_arcs">Add arcs</option><option value="replace">Replace layout</option></select></label>
+            <button id="appearanceLayoutPreview">Preview placement</button>
+            <button id="appearanceLayoutLoad">Load layout into draft</button>
+            <button id="appearanceLayoutCancel">Cancel placement preview</button>
+            <button id="appearanceLayoutUndo">Undo import</button>
+            <p id="appearanceLayoutStatus" role="status" class="small"></p>
+            <label>Portable shape for settings only <select id="appearanceLayoutDefaultsShape"></select></label>
+            <button id="appearanceLayoutSettingsOnly">Use settings only on the selected target shape</button>
+            <p class="small">If placement cannot fit native limits, explicitly reuse one shape's transition/strength instead. Select a current target shape above. The portable file stays unchanged.</p>
+          </div>
           <button id="appearanceClose">Close recipe preview</button>
         </div>
       </fieldset>
@@ -685,9 +698,11 @@
     const effectAreaVersions = {exposure: 0, fade: 0};
     const appearanceScalarDrafts = new Map(["color_cleanup", "shading", "background"].map(section => [section, {identity: null, version: 0, dirty: false}]));
     const appearanceLabels = {shadow_fade: "Shadow fade", local_exposure: "Local exposure", color_cleanup: "Color cleanup", background: "Background", shading: "Inward shading", spatial_fade: "Fade-shape defaults"};
+    const appearanceSaveSections = [...Object.keys(appearanceLabels), "spatial_layout"];
     let appearanceScalarSubmitted = null, appearanceInteractionVersion = 0;
     let appearanceRecipePreview = null, appearanceRecipeImportSequence = 0, appearanceSaveSequence = 0;
     let appearanceReferenceUrl = "", appearanceDownloadUrl = "";
+    let appearanceLayoutProposal = null, appearanceLayoutUndo = null, appearanceLayoutSequence = 0;
     let sharpeningControlsIdentity = null, sharpeningControlsSubmitted = null;
     let spatialDraft = null, spatialDirty = false, spatialDraftIdentity = "", spatialDraftVersion = 0;
     let selectedSpatialId = "oval", spatialSubmitted = null, spatialAdding = false, spatialOverlayLoaded = false;
@@ -807,7 +822,7 @@
         && result.authoring_digest === state.authoring_digest;
     }
     function appearanceSavedSettings(revision, section) {
-      const record = revision?.[section];
+      const record = revision?.[section === "spatial_layout" ? "spatial_fade" : section];
       // Cleanup predates the nested settings records; absent-strength snapshots are placeholders.
       if (section === "color_cleanup") return record?.strength === undefined ? undefined
         : {enabled: record.enabled, strength: record.strength};
@@ -831,6 +846,7 @@
       }
       const preview = appearanceRecipePreview;
       $("appearancePreview").hidden = !preview;
+      renderAppearanceLayout();
       if (!preview) return;
       $("appearanceName").textContent = preview.recipe.name;
       const targetChanged = preview.targetKey !== appearanceTargetKey();
@@ -849,7 +865,7 @@
       const source = $("appearanceSource").value || state.working_revision || "";
       select("appearanceSource", [["", "Choose a complete saved revision"], ...rows.map(row => [row.revision, row.revision + " · saved settings only"])], source);
       const selected = rows.find(row => row.revision === $("appearanceSource").value);
-      for (const section of Object.keys(appearanceLabels)) {
+      for (const section of appearanceSaveSections) {
         const settings = appearanceSavedSettings(selected, section);
         $("appearanceSave-" + section).disabled = !settings || authoringBusy();
         if (!settings) $("appearanceSave-" + section).checked = false;
@@ -860,14 +876,16 @@
       renderAppearanceRecipe();
     }
     function closeAppearanceRecipe() {
+      invalidateAppearanceLayout();
       appearanceRecipeImportSequence++; appearanceSaveSequence++; appearanceInteractionVersion++;
       appearanceRecipePreview = null;
       for (const url of [appearanceReferenceUrl, appearanceDownloadUrl]) if (url) URL.revokeObjectURL(url);
       appearanceReferenceUrl = appearanceDownloadUrl = "";
       $("appearanceReference").src = ""; $("appearanceReference").hidden = true;
-      renderAppearanceRecipe();
+      renderAppearanceRecipe(); draw();
     }
     async function loadAppearanceRecipeFile(file) {
+      invalidateAppearanceLayout();
       const sequence = ++appearanceRecipeImportSequence, interaction = appearanceInteractionVersion;
       const binding = appearanceTargetBinding(), key = appearanceTargetKey();
       if (file.size > 1572864) throw Error("Appearance recipe exceeds 1572864 bytes");
@@ -891,10 +909,11 @@
       renderAppearanceRecipe();
       $("appearanceStatus").textContent = "Recipe opened. Choose settings to load; no photo settings have been applied.";
     }
-    async function loadAppearanceRecipeSections(sectionNames) {
+    async function loadAppearanceRecipeSections(sectionNames, layoutDefaultsShape = undefined) {
       if (authoringBusy()) throw Error("Wait for the active writer before loading recipe settings");
       const preview = appearanceRecipePreview;
-      if (!preview || !sectionNames.length || new Set(sectionNames).size !== sectionNames.length || sectionNames.some(section => !preview.recipe.sections[section])) throw Error("Choose included recipe sections to load");
+      const fallback = layoutDefaultsShape !== undefined && !!preview?.recipe.sections.spatial_layout;
+      if (!preview || !sectionNames.length || new Set(sectionNames).size !== sectionNames.length || sectionNames.some(section => !preview.recipe.sections[section] && !(fallback && section === "spatial_fade"))) throw Error("Choose included recipe sections to load");
       const spatial = sectionNames.includes("spatial_fade");
       if (spatial && (!$("appearanceTargetShape").value || $("appearanceTargetShape").value !== selectedSpatialId || !selectedSpatialShape())) throw Error("Choose an explicit current target shape first");
       if (spatial && spatialDraftIdentity !== spatialCurrentIdentity()) throw Error("Stale fade geometry: cancel/reload or re-author it before loading scalar defaults");
@@ -903,9 +922,11 @@
       const versions = sectionNames.map(section => appearanceScalarState(section).version);
       const unchanged = () => sequence === appearanceRecipeImportSequence && preview === appearanceRecipePreview
         && interaction === appearanceInteractionVersion && key === appearanceTargetKey()
+        && (!fallback || $("appearanceLayoutDefaultsShape").value === String(layoutDefaultsShape))
         && (!spatial || shape === selectedSpatialId && spatialDraftIdentity === spatialCurrentIdentity())
         && sectionNames.every((section, index) => versions[index] === appearanceScalarState(section).version);
-      const result = await (await api("/api/appearance-recipe-validate", {...binding, recipe_json: JSON.stringify(preview.recipe)})).json();
+      const result = await (await api("/api/appearance-recipe-validate", {...binding, recipe_json: JSON.stringify(preview.recipe),
+        ...(fallback ? {layout_defaults_shape: layoutDefaultsShape} : {})})).json();
       if (!unchanged()) return;
       if (!appearanceResponseMatches(result, binding)) throw Error("Recipe target changed; reload settings explicitly");
       for (const section of sectionNames) if (result.unavailable[section] || !result.sections[section]) throw Error(result.unavailable[section] || "Selected settings are unavailable");
@@ -930,8 +951,8 @@
     function appearanceSaveRequest() {
       const selected = state.revisions.find(row => row.revision === $("appearanceSource").value && row.final_acceptable);
       if (!selected) throw Error("Choose a complete saved source revision");
-      const sections = Object.keys(appearanceLabels).filter(section => $("appearanceSave-" + section).checked);
-      if (!sections.length || sections.includes("shading") && sections.includes("spatial_fade")) throw Error("Choose sections and at most one of shading or fade-shape defaults");
+      const sections = appearanceSaveSections.filter(section => $("appearanceSave-" + section).checked);
+      if (!sections.length || ["shading", "spatial_fade", "spatial_layout"].filter(section => sections.includes(section)).length > 1) throw Error("Choose sections and at most one of shading, fade-shape defaults or editable layout");
       if (sections.includes("spatial_fade") && !$("appearanceSourceShape").value) throw Error("Choose an actual saved shape for defaults");
       return {developed_id: state.developed_id, revision: selected.revision, revision_manifest_sha256: selected.revision_manifest_sha256,
         name: $("appearanceSaveName").value, sections, reference_shape_id: sections.includes("spatial_fade") ? $("appearanceSourceShape").value : null,
@@ -954,14 +975,128 @@
     $("appearanceSave").onclick = guarded(saveAppearanceRecipe);
     $("appearanceClose").onclick = guarded(closeAppearanceRecipe);
     $("appearanceSource").onchange = () => {appearanceSaveSequence++; syncAppearanceSource();};
-    $("appearanceTargetShape").onchange = () => {appearanceInteractionVersion++; if ($("appearanceTargetShape").value) {selectedSpatialId = $("appearanceTargetShape").value; renderSpatialControls(); draw();}};
+    $("appearanceTargetShape").onchange = () => {invalidateAppearanceLayout(); appearanceInteractionVersion++; if ($("appearanceTargetShape").value) {selectedSpatialId = $("appearanceTargetShape").value; renderSpatialControls(); draw();}};
     for (const section of Object.keys(appearanceLabels)) {
       $("appearanceReload-" + section).onclick = guarded(() => reloadAppearanceRecipeSection(section));
       $("appearanceLoad-" + section).onchange = () => {appearanceInteractionVersion++;};
       $("appearanceSave-" + section).onchange = () => {appearanceSaveSequence++;};
     }
     for (const id of ["appearanceSaveName", "appearanceSourceShape", "appearanceIncludeReference"]) $(id).oninput = () => {appearanceSaveSequence++;};
+    $("appearanceSave-spatial_layout").onchange = () => {appearanceSaveSequence++;};
     globalThis.addEventListener?.("beforeunload", closeAppearanceRecipe);
+    function appearanceSpatialControlValues() {
+      return spatialControlIds.map(id => ({id, value: $(id).value, checked: $(id).checked}));
+    }
+    function appearanceLayoutLocalKey() {
+      const reductionControls = ["reductionTarget", "reductionShape", "reductionRadius", "reductionFeather", "reductionAmount", "reductionRectangle", "reductionSelect", "reductionView"];
+      return JSON.stringify([spatialDraft, spatialDirty, spatialDraftIdentity, spatialDraftVersion,
+        selectedSpatialId, appearanceInteractionVersion, appearanceSpatialControlValues(),
+        [...fadeReductionDrafts], selectedReductionId, reductionControls.map(id => $(id).value),
+        $("reductionCandidate").checked, $("authorMode").value, $("viewRevision").value,
+        $("appearanceTargetShape").value, !!gesture, spatialAdding]);
+    }
+    function appearanceLayoutMatches(record) {
+      return record && record.recipe === appearanceRecipePreview && record.targetKey === appearanceTargetKey()
+        && record.mode === $("appearanceLayoutMode").value && record.localKey === appearanceLayoutLocalKey();
+    }
+    function invalidateAppearanceLayout() {
+      appearanceLayoutSequence++; appearanceLayoutProposal = null; appearanceLayoutUndo = null;
+      renderAppearanceLayout();
+    }
+    function renderAppearanceLayout() {
+      if (!state) return;
+      if (appearanceLayoutProposal && !appearanceLayoutMatches(appearanceLayoutProposal)) {appearanceLayoutProposal = null; appearanceLayoutSequence++;}
+      if (appearanceLayoutUndo && !appearanceLayoutMatches(appearanceLayoutUndo)) {appearanceLayoutUndo = null; appearanceLayoutSequence++;}
+      const layout = appearanceRecipePreview?.recipe.sections.spatial_layout;
+      $("appearanceLayoutControls").hidden = !layout;
+      if (!layout) return;
+      select("appearanceLayoutDefaultsShape", [["", "Choose portable source shape"], ["oval", "Portable oval · " + (layout.oval.enabled ? "ON" : "OFF")],
+        ...layout.arcs.map((arc, index) => [String(index), "Portable arc " + (index + 1) + " · " + (layout.arcs_enabled && arc.enabled ? "ON" : "OFF")])]);
+      for (const id of ["appearanceLayoutMode", "appearanceLayoutPreview", "appearanceLayoutDefaultsShape", "appearanceLayoutSettingsOnly"]) $(id).disabled = authoringBusy();
+      $("appearanceLayoutLoad").disabled = !appearanceLayoutProposal || authoringBusy();
+      $("appearanceLayoutCancel").disabled = !appearanceLayoutProposal;
+      $("appearanceLayoutUndo").disabled = !appearanceLayoutUndo || authoringBusy();
+      $("appearanceLayoutStatus").textContent = appearanceLayoutProposal
+        ? "Placement preview — effects not applied. " + appearanceLayoutProposal.warnings.join(" ")
+        : appearanceLayoutUndo ? "Layout loaded into the native draft. Undo import is available until another edit or action; Apply remains explicit."
+        : "Choose Add arcs or Replace layout, then preview placement. Unavailable placement can still offer explicit settings-only reuse.";
+    }
+    async function previewAppearanceLayout(mode) {
+      if (authoringBusy()) throw Error("Wait for the active writer before previewing layout");
+      const preview = appearanceRecipePreview;
+      if (!preview?.recipe.sections.spatial_layout || !["add_arcs", "replace"].includes(mode)) throw Error("Choose an imported layout and Add arcs or Replace layout");
+      if (!spatialDraft || spatialDraftIdentity !== spatialCurrentIdentity()) throw Error("Stale fade geometry: explicitly recover current saved shapes before layout preview");
+      if (gesture || spatialAdding) throw Error("Finish the current pointer gesture or arc placement first");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view for placement preview");
+      validateSpatialSettings();
+      invalidateAppearanceLayout();
+      const sequence = appearanceLayoutSequence, targetKey = appearanceTargetKey(), localKey = appearanceLayoutLocalKey();
+      const binding = appearanceTargetBinding(), version = spatialDraftVersion;
+      const result = await (await api("/api/appearance-layout-preview", {recipe_json: JSON.stringify(preview.recipe),
+        ...binding, inputs_digest: state.inputs_digest, authoring_digest: state.authoring_digest,
+        spatial_draft: structuredClone(spatialDraft), spatial_draft_version: version, mode})).json();
+      if (sequence !== appearanceLayoutSequence || preview !== appearanceRecipePreview || targetKey !== appearanceTargetKey()
+        || localKey !== appearanceLayoutLocalKey() || mode !== $("appearanceLayoutMode").value || authoringBusy()) return;
+      if (!appearanceResponseMatches(result, binding) || result.mode !== mode || result.spatial_draft_version !== version
+        || !Array.isArray(result.warnings) || result.warnings.some(value => typeof value !== "string")) throw Error("Layout target changed or response is invalid; preview again");
+      validateSpatialSettings(result.spatial_fade);
+      appearanceLayoutProposal = {recipe: preview, targetKey, localKey, mode, settings: structuredClone(result.spatial_fade), warnings: [...result.warnings]};
+      renderAppearanceLayout(); draw();
+    }
+    function cancelAppearanceLayout() {
+      appearanceLayoutSequence++; appearanceLayoutProposal = null;
+      renderAppearanceLayout(); draw();
+    }
+    async function loadAppearanceLayout() {
+      if (gesture || spatialAdding) throw Error("Finish the current pointer gesture or arc placement first");
+      const proposal = appearanceLayoutProposal, sequence = appearanceLayoutSequence;
+      if (!appearanceLayoutMatches(proposal) || authoringBusy()) throw Error("Layout proposal is unavailable or changed; preview the current draft again");
+      if (spatialDraftIdentity !== spatialCurrentIdentity()) throw Error("Stale fade geometry; explicitly recover current saved shapes first");
+      const unchanged = () => sequence === appearanceLayoutSequence && proposal === appearanceLayoutProposal
+        && appearanceLayoutMatches(proposal) && !authoringBusy() && !gesture && !spatialAdding;
+      if (proposal.mode === "replace" && !await Promise.resolve(confirm("Replace the current oval and " + spatialDraft.arcs.length
+        + " arc(s), their internal switches and highlight preservation" + (spatialDirty ? ", including unapplied shape edits" : "")
+        + "? Target master, protection and reduction stay unchanged. Effects still require Apply."))) return;
+      if (!unchanged()) return;
+      const before = {settings: structuredClone(spatialDraft), selected: selectedSpatialId, dirty: spatialDirty,
+        identity: spatialDraftIdentity, controls: appearanceSpatialControlValues(), authorMode: $("authorMode").value,
+        targetShape: $("appearanceTargetShape").value};
+      const firstNewArc = spatialDraft.arcs.length;
+      spatialDraft = structuredClone(proposal.settings);
+      selectedSpatialId = proposal.mode === "replace" ? "oval" : spatialDraft.arcs[firstNewArc].id;
+      markSpatialDirty(); renderSpatialControls(); renderAppearanceRecipe();
+      $("appearanceTargetShape").value = selectedSpatialId;
+      appearanceLayoutUndo = {recipe: proposal.recipe, targetKey: proposal.targetKey, mode: proposal.mode,
+        localKey: appearanceLayoutLocalKey(), before};
+      renderAppearanceLayout(); draw();
+    }
+    function undoAppearanceLayoutImport() {
+      const undo = appearanceLayoutUndo;
+      if (!appearanceLayoutMatches(undo) || authoringBusy() || gesture || spatialAdding) {
+        invalidateAppearanceLayout(); throw Error("Undo import is unavailable after edits, actions or target changes");
+      }
+      appearanceLayoutUndo = null; appearanceLayoutProposal = null; appearanceLayoutSequence++;
+      spatialDraft = structuredClone(undo.before.settings); selectedSpatialId = undo.before.selected;
+      spatialDirty = undo.before.dirty; spatialDraftIdentity = undo.before.identity;
+      spatialDraftVersion++; appearanceInteractionVersion++;
+      renderSpatialControls(); renderAppearanceRecipe();
+      for (const control of undo.before.controls) {$(control.id).value = control.value; $(control.id).checked = control.checked;}
+      $("authorMode").value = undo.before.authorMode; $("appearanceTargetShape").value = undo.before.targetShape;
+      renderAppearanceLayout(); draw();
+    }
+    function loadAppearanceLayoutSettingsOnly() {
+      const selected = $("appearanceLayoutDefaultsShape").value;
+      if (selected !== "oval" && !/^\d+$/.test(selected)) throw Error("Choose an explicit portable shape for settings only");
+      invalidateAppearanceLayout();
+      return loadAppearanceRecipeSections(["spatial_fade"], selected === "oval" ? selected : Number(selected));
+    }
+    $("appearanceLayoutPreview").onclick = guarded(() => previewAppearanceLayout($("appearanceLayoutMode").value));
+    $("appearanceLayoutLoad").onclick = guarded(loadAppearanceLayout);
+    $("appearanceLayoutCancel").onclick = guarded(cancelAppearanceLayout);
+    $("appearanceLayoutUndo").onclick = guarded(undoAppearanceLayoutImport);
+    $("appearanceLayoutSettingsOnly").onclick = guarded(loadAppearanceLayoutSettingsOnly);
+    $("appearanceLayoutMode").onchange = () => {invalidateAppearanceLayout(); draw();};
+    $("appearanceLayoutDefaultsShape").onchange = () => {appearanceInteractionVersion++; invalidateAppearanceLayout(); draw();};
     function select(id, values, selected) {
       const node = $(id),
         previous = selected === undefined ? node.value : selected;
@@ -1157,6 +1292,7 @@
         ? Object.fromEntries(Object.keys(value).sort().map(field => [field, value[field]])) : value);
     }
     function reloadFadeReduction(target = reductionTarget()) {
+      invalidateAppearanceLayout();
       const current = state?.revisions.find(record => record.revision === state.working_revision);
       const saved = current?.fade_reduction_areas?.[target];
       const previous = fadeReductionDrafts.get(target);
@@ -1189,10 +1325,12 @@
     function syncFadeReduction() {
       renderFadeReduction();
       const draft = reductionDraft();
-      if (!draft || !draft.dirty && !fadeReductionSubmitted) reloadFadeReduction();
-      else renderFadeReduction();
+      const current = state?.revisions.find(record => record.revision === state.working_revision);
+      if ((!draft && current?.fade_reduction_areas?.[reductionTarget()])
+        || (draft && !draft.dirty && !fadeReductionSubmitted && draft.identity !== spatialCurrentIdentity())) reloadFadeReduction();
     }
     function markFadeReductionDirty() {
+      invalidateAppearanceLayout();
       const draft = reductionDraft();
       if (!draft) throw Error("Save " + reductionLabel() + " settings before adding reduction");
       draft.dirty = true;
@@ -1287,6 +1425,12 @@
       }
       return loadImage();
     });
+    // Raw control/selection edits need invalidation even when no reduction draft version changes.
+    for (const id of ["reductionTarget", "reductionShape", "reductionRadius", "reductionFeather", "reductionAmount", "reductionRectangle", "reductionSelect", "reductionCandidate", "reductionView"])
+      for (const eventName of ["oninput", "onchange"]) {
+        const handler = $(id)[eventName];
+        $(id)[eventName] = event => {invalidateAppearanceLayout(); const result = handler?.(event); draw(); return result;};
+      }
     function selectedSpatialShape() {
       return selectedSpatialId === "oval" ? spatialDraft?.oval : spatialDraft?.arcs.find(arc=>arc.id===selectedSpatialId);
     }
@@ -1335,13 +1479,20 @@
     }
     function resetSpatialFromSaved() {
       if(!state) return;
+      invalidateAppearanceLayout();
       const current=state.revisions.find(r=>r.revision===state.working_revision);
       spatialDraft=structuredClone(current?.spatial_fade?.settings || spatialDefaultSettings());
       spatialDirty=false;spatialDraftIdentity=spatialCurrentIdentity();spatialDraftVersion++;spatialSubmitted=null;spatialAdding=false;
       $("spatialCandidate").checked=false;$("spatialProtection").value="";
       renderSpatialControls();draw();refreshSpatialSelectionMap();
     }
+    function syncSpatialFromSaved() {
+      // Polling the same saved identity is not an edit or an explicit draft reset.
+      if (!spatialDraft || (!spatialDirty && !spatialSubmitted && spatialDraftIdentity !== spatialCurrentIdentity())) resetSpatialFromSaved();
+      else spatialDraftStatus();
+    }
     function markSpatialDirty() {
+      invalidateAppearanceLayout();
       spatialDirty=true;spatialDraftVersion++;appearanceInteractionVersion++;$("authorMode").value="spatial";
       spatialDraftStatus();draw();
     }
@@ -1372,16 +1523,16 @@
       if(enabled && $("spatialProtection").value.trim()) fields.spatial_fade_protection_file=$("spatialProtection").value.trim();
       const preserveDraft=!!savedSettings && spatialDirty;
       spatialDirty=true;spatialDraftStatus();
-      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,developed_id:state.developed_id,preserve_draft:preserveDraft};
+      spatialSubmitted={settings:fadeReductionAreaIdentity(settings),version:spatialDraftVersion,base_revision:state.working_revision,developed_id:state.developed_id,preserve_draft:preserveDraft};
       try {await action("effects",fields);} catch(error) {spatialSubmitted=null;throw error;}
     }
-    function drawSpatialShapes(scale) {
-      if(!spatialDraft || $("authorMode").value!=="spatial" || $("viewRevision").value!==state.working_revision) return;
-      try {validateSpatialSettings();} catch {return;}
+    function drawSpatialShapes(scale, settings = spatialDraft, preview = false) {
+      if(!settings || !preview && $("authorMode").value!=="spatial" || $("viewRevision").value!==state.working_revision) return;
+      try {validateSpatialSettings(settings);} catch {return;}
       ctx.save();ctx.beginPath();ctx.rect(0,0,image.width,image.height);ctx.clip();
       const pathPoint=(shape,point)=>{const p=spatialToNative(point,shape);return [p[0]-crop[0],p[1]-crop[1]];};
-      for(const [id,shape,group] of [["oval",spatialDraft.oval,true],...spatialDraft.arcs.map(arc=>[arc.id,arc,spatialDraft.arcs_enabled])]) {
-        ctx.strokeStyle=id===selectedSpatialId ? "#55ffff" : "#f2be64";ctx.lineWidth=(id===selectedSpatialId ? 2 : 1)/scale;
+      for(const [id,shape,group] of [["oval",settings.oval,true],...settings.arcs.map(arc=>[arc.id,arc,settings.arcs_enabled])]) {
+        ctx.strokeStyle=preview ? "#ff8bff" : id===selectedSpatialId ? "#55ffff" : "#f2be64";ctx.lineWidth=(preview || id===selectedSpatialId ? 2 : 1)/scale;
         ctx.setLineDash(shape.enabled && group ? [] : [5/scale,4/scale]);
         if(id==="oval") for(const d of [0,shape.transition_width]) {ctx.beginPath();ctx.ellipse(shape.center_xy[0]-crop[0],shape.center_xy[1]-crop[1],shape.inner_radii_xy[0]+d,shape.inner_radii_xy[1]+d,shape.rotation_degrees*Math.PI/180,0,Math.PI*2);ctx.stroke();}
         else {
@@ -1393,7 +1544,7 @@
         }
       }
       ctx.setLineDash([]);ctx.fillStyle="#55ffff";
-      for(const handle of spatialHandles(selectedSpatialShape(),selectedSpatialId==="oval")){ctx.beginPath();ctx.arc(handle.point[0]-crop[0],handle.point[1]-crop[1],4/scale,0,Math.PI*2);ctx.fill();}
+      if(!preview) for(const handle of spatialHandles(selectedSpatialShape(),selectedSpatialId==="oval")){ctx.beginPath();ctx.arc(handle.point[0]-crop[0],handle.point[1]-crop[1],4/scale,0,Math.PI*2);ctx.fill();}
       ctx.restore();
     }
     function dragSpatialHandle(gesture, point) {
@@ -1412,8 +1563,8 @@
     }
     for(const id of ["spatialCenterX","spatialCenterY","spatialRotation","spatialTransition","spatialStrength","spatialPreserve","spatialWidth","spatialHeight","spatialSpan","spatialBend","spatialEndSoftness"]) $(id).oninput=()=>updateSpatialNumber(id);
     for(const [id,update] of [["spatialMaster",()=>spatialDraft.enabled=$("spatialMaster").checked],["spatialUseOval",()=>spatialDraft.oval.enabled=$("spatialUseOval").checked],["spatialUseArcs",()=>spatialDraft.arcs_enabled=$("spatialUseArcs").checked],["spatialArcEnabled",()=>selectedSpatialShape().enabled=$("spatialArcEnabled").checked],["spatialSide",()=>selectedSpatialShape().fade_side=$("spatialSide").value]]) $(id).oninput=()=>{update();markSpatialDirty();renderSpatialControls();};
-    $("spatialSelect").onchange=()=>{selectedSpatialId=$("spatialSelect").value;appearanceInteractionVersion++;$("appearanceTargetShape").value=selectedSpatialId;renderSpatialControls();draw();if($("spatialMap").value==="selected")loadImage().catch(error=>message(error.message));};
-    $("spatialAdd").onclick=event=>guarded(()=>{if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");if(event?.detail){spatialAdding=true;$("authorMode").value="spatial";spatialDraftStatus();draw();}else addSpatialArc();})();
+    $("spatialSelect").onchange=()=>{invalidateAppearanceLayout();selectedSpatialId=$("spatialSelect").value;appearanceInteractionVersion++;$("appearanceTargetShape").value=selectedSpatialId;renderSpatialControls();draw();if($("spatialMap").value==="selected")loadImage().catch(error=>message(error.message));};
+    $("spatialAdd").onclick=event=>guarded(()=>{invalidateAppearanceLayout();if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");if(event?.detail){spatialAdding=true;$("authorMode").value="spatial";spatialDraftStatus();draw();}else addSpatialArc();})();
     $("spatialDuplicate").onclick=guarded(()=>{if(selectedSpatialId==="oval")throw Error("Select an arc to duplicate");if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");const arc=structuredClone(selectedSpatialShape());arc.id=crypto.randomUUID();spatialDraft.arcs.push(arc);selectedSpatialId=arc.id;markSpatialDirty();renderSpatialControls();refreshSpatialSelectionMap();});
     $("spatialRemove").onclick=guarded(()=>{if(selectedSpatialId==="oval")throw Error("Use the oval switch to disable its contribution");spatialDraft.arcs=spatialDraft.arcs.filter(arc=>arc.id!==selectedSpatialId);selectedSpatialId="oval";markSpatialDirty();renderSpatialControls();refreshSpatialSelectionMap();});
     $("spatialFlip").onclick=guarded(()=>{const arc=selectedSpatialShape();if(selectedSpatialId==="oval")throw Error("Select an arc to flip");arc.fade_side=arc.fade_side==="positive" ? "negative" : "positive";markSpatialDirty();renderSpatialControls();});
@@ -1457,7 +1608,7 @@
         $("shadingOpacity").value = shadingSettings?.opacity ?? 0;
       }
       const currentExposure = state.revisions.find(r => r.revision === state.working_revision);
-      if(!spatialDraft || !spatialDirty && !spatialSubmitted) resetSpatialFromSaved();
+      syncSpatialFromSaved();
       if (!exposureDirty) {
         exposureArea = structuredClone(currentExposure?.exposure_area || {regions: [], protection: []});
         exposureAreaDraftBinding = null; effectAreaVersions.exposure++;
@@ -1639,7 +1790,7 @@
       }
       if (completed) fadeReductionSubmitted = null;
       const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && (a.result?.reused===true ? a.result.revision===spatialSubmitted.base_revision : a.result?.parent===spatialSubmitted.base_revision) && state.developed_id===spatialSubmitted.developed_id;
-      if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
+      if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && fadeReductionAreaIdentity(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && fadeReductionAreaIdentity(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
       if(reload || completed) spatialSubmitted=null;
       if(reload) resetSpatialFromSaved();
       const scalarSubmission = appearanceScalarSubmitted;
@@ -1748,8 +1899,7 @@
             : "clipping unavailable · complete matte review pending")
         : "Saved local exposure OFF · 0 applied EV";
       renderExposureArea();
-      if(!spatialDraft || !spatialDirty && !spatialSubmitted) resetSpatialFromSaved();
-      else spatialDraftStatus();
+      syncSpatialFromSaved();
       syncFadeReduction();
       if (!actionSubmitting) actionWasRunning = a.running;
       const authoringPublished = ["save", "prepare", "restore"].includes(
@@ -2026,6 +2176,7 @@
       }
     }
     function draw() {
+      renderAppearanceLayout();
       const rect = canvas.getBoundingClientRect();
       canvas.width = Math.max(1, Math.round(rect.width));
       canvas.height = Math.max(1, Math.round(rect.height));
@@ -2110,6 +2261,7 @@
         }
       }
       drawSpatialShapes(scale);
+      if (appearanceLayoutProposal) drawSpatialShapes(scale, appearanceLayoutProposal.settings, true);
       ctx.restore();
     }
     function nativePosition(event, edge = false) {
@@ -2425,6 +2577,7 @@
       if (!identity) throw Error("Project inputs unavailable");
       if (authoringBusy())
         throw Error("Wait for the active writer before submitting");
+      invalidateAppearanceLayout();
       const section = name === "effects" && Object.keys(appearanceLabels).find(key => key !== "spatial_fade" && key in extra);
       const scalarDraft = section && appearanceScalarState(section);
       const scalarSubmission = section ? {section, version: scalarDraft.version,

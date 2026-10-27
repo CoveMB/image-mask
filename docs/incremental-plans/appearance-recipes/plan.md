@@ -1,6 +1,50 @@
 # Appearance recipes — incremental plan
 
-Status: **AR1 Gate 3 accepted by the owning orchestrator; 1/2 increments accepted**. Created: 2026-10-27. Supplementary QA: **on**, in [qa-plan.md](qa-plan.md). The feature owner is waiting while root commits AR1. AR2 preparation and implementation remain on hold pending root's next instruction.
+Status: **AR2 Gate3 accepted by root; 2/2 increments accepted**. Created: 2026-10-27. Supplementary QA: **on**, in [qa-plan.md](qa-plan.md). Root accepted the exact AR2 packet and the disclosed browser qualification recorded below. The owner is holding while root handles Git/publication/provider settlement; final human review remains on GitHub, with no merge action authorized here.
+
+## AR2 current result checkpoint
+
+T5–T6 are implemented in the approved three product owners, four test files and
+four maintained documents. Frozen result manifest
+`local/evaluations/appearance-recipes/ar2-20261027T184703Z/ar2-result-review-candidate.json`
+has SHA256 `cd34d6fd60d17ec16d0cd3a3173a037bfa2fd42ac4cbe97e562af0c1c6b048ce`;
+the corresponding 11-file diff is
+`1c2af7aa1de559f3ff663dee5d17877c7d1a3ad019b029f7a9de93ea91630058`.
+All three raw sources remain unchanged. The settled full suite completed with
+2457 passed,7 skipped,exit0 and no changed source/test hashes. These three planning
+documents record evidence/status and are excluded from installable packages.
+
+The [current QA execution record](qa-plan.md#ar2-execution-record--current) owns
+causal/focused checks, browser repairs, combined native-denial reconstruction,
+actual package inspection and limitations. The narrow real-browser off-canvas
+rejection and explicit settings-only fallback also passed without changing any
+of the target's 195 files. No whole-browser offline/isolation claim is made:
+root accepted the earlier token-free localhost search as a disclosed automation
+navigation error, with the qualification retained below.
+
+All three fresh read-only result scopes report **No material improvements
+recommended**, verifying all11 candidate and three raw-source hashes before and
+after. Architecture actually performed the expressly requested
+`ponytail:ponytail-review`; its bounded Ship verdict is not Gate3. Verification
+inspected the completed suite, native browser records, isolated reconstruction,
+actual packages and complete static records. Actual native-tool report identities
+and retained reports are:
+
+| Scope | Reviewer identity | Retained final report under the evidence root |
+| --- | --- | --- |
+| Source fidelity | `/root/appearance_ar2_result_source` | `result-source-review.md` |
+| Architecture/simplicity, actual Ponytail | `/root/appearance_ar2_result_architecture` | `result-architecture-review.md` |
+| Verification/evidence | `/root/appearance_ar2_result_verification` | `result-verification-review.md` |
+
+All reports were collected before final synthesis. The owner checked applicable
+code/contract/evidence correspondence; no material finding required repair or
+renewal. No reviewer edits, product execution, provider action or recursive
+delegation occurred. Terminal retention review is complete below, with no deletion.
+Accepted `ar2-gate3-candidate.json` binds the11 unchanged reviewed files, three
+pre-acceptance planning records, three raw sources and retained evidence. The
+actual root Gate3 decision below supersedes its proposed status without rewriting
+that frozen evidence. Only these three planning documents receive the acceptance
+record; no owner Git action is authorized.
 
 ## Purpose and context
 
@@ -14,7 +58,7 @@ Primary source: [Named Appearance Recipes Implementation Plan](../../superpowers
 | Design | `ce3bd1b9302cf31fdce6b2aa3dd11c644a7fe1a60b98f30e83b764db96813090` |
 | Historical review record | `b67151242471b499bb8f4bce17e6a32183c7f73b9b20760fd9659bb9d2d17006` |
 
-Inspected checkout: `image-mask`, branch `appearance-recipes`, clean baseline `42175688041e3ae013d9d395d45f631026adcd94`. Local refs were not refreshed. The predecessor is [PR #34](https://github.com/CoveMB/image-mask/pull/34), Fade reduction. The owning orchestrator reports exact-head CodeRabbit/GitGuardian settlement and acceptance; the current source contains both reduction targets and the repaired lifecycle test packaging. This owner verified the baseline identity and code correspondence, not a new provider run. Earlier source baselines and planning-only authority are historical.
+Current AR2 baseline: clean `image-mask`, branch `appearance-recipes`, commit `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732` (`Add saved appearance recipe settings`). The owner verified all 14 nonplanning AR1 candidate files against the accepted manifest and all three unchanged raw-source hashes; the three committed planning documents contain root's administrative acceptance update. Local refs were not refreshed. Initial AR1 baseline was `42175688041e3ae013d9d395d45f631026adcd94`, the accepted [Fade reduction PR #34](https://github.com/CoveMB/image-mask/pull/34) head. Its provider settlement is root-owned prior evidence, not a new provider run. Both reduction targets and lifecycle packaging remain present; older source baselines are historical.
 
 **Active Preapproved orchestration:** this owner read the actual human message `01a17ba9-9f58-7303-b9f5-57a66c05db20`, turn `01a17ba9-9c90-7f93-ac2d-9eb16b5fa21c`, in orchestrator chat `01a17ba9-9112-7a52-b8da-547737b178e3`. It requests sequential feature chats, incremental conversion, implementation/reviews including Ponytail, fixes, commits/pushes/MRs, with ordinary approvals delegated to that orchestrator. The grant is active, not a proposed export. Concrete Gate 2/Gate 3 evaluation and all evidence remain required. This owner prepares and later implements only after the orchestrator's concrete decision; the orchestrator owns Git, publication and provider follow-up. No parent messaging from this owner.
 
@@ -93,8 +137,8 @@ The source's single bounded result-review minimum is strengthened to the adopted
 
 | Increment | Status | Evidence / decision | Next action |
 | --- | --- | --- | --- |
-| AR1 | Gate 3 accepted; 1/2 increments accepted | Actual root decision below; result reviews/renewals and QA evidence complete within stated limits | Root commits AR1; feature owner waits |
-| AR2 | Planned; preparation and implementation on hold | AR1 accepted; no AR2 preparation/implementation approval | Wait for root's next instruction after the AR1 commit |
+| AR1 | Gate3 accepted and committed | Actual root decision below; commit `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732`; evidence limits retained | Reuse accepted behavior and protection obligations |
+| AR2 | Gate3 accepted; feature2/2 increments accepted | Actual root decision on exact final manifest below;2457 passed/7 skipped, unchanged inputs; three no-material-finding reports and retained qualifications | Owner holds; root handles commit/push/feature PR and provider settlement |
 
 | Plan review scope | Reviewer / report | Candidate | Disposition |
 | --- | --- | --- | --- |
@@ -122,8 +166,15 @@ The sole substantive repair changed R4, Q3 and the handoff width paragraph. The 
 
 Reviewers receive raw sources, candidate hashes, baseline, bounded questions and constraints in fresh contexts without author history. They cannot edit, execute product/tests, delegate or use providers. Collect every report before edits. The owner verifies findings, makes only material in-scope repairs, records evidence-backed rejections and renews affected review scopes; administrative report/status notes alone do not invalidate substantive review. Missing reports or material unresolved findings hold readiness despite preapproval. Root alone records actual delegated Gate 2/Gate 3 decisions with evidence and the human-grant reference.
 
+**AR2 targeted verification-plan renewal, 2026-10-27:** `/root/appearance_plan_verification`, chat `01a17ccd-dd2e-70c3-99b8-8e114459baee`, turn `01a17eab-5c85-7660-85cc-0059e64309e9`, final report `msg_05c3294c89099228016ae0f0d55fd88190a6fe08e12dc6cdbb`. The reviewer inspected the concrete Q11 extension, unchanged sources, exact AR1 baseline and before/after candidate hashes: plan `eafa41740d9df56558e489cb32a1b0ba907ad2a501c304bb03423aa25760344b`, QA `e7bbe57d4a60507451b143b0812e5bca433f2e1745e349daa27ed1cc23ca20ea`, handoff `afbaf0e7e042d38dfea72b38da65c7999599b403bbb970eef7faf58a6f9a2fa6`. **No material improvements recommended.** It confirmed required operands/history/deliveries/cache accounting and independent reconstruction remain, with existing readable probes, permission-specific failures and positive controls addressing false passes. Its execution clarification requires native network denial independent of `install_guard`'s Python socket interception; the owner verified that hook and explicitly specifies native `ctypes` socket/connect below. No product execution, mutations or result/Gate2 approval came from the review. Unaffected source/architecture/verification plan coverage is reused. Final status/report entries and that clarification do not change the reviewed product or isolation requirements.
+
 ## Decisions and remaining obligations
 
+- **2026-10-27 AR2 Gate3: accepted by the owning orchestrator under direct human preapproval; Appearance recipes2/2 increments accepted.** Actual decision from root `01a17ba9-9112-7a52-b8da-547737b178e3` accepted final manifest SHA256 `3a1d7b05063b9874751a9fc862d0e0eee12e400fd5b452870ced7b4c33c5709b`, final diff `4bdcd4e47282f77847c9d0da9b2698a1c2cb210907db777e77361e0e6f0a7480`, against baseline `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732`. Root independently matched14 final files, all11 reviewed files,3 raw sources,73 evidence entries and74 current full-suite inputs. Root read all three actual native reviewer finals and inspected core conversion/endpoint/UI/native reconstruction controls; the complete2457-passed/7-skipped/exit0 suite with unchanged inputs; combined static evidence; actual browser records/screenshots/off-canvas preservation/fallback; wheel/sdist hashes and30/89 source correspondences; and terminal retention. Root accepted the Google query as a disclosed automation navigation error, not an application network defect: the observed query contained only a localhost port and test probe path, without capability, project identity/path, recipe or image; ordinary browser metadata was not inspected. Retain no-wholly-offline/browser-wide-isolation qualification, separate from application CSP and native subprocess isolation. No rerun or product change is warranted. I10, human photographic/usability/accessibility and representative-photo performance remain OPEN. The owner reverified the accepted manifest,14 files,3 raw sources and baseline before recording this decision. Root authorizes only this administrative update to the three incremental documents, then an owner hold while root commits/pushes/opens the feature PR and reconciles providers. No product/test/evidence rewrite, owner Git/provider action or parent message. Final human review remains GitHub; this decision does not authorize a merge.
+- **2026-10-27 AR2 Gate 2: orchestrator-approved under the verified direct human delegation.** Root `01a17ba9-9112-7a52-b8da-547737b178e3` delivered actual approval against baseline `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732`, plan SHA256 `485c00ccddd662dd4fb9525e6fbe5337bde8f4be697db097eb7d0de88dcafe60`, QA `24b81e162146951a5600f13fccf177a4b746c248c89e0d5b69f7b5ad98081a44`, handoff `5bc924485449c88f56d81dd27c069ad05343df758812bd6d231dcf0b650a7469`. Root checked the actual packet/diffs, unchanged T5–T6 design, native validators/UI owners, all 14 accepted nonplanning files/3 sources/28 evidence artifacts and actual Q11 reviewer turn. It accepted the native ctypes network-probe clarification; Python-hook denial alone remains insufficient. The owner reverified baseline and all three approved hashes before this administrative record. No material design choice remains. Implement only this packet, preserve native validators and AR1 protections, complete causal/focused/full/static/browser/Q11/package checks, three distinct result scopes with actual Ponytail inside architecture, final R1–R22 and retention review. Gate 3 remains pending; root retains Git/publication/provider authority. No deletion or parent message is authorized.
+- **2026-10-27 AR2 preparation authorized after the AR1 commit.** Root directed this persistent owner to prepare against exact `5c5d1ee7d9f8afd9acf8a42d1e4feebe893ae732`, reuse the coordinated source/plan reports and preserve R13–R18/Q7–Q12 plus every AR1 protection. This supersedes the earlier preparation hold only. No AR2 product code, tests, build, browser fixture or application import ran during preparation. Only these three documents change. Root still owns Gate 2, Git/publication and provider decisions; no outbound parent message.
+- **Preparation reconciliation:** the v1 codec now exists; layout must be excluded from its generic scalar assignment branch and saved layout must read canonical `manifest.spatial_fade.settings`. The new preview route needs explicit duplicate-key admission because its name does not match the recipe-route prefix. Complete client identity includes authoring digest; spatial identity/version alone does not cover independent reduction edits or raw controls. These are concrete T5–T6 integrations, with no new public-format or product-design choice. Exact proposed ownership and guards are in [the AR2 handoff](handoff.md#ar2-concrete-preparation).
+- **Q11 mechanism clarification:** current delivered-only replay proves independent reconstruction from copied native/margins/series assets with renamed original project/capture and no imported application modules. It does not deny native reads or network. Extend that existing journey with the existing Python audit guard and native sandbox/negative controls; the separate saved-project re-export test is not a substitute. Root explicitly retained the whole obligation. Because this concretizes a previously unexercised isolation mechanism, renew only verification-plan coverage of [the Q11 preparation](qa-plan.md#ar2-verification-preparation); unchanged source/architecture plan reports remain applicable. This is preparation evidence, not a result review or pass.
 - **2026-10-27 AR1 Gate 2: orchestrator-approved under user delegation.** Actual decision delivered from owning chat `01a17ba9-9112-7a52-b8da-547737b178e3` approved exactly the returned packet above against baseline `42175688041e3ae013d9d395d45f631026adcd94`. Root independently checked hashes, full source/candidate/reports and native shading evidence, accepted the bounded repair and retained the review-exposure limitation. The owner rechecked all six source/candidate hashes and unchanged checkout before execution. This administrative decision record does not change approved product scope. AR1 only; no AR2, Git/publication/provider/parent-message authority. At that checkpoint, Gate 3 and execution evidence were still pending.
 - **2026-10-27 AR1 Gate 3: accepted by the owning orchestrator under direct human preapproval; 1/2 increments accepted.** The actual decision delivered from `01a17ba9-9112-7a52-b8da-547737b178e3` accepted `ar1-gate3-candidate.json`, SHA256 `19970be8605c026e1dd9b188d9e6fe1861286748f25591cd2bfecda95d1521b3`, with diff SHA256 `c2ab79db1c78563d14811f9842fd88469c48322e62799831a28e63e2d7a18718`, against the unchanged baseline above. Root reported independent verification of all 17 final candidate files, 3 raw sources, 19 browser evidence files, 2 harnesses and 7 actual result reports; actual initial/renewal reviewer histories; canonical cleanup repair and parser regression tests; raw suite/repair evidence; current wheel/sdist hashes and 30/89 source correspondences; browser verification and saved-cleanup screenshot. Root found no unresolved material finding. Accepted evidence combines the full-suite run, isolated native storage renewal and affected repair renewals; it is not an all-green single full invocation. Mandatory I10 live/recovery, human photographic/usability/accessibility acceptance, representative-photo performance and browser/OS-wide traffic limitations remain unchanged. Root directed only this administrative update to the three incremental documents, then a hold while root commits AR1. No AR2 preparation or implementation, Git action or outbound parent message is authorized for this owner.
 - Execution follows the approved handoff using this checkout and existing records; no second workspace/ledger, per-task commit, cleanup or extra generic review layer. T1–T4 remain internal checkpoints. The retained interpreter now imports this checkout and Pillow/module/core13.0.0; evidence root is `local/evaluations/appearance-recipes/ar1-20261027T101459Z/`. Initial runtime probe used an absent lowercase core attribute (exit1), then verified the exposed `PILLOW_VERSION` (exit0); no environment change.
@@ -153,10 +204,62 @@ Native recovery completion used the user's explicitly authorized empty Brave pri
 
 ## Final scope reconciliation
 
-Not performed. At closure reconcile R1–R22 with actual AR1/AR2 candidate/test/browser/package/review evidence and delegated decisions. A last-increment pass alone is insufficient. The feature owner checks delivered identities, documentation and usable evidence links after the last relevant change and before result review; root reconciles current CI/provider settlement and the open PR targeting `fade-reduction`. Separate certification/human limits remain visible.
+Current reconciliation below preserves all 22 obligations. AR1 acceptance is the
+actual root decision above, supported by its accepted manifest and applicable
+renewals. Root accepted AR2 engineering evidence and its browser qualification
+through the actual Gate3 decision above;2/2 increments are accepted. Root owns
+current CI/provider settlement and publication. Separate certification/human
+limits remain visible.
+
+| Obligation | Applicable evidence / disposition |
+| --- | --- |
+| R1 | Accepted AR1 selected settings and per-effect Apply; AR2 preview/fallback remain draft-only, ordinary native Apply verified in browser and Q11 |
+| R2 | Accepted strict v1 codec and parser-guard renewals; AR2 exact v1/v2 tests retain duplicate/type/nonfinite/depth/size protections |
+| R3 | Accepted reference size/format/sanitation and selected-source checks; extracted current wheel/sdist probes include actual saved reference |
+| R4 | Accepted alpha1/half-open bounds and fractional width/ULP tests; current layout conversion extends the same converter-only rule, native validators unchanged |
+| R5 | Accepted exact historical saved revision/reference proof; AR2 saved-layout extraction includes disabled geometry with no draft/master/ID leakage |
+| R6 | Current codec allowlists and package privacy inspection exclude local identity, operands, paths and planning/private material; both reduction operands retained in browser/Q11 |
+| R7 | Accepted read-only create/validate safety plus current layout actual-HTTP auth/origin/host/body/duplicate/busy/disconnect/race tests; no job/render/write for proposal |
+| R8 | Accepted selective forms/dirty confirmation/explicit shape behavior; current browser v1/v2 reopen and independent fallback selection preserve that contract |
+| R9 | Accepted literal .125/12.5% persistence and colour-only edit coverage; current browser v1 download/reopen shows .125/12.5% |
+| R10 | Accepted sequential effects/stale reload/late completion/object-URL checks; current page polling and key-order causal repairs preserve proposals and newer drafts |
+| R11 | Accepted independent exposure/Shadow area-binding and same-revision completion renewals; current unchanged regressions remain in the settled suite |
+| R12 | Current layout binding includes spatial identity/version plus both reduction drafts/raw controls; Cancel/Undo/fallback tests and native saved operands preserve target ownership |
+| R13 | Current strict v1/v2/all-shape codec cases and actual browser downloads; emits v1 without layout, v2 with layout, no project schema migration |
+| R14 | Literal independent geometry/continuous-weight and finite/ULP/native-limit cases; real off-canvas HTTP409 rejection, no fitting/clamping/dropping |
+| R15 | Eight switch combinations, zero/32/33, UUID type/case/count/collision tests; native browser Add with group OFF and confirmed Replace; Q11 master/protection/reduction preservation |
+| R16 | Explicit source/target shape tests and real browser off-canvas fallback; original portable file retained, selected transition13.25→12.4 without Apply or geometry/switch change |
+| R17 | Executed-page bound preview/Cancel/Load/monotonic Undo and intervening-edit/late-reply cases; real outlines, Undo after polling and mandatory Replace confirmation/Cancel |
+| R18 | Real ordinary Apply/reopen/edit plus combined Q11 frozen native/margins/series deliveries, canonical cache accounting and independent delivery-only replay with native read/network denial |
+| R19 | Causal/focused/statics, actual browser/packages and settled full suite2457 passed/7 skipped/exit0 with unchanged inputs. Root accepted the disclosed navigation exception; no wholly offline/browser-wide-isolation claim |
+| R20 | Source/capture/alpha/protection/both reductions/accepted bytes checked; I10 live/recovery, human photographic/usability/accessibility and representative-photo performance remain OPEN |
+| R21 | Accepted coordinated plan scopes and AR1 result scopes retained; all three fresh AR2 result scopes complete, including actual Ponytail; no material findings; actual root Gate3 accepted,2/2 increments accepted |
+| R22 | Terminal evidence-retention review completed after verification/all result reports, as recorded below; no evidence/fixture deletion authorized or performed |
+
+The owner has checked requirement coverage, maintained-document consistency and
+canonical reuse: native validators, outline drawing, ordinary Apply, cache
+validation and delivery readers retain one owner. The two actual browser defects
+received focused causal repairs; no neighboring renderer/cache/schema/dependency
+change was added. Administrative evidence additions do not change the frozen
+candidate or repeat already-passing package checks.
 
 ### Evidence retention and cleanup review
 
-**Planned** after both increments' verification/reviews, outside the two-feature-increment count and with no extra gate. Record keep/hold/cleanup-candidate/unknown for owned evidence with reason, size if measured, active consumer and review event. Preserve required proof and failed environments; optional storage disposition alone does not block demonstrated behavior. No deletion or compaction is authorized or claimed.
+**Completed 2026-10-27 at19:59 UTC**, after the settled suite and all three AR2
+result reports, outside the two-increment count and with no extra acceptance
+gate. `evidence-retention-review.json` under the AR2 evidence root records actual
+metadata inventories, reasons, consumers and scope limitations.
+
+| Disposition | Scope / measured size at review | Reason / active consumer |
+| --- | --- | --- |
+| Keep | AR1 evidence root:1109 files,19,240,584 bytes | Accepted candidate, causal/failure/browser/package/review provenance used by root and final human GitHub review |
+| Keep | AR2 evidence root:548 files,12,092,377 bytes | Current candidate, complete logs, synthetic fixtures, browser/native isolation/packages/reviews used by root Gate3 and final human review |
+| Hold | Retained interpreter/installed dependencies; size not measured here | Active reproduction runtime outside the owned evidence-cleanup scope; unchanged |
+| Cleanup candidates | None at this checkpoint | Package extractions and historical failures still have active proof consumers; no storage benefit warrants removing that evidence now |
+| Unknown | Historical Downloads copies and unrelated local/pytest/runtime stores | Outside this bounded inventory; no size or cleanup claim |
+
+The byte/file snapshot precedes the retention record and final candidate manifest.
+All owned evidence and fixtures are retained. No deletion, compaction, accepted
+photo change or dependency cleanup was authorized or performed.
 
 Current handoff: [handoff.md](handoff.md). Detailed verification: [qa-plan.md](qa-plan.md).

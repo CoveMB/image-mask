@@ -294,12 +294,14 @@ combined when requested. Current user choices override example values; preserve
 source development, protected detail and unrelated settings, adapt native-pixel
 widths and protection to the target, and use fresh identities with existing controls.
 
-Named reference cards remain descriptive guidance. A supported portable v1
+Named reference cards remain descriptive guidance. A supported portable v1/v2
 appearance file can be opened through **Appearance recipes → Open recipe file**;
 see [the manual workflow](workflow.md#reuse-appearance-settings). Load only the
-requested scalar sections, then use the existing per-effect Apply controls with
-fresh target identities. Loading does not transfer geometry, protection, fade
-reduction, enable switches, source development or photographic acceptance. A source
+requested scalar sections or explicitly requested editable layout, then use the
+existing per-effect Apply controls with fresh target identities. Scalar loading
+does not transfer geometry or switches. Layout Add/Replace and its guarded Undo
+follow the manual workflow; they retain the target master switch, protection,
+fade reduction, source development and acceptance. A source
 thumbnail is optional private photo content, not a prediction for the target.
 A supported portable series preset can be loaded through **Match series → Load
 preset file**. Keep references local; do not upload or include them in distributions.

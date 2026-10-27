@@ -775,8 +775,8 @@ Open **Appearance recipes** in the local viewer. Choose a complete saved source
 revision, give the recipe a name, and check each setting you want to save. The
 labels show saved ON/OFF status; even an OFF effect needs explicit selection.
 Pending form edits and the current editable recipe are excluded. For fade-shape
-defaults, choose one saved oval or arc. Choose either inward shading or fade-shape
-defaults in one file.
+defaults, choose one saved oval or arc. Choose only one of inward shading,
+fade-shape defaults or **Editable oval and arc layout** in one file.
 
 **Include a small source-photo reference** is unchecked. If selected, the file
 contains a sanitized RGB8 thumbnail of that revision's saved Result, including
@@ -786,10 +786,10 @@ or share only deliberately. It is not a target preview or an editable source.
 
 On another photo, choose **Open recipe file**, inspect the name, included values
 and optional reference, then select the sections to load. All selections start
-unchecked. Loading changes controls only. It preserves effect switches, masks,
+unchecked. Loading scalar sections changes controls only. It preserves effect switches, masks,
 areas, protection, both fade-reduction drafts, source development, framing and
 acceptance. Confirming replacement affects only the selected unapplied scalar
-settings; Cancel keeps them. The portable [v1 file contract](file-contract.md#portable-appearance-recipes)
+settings; Cancel keeps them. The portable [file contract](file-contract.md#portable-appearance-recipes)
 defines the accepted fields and limits.
 
 Widths scale by the maximum side of the saved nonzero-alpha subject bounds,
@@ -799,6 +799,30 @@ sections remain usable. Fade-shape defaults require an explicit current target
 shape, change only transition width, strength and highlight preservation, and
 never create geometry or enable its switches. Recover a stale spatial draft
 before loading these defaults.
+
+For a file containing an editable fade layout, choose **Add arcs** or **Replace
+layout**, then **Preview placement**. The separate magenta outlines show proposed
+geometry; they do not render the target appearance or change its draft. Cancel
+discards the proposal. Add retains the target oval, highlight setting and arc
+group switch. If that group is OFF, imported arcs stay invisible until you
+explicitly turn it on. Replace imports the oval, arcs, their internal switches
+and highlight setting; it always asks for confirmation. Both retain the target
+master switch, protection, reduction drafts and candidate comparison choice.
+
+**Load layout into draft** installs editable shapes in the normal Fade controls. Each
+imported arc has a fresh identity. **Undo import** restores the previous
+draft exactly while the target, recipe and controls remain unchanged; subsequent
+edits, selections, mode changes or Apply invalidate that Undo. Use ordinary
+**Apply fade shapes** to save the layout, then the usual revision Restore for
+recovery after Apply. The source recipe and source project are not needed to
+reopen, edit or export the saved native result.
+
+Layout geometry uses one subject-relative scale in both axes, preserving angles
+and bends. An empty matte or a shape outside native limits blocks the proposal;
+shapes are not silently fitted or dropped. To reuse just values instead, choose
+an explicit source oval/arc under **Portable shape for settings only**, select a current
+target shape, and use **Use settings only on the selected target shape**. This transfers only transition
+width, strength and highlight preservation, leaving target geometry and switches.
 
 Apply effects individually through their existing controls. For example, after
 loading Shadow fade, exposure and shading, Apply Shadow fade first. The recipe

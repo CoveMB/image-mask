@@ -4,7 +4,9 @@ import hashlib
 import importlib
 import json
 import os
+import select
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -49,9 +51,10 @@ class CachedPrediction:
 def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_reconstruction(
     tmp_path,
 ):
-    """Clearing predictions cannot lose reduction or require a project-backed re-export."""
+    """Transferred layout and both reductions survive cache clearing and isolated delivery replay."""
     import inspect
 
+    from test_appearance_recipes import saved_recipe
     from test_background import scalar_background
     from test_cache_management import predictions
     from test_effects import fixture_project
@@ -63,7 +66,8 @@ def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_r
         scalar_weights,
     )
     from test_shadow_fade import fade_request, scalar_fade
-    from test_spatial_fade import spatial_request, spatial_settings
+    from test_spatial_fade import arc_settings, spatial_request, spatial_settings
+    from test_viewer import appearance_layout_request, running
 
     from blackmask.project import digest
     from blackmask.series_framing import SeriesSettings
@@ -102,6 +106,75 @@ def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_r
     result = operations.apply_operation(
         project, reduction_request(project, document, target="shadow_fade")
     )
+    # A different saved source supplies geometry; target operands stay target-owned.
+    layout_root = tmp_path / "layout-source"
+    layout_root.mkdir()
+    layout_project, _, _ = fixture_project(layout_root, np.full((4, 11, 3), 30000, np.uint16))
+    source_settings = spatial_settings(11, 4)
+    source_settings.update(enabled=False, preserve_highlights=0.65, arcs_enabled=True)
+    source_settings["oval"].update(
+        center_xy=[1, 0], inner_radii_xy=[1, 1], transition_width=1, rotation_degrees=37
+    )
+    source_settings["arcs"] = [
+        arc_settings(
+            center_xy=[6, 2],
+            half_span=4,
+            bend=-2,
+            end_softness=1,
+            transition_width=1,
+            rotation_degrees=37,
+        )
+    ]
+    source_result = operations.apply_operation(
+        layout_project,
+        dict(spatial_request(layout_project, source_settings), scope_xyxy=[0, 0, 11, 4]),
+    )
+    portable = saved_recipe(layout_project, source_result["revision"], ["spatial_layout"])
+    recipe_path = layout_root / "saved-layout.json"
+    recipe_path.write_bytes(portable)
+    source_before = inventory(layout_root)
+    target_before = inventory(project)
+    previous_revision = project / "revisions" / result["revision"]
+    with running(project) as server:
+        data = appearance_layout_request(server)
+        data.update(recipe_json=portable.decode(), spatial_draft=settings)
+        status, body, _ = http(server, "/api/appearance-layout-preview", "POST", data)
+        assert status == 200, body
+        proposal = json.loads(body)["spatial_fade"]
+    assert inventory(project) == target_before
+    assert proposal["enabled"] is True  # Source master is OFF; target master is retained.
+    assert proposal["oval"]["center_xy"] == [1, 1]
+    assert proposal["oval"]["inner_radii_xy"] == [0.5, 0.5]
+    assert proposal["oval"]["transition_width"] == 0.5
+    assert proposal["oval"]["rotation_degrees"] == 37
+    imported_arc = proposal["arcs"][0]
+    assert imported_arc["center_xy"] == [3.5, 2]
+    assert (imported_arc["half_span"], imported_arc["bend"], imported_arc["end_softness"]) == (
+        2,
+        -1,
+        0.5,
+    )
+    assert imported_arc["id"] != source_settings["arcs"][0]["id"]
+    result = operations.apply_operation(project, spatial_request(project, proposal, candidate=True))
+    selected_directory = project / "revisions" / result["revision"]
+    manifest = read_revision(project, result["revision"], read_project(project)["developed_id"])
+    assert manifest["spatial_fade"]["settings"] == proposal
+    assert manifest["spatial_fade"]["candidate_comparison"] is True
+    for name in (
+        "base_alpha16.png",
+        "effects/spatial-fade/protection16.png",
+        "effects/spatial-fade/reduction.json",
+        "effects/spatial-fade/reduction16.png",
+        "effects/shadow-fade/protection16.png",
+        "effects/shadow-fade/reduction.json",
+        "effects/shadow-fade/reduction16.png",
+    ):
+        assert (
+            saved_raster(selected_directory / name).read_bytes()
+            == saved_raster(previous_revision / name).read_bytes()
+        )
+    assert inventory(layout_root) == source_before
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
     selected = result["revision"]
     flat = export_project(project, revision=selected, draft=True, variants=("transparent",))
     assert not flat.get("editable_companion")
@@ -139,14 +212,78 @@ def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_r
     isolated.mkdir()
     for directory in frozen:
         shutil.copytree(directory, isolated / directory.name)
-    project.rename(tmp_path / "project-unavailable")
-    (tmp_path / "source.tif").rename(tmp_path / "capture-unavailable.tif")
+    retained_project = tmp_path / "project-unavailable"
+    project.rename(retained_project)
+    capture = tmp_path / "capture-unavailable.tif"
+    (tmp_path / "source.tif").rename(capture)
+    model_root = tmp_path / "unavailable-models"
+    model_root.mkdir()
+    model_probe = model_root / "synthetic-model.bin"
+    model_probe.write_bytes(b"Synthetic denial probe; no model weights")
+    probes = [
+        retained_project / "state.json",
+        capture,
+        layout_project / "state.json",
+        recipe_path,
+        retained_project / next(iter(frozen)).relative_to(project) / "result_rgb16.tif",
+        model_probe,
+    ]
+    probe_hashes = [digest(path.read_bytes()) for path in probes]
+    forbidden_roots = [
+        project,
+        retained_project,
+        tmp_path / "source.tif",
+        capture,
+        layout_root,
+        model_root,
+    ]
     program = (
-        """import json,math,sys
+        """import ctypes,errno,fcntl,json,math,os,socket,struct,sys,threading
 from pathlib import Path
 from types import SimpleNamespace
 import numpy as np,tifffile
 from PIL import Image
+"""
+        + inspect.getsource(install_guard)
+        + r"""
+root=Path(sys.argv[1]).resolve()
+probes=json.loads(sys.argv[2]); port=int(sys.argv[3]); mode=sys.argv[4]
+runtime_roots=[Path(sys.base_prefix).resolve(),Path(sys.prefix).resolve()]
+runtime_roots += [Path(module.__file__).resolve().parent for module in (np,tifffile,Image)]
+assert all(not Path(probe).is_relative_to(allowed) for probe in probes for allowed in runtime_roots)
+libc=ctypes.CDLL(None,use_errno=True)
+def native_connect():
+ descriptor=libc.socket(socket.AF_INET,socket.SOCK_STREAM,0)
+ assert descriptor>=0,('socket',ctypes.get_errno())
+ try:
+  family=bytes((16,socket.AF_INET)) if sys.platform=='darwin' else struct.pack('H',socket.AF_INET)
+  address=ctypes.create_string_buffer(family+struct.pack('!H',port)+socket.inet_aton('127.0.0.1')+bytes(8))
+  status=libc.connect(descriptor,address,16)
+  return status,ctypes.get_errno()
+ finally: libc.close(descriptor)
+if mode=='control':
+ for probe in probes:
+  assert Path(probe).read_bytes()
+  descriptor=libc.open(probe.encode(),0); assert descriptor>=0
+  libc.close(descriptor)
+ assert native_connect()[0]==0
+ print('unguarded existing-file and native loopback controls passed')
+ sys.exit(0)
+release,observed=install_guard(root,read_roots=[root,*runtime_roots])
+for probe in probes:
+ try: Path(probe).read_bytes()
+ except PermissionError: pass
+ else: raise AssertionError('Python read guard failed: '+probe)
+ if mode=='sandbox':
+  assert libc.open(probe.encode(),0)==-1
+  assert ctypes.get_errno() in (errno.EPERM,errno.EACCES)
+with socket.socket() as connection:
+ try: connection.connect(('127.0.0.1',port))
+ except PermissionError: pass
+ else: raise AssertionError('Python network guard failed')
+if mode=='sandbox':
+ status,error=native_connect()
+ assert status==-1 and error in (errno.EPERM,errno.EACCES),(status,error)
 """
         + "\n".join(
             inspect.getsource(helper)
@@ -268,19 +405,50 @@ assert native_count>=1
 assert not any(name=='blackmask' or name.startswith('blackmask.') for name in sys.modules)
 assert Image.__version__==Image.core.PILLOW_VERSION=='13.0.0'
 print('retained native/margins/series deliveries reconstructed without application/project/capture/cache; Pillow/core 13.0.0')
+print(json.dumps({'isolation':mode,'denied_existing_files':len(probes),'native_network_denied':mode=='sandbox','observed_reads':sorted(observed)}))
 """
     )
-    child = subprocess.run(
-        [sys.executable, "-B", "-c", program, str(isolated)],
-        cwd=isolated,
-        env=dict(os.environ, PYTHONPATH=""),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
+    sandboxed = sys.platform == "darwin" and Path("/usr/bin/sandbox-exec").is_file()
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        arguments = [
+            sys.executable,
+            "-B",
+            "-c",
+            program,
+            str(isolated),
+            json.dumps(list(map(str, probes))),
+            str(listener.getsockname()[1]),
+        ]
+        options = {
+            "cwd": isolated,
+            "env": dict(os.environ, PYTHONPATH=""),
+            "capture_output": True,
+            "text": True,
+            "timeout": 30,
+        }
+        control = subprocess.run([*arguments, "control"], check=False, **options)
+        assert control.returncode == 0, control.stdout + control.stderr
+        assert select.select([listener], [], [], 3)[0], "Positive connection did not reach listener"
+        connection, _ = listener.accept()
+        connection.close()
+        arguments.append("sandbox" if sandboxed else "python-audit-only")
+        if sandboxed:
+            permissions = " ".join(
+                "(subpath " + json.dumps(str(path)) + ")" for path in forbidden_roots
+            )
+            profile = (
+                "(version 1)(allow default)(deny network*)(deny file-read* " + permissions + ")"
+            )
+            arguments = ["/usr/bin/sandbox-exec", "-p", profile, *arguments]
+        child = subprocess.run(arguments, check=False, **options)
+        assert not select.select([listener], [], [], 0)[0], "Guarded child reached listener"
     assert child.returncode == 0, child.stdout + child.stderr
     assert "retained native/margins/series deliveries reconstructed" in child.stdout
+    assert [digest(path.read_bytes()) for path in probes] == probe_hashes
+    print(control.stdout.strip())
+    print(child.stdout.strip())
 
 
 def imported_project(tmp_path):

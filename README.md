@@ -76,11 +76,12 @@ keeps Shadow fade independent. Local **fade reduction** brushes and rectangles c
 reduce either effect independently without changing saved areas, protection or alpha. See the [offline walkthrough](docs/workflow.md#fade-into-background)
 for shape controls, saved strength maps, recovery and portable two-folder exports.
 
-**Appearance recipes** save selected scalar settings from a complete saved revision
-as a portable JSON file, with an optional source-photo thumbnail. Open the file on
+**Appearance recipes** save selected scalar settings or an editable fade layout
+from a complete saved revision as a portable JSON file, with an optional source-photo thumbnail. Open the file on
 another photo, load chosen values into controls, then Apply each effect explicitly.
 Widths adapt to the saved subject bounds; areas, protection, fade reduction and
-enable switches stay local. See [reuse appearance settings](docs/workflow.md#reuse-appearance-settings)
+master effect switches stay local. Layout imports have explicit Add/Replace and
+Undo controls. See [reuse appearance settings](docs/workflow.md#reuse-appearance-settings)
 for privacy, sequential Apply and stale-draft recovery.
 
 Background appearance saves a tone and broad variation behind the matte. New
@@ -213,7 +214,7 @@ for explicit model setup, typed preparation and human review.
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Shared immutable raster references and role validation | `src/blackmask/assets.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
-| Portable appearance recipes and subject-relative scalar conversion | `src/blackmask/appearance_recipes.py` |
+| Portable appearance recipes and subject-relative scalar/layout conversion | `src/blackmask/appearance_recipes.py` |
 | Presentation geometry, bounded sampling and source-bound preset | `src/blackmask/framing.py` |
 | Fixed-size subject layout, premultiplied resampling and portable series settings | `src/blackmask/series_framing.py` |
 | One-project loopback server and packaged manual page | `src/blackmask/viewer.py`, `src/blackmask/ui/review.html` |
