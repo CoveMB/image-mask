@@ -61,15 +61,15 @@ from .sharpening import (
 )
 from .spatial_fade import (
     SPATIAL_FADE_ALGORITHM,
-    SPATIAL_FADE_FILES,
     SpatialFadeOperands,
     make_spatial_weight,
     read_spatial_fade,
+    spatial_fade_files,
     validate_spatial_fade,
 )
 
 # Bump when validation, request equivalence or effect arithmetic changes.
-EFFECTS_EXECUTION_VERSION = "validated-effects-v4"
+EFFECTS_EXECUTION_VERSION = "validated-effects-v5"
 
 
 def _effects_execution_identity() -> dict[str, Any] | None:
@@ -128,10 +128,26 @@ def _effects_request_identity(
         "shadow_fade",
         "background",
         "spatial_fade",
+        "fade_reduction",
     }:
         normalized["color_cleanup"] = settings
     if "background" in normalized:
         normalized["background"] = normalized_background(normalized["background"])
+    if "fade_reduction" in normalized:
+        from .fade_reduction import REDUCTION_ALGORITHM
+
+        reduction = normalized["fade_reduction"]
+        normalized["fade_reduction"] = dict(
+            reduction,
+            algorithm=REDUCTION_ALGORITHM,
+            area=dict(
+                reduction["area"],
+                regions=[
+                    dict(region, amount=float(region["amount"]))
+                    for region in reduction["area"]["regions"]
+                ],
+            ),
+        )
     if "shading" in normalized:
         normalized["shading"] = _effective_shading_settings(normalized["shading"], saved_shading)
     if "spatial_fade" in normalized:
@@ -179,7 +195,7 @@ def _spatial_reuse_binding(
         "record": record,
         "files": {
             f"effects/spatial-fade/{name}": hashes[f"effects/spatial-fade/{name}"]
-            for name in SPATIAL_FADE_FILES
+            for name in spatial_fade_files(record)
         },
     }
 
@@ -695,7 +711,7 @@ def inherit_spatial_fade(
         parent,
         stage,
         assets,
-        tuple("effects/spatial-fade/" + name for name in SPATIAL_FADE_FILES),
+        tuple("effects/spatial-fade/" + name for name in spatial_fade_files(record)),
     )
     if alpha is not None:
         record["stale"] = bool(
@@ -948,6 +964,7 @@ def run_effects(
             "sharpening_amount_only",
             "spatial_fade",
             "spatial_fade_protection_file",
+            "fade_reduction",
         }
         or type(operation["schema_version"]) is not int
         or operation["schema_version"] != 2
@@ -956,6 +973,16 @@ def run_effects(
     ):
         raise ProjectError("Invalid schema-2 effects request")
     spatial_changed = "spatial_fade" in operation
+    reduction_changed = "fade_reduction" in operation
+    if reduction_changed:
+        reduction_request = operation["fade_reduction"]
+        if (
+            set(operation) != required | {"fade_reduction"}
+            or not isinstance(reduction_request, dict)
+            or set(reduction_request) != {"target", "area"}
+            or reduction_request["target"] != "spatial_fade"
+        ):
+            raise ProjectError("Fade reduction requires one exclusive saved effect target and area")
     if spatial_changed:
         if set(operation) - required - {"spatial_fade", "spatial_fade_protection_file"}:
             raise ProjectError("Spatial fade must be an exclusive effects operation")
@@ -1036,6 +1063,7 @@ def run_effects(
         and not sharpening_changed
         and not background_changed
         and not spatial_changed
+        and not reduction_changed
         and "support_file" not in operation
     ):
         raise ProjectError("Invalid effects support/exposure fields")
@@ -1073,6 +1101,8 @@ def run_effects(
     elif set(operation) & fade_fields:
         raise ProjectError("Shadow fade fields require shadow_fade settings")
     operation = json.loads(_json_bytes(operation))
+    if reduction_changed:
+        reduction_request = operation["fade_reduction"]
     request_bytes = request_file.read_bytes() if request_file else _json_bytes(operation)
     if json.loads(request_bytes) != operation:
         raise ProjectError("Stale effects request file")
@@ -1093,6 +1123,7 @@ def run_effects(
         or fade_changed
         or background_changed
         or spatial_changed
+        or reduction_changed
     )
     settings = operation.get(
         "color_cleanup",
@@ -1113,6 +1144,38 @@ def run_effects(
     source, _ = load_developed(project, state["developed_id"])
     height, width = alpha.shape
     scope = coordinates(operation["scope_xyxy"], width, height, box=True)
+    reduction16 = None
+    reduction_area_bytes = None
+    if reduction_changed:
+        from .fade_reduction import rasterize_fade_reduction, validate_fade_reduction
+
+        previous_reduction = read_spatial_fade(
+            project, saved_asset(project, f"revisions/{parent}"), manifest, alpha
+        )
+        if previous_reduction is None:
+            raise ProjectError("Fade reduction requires a saved spatial fade effect")
+        if previous_reduction.record["stale"] or not np.array_equal(
+            scalar16(saved_asset(project, f"revisions/{parent}/effects/spatial-fade/alpha16.png")),
+            alpha,
+        ):
+            raise ProjectError("Fade reduction requires current saved spatial fade alpha")
+        if parent != state["accepted_revision"] and not operation["candidate_comparison"]:
+            raise ProjectError(
+                "Fade reduction requires accepted base or explicit candidate comparison"
+            )
+        validate_fade_reduction(reduction_request["area"], state["developed_id"], width, height)
+        check_space(project, source.nbytes * 45 + alpha.nbytes * 32 + 1024**2)
+        reduction16 = rasterize_fade_reduction(
+            reduction_request["area"], state["developed_id"], width, height
+        )
+        reduction_area_bytes = _json_bytes(reduction_request["area"])
+        outside = reduction16 != 0
+        if previous_reduction.reduction16 is not None:
+            outside |= previous_reduction.reduction16 != 0
+        x0, y0, x1, y1 = scope
+        outside[y0:y1, x0:x1] = False
+        if outside.any():
+            raise ProjectError("Fade reduction scope must contain previous and replacement areas")
     if spatial_changed:
         validate_spatial_fade(operation["spatial_fade"], width, height)
         if scope != [0, 0, width, height]:
@@ -1784,7 +1847,8 @@ def run_effects(
         ):
             Image.fromarray(value).save(directory / (name + ".png"))
         spatial_record = {
-            "schema_version": 1,
+            **(spatial_record or {}),
+            "schema_version": spatial_record["schema_version"] if spatial_record else 1,
             "enabled": spatial_settings["enabled"],
             "settings": spatial_settings,
             "stale": False,
@@ -1810,6 +1874,25 @@ def run_effects(
                 settings=dict(shading_record["settings"], enabled=False),
             )
             (stage / "effects/shading/settings.json").write_bytes(_json_bytes(shading_record))
+    if reduction_changed:
+        from .fade_reduction import REDUCTION_ALGORITHM
+
+        assert (
+            spatial_record is not None
+            and reduction16 is not None
+            and reduction_area_bytes is not None
+        )
+        directory = stage / "effects/spatial-fade"
+        Image.fromarray(reduction16).save(directory / "reduction16.png")
+        (directory / "reduction.json").write_bytes(reduction_area_bytes)
+        spatial_record = dict(
+            spatial_record,
+            schema_version=2,
+            reduction_sha256=digest((directory / "reduction16.png").read_bytes()),
+            reduction_area_sha256=digest(reduction_area_bytes),
+            reduction_algorithm=REDUCTION_ALGORITHM,
+        )
+        (directory / "settings.json").write_bytes(_json_bytes(spatial_record))
     if "shading" in operation and spatial_record is not None and shading_settings["enabled"]:
         spatial_record = dict(
             spatial_record,
@@ -2049,6 +2132,9 @@ def run_effects(
             scalar16(stage_asset(project, stage, assets, "effects/spatial-fade/protection16.png"))
             != 0,
             spatial_record,
+            scalar16(stage_asset(project, stage, assets, "effects/spatial-fade/reduction16.png"))
+            if spatial_record["schema_version"] == 2
+            else None,
         )
         if spatial_record is not None and spatial_record["enabled"] and not stale
         else None
@@ -2132,7 +2218,7 @@ def run_effects(
             f"effects/spatial-fade/{name}": digest(
                 stage_asset(project, stage, assets, f"effects/spatial-fade/{name}").read_bytes()
             )
-            for name in SPATIAL_FADE_FILES
+            for name in spatial_fade_files(spatial_record)
         }
         if spatial_record is not None
         else {},

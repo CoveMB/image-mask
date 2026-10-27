@@ -685,7 +685,7 @@ execution identity can create a meaningful small revision even if pixels agree.
 There is no historical request search, registry or new cache engine. The explicit
 effects execution version must change when equivalence, validation or arithmetic
 semantics change. Existing native model/tile cache invalidation stays independent.
-Current `validated-effects-v4` covers all seven effects, including Fade into background's
+Current `validated-effects-v5` includes local fade reduction and covers all seven effects, including Fade into background's
 validated nested settings, algorithm, actual explicit protection bytes and all four
 saved spatial operands. Its output binding includes OFF and inherited spatial state;
 new output is bound only after generation, allowing the first equivalent repeat to
@@ -933,12 +933,13 @@ inward shading instead uses the existing `P=R(A*F*H)` path with its saved H fact
 
 Native editable deliveries add exactly `spatial_fade_weight16.png`,
 `spatial_fade_protection16.png`, `spatial_fade_alpha16.png`,
-`spatial_fade_settings.json` to the existing conditional inventory.
+`spatial_fade_settings.json` to the existing conditional inventory. Record 2 also
+adds the reduction raster/document described below, including while OFF.
 `foreground_rgb16.tif` stays pre-spatial, already including selected earlier effects.
 Alpha, source, background RGB16/settings and other effect operands remain separate.
 To reconstruct without the project/models: validate the delivered records and
 select the active rendering mode. With spatial fade enabled, calculate q from
-foreground/W/protection/settings, blend toward delivered B and compose alpha once.
+foreground/W/protection/settings and optional reduction, blend toward delivered B and compose alpha once.
 With spatial fade OFF, q is zero; if inward shading is enabled, use delivered
 `shadow_weight16.png` and its opacity to calculate `H=1-opacity*W16/65535` and
 `round(F*A*H+B*(1-A))`. Otherwise H is 1. The native manifest/README formula
@@ -965,6 +966,62 @@ this is not an available-RAM reservation.
 After durable success, only that invocation's byte-verified duplicate stage is
 removed. Failed, uncertain and earlier stages remain preserved. A cleanup error
 identifies the durably published output and any remaining duplicate-stage files.
+
+### Local fade reduction
+
+The exclusive schema-2 `effects` request uses the common identity, scope and
+`candidate_comparison` fields plus exactly `fade_reduction:{"target":"spatial_fade","area":...}`.
+It requires an existing validated spatial effect, a current alpha dependency even
+when disabled, and an accepted base or explicit candidate comparison. Scope contains
+the union of old and replacement nonzero reduction; the viewer sends full native
+scope. It changes neither the effect switch, geometric W, protection, source,
+alpha/guidance nor another effect's stale state. Settings, background changes,
+prepare/matte/repair and effect OFF inherit the reduction.
+
+The area has exactly `schema_version:1` and `regions`. Each region has exactly
+`shape` and finite nonboolean `amount` in [0,1]. Shapes are existing native support
+strokes or rectangles, including their stable unique IDs and inward `feather_px`;
+other shapes/roles/keys are rejected. At most 128 regions and 8192 total stroke
+points are validated before raster allocation. Using the existing quantized support
+`S_i16`, compute `R16=round(max_i(amount_i*S_i16))` once, ties-to-even. Empty gives
+zero. Overlap never accumulates. Scratch holds one shape at a time, not all rasters.
+
+Only an explicit reduction edit upgrades the spatial record from 1 to 2. Record 2
+adds exactly `reduction_sha256`, `reduction_area_sha256` and
+`reduction_algorithm:"native-support-max-reduction-v1"`. Its closed inventory adds
+shared `effects/spatial-fade/reduction16.png` and revision-local `reduction.json`.
+Legacy records mean zero reduction and are not rewritten. Clear saves zero/empty
+in a new record 2 revision. Readers check hashes, native dimensions and geometry
+replay even OFF; missing, extra, unbound, future and inconsistent operands fail
+on cold and warm reads. Cache clear never owns these permanent operands.
+
+After spatial support, protection and highlight preservation, multiply q by
+`1-R16/65535` exactly once. Alpha remains eligibility only. Missing/zero reduction
+preserves old arithmetic and full reduction removes only this effect. Combined
+geometry maps retain unreduced W; effective maps include reduction. Native, crop,
+review and series consumers use the same q. Native editable delivery adds
+`spatial_fade_reduction16.png` and `spatial_fade_reduction.json`; compact-only requests
+add no editing bundle. Standalone reconstruction must apply this factor before
+native blending or series sampling of `A*q`, never interpolate already-faded RGB.
+
+Viewer reduction saves additionally require raw `revision_manifest_sha256`, checked
+under the project writer lock and excluded from the persisted operation. Authenticated
+`POST /api/fade-reduction-preview` takes exactly `developed_id`, `revision`, raw
+`revision_manifest_sha256`, `crop_xyxy`, `target:"spatial_fade"`, and `view` (`coverage`
+or `off`). Only `off` may add `panel` (`result`, `black`, `gray`, `white`). OFF removes
+reduction for comparison while retaining the saved effect switch and settings.
+Responses echo the request and bind a labelled PNG8 to the saved crop. Preview/save
+JSON rejects duplicate keys. The existing body cap, preview lock, identity rechecks
+and local authentication apply. Snapshots expose validated `fade_reduction_areas`
+per saved target, empty for legacy and omitted for absent targets.
+
+Drafts retain their captured raw identity and version. Only matching target,
+identity, submitted version and saved result can clear a submitted draft; later
+edits and failures retain it. Old readers may reject record 2. Recovery is updated
+software or preserved pre-feature revisions/exports, never in-place migration or
+automatic deletion. Human photographic acceptance remains separate.
+
+### Saved spatial previews
 
 Authenticated `POST /api/spatial-preview` takes exactly `developed_id`, `revision`,
 raw `revision_manifest_sha256`, native `crop_xyxy`, `view`. Views are `off`,

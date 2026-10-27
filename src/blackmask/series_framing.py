@@ -523,7 +523,9 @@ def render_series(
         + alpha16.nbytes
         + (0 if weight16 is None else weight16.nbytes)
         + (
-            spatial_fade.weight16.nbytes + spatial_fade.protection.nbytes
+            spatial_fade.weight16.nbytes
+            + spatial_fade.protection.nbytes
+            + (0 if spatial_fade.reduction16 is None else spatial_fade.reduction16.nbytes)
             if active_spatial and spatial_fade is not None
             else 0
         ),

@@ -223,7 +223,7 @@
         <canvas
           id="canvas"
           tabindex="0"
-          aria-label="Source and result; native-coordinate guides, Local sharpening, Local exposure, Shadow fade or Fade shapes authoring. Numeric alternatives in each section."
+          aria-label="Source and result; native-coordinate guides, Local sharpening, Local exposure, Shadow fade, Fade shapes or Fade reduction authoring. Numeric alternatives in each section."
         ></canvas>
       </div>
     </section>
@@ -367,7 +367,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -491,6 +491,23 @@
         <label>Map display opacity <input id="spatialOpacity" type="range" min="0" max="1" step="0.05" value="0.45" /></label>
         <p class="small">Outlines can show unapplied edits; images and strength maps show the bound saved revision until Apply. The selected background remains the fade target on black/gray/white diagnostic views. Blending can tint or brighten RGB; transparent views retain that tint and unchanged alpha. Keep both exported folders for portable editing.</p>
         <p id="spatialDraftStatus" role="status" class="small"></p><p id="spatialStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset id="reductionControls">
+        <legend>Reduce fade locally</legend>
+        <p class="small">Reduce a saved fade without changing its shapes or the mask. Amount 100% removes this fade locally. Overlapping regions use the strongest reduction. Feathering stays inside each region; narrow regions may have no full-strength centre.</p>
+        <label>Target <select id="reductionTarget"></select></label>
+        <label>Drawing shape <select id="reductionShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+        <label>Native brush radius <input id="reductionRadius" type="number" min="1" step="1" value="10" /></label>
+        <label>Inward feather (native pixels) <input id="reductionFeather" type="number" min="0" step="1" value="0" /></label>
+        <label>Reduction amount (%) <input id="reductionAmount" type="number" min="0" max="100" step="1" value="100" /></label>
+        <label>Rectangle x0,y0,x1,y1 <input id="reductionRectangle" class="wide" /></label>
+        <div class="row"><button id="reductionAddRectangle">Add reduction rectangle</button><button id="reductionUpdateRectangle">Update selected rectangle</button></div>
+        <label>Reduction region <select id="reductionSelect" size="4"></select></label>
+        <div class="row"><button id="reductionRemove">Remove selected region</button><button id="reductionClear">Clear target reduction</button></div>
+        <label><input id="reductionCandidate" type="checkbox" /> Explicitly compare an unaccepted candidate</label>
+        <div class="row"><button id="reductionApply">Apply reduction</button><button id="reductionReload">Cancel / reload saved reduction</button></div>
+        <label>Saved reduction view <select id="reductionView"><option value="none">Normal</option><option value="coverage">Reduction coverage</option><option value="off">Reduction OFF (original fade strength)</option></select></label>
+        <p id="reductionDraftStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>Optional protected inward shading</legend>
@@ -624,6 +641,8 @@
     let sharpeningControlsIdentity = null, sharpeningControlsSubmitted = null;
     let spatialDraft = null, spatialDirty = false, spatialDraftIdentity = "", spatialDraftVersion = 0;
     let selectedSpatialId = "oval", spatialSubmitted = null, spatialAdding = false, spatialOverlayLoaded = false;
+    const fadeReductionDrafts = new Map();
+    let fadeReductionSubmitted = null, selectedReductionId = "";
     const spatialControlIds = ["spatialMaster","spatialUseOval","spatialUseArcs","spatialSelect","spatialArcEnabled","spatialCenterX","spatialCenterY","spatialRotation","spatialWidth","spatialHeight","spatialSpan","spatialBend","spatialSide","spatialEndSoftness","spatialTransition","spatialStrength","spatialPreserve","spatialCandidate","spatialProtection","spatialApply","spatialDisable","spatialCancel","spatialAdd","spatialDuplicate","spatialRemove","spatialFlip"];
     const framingFields = {left_px:"framingLeft",right_px:"framingRight",top_px:"framingTop",bottom_px:"framingBottom"};
     let framingDirty = false, framingSource = null, framingDigest = null;
@@ -848,6 +867,141 @@
       const current = state?.revisions.find(r=>r.revision===state.working_revision);
       return JSON.stringify([state?.developed_id,state?.working_revision,state?.inputs_digest,current?.revision_manifest_sha256]);
     }
+    function reductionTarget() { return $("reductionTarget").value || "spatial_fade"; }
+    function reductionDraft() { return fadeReductionDrafts.get(reductionTarget()); }
+    function fadeReductionAreaIdentity(area) {
+      // Persisted JSON orders object keys; geometry and region array order still matter.
+      return JSON.stringify(area, (key, value) => value && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.keys(value).sort().map(field => [field, value[field]])) : value);
+    }
+    function reloadFadeReduction(target = reductionTarget()) {
+      const current = state?.revisions.find(record => record.revision === state.working_revision);
+      const saved = current?.fade_reduction_areas?.[target];
+      const previous = fadeReductionDrafts.get(target);
+      if (saved) fadeReductionDrafts.set(target, {
+        area: structuredClone(saved), identity: spatialCurrentIdentity(),
+        version: (previous?.version || 0) + 1, dirty: false,
+      });
+      else fadeReductionDrafts.delete(target);
+      selectedReductionId = "";
+      renderFadeReduction();
+      draw();
+    }
+    function renderFadeReduction() {
+      const current = state?.revisions.find(record => record.revision === state.working_revision);
+      const available = !!current?.fade_reduction_areas?.spatial_fade;
+      select("reductionTarget", available ? [["spatial_fade", "Fade into background"]] : [], reductionTarget());
+      const draft = reductionDraft();
+      select("reductionSelect", (draft?.area.regions || []).map(region => [region.shape.id,
+        region.shape.shape + " · " + Math.round(region.amount * 100) + "% · " + region.shape.id]), selectedReductionId);
+      $("reductionDraftStatus").textContent = !available ? "Save Fade into background settings before adding reduction."
+        : draft?.dirty ? draft.identity !== spatialCurrentIdentity()
+          ? "Stale unapplied reduction · reload saved reduction before Apply; draft retained."
+          : "Unapplied reduction · outlines only; images and coverage still show saved reduction."
+        : "Saved reduction · drawing and numeric edits stay local until Apply.";
+      $("reductionApply").disabled = !available || authoringBusy();
+      $("reductionReload").disabled = authoringBusy();
+    }
+    function syncFadeReduction() {
+      const draft = reductionDraft();
+      if (!draft || !draft.dirty && !fadeReductionSubmitted) reloadFadeReduction();
+      else renderFadeReduction();
+    }
+    function markFadeReductionDirty() {
+      const draft = reductionDraft();
+      if (!draft) throw Error("Save Fade into background settings before adding reduction");
+      draft.dirty = true;
+      draft.version++;
+      $("authorMode").value = "reduction";
+      renderFadeReduction();
+      draw();
+    }
+    function reductionNumbers() {
+      const radius = wholePixels("reductionRadius"), feather = wholePixels("reductionFeather");
+      const text = String($("reductionAmount").value).trim(), amount = Number(text) / 100;
+      const limit = Math.max(...state.dimensions_wh);
+      if (radius < 1 || radius > limit || feather > limit || text === "" || !Number.isFinite(amount) || amount < 0 || amount > 1)
+        throw Error("Use a native radius from 1 to the image size, a bounded inward feather and reduction from 0 to 100%");
+      return {radius, feather, amount};
+    }
+    function requireReductionView() {
+      const draft = reductionDraft();
+      if (!draft) throw Error("Save Fade into background settings before adding reduction");
+      if (draft.identity !== spatialCurrentIdentity()) throw Error("Stale reduction draft; reload saved reduction before Apply");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision)
+        throw Error("Load the current working native view before editing reduction");
+      return draft;
+    }
+    function addFadeReductionRegion(geometry, shape) {
+      const draft = requireReductionView(), {radius, feather, amount} = reductionNumbers();
+      if (draft.area.regions.length >= 128) throw Error("At most 128 reduction regions");
+      const points = draft.area.regions.reduce((count, region) => count + (region.shape.points?.length || 0), 0);
+      if (shape === "stroke" && points + geometry.length > 8192) throw Error("At most 8192 total reduction stroke points");
+      const region = {id: "reduction-" + crypto.randomUUID(), role: "support", shape, feather_px: feather};
+      if (shape === "rectangle") region.xyxy = geometry;
+      else { region.points = geometry; region.radius_px = radius; }
+      draft.area.regions.push({shape: region, amount});
+      selectedReductionId = region.id;
+      markFadeReductionDirty();
+    }
+    async function applyFadeReduction() {
+      requireSaved();
+      const draft = requireReductionView(), target = reductionTarget();
+      const current = state.revisions.find(record => record.revision === state.working_revision);
+      if (current?.[target]?.stale) throw Error("Rebuild stale Fade into background before applying reduction");
+      if (state.working_revision !== state.accepted_revision && !$("reductionCandidate").checked)
+        throw Error("Use an accepted base or explicitly choose candidate comparison");
+      if (!current?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
+      const submitted = {target, identity: draft.identity, version: draft.version, area: fadeReductionAreaIdentity(draft.area),
+        base_revision: state.working_revision, developed_id: state.developed_id};
+      fadeReductionSubmitted = submitted;
+      draft.dirty = true;
+      renderFadeReduction();
+      try {
+        await action("effects", {scope_xyxy: [0, 0, ...state.dimensions_wh], candidate_comparison: $("reductionCandidate").checked,
+          revision_manifest_sha256: current.revision_manifest_sha256, fade_reduction: {target, area: structuredClone(draft.area)}});
+      } catch (error) { if (fadeReductionSubmitted === submitted) fadeReductionSubmitted = null; throw error; }
+    }
+    $("reductionAddRectangle").onclick = guarded(() => addFadeReductionRegion(bounds("reductionRectangle"), "rectangle"));
+    $("reductionUpdateRectangle").onclick = guarded(() => {
+      const draft = requireReductionView(), region = draft.area.regions.find(item => item.shape.id === selectedReductionId);
+      if (!region || region.shape.shape !== "rectangle") throw Error("Select a reduction rectangle");
+      region.shape.xyxy = bounds("reductionRectangle"); markFadeReductionDirty();
+    });
+    $("reductionSelect").onchange = () => {
+      selectedReductionId = $("reductionSelect").value;
+      const region = reductionDraft()?.area.regions.find(item => item.shape.id === selectedReductionId);
+      if (!region) return;
+      $("reductionAmount").value = region.amount * 100;
+      $("reductionFeather").value = region.shape.feather_px;
+      if (region.shape.points) $("reductionRadius").value = region.shape.radius_px;
+      if (region.shape.xyxy) $("reductionRectangle").value = region.shape.xyxy.join(",");
+      draw();
+    };
+    for (const id of ["reductionAmount", "reductionFeather", "reductionRadius"]) $(id).oninput = guarded(() => {
+      const draft = reductionDraft(), numbers = reductionNumbers();
+      const region = draft?.area.regions.find(item => item.shape.id === selectedReductionId);
+      if (!region) return;
+      region.amount = numbers.amount; region.shape.feather_px = numbers.feather;
+      if (region.shape.points) region.shape.radius_px = numbers.radius;
+      markFadeReductionDirty();
+    });
+    $("reductionRemove").onclick = guarded(() => {
+      const draft = requireReductionView();
+      draft.area.regions = draft.area.regions.filter(region => region.shape.id !== selectedReductionId);
+      selectedReductionId = ""; markFadeReductionDirty();
+    });
+    $("reductionClear").onclick = guarded(() => {requireReductionView().area.regions = []; selectedReductionId = ""; markFadeReductionDirty();});
+    $("reductionApply").onclick = guarded(applyFadeReduction);
+    $("reductionReload").onclick = guarded(() => reloadFadeReduction());
+    $("reductionTarget").onchange = () => {selectedReductionId = ""; syncFadeReduction(); draw();};
+    $("reductionView").onchange = guarded(() => {
+      if ($("reductionView").value !== "none") {
+        for (const id of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare"]) $(id).checked = false;
+        $("spatialMap").value = "none"; $("shadingPreview").value = "";
+      }
+      return loadImage();
+    });
     function selectedSpatialShape() {
       return selectedSpatialId === "oval" ? spatialDraft?.oval : spatialDraft?.arcs.find(arc=>arc.id===selectedSpatialId);
     }
@@ -985,7 +1139,7 @@
       return applySpatial(false,saved);
     });
     $("spatialCancel").onclick=guarded(()=>{resetSpatialFromSaved();return loadImage();});
-    $("spatialMap").onchange=guarded(()=>loadImage());$("spatialOpacity").oninput=draw;
+    $("spatialMap").onchange=guarded(()=>{if($("spatialMap").value!=="none") $("reductionView").value="none";return loadImage();});$("spatialOpacity").oninput=draw;
     $("spatialCandidate").oninput=markSpatialDirty;$("spatialProtection").oninput=markSpatialDirty;
     $("spatialControls").onkeydown=event=>{if(event.key==="Escape"){event.preventDefault();gesture=null;resetSpatialFromSaved();}};
 
@@ -1183,6 +1337,16 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
+      const reductionSubmission = fadeReductionSubmitted;
+      const reductionCompleted = completed && !a.error && reductionSubmission && a.name === "effects"
+        && (a.result?.reused ? a.result.revision === reductionSubmission.base_revision : a.result?.parent === reductionSubmission.base_revision)
+        && state.developed_id === reductionSubmission.developed_id && current?.revision === a.result?.revision
+        && fadeReductionAreaIdentity(current?.fade_reduction_areas?.[reductionSubmission.target]) === reductionSubmission.area;
+      if (reductionCompleted) {
+        const draft = fadeReductionDrafts.get(reductionSubmission.target);
+        if (draft?.identity === reductionSubmission.identity && draft.version === reductionSubmission.version) draft.dirty = false;
+      }
+      if (completed) fadeReductionSubmitted = null;
       const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && (a.result?.reused===true ? a.result.revision===spatialSubmitted.base_revision : a.result?.parent===spatialSubmitted.base_revision) && state.developed_id===spatialSubmitted.developed_id;
       if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
       if(reload || completed) spatialSubmitted=null;
@@ -1254,7 +1418,7 @@
         sharpeningControlsSubmitted = null;
       }
       const backgroundCompleted = completed && backgroundPublished && !a.error;
-      const preserveSubjectDrafts = backgroundCompleted || !!spatialCompleted;
+      const preserveSubjectDrafts = backgroundCompleted || !!spatialCompleted || !!reductionCompleted;
       if (reload || backgroundCompleted) backgroundDirty = false;
       if (completed) backgroundPublished = false;
       const savedBackground = current?.background?.settings || {color_srgb: "#000000", variation: 0};
@@ -1282,6 +1446,7 @@
       renderExposureArea();
       if(!spatialDraft || !spatialDirty && !spatialSubmitted) resetSpatialFromSaved();
       else spatialDraftStatus();
+      syncFadeReduction();
       if (!actionSubmitting) actionWasRunning = a.running;
       const authoringPublished = ["save", "prepare", "restore"].includes(
         a.name,
@@ -1420,6 +1585,7 @@
         $(id).disabled = authoringBusy();
       for(const id of spatialControlIds) $(id).disabled=authoringBusy();
       if(spatialDraft) renderSpatialControls();
+      renderFadeReduction();
       $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.developed_id || !!state?.series_error;
       const selected = state?.revisions.find(record=>record.revision === $("viewRevision").value);
       $("seriesExportAccepted").disabled = authoringBusy() || !selected?.final_acceptable || selected.revision !== state?.accepted_revision;
@@ -1429,13 +1595,14 @@
       const blob = await (await api(path)).blob();
       return createImageBitmap(blob);
     }
-    async function spatialBitmap(view, revision, requestedCrop, panel = "result") {
+    async function spatialBitmap(view, revision, requestedCrop, panel = "result", reduction = false) {
       const record=state.revisions.find(r=>r.revision===revision);
       if(!record?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
       const request={developed_id:state.developed_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,crop_xyxy:[...requestedCrop],view};
       if(view==="selected") request.shape_id=selectedSpatialId;
       if(view==="off") request.panel=panel;
-      const response=await (await api("/api/spatial-preview",request)).json();
+      if(reduction) request.target=reductionTarget();
+      const response=await (await api(reduction ? "/api/fade-reduction-preview" : "/api/spatial-preview",request)).json();
       if(!response || Object.entries(request).some(([key,value])=>JSON.stringify(response[key])!==JSON.stringify(value)) || typeof response.png_base64!=="string" || !response.png_base64.length || response.png_base64.length%4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(response.png_base64)) throw Error("Spatial preview response does not match the saved revision, crop and shape");
       const bytes=Uint8Array.from(atob(response.png_base64),character=>character.charCodeAt(0));
       const decoded=await createImageBitmap(new Blob([bytes],{type:"image/png"}));
@@ -1466,10 +1633,11 @@
       const panel = $("panel").value,
         revision = $("viewRevision").value;
       const spatialMap=$("spatialMap").value || "none", viewed=state.revisions.find(r=>r.revision===revision);
+      const reductionView = $("reductionView").value || "none";
       const selectedSaved=selectedSpatialId==="oval" || viewed?.spatial_fade?.settings?.arcs.some(arc=>arc.id===selectedSpatialId);
       const requestedCrop = [...crop],
         workingRevision = state.working_revision,
-        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "");
+        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "") + (reductionView === "none" ? "" : " · Saved reduction " + reductionView + " · draft excluded");
       const mask =
         $("candidate").value ||
         (!["guides", "none"].includes($("overlay").value)
@@ -1481,6 +1649,8 @@
         $("fadeCompare").checked,
         $("spatialCompare").checked,
         spatialMap,
+        reductionView,
+        reductionTarget(),
         spatialMap==="selected" ? selectedSpatialId : "",
         viewed?.revision_manifest_sha256,
         panel,
@@ -1508,10 +1678,14 @@
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
             : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
-        next = $("spatialCompare").checked && !["source","alpha"].includes(panel)
+        next = reductionView === "off" && !["source", "alpha"].includes(panel)
+          ? await spatialBitmap("off", revision, requestedCrop, panel, true)
+          : $("spatialCompare").checked && !["source","alpha"].includes(panel)
           ? await spatialBitmap("off",revision,requestedCrop,panel) : await bitmap(path);
         if (imageKey !== key) return;
-        if(spatialMap!=="none" && revision && (spatialMap!=="selected" || selectedSaved)) {
+        if (reductionView === "coverage" && revision) {
+          nextOverlay = await spatialBitmap("coverage", revision, requestedCrop, "result", true); nextSpatialOverlay = true;
+        } else if(spatialMap!=="none" && revision && (spatialMap!=="selected" || selectedSaved)) {
           nextOverlay=await spatialBitmap(spatialMap,revision,requestedCrop);nextSpatialOverlay=true;
         } else if (mask && workingRevision)
           nextOverlay = await bitmap(`/mask/${workingRevision}/${mask}`);
@@ -1575,9 +1749,11 @@
         );
         ctx.globalAlpha = 1;
       }
-      if ($("overlay").value === "guides" || ["exposure", "fade", "sharpening"].includes($("authorMode").value)) {
+      if ($("overlay").value === "guides" || ["exposure", "fade", "sharpening", "reduction"].includes($("authorMode").value)) {
         const area = $("authorMode").value === "sharpening" ? sharpeningArea : $("authorMode").value === "fade" ? fadeArea : exposureArea;
-        const drawnRegions = ["exposure", "fade", "sharpening"].includes($("authorMode").value)
+        const drawnRegions = $("authorMode").value === "reduction"
+          ? (reductionDraft()?.area.regions || []).map(region => region.shape)
+          : ["exposure", "fade", "sharpening"].includes($("authorMode").value)
           ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions;
         for (const region of drawnRegions) {
           ctx.strokeStyle = {
@@ -1876,6 +2052,7 @@
     }
     $("sharpeningCandidate").onchange = markSharpeningControlsDirty;
     function compareChanged(id) {
+      $("reductionView").value = "none";
       for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare"]) if (other !== id) $(other).checked = false;
       if (id !== "shadingPreview") $("shadingPreview").value = "";
       imageKey = ""; return loadImage();
@@ -2455,7 +2632,7 @@
     });
     canvas.onpointerdown = (event) => {
       const spatialMode=$("authorMode").value==="spatial";
-      const effectMode = ["exposure", "fade", "sharpening"].includes($("authorMode").value) ? $("authorMode").value : null;
+      const effectMode = ["exposure", "fade", "sharpening", "reduction"].includes($("authorMode").value) ? $("authorMode").value : null;
       const panMode = event.shiftKey || (!effectMode && !spatialMode && $("shape").value === "pan");
       const point = nativePosition(event,spatialMode);
       if (!panMode && (authoringBusy() || imageLoading)) {
@@ -2520,7 +2697,7 @@
       try {
         const shape = g.shape,
           start = g.points[0];
-        const add = geometry => g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
+        const add = geometry => g.effectMode === "reduction" ? addFadeReductionRegion(geometry, shape) : g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
         if (shape === "rectangle") {
           const rectangle = nativeBox(start, end);
           if (rectangle[0] === rectangle[2] || rectangle[1] === rectangle[3])
@@ -2534,6 +2711,7 @@
     };
     canvas.onpointercancel = () => (gesture = null);
     canvas.onkeydown = (event) => {
+      if (event.key === "Escape" && $("authorMode").value === "reduction") {event.preventDefault(); gesture = null; reloadFadeReduction(); return;}
       if(event.key==="Escape" && $("authorMode").value==="spatial") {event.preventDefault();gesture=null;if(spatialAdding){spatialAdding=false;spatialDraftStatus();draw();}else resetSpatialFromSaved();return;}
       if (
         [

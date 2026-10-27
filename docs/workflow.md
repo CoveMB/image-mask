@@ -475,8 +475,34 @@ accepted/candidate gate; it retains operands and protection. Invalid or corrupte
 saved assets must be recovered from a valid revision rather than silently repaired.
 Other stale effects require their own recovery. Earlier accepted work remains saved.
 
+To reduce Fade into background in selected areas, first save its settings, then use
+**Reduce fade locally** and **Canvas authoring mode → Fade reduction**. Draw a brush
+stroke or enter a half-open native rectangle and choose **Add reduction rectangle**.
+Set the native brush radius, inward feather and reduction amount. Select a saved
+region to edit its amount/feather, update a rectangle or remove it. Overlaps use
+the strongest reduction; 100% restores this effect's input locally. Other effects
+remain applied. Feathering stays inside the region, so a narrow region with wide
+feather may never reach full reduction. Limits are 128 regions and 8192 total
+stroke points per target.
+
+Drawing, numeric changes and **Clear target reduction** only change the draft.
+Choose **Apply reduction** to save a new revision; use an accepted base or explicitly
+select candidate comparison. **Cancel / reload saved reduction** discards this
+target's unapplied edits. Saved coverage displays the stored reduction, while
+**Reduction OFF** shows the original fade strength. **Compare Fade OFF** turns off
+the entire spatial fade for comparison. These views do not save changes.
+
+A draft retains its original revision identity. If saved inputs change, it stays
+visible as stale and must be reloaded before Apply; failed saves and late responses
+do not consume newer edits. Reduction cannot repair an old alpha dependency, even
+when the effect is disabled. Rebuild the effect explicitly first. Settings changes
+and effect OFF retain reduction; clearing it saves an empty reduction in a new
+revision. Older software may reject revisions with reduction. Preserve earlier
+revisions/exports and use updated software, or restore a pre-feature revision with
+compatible tooling. No existing revision is rewritten.
+
 Native export with editable selected retains pre-spatial foreground, alpha, combined weight, protection,
-settings and background as separate editable operands. Transparent viewing RGB
+settings, reduction geometry/raster when present, and background as separate editable operands. Transparent viewing RGB
 retains the tint toward the selected background; alpha is unchanged. Black/gray/
 white diagnostics change the backdrop but keep that same fade target.
 

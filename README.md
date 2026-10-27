@@ -72,7 +72,8 @@ See [Local sharpening](docs/workflow.md#local-sharpening) for limits and recover
 
 **Fade into background** blends subject colour toward the chosen background using
 an editable oval, independently directed arcs, or both. It preserves alpha and
-keeps Shadow fade independent. See the [offline walkthrough](docs/workflow.md#fade-into-background)
+keeps Shadow fade independent. Local **fade reduction** brushes and rectangles can
+reduce this effect without changing the saved oval, arcs or alpha. See the [offline walkthrough](docs/workflow.md#fade-into-background)
 for shape controls, saved strength maps, recovery and portable two-folder exports.
 
 Background appearance saves a tone and broad variation behind the matte. New
@@ -201,6 +202,7 @@ for explicit model setup, typed preparation and human review.
 | Independent native area and linear-sRGB local exposure | `src/blackmask/exposure.py` |
 | Independent linear-sRGB Shadow fade and saved operands | `src/blackmask/shadow_fade.py` |
 | Native oval/arc fields and background-targeted colour blend | `src/blackmask/spatial_fade.py` |
+| Bounded, editable local fade reduction geometry | `src/blackmask/fade_reduction.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Shared immutable raster references and role validation | `src/blackmask/assets.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |

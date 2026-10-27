@@ -149,6 +149,18 @@ class ReviewServer(ThreadingHTTPServer):
                             self.project, f"revisions/{path.name}/effects/sharpening/area.json"
                         ).read_bytes()
                     )
+                reduction_areas = {}
+                if "spatial_fade" in manifest:
+                    reduction_areas["spatial_fade"] = (
+                        json.loads(
+                            saved_asset(
+                                self.project,
+                                f"revisions/{path.name}/effects/spatial-fade/reduction.json",
+                            ).read_bytes()
+                        )
+                        if manifest["spatial_fade"]["schema_version"] == 2
+                        else {"schema_version": 1, "regions": []}
+                    )
                 exposure = dict(manifest.get("local_exposure", {"enabled": False, "stale": False}))
                 if "local_exposure" in manifest and manifest["final_acceptable"]:
                     saved_review = json.loads(
@@ -184,6 +196,7 @@ class ReviewServer(ThreadingHTTPServer):
                         ),
                         "sharpening_area": sharpening_area,
                         "spatial_fade": manifest.get("spatial_fade"),
+                        "fade_reduction_areas": reduction_areas,
                         "background": manifest.get("background"),
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
@@ -274,11 +287,25 @@ class ReviewServer(ThreadingHTTPServer):
 
     @_validation_scope()
     def preview_spatial(self, data: Any) -> dict[str, Any]:
+        return self._preview_spatial(data, reduction=False)
+
+    @_validation_scope()
+    def preview_fade_reduction(self, data: Any) -> dict[str, Any]:
+        return self._preview_spatial(data, reduction=True)
+
+    def _preview_spatial(self, data: Any, *, reduction: bool) -> dict[str, Any]:
         """Read one bound saved field/comparison under the existing bounded preview guard."""
         required = {"developed_id", "revision", "revision_manifest_sha256", "crop_xyxy", "view"}
+        if reduction:
+            required.add("target")
         if (
             not isinstance(data, dict)
-            or data.get("view") not in ("off", "combined", "effective", "selected")
+            or data.get("view")
+            not in (
+                ("off", "coverage") if reduction else ("off", "combined", "effective", "selected")
+            )
+            or reduction
+            and data.get("target") != "spatial_fade"
             or set(data)
             != required
             | ({"shape_id"} if data.get("view") == "selected" else set())
@@ -324,14 +351,29 @@ class ReviewServer(ThreadingHTTPServer):
             x0, y0, x1, y1 = crop
             directory = saved_asset(self.project, f"revisions/{data['revision']}")
             saved = read_spatial_fade(self.project, directory, manifest, alpha)
+            if reduction and saved is None:
+                raise ProjectError("Fade reduction preview requires a saved spatial fade")
             view = data["view"]
             label = "Saved geometric strength; protection and highlights excluded"
             if view == "off":
                 from .background import read_background
+                from .spatial_fade import SpatialFadeOperands
 
                 background = None if stale else read_background(self.project, directory, manifest)
                 weight, opacity = saved_shading(
                     self.project, data["revision"], alpha, manifest, effects_off=stale
+                )
+                comparison_spatial = (
+                    SpatialFadeOperands(
+                        saved.weight16[y0:y1, x0:x1], saved.protection[y0:y1, x0:x1], saved.record
+                    )
+                    if reduction and saved is not None and not stale
+                    else None
+                )
+                target = (
+                    background[y0:y1, x0:x1]
+                    if background is not None
+                    else np.zeros_like(foreground[y0:y1, x0:x1])
                 )
                 pixels = review_panels(
                     foreground[y0:y1, x0:x1],
@@ -340,12 +382,25 @@ class ReviewServer(ThreadingHTTPServer):
                     None if weight is None else weight[y0:y1, x0:x1],
                     opacity,
                     background16=None if background is None else background[y0:y1, x0:x1],
+                    spatial_fade=comparison_spatial,
+                    fade_background16=target if comparison_spatial is not None else None,
                 )[data.get("panel", "result")]
                 label = (
                     "Fade OFF; BASE comparison: all optional foreground effects and background OFF"
                     if stale
                     else "Fade OFF; cleanup, local exposure, Shadow fade and selected background retained"
                 )
+                if reduction:
+                    label = "Saved reduction OFF; Fade into background settings and other effects retained"
+            elif view == "coverage":
+                pixels = (
+                    np.zeros((y1 - y0, x1 - x0), np.uint8)
+                    if saved is None or saved.reduction16 is None
+                    else np.rint(saved.reduction16[y0:y1, x0:x1].astype(np.float64) / 257).astype(
+                        np.uint8
+                    )
+                )
+                label = "Saved fade reduction coverage; unapplied draft excluded"
             elif view == "combined":
                 pixels = (
                     np.zeros((y1 - y0, x1 - x0), np.uint8)
@@ -368,6 +423,9 @@ class ReviewServer(ThreadingHTTPServer):
                                 saved.weight16[y0:y1, x0:x1],
                                 saved.protection[y0:y1, x0:x1],
                                 saved.record,
+                                None
+                                if saved.reduction16 is None
+                                else saved.reduction16[y0:y1, x0:x1],
                             ),
                         )
                         * 255
@@ -485,10 +543,11 @@ class ReviewServer(ThreadingHTTPServer):
                 "sharpening_amount_only",
                 "spatial_fade",
                 "spatial_fade_protection_file",
+                "fade_reduction",
                 "background",
             }
             fields["effects"] |= set(data) & optional
-            if "spatial_fade" in data:
+            if "spatial_fade" in data or "fade_reduction" in data:
                 fields["effects"].add("revision_manifest_sha256")
         if action not in fields or set(data) != fields[action] | {
             "action",
@@ -699,6 +758,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "sharpening_amount_only",
                         "spatial_fade",
                         "spatial_fade_protection_file",
+                        "fade_reduction",
                         "background",
                     )
                     if k in data
@@ -711,13 +771,14 @@ class ReviewServer(ThreadingHTTPServer):
             request["support_file"] = (
                 f"revisions/{state['working_revision']}/supports/support16.png"
             )
-        expected_manifest = data.get("revision_manifest_sha256") if "spatial_fade" in data else None
-        if "spatial_fade" in data and (
+        bound_fade_action = "spatial_fade" in data or "fade_reduction" in data
+        expected_manifest = data.get("revision_manifest_sha256") if bound_fade_action else None
+        if bound_fade_action and (
             not isinstance(expected_manifest, str)
             or re.fullmatch(r"[a-f0-9]{64}", expected_manifest) is None
         ):
             raise ProjectError("Invalid spatial action raw revision manifest identity")
-        if "spatial_fade" in data:
+        if bound_fade_action:
             return operations.apply_operation(
                 self.project,
                 request,
@@ -805,7 +866,10 @@ class ReviewServer(ThreadingHTTPServer):
                 spatial_fade=None
                 if spatial is None
                 else SpatialFadeOperands(
-                    spatial.weight16[y0:y1, x0:x1], spatial.protection[y0:y1, x0:x1], spatial.record
+                    spatial.weight16[y0:y1, x0:x1],
+                    spatial.protection[y0:y1, x0:x1],
+                    spatial.record,
+                    None if spatial.reduction16 is None else spatial.reduction16[y0:y1, x0:x1],
                 ),
                 fade_background16=None if target is None else target[y0:y1, x0:x1],
             )[panel]
@@ -932,6 +996,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
             "/api/series-preview",
             "/api/series-preset-validate",
             "/api/spatial-preview",
+            "/api/fade-reduction-preview",
         }:
             self.error(404, "Unknown route")
             return
@@ -954,11 +1019,14 @@ class ReviewHandler(BaseHTTPRequestHandler):
             data = json.loads(
                 body,
                 object_pairs_hook=_unique_object
-                if self.path.startswith(("/api/series-", "/api/spatial-"))
+                if self.path.startswith(("/api/series-", "/api/spatial-", "/api/fade-reduction-"))
                 else None,
                 parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Nonfinite JSON")),
             )
-            if self.path == "/api/spatial-preview":
+            if self.path == "/api/fade-reduction-preview":
+                result = self.server.preview_fade_reduction(data)
+                self.reply(200, json.dumps(result, allow_nan=False).encode())
+            elif self.path == "/api/spatial-preview":
                 result = self.server.preview_spatial(data)
                 self.reply(200, json.dumps(result, allow_nan=False).encode())
             elif self.path == "/api/framing-preview":
@@ -980,7 +1048,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
                         "series-export",
                     }
                     or data.get("action") == "effects"
-                    and "spatial_fade" in data
+                    and ("spatial_fade" in data or "fade_reduction" in data)
                 ):
                     data = json.loads(
                         body,
@@ -993,7 +1061,13 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 self.reply(202, b'{"started":true}')
         except (OSError, ValueError, TypeError) as error:
             conflict = "busy" in str(error).lower() or (
-                self.path in {"/api/framing-preview", "/api/series-preview", "/api/spatial-preview"}
+                self.path
+                in {
+                    "/api/framing-preview",
+                    "/api/series-preview",
+                    "/api/spatial-preview",
+                    "/api/fade-reduction-preview",
+                }
                 and isinstance(error, ProjectError)
             )
             self.error(409 if conflict else 400, str(error))

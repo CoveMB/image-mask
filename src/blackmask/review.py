@@ -152,6 +152,9 @@ def write_review(
                 spatial_fade.weight16[y0:y1, x0:x1],
                 spatial_fade.protection[y0:y1, x0:x1],
                 spatial_fade.record,
+                None
+                if spatial_fade.reduction16 is None
+                else spatial_fade.reduction16[y0:y1, x0:x1],
             ),
             fade_background16=None
             if fade_background16 is None
@@ -307,6 +310,9 @@ def write_revision_overview(
                 spatial_fade.weight16[y0:y1, x0:x1],
                 spatial_fade.protection[y0:y1, x0:x1],
                 spatial_fade.record,
+                None
+                if spatial_fade.reduction16 is None
+                else spatial_fade.reduction16[y0:y1, x0:x1],
             ),
             fade_background16=None
             if fade_background16 is None

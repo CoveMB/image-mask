@@ -17,9 +17,10 @@ from blackmask.export import export_project, saved_layers
 from blackmask.project import ProjectError, accept_development, create_project, read_project
 
 
-def fixture_project(tmp_path):
-    source = np.full((4, 6, 3), [20000, 30000, 40000], dtype=np.uint16)
-    source[:, 0] = [10000, 20000, 30000]
+def fixture_project(tmp_path, source=None):
+    if source is None:
+        source = np.full((4, 6, 3), [20000, 30000, 40000], dtype=np.uint16)
+        source[:, 0] = [10000, 20000, 30000]
     project = tmp_path / "project"
     create_project(tiff(tmp_path / "source.tif", source, profile=srgb_profile()), project, {})
     accept_development(project, read_project(project)["developed_id"])

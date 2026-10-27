@@ -148,12 +148,13 @@ def test_black_spatial_series_admits_separate_selected_target_canvas():
 
 
 @pytest.mark.parametrize("black_background", [False, True])
+@pytest.mark.parametrize("reduced", [False, True])
 @pytest.mark.parametrize("configuration", ["oval", "arcs", "both"])
 @pytest.mark.parametrize(
     "shape,output", [((4, 6), (6, 4)), ((4, 6), (17, 19)), ((9, 12), (7, 11)), ((5, 31), (11, 23))]
 )
 def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
-    configuration, shape, output, black_background
+    configuration, shape, output, black_background, reduced
 ):
     from blackmask.background import make_background
 
@@ -162,6 +163,11 @@ def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
     alpha.flat[-1] = 65535
     foreground = (np.arange(alpha.size * 3).reshape((*shape, 3)) * 293 + 117).astype(np.uint16)
     saved = spatial_operands_for_series(alpha, configuration)
+    if reduced:
+        from dataclasses import replace
+
+        reduction = np.resize(np.array([0, 32768, 49151, 65535], np.uint16), alpha.shape)
+        saved = replace(saved, reduction16=reduction)
     saved.protection[1, 2] = True
     sampling = series_sampling_plan(
         compute_series_layout(
@@ -180,6 +186,8 @@ def test_spatial_series_samples_premultiplied_colour_alpha_and_combined_amount(
     native_alpha = alpha.astype(np.float64) / 65535
     native_q = saved.weight16.astype(np.float64) / 65535
     native_q[saved.protection] = 0
+    if reduced:
+        native_q *= 1 - reduction.astype(np.float64) / 65535
     a = np.clip(scalar_sample(native_alpha, sampling, effective=True), 0, 1)
     q = np.clip(scalar_sample(native_alpha * native_q, sampling, effective=True), 0, a)
     ratio = np.divide(q, a, out=np.zeros_like(q), where=a > 0)

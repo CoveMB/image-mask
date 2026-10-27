@@ -34,10 +34,10 @@ from .project import (
     read_revision,
 )
 from .spatial_fade import (
-    SPATIAL_FADE_FILES,
     SpatialFadeOperands,
     blend_background_float,
     spatial_fade_amount,
+    spatial_fade_files,
 )
 
 if TYPE_CHECKING:
@@ -84,7 +84,10 @@ def _spatial_appearance(
     for start in range(0, alpha16.shape[0], 64):
         rows = slice(start, start + 64)
         operands = SpatialFadeOperands(
-            spatial_fade.weight16[rows], spatial_fade.protection[rows], spatial_fade.record
+            spatial_fade.weight16[rows],
+            spatial_fade.protection[rows],
+            spatial_fade.record,
+            None if spatial_fade.reduction16 is None else spatial_fade.reduction16[rows],
         )
         amount = spatial_fade_amount(foreground[rows], alpha16[rows], operands)
         result[rows] = blend_background_float(foreground[rows], fade_background16[rows], amount)
@@ -443,6 +446,8 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         text += "Native editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
         if "spatial_fade" in record:
             text += "With enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\n"
+            if record["spatial_fade"]["schema_version"] == 2:
+                text += "Also retain spatial_fade_reduction16.png and spatial_fade_reduction.json. Multiply q by (1-reduction16/65535) exactly once after protection/highlights and before blending or series sampling of A*q. Alpha is eligibility only; zero reduction preserves the original fade, full reduction removes only this effect. The raster is the rounded maximum of amount times each authored support16 field; overlaps never accumulate.\n"
     if "local_sharpening" in record and "editable" in record["requested_variants"]:
         text += (
             "Replay Local sharpening from unsharpened_foreground_rgb16.tif (cleanup-selected RGB), "
@@ -514,7 +519,9 @@ def _delivery_members(
                 if f"effects/{directory}/{name}" in saved:
                     names.add(prefix + "_" + name)
         if "spatial_fade" in manifest:
-            names.update("spatial_fade_" + name for name in SPATIAL_FADE_FILES)
+            names.update(
+                "spatial_fade_" + name for name in spatial_fade_files(manifest["spatial_fade"])
+            )
         for name in names:
             members[name] = (
                 dict(rgb)
@@ -903,6 +910,10 @@ def _delivery_request_record(
             if manifest.get("spatial_fade", {}).get("enabled")
             else "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-p*W16/65535, A=alpha16/65535; p is saved opacity only when shading is enabled, otherwise zero; B is saved background RGB16 or zero"
         ) + "; F already includes Local sharpening, local exposure and Shadow fade"
+        if manifest.get("spatial_fade", {}).get("schema_version") == 2:
+            record["result_compositing"] += (
+                "; when spatial fade is enabled, multiply q once by (1-reduction16/65535) after protection/highlights"
+            )
     if companion_request is not None:
         record["editable_companion_request"] = companion_request
     record["identity_sha256"] = digest(_json_bytes(record))
@@ -1085,7 +1096,9 @@ def _export_delivery(
 
         estimate_series_resources(
             sampling,
-            retained_native_bytes=base.nbytes + alpha.nbytes,
+            retained_native_bytes=base.nbytes
+            + alpha.nbytes
+            + (alpha.nbytes if manifest.get("spatial_fade", {}).get("schema_version") == 2 else 0),
             transparent="transparent" in variants,
             spatial_fade_pixels=alpha.size
             if manifest.get("spatial_fade", {}).get("enabled")
@@ -1491,7 +1504,7 @@ def _write_editable(
                 )
     write_developed(stage / "source_rgb16.tif", load_developed(project, state["developed_id"])[0])
     if "spatial_fade" in manifest:
-        for name in SPATIAL_FADE_FILES:
+        for name in spatial_fade_files(manifest["spatial_fade"]):
             (stage / ("spatial_fade_" + name)).write_bytes(
                 saved_asset(
                     project, f"revisions/{revision}/effects/spatial-fade/{name}"

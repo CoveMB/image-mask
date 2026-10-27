@@ -802,8 +802,9 @@ def _validate_background_semantics(project: Path, directory: Path, manifest_byte
 
 @lru_cache(maxsize=128)
 def _validate_spatial_fade_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
-    """Replay bounded geometry after fresh hashes; ordinary renders reuse saved W16."""
+    """Replay bound geometry after fresh hashes; ordinary renders reuse saved fields."""
     from .assets import revision_asset
+    from .fade_reduction import rasterize_fade_reduction
     from .repair import scalar16
     from .spatial_fade import make_spatial_weight, read_spatial_fade
 
@@ -814,6 +815,19 @@ def _validate_spatial_fade_semantics(project: Path, directory: Path, manifest_by
         saved.weight16, make_spatial_weight(alpha.shape, saved.record["settings"])
     ):
         raise ProjectError("Saved spatial fade geometry differs from its settings")
+    if saved is not None and saved.reduction16 is not None:
+        area = json.loads(
+            revision_asset(
+                project, directory, manifest, "effects/spatial-fade/reduction.json"
+            ).read_bytes()
+        )
+        if not np.array_equal(
+            saved.reduction16,
+            rasterize_fade_reduction(
+                area, manifest["developed_id"], alpha.shape[1], alpha.shape[0]
+            ),
+        ):
+            raise ProjectError("Saved fade reduction geometry differs from its raster")
 
 
 def _validate_revision_directory(

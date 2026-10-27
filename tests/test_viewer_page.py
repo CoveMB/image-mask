@@ -79,6 +79,67 @@ async function ready(){
     assert result.returncode == 0, result.stderr
 
 
+def test_fade_reduction_drafts_keep_edits_local_and_bind_explicit_apply():
+    run_page(r"""
+ await ready();
+ servedState.revisions[0].spatial_fade={enabled:true,stale:false,settings:spatialDefaultSettings()};
+ servedState.revisions[0].fade_reduction_areas={spatial_fade:{schema_version:1,regions:[]}};
+ await refresh(true);
+ $('reductionRadius').value='3';$('reductionFeather').value='4';$('reductionAmount').value='50';
+ $('reductionRectangle').value='10,20,30,40';
+ await $('reductionAddRectangle').onclick();
+ const draft=fadeReductionDrafts.get('spatial_fade');
+ assert.equal(draft.area.regions.length,1);assert(draft.dirty);assert.equal(posts.length,0);
+ const id=draft.area.regions[0].shape.id;
+ assert.deepEqual(draft.area.regions[0].shape.xyxy,[10,20,30,40]);
+ $('reductionAmount').value='75';$('reductionAmount').oninput();
+ assert.equal(draft.area.regions[0].amount,.75);assert.equal(draft.area.regions[0].shape.id,id);
+ await $('reductionApply').onclick();
+ const sent=posts.at(-1);assert.equal(sent.action,'effects');
+ assert.equal(sent.revision_manifest_sha256,'a'.repeat(64));
+ assert.deepEqual(sent.fade_reduction,{target:'spatial_fade',area:draft.area});
+ assert(!('spatial_fade' in sent));
+ assert.deepEqual(sent.scope_xyxy,[0,0,100,100]);
+ await $('reductionClear').onclick();assert.equal(draft.area.regions.length,0);
+ assert.equal(posts.length,1);
+ await $('reductionReload').onclick();assert.equal(fadeReductionDrafts.get('spatial_fade').dirty,false);
+ """)
+
+
+@pytest.mark.parametrize("completion", ["match", "newer", "error", "manifest"])
+def test_fade_reduction_completion_preserves_newer_or_stale_draft(completion):
+    run_page(
+        "const completion="
+        + repr(completion)
+        + r""";
+ await ready();
+ servedState.revisions[0].spatial_fade={enabled:true,stale:false,settings:spatialDefaultSettings()};
+ servedState.revisions[0].fade_reduction_areas={spatial_fade:{schema_version:1,regions:[]}};
+ await refresh(true);$('reductionRadius').value='3';$('reductionFeather').value='0';$('reductionAmount').value='50';
+ $('reductionRectangle').value='10,20,30,40';await $('reductionAddRectangle').onclick();
+ const originalFetch=fetch;
+ globalThis.fetch=async(path,options)=>{if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return originalFetch(path,options);};
+ await $('reductionApply').onclick();const sent=posts.at(-1);
+ if(completion==='newer'){$('reductionAmount').value='80';$('reductionAmount').oninput();}
+ servedState.working_revision='rev-002';
+ // Saved JSON sorts object keys; semantic equality must survive transport ordering.
+ const savedArea=JSON.parse(JSON.stringify(sent.fade_reduction.area,
+   ['amount','feather_px','id','points','radius_px','regions','role','schema_version','shape','xyxy']));
+ assert.notEqual(JSON.stringify(savedArea),JSON.stringify(sent.fade_reduction.area));
+ servedState.revisions.push({...structuredClone(servedState.revisions[0]),revision:'rev-002',revision_manifest_sha256:'b'.repeat(64),fade_reduction_areas:{spatial_fade:savedArea}});
+ servedState.action={running:false,name:'effects',error:completion==='error'?'failed':null,result:{revision:'rev-002',parent:'rev-001',reused:false}};
+ if(completion==='manifest')servedState.revisions[1].fade_reduction_areas.spatial_fade={schema_version:1,regions:[]};
+ await refresh();const draft=fadeReductionDrafts.get('spatial_fade');
+ assert.equal(draft.dirty,completion!=='match');
+ if(completion==='newer')assert.equal(draft.area.regions[0].amount,.8);
+ if(completion!=='match'){
+   const count=posts.length;await $('reductionApply').onclick();assert.equal(posts.length,count);
+   assert($('message').textContent.toLowerCase().includes('stale'));
+ }
+ """
+    )
+
+
 def test_spatial_authoring_uses_stable_independent_shapes_and_cancel_preserves_other_drafts():
     run_page(r"""
  servedState.revisions[0].revision_manifest_sha256='a'.repeat(64);

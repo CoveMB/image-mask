@@ -13,6 +13,192 @@ from blackmask import operations
 from blackmask.project import ProjectError, load_developed, project_lock, read_project
 
 
+def test_fade_reduction_viewer_save_snapshot_and_saved_comparisons(tmp_path):
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+    from test_effects import fixture_project
+    from test_fade_reduction import area, rectangle
+    from test_spatial_fade import spatial_request
+
+    project, _, _ = fixture_project(tmp_path)
+    legacy = operations.apply_operation(project, spatial_request(project))
+    document = area(rectangle(amount=1, box=[0, 0, 6, 4]))
+    with running(project) as server:
+        state = server.snapshot()
+        selected = next(r for r in state["revisions"] if r["revision"] == legacy["revision"])
+        data = {key: state[key] for key in ("developed_id", "inputs_digest", "authoring_digest")}
+        data.update(
+            action="effects",
+            base_revision=legacy["revision"],
+            revision_manifest_sha256=selected["revision_manifest_sha256"],
+            scope_xyxy=[0, 0, 6, 4],
+            candidate_comparison=True,
+            fade_reduction={"target": "spatial_fade", "area": document},
+        )
+        status, body, _ = http(server, "/api/action", "POST", data)
+        assert status == 202, body
+        assert server.action_lock.acquire(timeout=10)
+        server.action_lock.release()
+        assert server.action["error"] is None, server.action
+        current = server.action["result"]["revision"]
+        state = server.snapshot()
+        selected = next(r for r in state["revisions"] if r["revision"] == current)
+        assert selected["fade_reduction_areas"] == {"spatial_fade": document}
+        identity = {
+            "developed_id": state["developed_id"],
+            "revision": current,
+            "revision_manifest_sha256": selected["revision_manifest_sha256"],
+            "crop_xyxy": [0, 0, 6, 4],
+            "target": "spatial_fade",
+        }
+        responses = {}
+        for view in ("coverage", "off"):
+            status, body, _ = http(
+                server, "/api/fade-reduction-preview", "POST", dict(identity, view=view)
+            )
+            assert status == 200, body
+            result = json.loads(body)
+            assert all(result[k] == v for k, v in identity.items())
+            with Image.open(io.BytesIO(base64.b64decode(result["png_base64"]))) as image:
+                responses[view] = np.array(image)
+        assert np.all(responses["coverage"] == 255)
+        for rev, expected_equal in ((legacy["revision"], True), (current, False)):
+            status, body, _ = http(server, f"/image/result/{rev}/0,0,6,4")
+            assert status == 200
+            with Image.open(io.BytesIO(body)) as image:
+                assert np.array_equal(responses["off"], np.array(image)) is expected_equal
+        before = (project / "state.json").read_bytes()
+        data.update(
+            base_revision=current,
+            inputs_digest=state["inputs_digest"],
+            authoring_digest=state["authoring_digest"],
+        )
+        assert http(server, "/api/action", "POST", data)[0] == 202
+        assert server.action_lock.acquire(timeout=10)
+        server.action_lock.release()
+        assert "Stale" in server.action["error"]
+        assert (project / "state.json").read_bytes() == before
+        del data["revision_manifest_sha256"]
+        assert http(server, "/api/action", "POST", data)[0] == 400
+        assert (
+            http(
+                server,
+                "/api/fade-reduction-preview",
+                "POST",
+                dict(identity, view="off"),
+                Origin="null",
+            )[0]
+            == 403
+        )
+        assert (
+            http(
+                server,
+                "/api/fade-reduction-preview",
+                "POST",
+                dict(identity, view="coverage", panel="result"),
+            )[0]
+            == 400
+        )
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_reduction_native_previews_reuse_validated_geometry_even_off(tmp_path, enabled):
+    from unittest.mock import patch
+
+    from test_effects import fixture_project
+    from test_fade_reduction import reduction_request
+    from test_spatial_fade import spatial_request, spatial_settings
+
+    from blackmask import fade_reduction
+    from blackmask import project as project_module
+
+    project, _, _ = fixture_project(tmp_path)
+    settings = dict(spatial_settings(6, 4), enabled=enabled)
+    operations.apply_operation(project, spatial_request(project, settings))
+    result = operations.apply_operation(project, reduction_request(project))
+    with running(project) as server:
+        state = server.snapshot()
+        selected = next(r for r in state["revisions"] if r["revision"] == result["revision"])
+        identity = {
+            "developed_id": state["developed_id"],
+            "revision": result["revision"],
+            "revision_manifest_sha256": selected["revision_manifest_sha256"],
+            "crop_xyxy": [0, 0, 6, 4],
+            "target": "spatial_fade",
+        }
+        path = f"/image/result/{result['revision']}/0,0,6,4"
+        status, expected, _ = http(server, path)
+        assert status == 200
+        project_module._validate_spatial_fade_semantics.cache_clear()
+        with patch.object(
+            fade_reduction,
+            "rasterize_fade_reduction",
+            wraps=fade_reduction.rasterize_fade_reduction,
+        ) as replay:
+            status, pixels, _ = http(server, path)
+            assert status == 200 and pixels == expected
+            assert replay.call_count == 1  # Cold validation still checks the complete field.
+            for _ in range(2):
+                status, pixels, _ = http(server, path)
+                assert status == 200 and pixels == expected
+                for view in ("coverage", "off"):
+                    status, body, _ = http(
+                        server, "/api/fade-reduction-preview", "POST", dict(identity, view=view)
+                    )
+                    assert status == 200, body
+            assert replay.call_count == 1  # Warm image/coverage/OFF views only read saved fields.
+
+
+@pytest.mark.parametrize("field", ["target", "area"])
+def test_fade_reduction_http_rejects_duplicate_nested_keys_before_start(tmp_path, field):
+    from test_effects import fixture_project
+    from test_fade_reduction import area
+    from test_spatial_fade import spatial_request
+
+    project, _, _ = fixture_project(tmp_path)
+    operations.apply_operation(project, spatial_request(project))
+    with running(project) as server:
+        snapshot = server.snapshot()
+        current = next(
+            r for r in snapshot["revisions"] if r["revision"] == snapshot["working_revision"]
+        )
+        data = {key: snapshot[key] for key in ("developed_id", "inputs_digest", "authoring_digest")}
+        data.update(
+            action="effects",
+            base_revision=snapshot["working_revision"],
+            revision_manifest_sha256=current["revision_manifest_sha256"],
+            scope_xyxy=[0, 0, 6, 4],
+            candidate_comparison=True,
+            fade_reduction={"target": "spatial_fade", "area": area()},
+        )
+        original = json.dumps(data)
+        body = original.replace(
+            '"' + field + '":', '"' + field + '": null, "' + field + '":'
+        ).encode()
+        before = dict(server.action)
+        connection = HTTPConnection(*server.server_address, timeout=5)
+        connection.request(
+            "POST",
+            "/api/action",
+            body,
+            {
+                "Host": server.host,
+                "Origin": server.origin,
+                "Content-Type": "application/json",
+                "X-Blackmask-Token": server.token,
+            },
+        )
+        response = connection.getresponse()
+        status, result = response.status, response.read()
+        connection.close()
+        assert status == 400, result
+        assert b"Duplicate" in result
+        assert server.action == before
+
+
 def test_spatial_saved_preview_routes_bind_revision_shape_crop_and_preview_guard(tmp_path):
     import base64
     import io
@@ -155,13 +341,21 @@ def test_spatial_saved_preview_routes_bind_revision_shape_crop_and_preview_guard
         )
 
 
-def test_spatial_viewer_raw_manifest_check_occurs_inside_the_writer_lock(tmp_path, monkeypatch):
+@pytest.mark.parametrize("reduction", [False, True])
+def test_spatial_viewer_raw_manifest_check_occurs_inside_the_writer_lock(
+    tmp_path, monkeypatch, reduction
+):
     from test_effects import fixture_project
+    from test_fade_reduction import reduction_request
     from test_spatial_fade import spatial_request, spatial_settings
 
     from blackmask.project import digest
 
     project, _, parent = fixture_project(tmp_path)
+    if reduction:
+        parent = operations.apply_operation(
+            project, spatial_request(project, spatial_settings(6, 4))
+        )
     manifest = project / "revisions" / parent["revision"] / "manifest.json"
     expected = digest(manifest.read_bytes())
     before = (project / "state.json").read_bytes()
@@ -178,7 +372,9 @@ def test_spatial_viewer_raw_manifest_check_occurs_inside_the_writer_lock(tmp_pat
     with pytest.raises(ProjectError, match="Stale"):
         operations.apply_operation(
             project,
-            spatial_request(project, spatial_settings(6, 4)),
+            reduction_request(project)
+            if reduction
+            else spatial_request(project, spatial_settings(6, 4)),
             expected_revision_manifest_sha256=expected,
         )
     assert (project / "state.json").read_bytes() == before

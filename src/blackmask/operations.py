@@ -1584,6 +1584,9 @@ def _matte(
             scalar16(stage_asset(project, stage, assets, "effects/spatial-fade/protection16.png"))
             != 0,
             spatial,
+            scalar16(stage_asset(project, stage, assets, "effects/spatial-fade/reduction16.png"))
+            if spatial["schema_version"] == 2
+            else None,
         )
         if spatial is not None and spatial["enabled"] and not stale_effects
         else None

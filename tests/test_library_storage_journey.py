@@ -44,6 +44,193 @@ class CachedPrediction:
         return np.full(trimap.shape, 0.5), {"fixture": "synthetic", "device": device}
 
 
+def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_reconstruction(
+    tmp_path,
+):
+    """Clearing predictions cannot lose reduction or require a project-backed re-export."""
+    import inspect
+
+    from test_background import scalar_background
+    from test_cache_management import predictions
+    from test_effects import fixture_project
+    from test_fade_reduction import area, rectangle, reduction_request, saved_reduction
+    from test_series_framing import (
+        scalar_background_blend,
+        scalar_matrices,
+        scalar_sample,
+        scalar_weights,
+    )
+    from test_spatial_fade import spatial_request, spatial_settings
+
+    from blackmask.project import digest
+    from blackmask.series_framing import SeriesSettings
+
+    source = (np.arange(72).reshape(4, 6, 3) * 617 + 123).astype(np.uint16)
+    project, _, accepted = fixture_project(tmp_path, source)
+    protected = np.zeros((4, 6), np.uint16)
+    protected[1, 3] = 65535
+    Image.fromarray(protected).save(project / "protected.png")
+    settings = spatial_settings(6, 4)
+    settings["oval"].update(center_xy=[0, 0], inner_radii_xy=[0.5, 0.5], transition_width=0.5)
+    operations.apply_operation(
+        project, spatial_request(project, settings, spatial_fade_protection_file="protected.png")
+    )
+    document = area(
+        rectangle(amount=0.5, box=[0, 0, 6, 4]), rectangle("full", 1.0, box=[5, 0, 6, 4])
+    )
+    result = operations.apply_operation(project, reduction_request(project, document))
+    _, saved = saved_reduction(project, result["revision"])
+    assert saved.protection[1, 3] and saved.weight16[1, 3] > 0 and saved.reduction16[1, 3] == 32768
+    selected = result["revision"]
+    flat = export_project(project, revision=selected, draft=True, variants=("transparent",))
+    assert not flat.get("editable_companion")
+    assert not any("reduction" in path.name for path in Path(flat["directory"]).iterdir())
+    margins = {"left_px": 1, "right_px": 2, "top_px": 2, "bottom_px": 1}
+    modes = [
+        {"variants": ("editable", "transparent")},
+        {"variants": ("editable",), "framing": margins, "framed_transparent": True},
+        {
+            "variants": ("editable",),
+            "series": SeriesSettings(output_width_px=17, output_height_px=19).to_dict(),
+            "framed_transparent": True,
+        },
+    ]
+    deliveries = [export_project(project, revision=selected, draft=True, **mode) for mode in modes]
+    frozen = {}
+    for delivery in deliveries:
+        paths = [Path(delivery["directory"])]
+        if delivery.get("editable_companion"):
+            paths.append(Path(delivery["editable_companion"]["directory"]))
+        for directory in paths:
+            frozen[directory] = {p.name: digest(p.read_bytes()) for p in directory.iterdir()}
+    predictions(project, count=1)
+    permanent_before = inventory(project)
+    inspected = operations.inspect_processing_cache(project)
+    assert inspected["candidates"] and not inspected["blockers"]
+    cleared = operations.clear_processing_cache(project, inspected["candidate_digest"])
+    assert inventory(project) == {
+        name: value for name, value in permanent_before.items() if name not in cleared["removed"]
+    }
+    for directory, hashes in frozen.items():
+        assert hashes == {p.name: digest(p.read_bytes()) for p in directory.iterdir()}
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
+    isolated = tmp_path / "delivered-only"
+    isolated.mkdir()
+    for directory in frozen:
+        shutil.copytree(directory, isolated / directory.name)
+    project.rename(tmp_path / "project-unavailable")
+    (tmp_path / "source.tif").rename(tmp_path / "capture-unavailable.tif")
+    program = (
+        """import json,math,sys
+from pathlib import Path
+from types import SimpleNamespace
+import numpy as np,tifffile
+from PIL import Image
+"""
+        + "\n".join(
+            inspect.getsource(helper)
+            for helper in (
+                scalar_background,
+                scalar_background_blend,
+                scalar_weights,
+                scalar_matrices,
+                scalar_sample,
+            )
+        )
+        + r"""
+root=Path(sys.argv[1])
+def scalar(path):
+ with Image.open(path) as image: return np.array(image)
+def operands(directory, factor=1):
+ record=json.loads((directory/'manifest.json').read_bytes())
+ foreground=tifffile.imread(directory/'foreground_rgb16.tif').astype(float)
+ alpha=scalar(directory/'alpha16.png').astype(float)/65535
+ weight=scalar(directory/'spatial_fade_weight16.png').astype(float)/65535
+ protected=scalar(directory/'spatial_fade_protection16.png')!=0
+ reduction=scalar(directory/'spatial_fade_reduction16.png').astype(float)/65535
+ assert record['spatial_fade']['schema_version']==2
+ assert record['spatial_fade']['settings']['preserve_highlights']==0
+ assert np.any(protected & (alpha>0) & (alpha<1) & (weight>0) & (reduction<1))
+ assert json.loads((directory/'spatial_fade_reduction.json').read_bytes())['regions']
+ amount=weight*(1-reduction)**factor
+ amount[protected | (alpha==0)]=0
+ return foreground,alpha,amount
+def composite(foreground,alpha,amount,background):
+ straight=np.empty_like(foreground)
+ for y,x,c in np.ndindex(foreground.shape):
+  straight[y,x,c]=scalar_background_blend(foreground[y,x,c],int(background[y,x,c]),amount[y,x])
+ rgb=np.rint(straight*alpha[...,None]+background*(1-alpha[...,None])).astype(np.uint16)
+ rgba=np.dstack((np.rint(straight/257).astype(np.uint8),np.rint(alpha*255).astype(np.uint8)))
+ return rgb,rgba
+native_count=0
+for directory in root.iterdir():
+ record=json.loads((directory/'manifest.json').read_bytes())
+ if not (directory/'spatial_fade_reduction16.png').exists(): continue
+ foreground,alpha,amount=operands(directory)
+ background=tifffile.imread(directory/'background_rgb16.tif')
+ expected,rgba=composite(foreground,alpha,amount,background)
+ actual=tifffile.imread(directory/'result_rgb16.tif')
+ np.testing.assert_array_equal(expected,actual)
+ for wrong in (0,2):
+  f,a,q=operands(directory,wrong)
+  assert np.any(composite(f,a,q,background)[0]!=actual),'fixture must detect dropped/double reduction'
+ if (directory/'transparent_RGBA8_VIEW.png').exists():
+  np.testing.assert_array_equal(rgba,scalar(directory/'transparent_RGBA8_VIEW.png'))
+ native_count+=1
+for directory in root.iterdir():
+ record=json.loads((directory/'manifest.json').read_bytes())
+ companion=record.get('editable_companion')
+ if not companion: continue
+ native=root/companion['directory_name']
+ foreground,alpha,amount=operands(native)
+ if 'margins' in record:
+  margins=record['margins']; pad=((margins['top_px'],margins['bottom_px']),(margins['left_px'],margins['right_px']),(0,0))
+  background=tifffile.imread(native/'background_rgb16.tif')
+  rgb,rgba=composite(foreground,alpha,amount,background)
+  expected=np.pad(background,pad,mode='edge')
+  x,y=margins['left_px'],margins['top_px']; expected[y:y+rgb.shape[0],x:x+rgb.shape[1]]=rgb
+  transparent=np.pad(rgba,pad,mode='constant')
+  np.testing.assert_array_equal(expected,tifffile.imread(directory/'result_rgb16.tif'))
+  np.testing.assert_array_equal(transparent,scalar(directory/'transparent_RGBA8_VIEW.png'))
+ else:
+  sampling=json.loads(json.dumps(record['sampling']),object_hook=lambda value:SimpleNamespace(**value))
+  width,height=record['layout']['output_dimensions_wh']
+  settings=record['background']['settings']; color=[int(settings['color_srgb'][i:i+2],16) for i in (1,3,5)]
+  background=scalar_background(height,width,color,settings['variation'])
+  x0,y0,x1,y1=record['layout']['subject_bounds_xyxy']; core=np.s_[y0:y1,x0:x1]
+  a=np.clip(scalar_sample(alpha[core],sampling,effective=True),0,1)
+  q=np.clip(scalar_sample((alpha*amount)[core],sampling,effective=True),0,a)
+  ratio=np.divide(q,a,out=np.zeros_like(q),where=a>0)
+  straight=np.zeros((*a.shape,3))
+  for channel in range(3):
+   p=np.clip(scalar_sample((alpha*foreground[...,channel])[core],sampling,effective=True),0,65535*a)
+   straight[...,channel]=np.divide(p,a,out=np.zeros_like(p),where=a>0)
+  x,y=sampling.x.output_start,sampling.y.output_start; h,w=a.shape
+  expected=background.copy(); rgb,rgba=composite(straight,a,ratio,background[y:y+h,x:x+w])
+  expected[y:y+h,x:x+w]=rgb
+  transparent=np.zeros((height,width,4),np.uint8); rgba[rgba[...,3]==0,:3]=0
+  transparent[y:y+h,x:x+w]=rgba
+  np.testing.assert_allclose(expected.astype(int),tifffile.imread(directory/'result_rgb16.tif').astype(int),atol=2,rtol=0)
+  np.testing.assert_allclose(transparent.astype(int),scalar(directory/'transparent_RGBA8_VIEW.png').astype(int),atol=1,rtol=0)
+assert native_count>=1
+assert not any(name=='blackmask' or name.startswith('blackmask.') for name in sys.modules)
+assert Image.__version__==Image.core.PILLOW_VERSION=='13.0.0'
+print('retained native/margins/series deliveries reconstructed without application/project/capture/cache; Pillow/core 13.0.0')
+"""
+    )
+    child = subprocess.run(
+        [sys.executable, "-B", "-c", program, str(isolated)],
+        cwd=isolated,
+        env=dict(os.environ, PYTHONPATH=""),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert child.returncode == 0, child.stdout + child.stderr
+    assert "retained native/margins/series deliveries reconstructed" in child.stdout
+
+
 def imported_project(tmp_path):
     config_file, destination = configuration(tmp_path)
     for name in ("sam", "vitmatte"):

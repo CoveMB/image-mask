@@ -54,6 +54,16 @@ the user separately requests it. Keep photographic evaluation local, preserve bo
 export folders, and label any assistant-selected result a draft until explicit
 human photographic acceptance.
 
+For requested local reduction, use the same brush/rectangle controls or an exclusive
+schema-2 `effects` request containing `fade_reduction:{"target":"spatial_fade","area":...}`
+with the common identities, scope and explicit candidate choice. The
+[reduction contract](file-contract.md#local-fade-reduction) defines the bounded
+geometry and saved dependencies. Scope must contain both old and replacement
+nonzero reduction. Do not substitute alpha edits, effect disable or a changed
+oval/arc. The target must have a current saved alpha dependency even while OFF.
+Coverage and reduction-OFF comparisons use saved state; draft outlines are not a
+rendered result. Keep unrelated effects and human photographic acceptance separate.
+
 ## Inspect and classify
 
 Read the project's current recipe, guides, state, user keep/remove request and
