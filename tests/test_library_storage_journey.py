@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 import tifffile
 from PIL import Image
+from storage_journey_process import filesystem_entries, install_guard, perform, running_process
 from test_cache_management import inventory
 from test_export import DEFAULT_MEMBERS
 from test_ingest import saved_raster, tiff
@@ -23,6 +24,7 @@ from test_library import command, configuration
 from test_matte import cache_identity
 from test_operations import edits, request
 from test_previews import jpeg, marker
+from test_viewer import http
 
 from blackmask import library, operations, previews, review
 from blackmask.export import export_project
@@ -58,7 +60,10 @@ def imported_project(tmp_path):
         )
     config = library.load_storage_config(config_file)
     library.ensure_library(config)
-    pixels = np.full((64, 96, 3), [20001, 30002, 40003], dtype=np.uint16)
+    y, x = np.indices((64, 96))
+    pixels = np.stack(
+        (20001 + 17 * x + 31 * y, 30002 + 43 * x + 7 * y, 40003 + 11 * x + 29 * y), axis=-1
+    ).astype(np.uint16)
     source = tiff(destination / "Inbox/CAMERA.tif", pixels, profile=srgb_profile())
     sidecar = source.with_suffix(".xmp")
     sidecar.write_bytes(b"synthetic original sidecar")
@@ -126,7 +131,9 @@ def assert_delivery(directory, size, members=DEFAULT_MEMBERS):
     return pixels
 
 
-def assert_editable_native(directory, foreground, alpha, weight, background, expected):
+def assert_editable_native(
+    directory, foreground, alpha, weight, background, expected, *, expected_opacity=0.12
+):
     members = DEFAULT_MEMBERS | {
         "foreground_rgb16.tif",
         "alpha16.png",
@@ -174,7 +181,7 @@ def assert_editable_native(directory, foreground, alpha, weight, background, exp
     ):
         np.testing.assert_array_equal(actual, saved)
     settings = json.loads((directory / "shading_settings.json").read_bytes())
-    assert settings["enabled"] is True and settings["opacity"] == 0.12
+    assert settings["enabled"] is True and settings["opacity"] == expected_opacity
     assert record["shading"]["opacity"] == settings["opacity"]
     reconstructed = np.rint(
         delivered_foreground.astype(float)
@@ -207,12 +214,44 @@ def assert_intact_editable_reuse(project, selected, options, deliveries):
 
 
 def test_configured_storage_cache_and_forced_saved_reconstruction(tmp_path):
+    release, _ = install_guard(tmp_path)
+    try:
+        with pytest.raises(PermissionError, match="outside workspace"):
+            (tmp_path.parent / "blocked-journey-escape").write_bytes(b"must not be written")
+        storage_journey(tmp_path)
+    finally:
+        release()
+
+
+def storage_journey(tmp_path):
     config_file, config, project, pixels = imported_project(tmp_path)
+    original_inventory = inventory(project.parent / "original")
+    master_inventory = inventory(project / "assets")
     model_root = tmp_path / "shared-models"
     models_before = inventory(model_root)
     assert len(models_before) == 2
-    first = matte(project, config)
-    operations.accept_revision(project, first["revision"], storage_config=config)
+    with running_process(project, config_file, tmp_path) as server:
+        first_pid = server.pid
+        first = perform(server, "matte")
+        perform(server, "accept", revision=first["revision"])
+        first_snapshot = json.loads(http(server)[1])
+    assert server.process.poll() is not None
+    preserved_after_close = inventory(project)
+    with running_process(project, config_file, tmp_path) as server:
+        assert server.pid != first_pid
+        reopened = json.loads(http(server)[1])
+        for field in (
+            "developed_id",
+            "working_revision",
+            "accepted_revision",
+            "latest_result_revision",
+            "guides",
+            "revisions",
+            "inputs_digest",
+            "authoring_digest",
+        ):
+            assert reopened[field] == first_snapshot[field]
+        assert inventory(project) == preserved_after_close
     # A saved lock protects real partial alpha through a second native operation.
     lock = edits(
         project,
@@ -238,6 +277,11 @@ def test_configured_storage_cache_and_forced_saved_reconstruction(tmp_path):
     Image.fromarray(support).save(project / "shading-support.png")
     Image.fromarray(protection).save(project / "shading-protection.png")
     twelve = operations.apply_operation(project, shade(project, 0.12), storage_config=config)
+    with running_process(project, config_file, tmp_path) as server:
+        perform(server, "accept", revision=twelve["revision"])
+    accepted_before_newer = inventory(project / "revisions" / twelve["revision"])
+    accepted_delivery = export_project(project)
+    accepted_export_before_newer = inventory(Path(accepted_delivery["directory"]))
     twenty_four = operations.apply_operation(
         project, shade(project, 0.24, opacity_only=True), storage_config=config
     )
@@ -269,8 +313,16 @@ def test_configured_storage_cache_and_forced_saved_reconstruction(tmp_path):
     assert inventory(project) == before_reuse
     gallery = jpeg(config, project)
     assert marker(gallery)["status"] == "Draft"
-    operations.accept_revision(project, twenty_four["revision"], storage_config=config)
-    assert marker(gallery)["status"] == "Accepted"
+    assert inventory(project / "revisions" / twelve["revision"]) == accepted_before_newer
+    assert inventory(Path(accepted_delivery["directory"])) == accepted_export_before_newer
+    # A remains accepted while newer B owns the latest gallery result.
+    assert marker(gallery)["revision"] == twenty_four["revision"]
+    assert marker(gallery)["status"] == "Draft"
+    accepted_delivery = export_project(project)
+    assert (
+        json.loads(Path(accepted_delivery["manifest_file"]).read_bytes())["revision"]
+        == twelve["revision"]
+    )
 
     margins = {"left_px": 2, "right_px": 3, "top_px": 4, "bottom_px": 5}
     series = {
@@ -291,7 +343,7 @@ def test_configured_storage_cache_and_forced_saved_reconstruction(tmp_path):
         project, native["revision"], replace_drafts=True, storage_config=config
     )
     assert read_project(project)["working_revision"] == "rev-004"
-    assert read_project(project)["accepted_revision"] == "rev-006"
+    assert read_project(project)["accepted_revision"] == "rev-005"
     assert read_project(project)["latest_result_revision"] == "rev-006"
     selected = twelve["revision"]
     assert selected == "rev-005"
@@ -307,10 +359,21 @@ def test_configured_storage_cache_and_forced_saved_reconstruction(tmp_path):
     assert Path(comparison["comparison_manifest_file"]).is_file()
     assert (project / "state.json").read_bytes() == state_before
     assert len(list((config.destination / "Results Preview").glob("*.jpg"))) == 1
-    assert marker(gallery)["revision"] == "rev-006" and marker(gallery)["status"] == "Accepted"
-    reopened = command("--config", config_file, "status", project, cwd=tmp_path)
-    assert reopened.returncode == 0, reopened.stderr
-    assert json.loads(reopened.stdout)["working_revision"] == "rev-004"
+    assert marker(gallery)["revision"] == "rev-006" and marker(gallery)["status"] == "Draft"
+    before_reopen = inventory(project)
+    with running_process(project, config_file, tmp_path) as server:
+        reopened = json.loads(http(server)[1])
+        assert (
+            reopened["working_revision"],
+            reopened["accepted_revision"],
+            reopened["latest_result_revision"],
+        ) == ("rev-004", "rev-005", "rev-006")
+        assert reopened["framing"] == margins and reopened["series_settings"] == series
+        assert inventory(project) == before_reopen
+        draft_delivery = perform(server, "export", revision="rev-006", draft=True)
+        assert (
+            json.loads(Path(draft_delivery["manifest_file"]).read_bytes())["revision"] == "rev-006"
+        )
 
     options = ({}, {"framing": margins}, {"series": series})
     default_deliveries = [
@@ -338,6 +401,7 @@ def test_configured_storage_cache_and_forced_saved_reconstruction(tmp_path):
         Image.open(saved_raster(project / f"revisions/{selected}/shadow_weight16.png")),
         dtype=np.uint16,
     )
+    assert np.all(alpha[:, :8] == 0) and np.all(alpha[:, 88:] == 65535)
     assert alpha[20, 30] == 32768 and weight[20, 30] == 0
     assert np.any(weight > 0) and np.any((alpha > 0) & (alpha < 65535))
     expected = np.rint(
@@ -447,10 +511,29 @@ def test_configured_storage_cache_and_forced_saved_reconstruction(tmp_path):
         json.loads((reference_root / path / "manifest.json").read_bytes())
         for path in relative_deliveries
     ]
+    # No links may escape the independent reconstruction workspace.
+    entries = filesystem_entries(reconstructed)
+    assert all(
+        item[0] != "symlink" and (item[0] != "file" or item[1] == 1) for item in entries.values()
+    )
     program = """import importlib,json,socket,sys
 from pathlib import Path
 from unittest.mock import patch
 from blackmask.export import export_project
+from storage_journey_process import install_guard
+roots=[Path(sys.argv[1]),Path(sys.base_prefix),Path(sys.prefix)]
+roots += [Path(p) for p in sys.path if p and Path(p).is_absolute()]
+enabled,observed=install_guard(Path(sys.argv[1]),read_roots=roots)
+for forbidden in json.loads(sys.argv[3]):
+    try: Path(forbidden).read_bytes()
+    except PermissionError: pass
+    else: raise AssertionError('read guard failed: '+forbidden)
+if sys.argv[4] == 'sandbox':
+    import ctypes,errno
+    libc=ctypes.CDLL(None,use_errno=True)
+    for forbidden in json.loads(sys.argv[3])[:2]:
+        assert libc.open(forbidden.encode(),0) == -1
+        assert ctypes.get_errno() == errno.EPERM
 outputs=[]
 with patch.object(socket,'socket',side_effect=AssertionError('offline')):
     for record in json.loads(sys.argv[2]):
@@ -465,10 +548,43 @@ with patch.object(socket,'socket',side_effect=AssertionError('offline')):
         outputs.append(dict(output,render_calls=render.call_count))
 print(json.dumps(outputs))
 """
+    arguments = [
+        sys.executable,
+        "-B",
+        "-c",
+        program,
+        str(reconstructed),
+        json.dumps(frozen),
+        json.dumps(
+            [
+                str(reference_root / relative_deliveries[0] / "result_rgb16.tif"),
+                str(model_root / "sam/retained-model.bin"),
+                str(project / "state.json"),
+            ]
+        ),
+    ]
+    sandboxed = sys.platform == "darwin" and Path("/usr/bin/sandbox-exec").is_file()
+    arguments.append("sandbox" if sandboxed else "python-audit-only")
+    if sandboxed:
+        forbidden_roots = (reference_root, project, model_root, project / "cache")
+        permissions = " ".join(
+            "(subpath " + json.dumps(str(value)) + ")" for value in forbidden_roots
+        )
+        # Python's read allowlist covers all data reads; the OS also blocks native reads
+        # of the original capture/project, prior exports, cache and configured models.
+        profile = "(version 1)(allow default)(deny network*)(deny file-read* " + permissions + ")"
+        arguments = ["/usr/bin/sandbox-exec", "-p", profile, *arguments]
     child = subprocess.run(
-        [sys.executable, "-B", "-c", program, str(reconstructed), json.dumps(frozen)],
+        arguments,
+        cwd=reconstructed,
         env=dict(
             os.environ,
+            PYTHONPATH=os.pathsep.join(
+                (
+                    str(Path(__file__).resolve().parents[1] / "src"),
+                    str(Path(__file__).resolve().parent),
+                )
+            ),
             BLACKMASK_VITMATTE_CACHE=str(tmp_path / "unavailable-models"),
             BLACKMASK_SAM_CACHE=str(tmp_path / "unavailable-models"),
         ),
@@ -508,13 +624,26 @@ print(json.dumps(outputs))
                 reference.parent / record["editable_companion"]["directory_name"]
             ) == inventory(companion)
             assert_editable_native(companion, pixels, alpha, weight, background, expected)
+    assert inventory(reference_root / "original") == original_inventory
+    retained_assets = inventory(reference_root / "project/assets")
+    assert all(retained_assets[name] == value for name, value in master_inventory.items())
+    assert (
+        inventory(reference_root / "project/revisions" / twelve["revision"])
+        == accepted_before_newer
+    )
     (tmp_path / "journey-evidence.json").write_text(
         json.dumps(
             {
                 "removed": cleared,
                 "selected_revision": selected,
                 "working_revision": "rev-004",
-                "accepted_revision": "rev-006",
+                "accepted_revision": "rev-005",
+                "latest_result_revision": "rev-006",
+                "process_restart": True,
+                "browser_coverage": False,
+                "read_guard": "OS sandbox and Python audit with native/Python negative controls"
+                if sandboxed
+                else "Python audit only; native reads unverified",
                 "model_locators": {
                     "sam": str(config.sam_cache),
                     "vitmatte": str(config.vitmatte_cache),

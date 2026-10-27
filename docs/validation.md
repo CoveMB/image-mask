@@ -1,5 +1,142 @@
 # Verification
 
+## Photo lifecycle acceptance coverage
+
+`test_library_storage_journey.py` remains the single combined deterministic
+storage journey. It uses a small asymmetric RGB16 image and sidecar, the real
+filesystem and shipped `ReviewServer` in fresh Python processes. Only inference
+is substituted. HTTP interaction is **not real-browser coverage**.
+
+| Original stage | Implemented assertion / retained owner |
+| --- | --- |
+| 1. Import | Exact source/sidecar bytes and modes, one library owner, explicit configuration, source/master preservation; `test_library.py` retains import identity/alias boundaries. |
+| 2. Edit and accept | Guidance, partial-alpha lock, successive matte/shading revisions; working rev-004, accepted rev-005, latest rev-006; preserved accepted bytes and Draft gallery. `test_effects.py::test_both_effects_repair_independent_stale_rebuild_and_fresh_export` retains the combined cleanup/shading repair/rebuild case. |
+| 3. Reopen | Stop the actual server process, launch a fresh interpreter, compare revision/guidance identities, acceptance, saved framing/series settings and editable assets. |
+| 4. Deliver | Native TIFF16/PNG8, framed and series results, complete editable companion membership, ICC profiles, dimensions, manifest bindings, and independently evaluated compositing. Default accepted export and explicit latest Draft export differ. |
+| 5. Reconstruct | A fresh process renders all three modes with no prior export/cache; reuse is forbidden. Python read allowlisting and negative controls block original/project/export/model reads. On macOS, the installed sandbox additionally denies native reads of those roots, tested with libc. Compare exact delivered bytes and decoded pixels to frozen references. |
+| 6. Recover | Existing combined import/publication/gallery fault variants plus real import/process-death and export-pair tests in `test_library.py`, `test_resume.py`, `test_repair_operations.py` and `test_export.py`. Pre-publication rollback, visible post-publication uncertainty and valid native-only partial pair success retain their distinct contracts. |
+| 7. Storage | Preserve original/accepted dependencies and diagnostics across cache clearing; inspect directories, symlinks and hard-link counts in the reconstruction copy. The scoped Python write guard includes a rejected outside-write control. Existing library/cache/export boundary tests retain collision, broken-reference and protected-alias checks. |
+
+`storage_journey_process.py` is a test helper, not a second processing path or a
+public test mode. Its Python audit guard is not an OS sandbox for native writes.
+Non-macOS reconstruction runs report Python-only isolation explicitly. Tests do
+not remove unknown data; interrupted stages and failure evidence remain test-owned.
+On macOS, invoke pytest directly: reconstruction starts its own native sandbox.
+Wrapping the whole suite in `sandbox-exec` fails because macOS rejects the nested
+sandbox; rerun only that affected case without the outer wrapper.
+
+Routine command with the repository's installed Python environment:
+
+```sh
+rtk proxy python -B -m pytest -q -p no:cacheprovider
+```
+
+`test_lifecycle_live.py` is the **mandatory I10 technical evidence variant**. It is
+separate from optional B photographic smoke; a skipped prerequisite leaves I10
+evidence open. The existing `test_models.py` / `test_matte.py` integration probes
+use synthetic inputs and are reported as component evidence, not photographic smoke. Supply an
+explicit local DNG fixture through `BLACKMASK_LIFECYCLE_RAW`, and already-installed
+pinned assets through `BLACKMASK_SAM_CACHE` and `BLACKMASK_VITMATTE_CACHE`.
+The variant copies the capture into isolated storage, runs actual RAW development,
+CPU SAM (cold/warm) and native ViTMatte, kills a child after a verified tile is
+published, resumes through the CLI, exercises a scoped repair with a partial-alpha
+lock, and exports editable layers. Fresh CLI processes then author guidance,
+repair, exercise stale shading rejection/rebuild, export, restore and author again.
+A separate small synthetic acceptance fixture checks that actual model
+interruption/resume preserves accepted revision, export and original bytes. Each model receives its own explicit MPS
+success/error disposition. Timings, dimensions, tile metadata, peak RSS and logical
+storage are saved in the test workspace. These observations are not performance
+limits or calibrated photographic scores.
+
+```sh
+rtk proxy python -B -m pytest -q -p no:cacheprovider tests/test_lifecycle_live.py
+```
+
+For offline evidence, launch that command under an OS network-denial policy,
+redirect HOME/cache/temp storage into the test workspace, and set
+`BLACKMASK_LIFECYCLE_NETWORK_DENIED=1`. The test verifies a denied loopback connect;
+offline environment flags alone do not prove isolation. No setup/download command
+is called. All resulting photographic revisions stay Draft. The scoped repair is
+a technical preservation exercise, not evidence of a genuine source-visible defect
+or a successful assisted photographic correction.
+
+`test_optional_fixed_photo_smoke` retains optional B separately. Select a fixed,
+locally available oriented RGB photograph with `BLACKMASK_LIFECYCLE_SMOKE_PHOTO`
+and the existing ViTMatte cache. It copies the fixture and runs one native centre
+crop through actual CPU inference, retaining hashes, backend and diagnostics.
+Missing configuration is an explicit skip; inference/validation errors fail.
+This optional smoke does not satisfy mandatory I10 evidence.
+
+Separate local evidence exercised one genuine source-visible petal defect through
+an actual assisted cycle: exact preservation passed, but the native comparison
+showed a new rectangular boundary. The cycle recorded regression and stopped after
+one attempt. Subsequent fresh CLI manual-control continuation kept that cycle
+closed and the photo Draft. This is not successful photographic correction.
+
+A copied accepted spider project also rendered in a fresh process without access
+to the real library or models. All sixteen delivered image/settings payloads matched
+its historical export exactly; current v4 manifest/README changes were reconciled
+against the older v3 contract. Native web/source crops were inspected, and all 214
+real-library file hashes and modes stayed unchanged. Those are bounded replay and
+agent-observation results, not new human acceptance. Missing flower/dragonfly
+accepted-project assets and wing observations remain explicit gaps.
+
+### Reusable isolated browser setup
+
+The separate `browser` lane reuses the combined storage journey's synthetic fixture
+and real application-process helper. Its browser interactions cover native-coordinate
+authoring, saved partial locks, scoped repair, shading revisions, synthetic acceptance,
+accepted/Draft editable exports, a fresh application/browser restart, saved framing,
+writer contention, stale authoring rejection and stale-effect recovery. It supplements
+the combined journey's independent native/framed/series reconstruction assertions;
+it does not create another processing implementation.
+
+From a repository checkout, using the existing native ARM64 Python 3.12 application
+environment, install only the additional hash-locked browser packages:
+
+```sh
+rtk proxy .venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-deps --target local/browser-runtime -r requirements-browser-macos-arm64.lock
+rtk proxy .venv/bin/python -B tests/run_browser.py
+```
+
+`local/browser-runtime` is isolated from the application environment and ignored by
+Git. Setup requires the explicitly approved public package downloads. The runner
+uses already-installed Google Chrome; it never downloads browsers or models.
+The lock pins Playwright and its dependencies, not the separately installed Chrome
+version; the test records the actual versions. Use a fresh target directory for a
+future lock update rather than mixing installations. See the official
+[Chrome channel guidance](https://playwright.dev/python/docs/browsers#google-chrome--microsoft-edge).
+
+The runner captures commands, exit status, screenshots, traces and test data under
+`local/browser-runs/run-*`, without overwriting earlier runs. Profiles/downloads are
+new and test-owned. Native socket temporary storage uses a separately recorded short
+`/private/tmp/im-browser-*` directory; Chromium on macOS uses
+[`MAC_CHROMIUM_TMPDIR`](https://chromium.googlesource.com/chromium/src/+/main/base/files/file_util_apple.mm),
+not `TMPDIR`. No existing user profile or photo project is opened or changed.
+Missing setup, unsupported platform, launch errors or assertion failures in the
+explicit lane fail. Ordinary pytest runs report the unselected browser lane as a
+prerequisite skip; that skip does not supply browser evidence.
+
+The runner uses one macOS OS sandbox: external outbound networking and writes
+outside the two recorded test roots are denied; loopback remains available. Native
+socket/write negative controls must pass before Chrome starts. macOS rejects nested
+sandbox profiles, so this explicitly approved synthetic-only test disables Chrome's
+internal sandbox inside that outer boundary. It never uses this mode with private
+photos or external pages. This is write/network confinement, not a universal read
+sandbox. The settled Chrome 156.0.8078.48 / Playwright 1.64.1 run passed the complete browser
+case (57.95 s), including both actual application PIDs, keyboard/pointer coordinates,
+new support/partial locks, accepted/Draft editable exports, writer contention,
+stale-input rejection, and stale-effect disable/export recovery. Native external
+network and outside-write probes were denied; Chrome itself returned
+`ERR_ACCESS_DENIED` for the external negative control. The original combined
+storage/reconstruction case also passed after the shared expected-opacity helper
+change (32.58 s). The unselected browser case skipped explicitly with no browser
+packages on Python's path. The prior broad deterministic/model evidence applies
+to unchanged behavior and was not repeated. These are synthetic browser/computational
+results; human photographic, usability/accessibility and regular-use validation
+are **not evaluated — excluded by user approval**. Missing flower/dragonfly assets
+remain separate gaps; full I10 or complete end-to-end certification is not claimed.
+
 ## DNG as-shot white-point fallback — 2026-10-21
 
 Synthetic RAW-boundary checks exercise real TIFF tag parsing and white-balance
