@@ -338,6 +338,9 @@ Presentation records bind the selected revision's raw manifest hash, actual marg
 or series settings, algorithm, full output geometry and output-to-display scale.
 They do not change native crop coordinates. Both presentation modes use the same
 bounded rendering as the manual window.
+Initial publication and reuse enforce the same panel, crop and sheet geometry
+checks. Invalid generated layouts retain staging for inspection and leave earlier
+comparisons and project pointers unchanged.
 
 `--retain-native` additionally retains native PNG evidence in project-local
 `reviews/rev-NNN/<hash>/`. The comparison binds the exact after manifest and, for
