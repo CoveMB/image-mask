@@ -685,11 +685,13 @@ execution identity can create a meaningful small revision even if pixels agree.
 There is no historical request search, registry or new cache engine. The explicit
 effects execution version must change when equivalence, validation or arithmetic
 semantics change. Existing native model/tile cache invalidation stays independent.
-Current `validated-effects-v4` covers all seven effects, including Fade into background's
+Current `validated-effects-v7` also binds Background light's normalized settings,
+algorithm and both saved fields, including OFF and inherited state. It covers all
+eight appearance sections and both local fade reduction targets, including Fade into background's
 validated nested settings, algorithm, actual explicit protection bytes and all four
 saved spatial operands. Its output binding includes OFF and inherited spatial state;
 new output is bound only after generation, allowing the first equivalent repeat to
-reuse it. Native recipe identity excludes all seven appearance sections. Mandatory cold
+reuse it. Native recipe identity excludes all eight appearance sections. Mandatory cold
 saved-geometry validation may rasterize W; a hit performs no additional result/effect/W
 generation, while existing warm validation caches retain their fresh-hash safeguards.
 Omitted shading-disable geometry still resolves from validated saved settings before
@@ -933,12 +935,13 @@ inward shading instead uses the existing `P=R(A*F*H)` path with its saved H fact
 
 Native editable deliveries add exactly `spatial_fade_weight16.png`,
 `spatial_fade_protection16.png`, `spatial_fade_alpha16.png`,
-`spatial_fade_settings.json` to the existing conditional inventory.
+`spatial_fade_settings.json` to the existing conditional inventory. Record 2 also
+adds the reduction raster/document described below, including while OFF.
 `foreground_rgb16.tif` stays pre-spatial, already including selected earlier effects.
 Alpha, source, background RGB16/settings and other effect operands remain separate.
 To reconstruct without the project/models: validate the delivered records and
 select the active rendering mode. With spatial fade enabled, calculate q from
-foreground/W/protection/settings, blend toward delivered B and compose alpha once.
+foreground/W/protection/settings and optional reduction, blend toward delivered B and compose alpha once.
 With spatial fade OFF, q is zero; if inward shading is enabled, use delivered
 `shadow_weight16.png` and its opacity to calculate `H=1-opacity*W16/65535` and
 `round(F*A*H+B*(1-A))`. Otherwise H is 1. The native manifest/README formula
@@ -965,6 +968,73 @@ this is not an available-RAM reservation.
 After durable success, only that invocation's byte-verified duplicate stage is
 removed. Failed, uncertain and earlier stages remain preserved. A cleanup error
 identifies the durably published output and any remaining duplicate-stage files.
+
+### Local fade reduction
+
+The exclusive schema-2 `effects` request uses the common identity, scope and
+`candidate_comparison` fields plus exactly `fade_reduction:{"target":"spatial_fade","area":...}`
+or `target:"shadow_fade"` in that same field. It requires an existing validated selected effect, a current alpha dependency even
+when disabled, and an accepted base or explicit candidate comparison. Scope contains
+the union of old and replacement nonzero reduction; the viewer sends full native
+scope. It changes neither the effect switch, geometric W, protection, source,
+alpha/guidance nor another effect's stale state. Settings, background changes,
+prepare/matte/repair and effect OFF inherit the reduction.
+
+The area has exactly `schema_version:1` and `regions`. Each region has exactly
+`shape` and finite nonboolean `amount` in [0,1]. Shapes are existing native support
+strokes or rectangles, including their stable unique IDs and inward `feather_px`;
+other shapes/roles/keys are rejected. At most 128 regions and 8192 total stroke
+points are validated before raster allocation. Using the existing quantized support
+`S_i16`, compute `R16=round(max_i(amount_i*S_i16))` once, ties-to-even. Empty gives
+zero. Overlap never accumulates. Scratch holds one shape at a time, not all rasters.
+
+Only an explicit reduction edit upgrades the spatial record from 1 to 2 or the Shadow
+record from 2 to 3. Each new version adds exactly `reduction_sha256`, `reduction_area_sha256` and
+`reduction_algorithm:"native-support-max-reduction-v1"`. Its closed inventory adds
+shared `effects/spatial-fade/reduction16.png` or `effects/shadow-fade/reduction16.png`
+and revision-local `reduction.json` in that target's directory.
+Legacy records mean zero reduction and are not rewritten. Clear saves zero/empty
+in a new revision retaining the new record version. Readers check hashes, native dimensions and geometry
+replay even OFF; missing, extra, unbound, future and inconsistent operands fail
+on cold and warm reads. Cache clear never owns these permanent operands.
+
+After spatial support, protection and highlight preservation, multiply q by
+`1-R16/65535` exactly once. Alpha remains eligibility only. Missing/zero reduction
+preserves old arithmetic and full reduction removes only this effect. Combined
+geometry maps retain unreduced W; effective maps include reduction. Native, crop,
+review and series consumers use the same q. Native editable delivery adds
+`spatial_fade_reduction16.png` and `spatial_fade_reduction.json`; compact-only requests
+add no editing bundle. Standalone reconstruction must apply this factor before
+native blending or series sampling of `A*q`, never interpolate already-faded RGB.
+
+For Shadow fade, multiply its existing support/highlight exponent weight by
+`1-R16/65535` before `gain=2**(-6*amount*weight)`. Exact copy/protection paths and
+alpha eligibility remain unchanged. Native editable delivery adds
+`shadow_fade_reduction16.png` and `shadow_fade_reduction.json`, including OFF.
+Replay Shadow once from `unfaded_foreground_rgb16.tif`; selected foreground already
+includes Shadow and must not be faded again. Recompute downstream spatial highlights
+from that selected RGB, retaining spatial W/protection/settings/reduction independently.
+
+Viewer reduction saves additionally require raw `revision_manifest_sha256`, checked
+under the project writer lock and excluded from the persisted operation. Authenticated
+`POST /api/fade-reduction-preview` takes exactly `developed_id`, `revision`, raw
+`revision_manifest_sha256`, `crop_xyxy`, `target` (`spatial_fade` or `shadow_fade`), and `view` (`coverage`
+or `off`). Only `off` may add `panel` (`result`, `black`, `gray`, `white`). OFF removes
+only the selected reduction for comparison while retaining the saved effect switch and settings.
+Shadow reduction OFF rerenders upstream Shadow, then recomputes downstream spatial
+highlights with the saved spatial reduction. Whole-effect OFF and BASE remain distinct.
+Responses echo the request and bind a labelled PNG8 to the saved crop. Preview/save
+JSON rejects duplicate keys. The existing body cap, preview lock, identity rechecks
+and local authentication apply. Snapshots expose validated `fade_reduction_areas`
+per saved target, empty for legacy and omitted for absent targets.
+
+Drafts retain their captured raw identity and version. Only matching target,
+identity, submitted version and saved result can clear a submitted draft; later
+edits and failures retain it. Old readers may reject spatial record 2 or Shadow record 3. Recovery is updated
+software or preserved pre-feature revisions/exports, never in-place migration or
+automatic deletion. Human photographic acceptance remains separate.
+
+### Saved spatial previews
 
 Authenticated `POST /api/spatial-preview` takes exactly `developed_id`, `revision`,
 raw `revision_manifest_sha256`, native `crop_xyxy`, `view`. Views are `off`,
@@ -1085,7 +1155,8 @@ Start every render from unfaded RGB16, never from flattened or previously faded
 pixels. Decode normalized sRGB with threshold .04045. In float64, compute linear
 luminance `Y = .2126 R + .7152 G + .0722 B`, `t = clip((Y-.10)/.65,0,1)`,
 `h = t*t*(3-2*t)`, `w = (support16/65535)*(1-preserve_highlights*h)` and
-`gain = 2**(-6*amount*w)`. Multiply linear RGB by gain, encode at threshold
+`gain = 2**(-6*amount*w)`. With saved [local reduction](#local-fade-reduction), multiply
+`w` by `1-R16/65535` before computing gain. Multiply linear RGB by gain, encode at threshold
 .0031308 and quantize once with ties-to-even RGB16. OFF, amount 0, zero effective
 weight, zero alpha, zero support and protected RGB take exact copy paths. Alpha
 only gates eligibility; partial alpha does not scale the gain and never changes.
@@ -1096,11 +1167,13 @@ No detail synthesis, alpha erosion or new compositing mode occurs.
 Immutable `effects/shadow-fade/` contains `support16.png`, `protection16.png`,
 `alpha16.png`, `settings.json`, and optional `area.json`. Every asset and the
 revision's `base_alpha16.png` are manifest-bound, including prepared revisions.
-The optional manifest `shadow_fade` record has exactly `schema_version=2`,
+The legacy optional manifest `shadow_fade` record has exactly `schema_version=2`,
 `enabled`, `settings`, `stale`, `developed_id`,
 `algorithm="linear-srgb-shadow-fade-v1"`, `scope_xyxy`, `candidate_comparison`,
 `support_sha256`, `protection_sha256`, `alpha_sha256`, `area_sha256` (null for
-scalar input). Settings JSON equals the record. Hashes, types, dimensions,
+scalar input). Explicit local reduction adds the version-3 fields/assets defined
+in [Local fade reduction](#local-fade-reduction); amount/area changes and OFF preserve them.
+Settings JSON equals the record. Hashes, types, dimensions,
 categorical protection, geometry equality and stale/dependency status validate
 even OFF. Unbound area files reject before warm-cache return. Bounded semantic
 caches retain no image arrays and never bypass current asset hashing.
@@ -1169,13 +1242,15 @@ multiply linear RGB by `2**(variation*field)`, clamp, encode and round ties-to-e
 once to RGB16. Zero variation copies RGB8*257; black is exact zero at all strengths.
 There is no crop/viewport normalization, seed or random pattern.
 
-Final Result is encoded-sRGB float64 `round(F*A*H + B*(1-A))`, ties-to-even,
+Without Background light, Result is encoded-sRGB float64 `round(F*A*H + B*(1-A))`, ties-to-even,
 where F is selected RGB16 after cleanup/sharpening/exposure/fade, A=alpha16/65535,
 H=1-p*W16/65535 and B is the saved RGB16 backdrop. p is saved opacity only when
 shading is enabled, otherwise zero (including absent shading). H applies only to F;
 alpha applies once, with no earlier rounding. Black compatibility keeps the
 existing arithmetic order. Protected underlying RGB/alpha remain exact while
 partial-alpha flattened colour changes with B. Clipping diagnostics are independent.
+With light, this saved base is B0; the [light contract](#saved-background-light)
+defines displayed B1 and the independent B0 fade target.
 
 Schema-2 `kind:effects` accepts exclusive `background` settings with all existing
 master/base/draft/candidate identities and full native `scope_xyxy`. It cannot
@@ -1192,7 +1267,7 @@ stale flags still block acceptance/export. Prepared revisions remain non-accepta
 
 Every requested delivery includes `result_rgb16.tif` and `result_RGB8_VIEW.png`.
 Native `--variant editable` also includes `background_rgb16.tif`,
-`background_settings.json` when saved. Result uses B; optional black and transparent
+`background_settings.json` when saved. Without light, Result uses B; optional black and transparent
 views retain their meanings. Selected foreground is pre-shading and already
 exposed/faded: do not replay these twice. Saved F/A/W/opacity/B reconstruct Result
 using the effective-opacity rule above,
@@ -1203,12 +1278,93 @@ reviews are not regenerated on open. Current readers restore prior revisions; ol
 are not promised to understand new records. Retain a prior project/revision for
 recovery rather than stripping fields. No automatic cleanup occurs.
 
+## Saved background light
+
+The optional recipe `background_light` has exactly `enabled` (boolean),
+`brightness` (finite non-bool number in [0,1]), `color_srgb` (six-digit #RRGGBB,
+normalized uppercase) and `geometry`. Absence remains absent until explicit Apply;
+it is not an implicit default or migration. Strict geometry validation also applies
+when OFF. With D=max(native width,height), alternatives are:
+
+- Oval: exactly `type:"oval"`, `center_xy:[x,y]`, `radii_xy:[rx,ry]`,
+  `rotation_degrees`, `softness`. Centre is within [0,width] × [0,height],
+  radii within [0.5,2D], rotation within [0,360), softness within [0.05,1].
+- Directional: exactly `type:"directional"`, `center_xy`, `rotation_degrees`,
+  `transition_width`, with the same centre/rotation bounds and width [0.5,2D].
+
+Initial draft: OFF, brightness 0.10, #FFFFFF, centre [(width-1)/2,(height-1)/2],
+rotation 0; oval radii [max(.5,.35*width),max(.5,.35*height)] and softness 1;
+directional width D. These defaults have no calibrated photographic meaning.
+Numeric UI percentages preserve fractions; slider changes are explicit.
+
+Native sample coordinates x/y are integer pixel centres. Rotate the offset from the
+centre clockwise into u=cos(theta)*dx+sin(theta)*dy and
+v=-sin(theta)*dx+cos(theta)*dy. Let S(t)=clamp(t,0,1)^2*(3-2*clamp(t,0,1)).
+Oval weight is S((1-hypot(u/rx,v/ry))/softness); directional weight is
+1-S(u/transition_width+.5). Decode tint RGB8/255 and brightness separately through
+sRGB. L16=encode_srgb(decoded_tint*decoded_brightness*weight), clamped and
+quantized to RGB16 with float64 ties-to-even. Generation uses at most 64-row
+temporary fields and never depends on alpha, base, crop or viewport. OFF retains
+the generated field; zero brightness or black tint gives exact zero.
+
+The optional manifest record has exactly `schema_version:1`,
+`algorithm:"linear-srgb-background-light-v1"`, `developed_id`, `width`, `height`,
+`settings`, `light_sha256`, `settings_sha256`. Bind
+`background_light/light_rgb16.tif` in assets and
+`background_light/settings.json` in files. Recipe, record and normalized JSON
+settings agree. Native registration/dimensions, source identity, RGB16/sRGB profile,
+hashes and exact inventories are validated even OFF and before warm/repeated reuse.
+Zero settings require an exactly zero raster. Other valid saved pixels are
+authoritative: native reading, comparison and delivery never regenerate L16.
+
+Keep saved base **B0** and light **L16** separate. Missing B0 means zero.
+When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)).
+Zero-light pixels copy B0 exactly; OFF uses B0 exactly. B1 is only the displayed
+backdrop. With foreground contribution P computed by the existing effects using
+**B0** as Fade into background's target, native Result is
+round(P+B1*(1-A)) once in encoded sRGB. Light never changes P or A. Opaque pixels
+remain exact; partially transparent flattened pixels change naturally, including
+protected ones. No alpha threshold, edge recolouring or second fade is introduced.
+BASE/stale comparisons remain all-effects-off black. Foreground-OFF and local
+reduction comparisons retain light. Black/gray/white and transparent diagnostics
+retain B0 as the fade target and exclude light from display.
+
+An exclusive schema 2 effects operation carries `background_light`, full native
+scope and existing master/base/input/authoring/candidate identities. Viewer POST
+also requires the raw `revision_manifest_sha256`, checked under the canonical
+writer lock, and rejects duplicate JSON keys at every depth. Only explicit Apply
+introduces or changes the saved light; enabled-only changes inherit exact field
+bytes. Explicit changed settings regenerate even OFF. Saved-only OFF submits the
+current saved geometry with `enabled=false` and preserves invalid/stale pending forms.
+Unrelated effects inherit light without consuming its root draft. Prepare/matte
+cannot introduce a new or changed light from an unapplied root draft. Same-source
+alpha repair inherits light without staling it; changed source/dimensions reject.
+State-last recovery, complete orphan restore, immutable assets and acceptance
+semantics remain unchanged.
+
+Native editable adds `background_light_rgb16.tif` and
+`background_light_settings.json` whenever a record exists, even OFF; B0 keeps
+`background_rgb16.tif`. Compact/default delivery still has five files.
+Native replay uses saved B0/L16, never the analytic generator. Add margins copies
+native Result and extends B1 edges. Match series generates output B0 and evaluates
+the analytic light from delivered settings using
+x_native=(X+.5-tx)/scale-.5, y_native=(Y+.5-ty)/scale-.5 across the full canvas.
+Reduced preview chooses X=floor((2*i+1)*output_width/(2*display_width)) and
+corresponding Y first. Geometry is not refitted or normalized to the preview.
+This is approximate preview sampling, not exact downsampling of a full render.
+Series metadata binds `background_light_transform` (scale, translation, native/output
+dimensions and sampling convention), the light record and native editable companion.
+Keep the pair; replay the series field from those delivered settings while using
+the existing premultiplied series kernel and B0 fade target. Subject bounds,
+sampling, source, alpha and retained foreground operands are unchanged.
+
 ## Requested Result deliveries
 
 Default export is exactly five regular files: `result_rgb16.tif`,
 `result_RGB8_VIEW.png`, `recipe.toml`, `manifest.json`, `README.txt`. Native output
 keeps the full original pixel dimensions, without upscaling or print sizing.
-Result follows the selected saved backdrop; absent background means black.
+Result follows the selected saved backdrop and optional Background light;
+absence of both means black. See [B0/B1 reconstruction](#saved-background-light).
 The TIFF is uncompressed processed sRGB uint16. The same-size PNG is RGB8; all
 delivered RGB/RGBA rasters embed the canonical sRGB ICC. Scalar16 editing masks
 remain exact and carry no ICC/gamma. A larger file container adds no captured detail.
@@ -1239,7 +1395,7 @@ Recovery uses the saved opacity only when the delivered shading record is enable
 disabled or absent shading means effective opacity zero, regardless of retained
 nonzero W/opacity. A missing W means zero. Keep retained editing settings unchanged.
 
-Schema-2 manifests identify `export_version=requested-result-v4`, selected revision,
+Schema-2 manifests identify `export_version=requested-result-v5`, selected revision,
 raw source/revision-manifest hashes, effective recipe hash, explicit draft status,
 mode/settings/geometry/algorithm, requested variants, native asset/effect identities,
 actual Python/NumPy/Pillow/tifffile encoding versions and profile digest. The
@@ -1526,6 +1682,138 @@ with the existing 10 GiB reserve plus pending-write allowance. Estimates include
 retained inputs, output, alpha, scalar intermediate, strip/coefficient and encoding
 scratch. They are not RAM reservations or guarantees that every valid size fits.
 
+
+## Portable appearance recipes
+
+`appearance_recipes.py` owns a standalone UTF-8 JSON file. V1 root keys are exactly
+`schema_version:1`, `kind:"appearance-recipe"`, `name`, `sections`, `reference`.
+V2 uses the same root keys with `schema_version:2` and permits `spatial_layout`.
+Writing emits v2 only when layout is present; otherwise it emits v1. Reading
+accepts both versions without rewriting existing files.
+The name is trimmed to 1–80 Unicode characters and rejects controls. Sections
+must be nonempty and contain only the following exact field sets. All numbers
+must be finite, nonboolean JSON numbers; native scalar validators apply.
+
+| Section | Fields and bounds |
+| --- | --- |
+| `shadow_fade` | `amount`, `preserve_highlights`, each [0,1] |
+| `local_exposure` | `ev` in [-3,3] |
+| `color_cleanup` | `strength` in [0,1] |
+| `background` | `color_srgb` as `#RRGGBB` (normalized uppercase), `variation` in [0,1] |
+| `shading` | positive `width_subject_fraction`, `direction_degrees` in [0,360), `opacity` in [0,1] |
+| `spatial_fade` | positive `transition_subject_fraction`, `amount` and `preserve_highlights` in [0,1] |
+
+Shading and spatial defaults are mutually exclusive. V1 contains no layout,
+enabled state, project/revision/shape identifiers, paths, source development,
+mask/area/protection/reduction data, framing or acceptance. A saved OFF section
+can supply explicitly selected values. Missing saved settings cannot be invented.
+Spatial defaults come from one explicitly chosen saved oval/arc; its geometry
+and identity are excluded.
+
+V2 `spatial_layout` is mutually exclusive with `shading` and `spatial_fade`. Its
+exact keys are `preserve_highlights`, `oval`, `arcs_enabled`, `arcs`. Each shape
+has `enabled`, `center_subject_xy`, `rotation_degrees`,
+`transition_subject_fraction`, `amount`; the oval adds `inner_radii_subject_xy`,
+and each arc adds `half_span_subject_fraction`, `bend_subject_fraction`,
+`end_softness_subject_fraction`, `fade_side`. Switches are strict booleans,
+centres contain two finite values, radii/transition/span/softness are positive,
+rotation is [0,360), amount/highlight preservation [0,1], bend is within ±span,
+softness cannot exceed span, and side is `positive` or `negative`. All shapes,
+including disabled ones, are validated; arc order is retained and count is at
+most 32. No source master switch, native IDs or target-local operands are saved.
+
+For half-open nonzero-alpha bounds, let C be their midpoint and D their maximum
+side. Layout centres encode `(P-C)/D`, lengths encode `length/D`; target centres
+decode as `Ctarget+Dtarget*offset`, lengths as `Dtarget*fraction`. Both axes use
+one scale; rotation, signed bend, side and strength retain their meaning.
+Conversion starts from the original portable values for each proposal. Native
+centres remain inside the image extent; radii, span and transition remain
+`[0.5,2*M]`, softness `[0.5,span]` and bend `[-span,span]`. The multiplication
+endpoint budget below also applies to layout lengths. Centre correction uses
+`4*(ulp(midpoint)+ulp(product)+ulp(sum)+ulp(endpoint))`; relational bounds add
+both operand budgets. Only finite just-outside values within the budget snap to
+the endpoint. Larger violations reject with shape/field context, without fitting
+or dropping shapes or relaxing native validation.
+
+Add validates the target draft before merging, preserves its oval/highlights,
+master switch, arc group and existing IDs, and imports each arc's enabled state
+as source-group AND source-arc. Zero imported arcs or combined count above 32
+rejects. Replace imports layout geometry/internal switches/highlights while
+preserving the target master. Each imported arc receives a canonical lowercase
+UUID-v4, unique and disjoint from every target ID, even IDs removed by Replace.
+The complete result must pass the unchanged native validator.
+
+`reference` is null or exactly `{mime:"image/png",width,height,png_base64}`.
+It must decode to one opaque RGB8 PNG, at most 1,048,576 encoded PNG bytes,
+1–512 pixels per side and 262,144 pixels total. The whole JSON is limited to
+1,572,864 UTF-8 bytes and nesting depth 8. Invalid UTF-8, duplicate/unknown keys,
+unsupported versions/types, nonfinite numbers and malformed images are rejected.
+Bounded PNG header/chunk checks precede decoding; verified pixels are re-encoded
+without text, EXIF, ICC or other source metadata. Unchecked reference creation
+does not render. A checked reference uses the selected complete revision's saved
+native Result composition, reduced to RGB8 and at most 512 pixels per side,
+without framing or gallery footer. Its label is **Reference from saved source
+photo — not a target preview**. Photographed content remains private content even
+after metadata removal.
+
+Widths divide by the source nonzero-alpha bounds' maximum side and multiply by
+the target's corresponding side, without integer rounding. Bounds are half-open
+and include alpha=1. For target native extent `M=max(width,height)`, shading
+requires `0 < width <= M`; spatial transition requires `[0.5,2*M]`. Only portable
+conversion may correct a just-outside closed endpoint within
+`4*(ulp(product)+ulp(endpoint))`. Interior values remain exact, shading zero or
+negative never receives correction, and native validators are unchanged.
+Missing/empty target alpha or invalid converted width is reported under
+`unavailable.<section>` while independent valid sections remain in `sections`.
+Malformed portable input rejects the whole recipe before form assignment.
+
+Authenticated same-origin POST `/api/appearance-recipe-create` accepts exactly
+`developed_id, revision, revision_manifest_sha256, name, sections,
+reference_shape_id, include_reference`. The revision must be complete and match
+its raw manifest hash; the response contains `recipe_json` and the binding.
+`/api/appearance-recipe-validate` accepts exactly `recipe_json, developed_id,
+revision, revision_manifest_sha256`, with optional `layout_defaults_shape` only
+for a v2 layout. This explicit fallback chooses `"oval"` or a zero-based integer
+arc index (never boolean), deriving scalar spatial defaults without changing the
+returned portable recipe. Ordinary layout validation makes no scalar assignment.
+Validation returns the sanitized `recipe`, converted
+`sections`, `unavailable` and binding. Both responses also echo
+`working_revision, inputs_digest, authoring_digest`. Only validation permits a
+null revision/hash pair, and only when there is no working revision. Partial
+pairs are invalid. The outer request limit remains 2,000,000 bytes.
+
+Both routes are read-only, share the nonblocking preview guard, validate source,
+selected assets and raw manifest, and recheck state/source/manifest/draft bindings
+before returning. They launch no action or writer. Source and target identifiers
+are transport-local and are not serialized into portable files.
+
+POST `/api/appearance-layout-preview` shares those authentication, origin, body,
+duplicate-key, lock and identity checks. It accepts exactly `recipe_json,
+developed_id, revision, revision_manifest_sha256, inputs_digest, authoring_digest,
+spatial_draft, spatial_draft_version, mode`. Version is a nonnegative nonboolean
+integer and mode is `add_arcs` or `replace`. It requires the current complete
+working revision and nonempty validated alpha. Its exact response fields are
+`spatial_fade, warnings, developed_id, revision, working_revision,
+revision_manifest_sha256, inputs_digest, authoring_digest, spatial_draft_version,
+mode`. No raster preview, action or saved write occurs. Proposal and one-step
+Undo bind the recipe, target identity, mode, spatial draft/version, selected
+shape, protection/candidate controls and both reduction drafts/raw controls.
+Cancel changes none of those. Load rechecks them and always confirms Replace;
+later edits, identity changes or actions invalidate Undo. Ordinary Apply persists
+native settings and operands, with no project schema migration or recipe dependency.
+
+The viewer binds scalar drafts to current developed/revision/input/authoring
+identity and an edit version. Loading is selective and explicit; it neither
+applies effects nor transfers enable state. Recipe previews survive per-effect
+Apply; remaining sections require explicit reload after identity changes.
+Completion clears only the matching submitted identity/version/settings/result.
+Exposure and Shadow area/protection drafts retain independent bindings and edit
+versions: scalar reload cannot rebind them, stale replace-area writes reject,
+and amount-only uses saved current geometry without discarding the pending area.
+Spatial defaults retain the existing whole-draft binding. Late replies and
+cancelled replacement cannot overwrite newer edits. Background numeric
+percentages preserve fractional values through Apply/reload and colour edits;
+programmatic range synchronization does not quantize them.
 
 ## Optional local sharpening
 

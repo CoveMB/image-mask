@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 from PIL import Image
@@ -149,6 +150,19 @@ class ReviewServer(ThreadingHTTPServer):
                             self.project, f"revisions/{path.name}/effects/sharpening/area.json"
                         ).read_bytes()
                     )
+                reduction_areas = {}
+                for target, version in (("spatial_fade", 2), ("shadow_fade", 3)):
+                    if target in manifest:
+                        reduction_areas[target] = (
+                            json.loads(
+                                saved_asset(
+                                    self.project,
+                                    f"revisions/{path.name}/effects/{target.replace('_', '-')}/reduction.json",
+                                ).read_bytes()
+                            )
+                            if manifest[target]["schema_version"] == version
+                            else {"schema_version": 1, "regions": []}
+                        )
                 exposure = dict(manifest.get("local_exposure", {"enabled": False, "stale": False}))
                 if "local_exposure" in manifest and manifest["final_acceptable"]:
                     saved_review = json.loads(
@@ -184,7 +198,9 @@ class ReviewServer(ThreadingHTTPServer):
                         ),
                         "sharpening_area": sharpening_area,
                         "spatial_fade": manifest.get("spatial_fade"),
+                        "fade_reduction_areas": reduction_areas,
                         "background": manifest.get("background"),
+                        "background_light": manifest.get("background_light"),
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
                             for k in ("inferred_tiles", "reused_tiles")
@@ -207,6 +223,200 @@ class ReviewServer(ThreadingHTTPServer):
         if _json_bytes(json.loads(raw)) != _json_bytes(manifest) or path.read_bytes() != raw:
             raise ProjectError("Stale revision manifest; reload current project")
         return manifest, raw
+
+    @_validation_scope()
+    def create_appearance_recipe(self, data: Any) -> dict[str, Any]:
+        return self._appearance_recipe(data, create=True)
+
+    @_validation_scope()
+    def validate_appearance_recipe(self, data: Any) -> dict[str, Any]:
+        return self._appearance_recipe(data, create=False)
+
+    @_validation_scope()
+    def preview_appearance_layout(self, data: Any) -> dict[str, Any]:
+        return self._appearance_recipe(data, create=False, layout_preview=True)
+
+    def _appearance_recipe(
+        self, data: Any, *, create: bool, layout_preview: bool = False
+    ) -> dict[str, Any]:
+        """Bounded read-only recipe transport with the same saved-target guard as previews."""
+        from .appearance_recipes import (
+            appearance_recipe_form_values,
+            appearance_recipe_from_revision,
+            parse_appearance_recipe,
+            spatial_layout_proposal,
+            spatial_layout_scalar_defaults,
+        )
+        from .export import validated_layer_inputs
+        from .series_framing import nonzero_alpha_bounds
+
+        required = {"developed_id", "revision", "revision_manifest_sha256"} | (
+            {"name", "sections", "reference_shape_id", "include_reference"}
+            if create
+            else {"recipe_json"}
+        )
+        if layout_preview:
+            required |= {
+                "inputs_digest",
+                "authoring_digest",
+                "spatial_draft",
+                "spatial_draft_version",
+                "mode",
+            }
+        admitted = [required]
+        if not create and not layout_preview:
+            admitted.append(required | {"layout_defaults_shape"})
+        if not isinstance(data, dict) or set(data) not in admitted:
+            raise ValueError("Invalid appearance recipe structured fields")
+        if layout_preview and (
+            type(data["spatial_draft_version"]) is not int
+            or data["spatial_draft_version"] < 0
+            or data["mode"] not in ("add_arcs", "replace")
+        ):
+            raise ValueError("Invalid appearance layout mode or spatial draft version")
+        revision, manifest_hash = data["revision"], data["revision_manifest_sha256"]
+        if (
+            (revision is None) != (manifest_hash is None)
+            or (create or layout_preview)
+            and revision is None
+            or revision is not None
+            and (
+                not isinstance(revision, str)
+                or re.fullmatch(r"rev-[0-9]{3,}", revision) is None
+                or not isinstance(manifest_hash, str)
+                or re.fullmatch(r"[a-f0-9]{64}", manifest_hash) is None
+            )
+            or not create
+            and not isinstance(data["recipe_json"], str)
+        ):
+            raise ValueError("Invalid appearance recipe revision/hash pair or JSON text")
+        if not self.framing_preview_lock.acquire(blocking=False):
+            raise ProjectError("Appearance preview busy; retry after the current preview")
+        try:
+            captured = {
+                name: saved_asset(self.project, name).read_bytes()
+                for name in ("state.json", "source.json")
+            }
+            state = read_project(self.project, validate_drafts=False)
+            if data["developed_id"] != state["developed_id"]:
+                raise ProjectError("Stale appearance recipe source")
+            binding = {
+                "developed_id": state["developed_id"],
+                "revision": revision,
+                "revision_manifest_sha256": manifest_hash,
+                "working_revision": state["working_revision"],
+                "inputs_digest": operations.draft_digest(self.project),
+                "authoring_digest": operations.guidance_draft_digest(self.project),
+            }
+            if layout_preview and (
+                revision != state["working_revision"]
+                or any(data[key] != binding[key] for key in ("inputs_digest", "authoring_digest"))
+            ):
+                raise ProjectError(
+                    "Stale appearance layout: use the current working revision and drafts"
+                )
+            if revision is None:
+                if state["working_revision"] is not None:
+                    raise ProjectError("Stale appearance target: select the current saved revision")
+            else:
+                _, raw = self._validated_revision(revision, state["developed_id"])
+                if digest(raw) != manifest_hash:
+                    raise ProjectError("Stale appearance recipe revision manifest")
+                captured[f"revisions/{revision}/manifest.json"] = raw
+            result: dict[str, Any]
+            if create:
+                assert revision is not None
+                result = {
+                    "recipe_json": appearance_recipe_from_revision(
+                        self.project,
+                        revision,
+                        manifest_hash,
+                        data["name"],
+                        data["sections"],
+                        data["reference_shape_id"],
+                        data["include_reference"],
+                    ).decode("utf-8")
+                }
+            else:
+                try:
+                    recipe = parse_appearance_recipe(data["recipe_json"].encode("utf-8"))
+                    converted_recipe = recipe
+                    if "layout_defaults_shape" in data:
+                        if (
+                            recipe["schema_version"] != 2
+                            or "spatial_layout" not in recipe["sections"]
+                        ):
+                            raise ValueError("Settings-only selection requires a v2 spatial layout")
+                        defaults = spatial_layout_scalar_defaults(
+                            recipe["sections"]["spatial_layout"], data["layout_defaults_shape"]
+                        )
+                        converted_recipe = {
+                            **recipe,
+                            "schema_version": 1,
+                            "sections": {
+                                key: value
+                                for key, value in recipe["sections"].items()
+                                if key != "spatial_layout"
+                            }
+                            | {"spatial_fade": defaults},
+                        }
+                    if layout_preview and "spatial_layout" not in recipe["sections"]:
+                        raise ValueError("Choose a recipe containing a spatial layout")
+                except (ValueError, UnicodeError) as error:
+                    raise ValueError(str(error)) from error
+                master, _ = _validate_assets(self.project, state, validate_drafts=False)
+                height, width = master.shape[:2]
+                bounds = None
+                if revision is not None:
+                    _, alpha, _ = validated_layer_inputs(
+                        self.project, revision, state["developed_id"]
+                    )
+                    bounds = nonzero_alpha_bounds(alpha)
+                if layout_preview:
+                    if bounds is None:
+                        raise ProjectError(
+                            "A complete saved matte with nonzero alpha is required for layout"
+                        )
+                    layout = recipe["sections"]["spatial_layout"]
+                    proposal = spatial_layout_proposal(
+                        layout,
+                        data["spatial_draft"],
+                        bounds,
+                        (width, height),
+                        data["mode"],
+                        [str(uuid4()) for _ in layout["arcs"]],
+                    )
+                    warnings = []
+                    if data["mode"] == "add_arcs" and not proposal["arcs_enabled"]:
+                        warnings.append("Target arc group is OFF; loading arcs will not enable it.")
+                    result = {
+                        "spatial_fade": proposal,
+                        "warnings": warnings,
+                        "spatial_draft_version": data["spatial_draft_version"],
+                        "mode": data["mode"],
+                    }
+                else:
+                    result = {
+                        "recipe": recipe,
+                        **appearance_recipe_form_values(converted_recipe, bounds, (width, height)),
+                    }
+            read_project(self.project, validate_drafts=False)
+            if revision is not None:
+                self._validated_revision(revision, state["developed_id"])
+            if (
+                any(
+                    saved_asset(self.project, name).read_bytes() != raw
+                    for name, raw in captured.items()
+                )
+                or operations.draft_digest(self.project) != binding["inputs_digest"]
+                or operations.guidance_draft_digest(self.project) != binding["authoring_digest"]
+            ):
+                raise ProjectError(
+                    "Stale appearance recipe target or drafts changed during validation"
+                )
+            return {**binding, **result}
+        finally:
+            self.framing_preview_lock.release()
 
     @_validation_scope()
     def preview_framing(self, data: Any, *, series_mode: bool = False) -> dict[str, Any]:
@@ -274,11 +484,25 @@ class ReviewServer(ThreadingHTTPServer):
 
     @_validation_scope()
     def preview_spatial(self, data: Any) -> dict[str, Any]:
+        return self._preview_spatial(data, reduction=False)
+
+    @_validation_scope()
+    def preview_fade_reduction(self, data: Any) -> dict[str, Any]:
+        return self._preview_spatial(data, reduction=True)
+
+    def _preview_spatial(self, data: Any, *, reduction: bool) -> dict[str, Any]:
         """Read one bound saved field/comparison under the existing bounded preview guard."""
         required = {"developed_id", "revision", "revision_manifest_sha256", "crop_xyxy", "view"}
+        if reduction:
+            required.add("target")
         if (
             not isinstance(data, dict)
-            or data.get("view") not in ("off", "combined", "effective", "selected")
+            or data.get("view")
+            not in (
+                ("off", "coverage") if reduction else ("off", "combined", "effective", "selected")
+            )
+            or reduction
+            and data.get("target") not in ("spatial_fade", "shadow_fade")
             or set(data)
             != required
             | ({"shape_id"} if data.get("view") == "selected" else set())
@@ -315,7 +539,13 @@ class ReviewServer(ThreadingHTTPServer):
                 captured[f"revisions/{state['working_revision']}/manifest.json"] = current_raw
             stale = effects_stale(current) or effects_stale(manifest)
             foreground, alpha, loaded = saved_layers(
-                self.project, data["revision"], state["developed_id"], effects_off=stale
+                self.project,
+                data["revision"],
+                state["developed_id"],
+                effects_off=stale,
+                shadow_reduction_off=reduction
+                and data["target"] == "shadow_fade"
+                and data["view"] == "off",
             )
             if loaded != manifest:
                 raise ProjectError("Stale spatial preview layers")
@@ -324,14 +554,36 @@ class ReviewServer(ThreadingHTTPServer):
             x0, y0, x1, y1 = crop
             directory = saved_asset(self.project, f"revisions/{data['revision']}")
             saved = read_spatial_fade(self.project, directory, manifest, alpha)
+            if reduction and data["target"] not in manifest:
+                raise ProjectError("Fade reduction preview requires a saved selected effect")
             view = data["view"]
             label = "Saved geometric strength; protection and highlights excluded"
             if view == "off":
-                from .background import read_background
+                from .background_light import saved_backgrounds
+                from .spatial_fade import SpatialFadeOperands
 
-                background = None if stale else read_background(self.project, directory, manifest)
+                base_background, background = (
+                    (None, None) if stale else saved_backgrounds(self.project, directory, manifest)
+                )
                 weight, opacity = saved_shading(
                     self.project, data["revision"], alpha, manifest, effects_off=stale
+                )
+                comparison_spatial = (
+                    SpatialFadeOperands(
+                        saved.weight16[y0:y1, x0:x1],
+                        saved.protection[y0:y1, x0:x1],
+                        saved.record,
+                        saved.reduction16[y0:y1, x0:x1]
+                        if data["target"] == "shadow_fade" and saved.reduction16 is not None
+                        else None,
+                    )
+                    if reduction and saved is not None and not stale
+                    else None
+                )
+                target = (
+                    base_background[y0:y1, x0:x1]
+                    if base_background is not None
+                    else np.zeros_like(foreground[y0:y1, x0:x1])
                 )
                 pixels = review_panels(
                     foreground[y0:y1, x0:x1],
@@ -340,12 +592,36 @@ class ReviewServer(ThreadingHTTPServer):
                     None if weight is None else weight[y0:y1, x0:x1],
                     opacity,
                     background16=None if background is None else background[y0:y1, x0:x1],
+                    spatial_fade=comparison_spatial,
+                    fade_background16=target if comparison_spatial is not None else None,
                 )[data.get("panel", "result")]
                 label = (
                     "Fade OFF; BASE comparison: all optional foreground effects and background OFF"
                     if stale
                     else "Fade OFF; cleanup, local exposure, Shadow fade and selected background retained"
                 )
+                if reduction:
+                    target_label = (
+                        "Shadow fade" if data["target"] == "shadow_fade" else "Fade into background"
+                    )
+                    label = f"Saved {target_label} reduction OFF; effect settings and other effects retained"
+            elif view == "coverage":
+                from .fade_reduction import read_fade_reduction
+
+                reduction16 = read_fade_reduction(
+                    self.project, directory, manifest, data["target"], alpha
+                )
+                pixels = (
+                    np.zeros((y1 - y0, x1 - x0), np.uint8)
+                    if reduction16 is None
+                    else np.rint(reduction16[y0:y1, x0:x1].astype(np.float64) / 257).astype(
+                        np.uint8
+                    )
+                )
+                target_label = (
+                    "Shadow fade" if data["target"] == "shadow_fade" else "Fade into background"
+                )
+                label = f"Saved {target_label} reduction coverage; unapplied draft excluded"
             elif view == "combined":
                 pixels = (
                     np.zeros((y1 - y0, x1 - x0), np.uint8)
@@ -368,6 +644,9 @@ class ReviewServer(ThreadingHTTPServer):
                                 saved.weight16[y0:y1, x0:x1],
                                 saved.protection[y0:y1, x0:x1],
                                 saved.record,
+                                None
+                                if saved.reduction16 is None
+                                else saved.reduction16[y0:y1, x0:x1],
                             ),
                         )
                         * 255
@@ -485,10 +764,14 @@ class ReviewServer(ThreadingHTTPServer):
                 "sharpening_amount_only",
                 "spatial_fade",
                 "spatial_fade_protection_file",
+                "fade_reduction",
                 "background",
+                "background_light",
             }
             fields["effects"] |= set(data) & optional
-            if "spatial_fade" in data:
+            if any(
+                field in data for field in ("spatial_fade", "fade_reduction", "background_light")
+            ):
                 fields["effects"].add("revision_manifest_sha256")
         if action not in fields or set(data) != fields[action] | {
             "action",
@@ -699,7 +982,9 @@ class ReviewServer(ThreadingHTTPServer):
                         "sharpening_amount_only",
                         "spatial_fade",
                         "spatial_fade_protection_file",
+                        "fade_reduction",
                         "background",
+                        "background_light",
                     )
                     if k in data
                 }
@@ -711,13 +996,16 @@ class ReviewServer(ThreadingHTTPServer):
             request["support_file"] = (
                 f"revisions/{state['working_revision']}/supports/support16.png"
             )
-        expected_manifest = data.get("revision_manifest_sha256") if "spatial_fade" in data else None
-        if "spatial_fade" in data and (
+        bound_action = any(
+            field in data for field in ("spatial_fade", "fade_reduction", "background_light")
+        )
+        expected_manifest = data.get("revision_manifest_sha256") if bound_action else None
+        if bound_action and (
             not isinstance(expected_manifest, str)
             or re.fullmatch(r"[a-f0-9]{64}", expected_manifest) is None
         ):
-            raise ProjectError("Invalid spatial action raw revision manifest identity")
-        if "spatial_fade" in data:
+            raise ProjectError("Invalid effect action raw revision manifest identity")
+        if bound_action:
             return operations.apply_operation(
                 self.project,
                 request,
@@ -733,7 +1021,7 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/exposure-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
+            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/background-light-off|/exposure-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -776,19 +1064,22 @@ class ReviewServer(ThreadingHTTPServer):
 
             if base and base.startswith("/p") and weight is not None:
                 opacity = float(base[2:])
-            from .background import read_background
+            from .background_light import saved_backgrounds
 
-            background = (
-                read_background(
-                    self.project, saved_asset(self.project, f"revisions/{identity}"), manifest
+            base_background, background = (
+                saved_backgrounds(
+                    self.project,
+                    saved_asset(self.project, f"revisions/{identity}"),
+                    manifest,
+                    light_off=base == "/background-light-off",
                 )
                 if (panel == "result" or spatial is not None)
                 and not (base == "/base" or stale or effects_stale(manifest))
-                else None
+                else (None, None)
             )
             target = (
-                background
-                if background is not None
+                base_background
+                if base_background is not None
                 else np.zeros_like(foreground)
                 if spatial is not None
                 else None
@@ -805,7 +1096,10 @@ class ReviewServer(ThreadingHTTPServer):
                 spatial_fade=None
                 if spatial is None
                 else SpatialFadeOperands(
-                    spatial.weight16[y0:y1, x0:x1], spatial.protection[y0:y1, x0:x1], spatial.record
+                    spatial.weight16[y0:y1, x0:x1],
+                    spatial.protection[y0:y1, x0:x1],
+                    spatial.record,
+                    None if spatial.reduction16 is None else spatial.reduction16[y0:y1, x0:x1],
                 ),
                 fade_background16=None if target is None else target[y0:y1, x0:x1],
             )[panel]
@@ -932,6 +1226,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
             "/api/series-preview",
             "/api/series-preset-validate",
             "/api/spatial-preview",
+            "/api/fade-reduction-preview",
+            "/api/appearance-recipe-create",
+            "/api/appearance-recipe-validate",
+            "/api/appearance-layout-preview",
         }:
             self.error(404, "Unknown route")
             return
@@ -951,14 +1249,43 @@ class ReviewHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(size)
             if len(body) != size:
                 raise ValueError("Incomplete body")
+            from .appearance_recipes import _unique_object as appearance_unique_object
+
             data = json.loads(
                 body,
-                object_pairs_hook=_unique_object
-                if self.path.startswith(("/api/series-", "/api/spatial-"))
+                object_pairs_hook=appearance_unique_object
+                if self.path.startswith("/api/appearance-recipe-")
+                or self.path == "/api/appearance-layout-preview"
+                else _unique_object
+                if self.path.startswith(("/api/series-", "/api/spatial-", "/api/fade-reduction-"))
                 else None,
                 parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Nonfinite JSON")),
             )
-            if self.path == "/api/spatial-preview":
+            if self.path == "/api/appearance-recipe-create":
+                self.reply(
+                    200,
+                    json.dumps(
+                        self.server.create_appearance_recipe(data), allow_nan=False
+                    ).encode(),
+                )
+            elif self.path == "/api/appearance-recipe-validate":
+                self.reply(
+                    200,
+                    json.dumps(
+                        self.server.validate_appearance_recipe(data), allow_nan=False
+                    ).encode(),
+                )
+            elif self.path == "/api/appearance-layout-preview":
+                self.reply(
+                    200,
+                    json.dumps(
+                        self.server.preview_appearance_layout(data), allow_nan=False
+                    ).encode(),
+                )
+            elif self.path == "/api/fade-reduction-preview":
+                result = self.server.preview_fade_reduction(data)
+                self.reply(200, json.dumps(result, allow_nan=False).encode())
+            elif self.path == "/api/spatial-preview":
                 result = self.server.preview_spatial(data)
                 self.reply(200, json.dumps(result, allow_nan=False).encode())
             elif self.path == "/api/framing-preview":
@@ -980,7 +1307,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
                         "series-export",
                     }
                     or data.get("action") == "effects"
-                    and "spatial_fade" in data
+                    and any(
+                        field in data
+                        for field in ("spatial_fade", "fade_reduction", "background_light")
+                    )
                 ):
                     data = json.loads(
                         body,
@@ -993,7 +1323,16 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 self.reply(202, b'{"started":true}')
         except (OSError, ValueError, TypeError) as error:
             conflict = "busy" in str(error).lower() or (
-                self.path in {"/api/framing-preview", "/api/series-preview", "/api/spatial-preview"}
+                self.path
+                in {
+                    "/api/framing-preview",
+                    "/api/series-preview",
+                    "/api/spatial-preview",
+                    "/api/fade-reduction-preview",
+                    "/api/appearance-recipe-create",
+                    "/api/appearance-recipe-validate",
+                    "/api/appearance-layout-preview",
+                }
                 and isinstance(error, ProjectError)
             )
             self.error(409 if conflict else 400, str(error))

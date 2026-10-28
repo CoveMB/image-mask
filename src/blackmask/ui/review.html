@@ -223,7 +223,7 @@
         <canvas
           id="canvas"
           tabindex="0"
-          aria-label="Source and result; native-coordinate guides, Local sharpening, Local exposure, Shadow fade or Fade shapes authoring. Numeric alternatives in each section."
+          aria-label="Source and result; native-coordinate guides, Background light, Local sharpening, Local exposure, Shadow fade, Fade shapes or Fade reduction authoring. Numeric alternatives in each section."
         ></canvas>
       </div>
     </section>
@@ -352,6 +352,57 @@
         ><button id="repair">Run scoped repair</button>
       </fieldset>
       <fieldset>
+        <legend>Appearance recipes</legend>
+        <p class="small">Reuse chosen settings from a complete saved revision. Loading changes controls only; apply each effect separately. Source development, masks, areas, protection, reduction, framing and acceptance stay with this photo.</p>
+        <label>Saved source revision <select id="appearanceSource"></select></label>
+        <label>Recipe name <input id="appearanceSaveName" type="text" maxlength="80" value="Saved appearance" /></label>
+        <p class="small">Save excludes pending edits. Select every section deliberately, including disabled saved effects.</p>
+        <div id="appearanceSaveSections">
+          <label><input id="appearanceSave-shadow_fade" type="checkbox" /> Shadow fade <span id="appearanceSaved-shadow_fade"></span></label>
+          <label><input id="appearanceSave-local_exposure" type="checkbox" /> Local exposure <span id="appearanceSaved-local_exposure"></span></label>
+          <label><input id="appearanceSave-color_cleanup" type="checkbox" /> Color cleanup <span id="appearanceSaved-color_cleanup"></span></label>
+          <label><input id="appearanceSave-background" type="checkbox" /> Background <span id="appearanceSaved-background"></span></label>
+          <label><input id="appearanceSave-shading" type="checkbox" /> Inward shading <span id="appearanceSaved-shading"></span></label>
+          <label><input id="appearanceSave-spatial_fade" type="checkbox" /> Selected fade-shape defaults <span id="appearanceSaved-spatial_fade"></span></label>
+          <label><input id="appearanceSave-spatial_layout" type="checkbox" /> Editable oval and arc layout <span id="appearanceSaved-spatial_layout"></span></label>
+        </div>
+        <label>Saved shape for defaults <select id="appearanceSourceShape"></select></label>
+        <label><input id="appearanceIncludeReference" type="checkbox" /> Include a small source-photo reference in the file</label>
+        <p class="small">The optional RGB8 reference contains photographed content. Share the file only when you intend to share that content.</p>
+        <button id="appearanceSave">Save recipe file</button>
+        <button id="appearanceLoad">Open recipe file</button>
+        <input id="appearanceFile" type="file" accept="application/json,.json" hidden aria-label="Appearance recipe JSON file" />
+        <p id="appearanceStatus" role="status" class="small"></p>
+        <div id="appearancePreview" hidden>
+          <strong id="appearanceName"></strong>
+          <p id="appearanceReferenceLabel" class="small" hidden>Reference from saved source photo — not a target preview</p>
+          <img id="appearanceReference" alt="Reference from saved source photo — not a target preview" hidden style="max-width:100%;height:auto" />
+          <p class="small">Choose values to load. Background, exposure and cleanup are opt-in. Widths scale to this photo's complete nonzero-alpha subject bounds.</p>
+          <label><input id="appearanceLoad-shadow_fade" type="checkbox" /> Shadow fade <span id="appearanceValues-shadow_fade"></span></label><button id="appearanceReload-shadow_fade">Reload Shadow fade settings</button>
+          <label><input id="appearanceLoad-local_exposure" type="checkbox" /> Local exposure <span id="appearanceValues-local_exposure"></span></label><button id="appearanceReload-local_exposure">Reload exposure settings</button>
+          <label><input id="appearanceLoad-color_cleanup" type="checkbox" /> Color cleanup <span id="appearanceValues-color_cleanup"></span></label><button id="appearanceReload-color_cleanup">Reload cleanup settings</button>
+          <label><input id="appearanceLoad-background" type="checkbox" /> Background <span id="appearanceValues-background"></span></label><button id="appearanceReload-background">Reload background settings</button>
+          <label><input id="appearanceLoad-shading" type="checkbox" /> Inward shading <span id="appearanceValues-shading"></span></label><button id="appearanceReload-shading">Reload shading settings</button>
+          <label><input id="appearanceLoad-spatial_fade" type="checkbox" /> Selected fade-shape defaults <span id="appearanceValues-spatial_fade"></span></label><button id="appearanceReload-spatial_fade">Reload fade-shape defaults</button>
+          <label>Current target shape for defaults <select id="appearanceTargetShape"></select></label>
+          <p class="small">Shape defaults change transition width, strength and highlight preservation only. Author or recover target geometry in Fade into background first; its switches stay unchanged.</p>
+          <button id="appearanceLoadSelected">Load selected values into controls</button>
+          <div id="appearanceLayoutControls" hidden>
+            <p class="small">Optional editable layout. Placement uses one uniform subject-relative scale. Protection, reduction and the target master switch stay unchanged.</p>
+            <label>Layout operation <select id="appearanceLayoutMode"><option value="add_arcs">Add arcs</option><option value="replace">Replace layout</option></select></label>
+            <button id="appearanceLayoutPreview">Preview placement</button>
+            <button id="appearanceLayoutLoad">Load layout into draft</button>
+            <button id="appearanceLayoutCancel">Cancel placement preview</button>
+            <button id="appearanceLayoutUndo">Undo import</button>
+            <p id="appearanceLayoutStatus" role="status" class="small"></p>
+            <label>Portable shape for settings only <select id="appearanceLayoutDefaultsShape"></select></label>
+            <button id="appearanceLayoutSettingsOnly">Use settings only on the selected target shape</button>
+            <p class="small">If placement cannot fit native limits, explicitly reuse one shape's transition/strength instead. Select a current target shape above. The portable file stays unchanged.</p>
+          </div>
+          <button id="appearanceClose">Close recipe preview</button>
+        </div>
+      </fieldset>
+      <fieldset>
         <legend>5 · Optional source-guided color cleanup</legend>
         <p class="small">Default OFF. Approximate decontamination, not recovery of true color or detail. Review with unchanged alpha.</p>
         <label>Strength (0–1; 0.35 is a starting point) <input id="cleanupStrength" type="number" min="0" max="1" step="0.01" value="0.35" /></label>
@@ -363,11 +414,12 @@
         <button id="cleanupDisable">Explicitly disable cleanup</button>
         <label><input id="cleanupBase" type="checkbox" /> Compare BASE with all optional foreground effects OFF (same alpha)</label>
         <p id="cleanupStatus" class="small" role="status"></p>
+        <p id="cleanupDraftStatus" class="small" role="status"></p>
       </fieldset>
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -377,6 +429,7 @@
         <label>Draft exposure shapes <select id="exposureRegions" class="wide" size="4"></select></label>
         <button id="exposureRemove">Remove exposure shape</button>
         <button id="exposureClear">Clear draft exposure area</button>
+        <button id="exposureReloadArea">Reload saved exposure area</button>
         <label>Exposure EV <input id="exposureRange" type="range" min="-3" max="3" step="0.1" value="0" /></label>
         <label>Exposure EV (numeric) <input id="exposureEV" type="number" min="-3" max="3" step="0.1" value="0" /></label>
         <label><input id="exposureCandidate" type="checkbox" /> Explicitly compare exposure on an unaccepted candidate</label>
@@ -396,12 +449,44 @@
         <button id="backgroundBlack">Pure black</button>
         <button id="backgroundWarm">Warm dark</button>
         <label>Background variation (%) <input id="backgroundRange" type="range" min="0" max="100" step="1" value="55" /></label>
-        <label>Variation (numeric %) <input id="backgroundVariation" type="number" min="0" max="100" step="1" value="55" /></label>
+        <label>Variation (numeric %) <input id="backgroundVariation" type="number" min="0" max="100" step="any" value="55" /></label>
         <p class="small">0% is uniform; 55% gives up to ±0.55 stops; 100% gives up to ±1 stop. Pure black stays exactly black at every variation; the slider is retained.</p>
         <label><input id="backgroundCandidate" type="checkbox" /> Explicitly compare background on an unaccepted candidate</label>
         <button id="backgroundApply">Apply background</button>
         <p id="backgroundStatus" role="status" class="small"></p>
         <p id="backgroundDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset id="backgroundLightControls">
+        <legend>Background light</legend>
+        <p class="small">One light behind the saved subject. Apply saves only this light. Draft outlines do not change the image; applying another shape replaces the saved light shape.</p>
+        <label><input id="backgroundLightEnabled" type="checkbox" /> Light ON</label>
+        <label>Brightness (%) <input id="backgroundLightRange" type="range" min="0" max="100" step="1" value="10" /></label>
+        <label>Brightness (numeric %) <input id="backgroundLightBrightness" type="number" min="0" max="100" step="any" value="10" /></label>
+        <p class="small">Peak light level on black with a white tint. Lower brightness preserves variation on a bright backdrop. Subject exposure is a separate adjustment.</p>
+        <label>Light colour <input id="backgroundLightColor" type="color" value="#ffffff" /></label>
+        <label>Light #RRGGBB <input id="backgroundLightHex" type="text" value="#FFFFFF" maxlength="7" /></label>
+        <label>Light shape <select id="backgroundLightShape"><option value="oval">Soft oval</option><option value="directional">Broad directional gradient</option></select></label>
+        <label>Centre X (native pixels) <input id="backgroundLightCenterX" type="number" min="0" step="any" /></label>
+        <label>Centre Y (native pixels) <input id="backgroundLightCenterY" type="number" min="0" step="any" /></label>
+        <label>Rotation (clockwise degrees, 0 to below 360) <input id="backgroundLightRotation" type="number" min="0" max="359.999999" step="any" /></label>
+        <div id="backgroundLightOval">
+          <label>Outer horizontal radius (native pixels) <input id="backgroundLightRadiusX" type="number" min="0.5" step="any" /></label>
+          <label>Outer vertical radius (native pixels) <input id="backgroundLightRadiusY" type="number" min="0.5" step="any" /></label>
+          <label>Softness (0.05–1) <input id="backgroundLightSoftness" type="number" min="0.05" max="1" step="any" /></label>
+        </div>
+        <div id="backgroundLightDirectional" hidden>
+          <label>Transition width (native pixels) <input id="backgroundLightTransition" type="number" min="0.5" step="any" /></label>
+          <button id="backgroundLightReverse">Reverse gradient direction</button>
+        </div>
+        <label><input id="backgroundLightHide" type="checkbox" /> Hide light outlines and handles</label>
+        <p class="small">Choose Background light in Canvas authoring mode to move, rotate or resize its handles. All handles have numeric controls above. Escape reloads saved light. The directional arrow points from light toward dark.</p>
+        <label><input id="backgroundLightCandidate" type="checkbox" /> Explicitly compare light on an unaccepted candidate</label>
+        <button id="backgroundLightApply">Apply Background light</button>
+        <button id="backgroundLightOff">Turn light OFF</button>
+        <button id="backgroundLightReload">Reload saved light</button>
+        <label><input id="backgroundLightCompare" type="checkbox" /> Compare Background light OFF</label>
+        <p id="backgroundLightStatus" role="status" class="small"></p>
+        <p id="backgroundLightDraftStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>Local sharpening</legend>
@@ -442,6 +527,7 @@
         <label>Draft fade shapes <select id="fadeRegions" class="wide" size="4"></select></label>
         <button id="fadeRemove">Remove fade shape</button>
         <button id="fadeClear">Clear draft fade area</button>
+        <button id="fadeReloadArea">Reload saved Shadow fade area</button>
         <label>Amount (%) <input id="fadeRange" type="range" min="0" max="100" step="1" value="0" /></label>
         <label>Amount (numeric %) <input id="fadeAmount" type="number" min="0" max="100" step="1" value="0" /></label>
         <label>Preserve highlights (%) <input id="fadePreserveRange" type="range" min="0" max="100" step="1" value="100" /></label>
@@ -492,6 +578,23 @@
         <p class="small">Outlines can show unapplied edits; images and strength maps show the bound saved revision until Apply. The selected background remains the fade target on black/gray/white diagnostic views. Blending can tint or brighten RGB; transparent views retain that tint and unchanged alpha. Keep both exported folders for portable editing.</p>
         <p id="spatialDraftStatus" role="status" class="small"></p><p id="spatialStatus" role="status" class="small"></p>
       </fieldset>
+      <fieldset id="reductionControls">
+        <legend>Reduce fade locally</legend>
+        <p class="small">Reduce a saved fade without changing its shapes or the mask. Amount 100% removes this fade locally. Overlapping regions use the strongest reduction. Feathering stays inside each region; narrow regions may have no full-strength centre.</p>
+        <label>Target <select id="reductionTarget"></select></label>
+        <label>Drawing shape <select id="reductionShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+        <label>Native brush radius <input id="reductionRadius" type="number" min="1" step="1" value="10" /></label>
+        <label>Inward feather (native pixels) <input id="reductionFeather" type="number" min="0" step="1" value="0" /></label>
+        <label>Reduction amount (%) <input id="reductionAmount" type="number" min="0" max="100" step="1" value="100" /></label>
+        <label>Rectangle x0,y0,x1,y1 <input id="reductionRectangle" class="wide" /></label>
+        <div class="row"><button id="reductionAddRectangle">Add reduction rectangle</button><button id="reductionUpdateRectangle">Update selected rectangle</button></div>
+        <label>Reduction region <select id="reductionSelect" size="4"></select></label>
+        <div class="row"><button id="reductionRemove">Remove selected region</button><button id="reductionClear">Clear target reduction</button></div>
+        <label><input id="reductionCandidate" type="checkbox" /> Explicitly compare an unaccepted candidate</label>
+        <div class="row"><button id="reductionApply">Apply reduction</button><button id="reductionReload">Cancel / reload saved reduction</button></div>
+        <label>Saved reduction view <select id="reductionView"><option value="none">Normal</option><option value="coverage">Reduction coverage</option><option value="off">Reduction OFF (original fade strength)</option></select></label>
+        <p id="reductionDraftStatus" role="status" class="small"></p>
+      </fieldset>
       <fieldset>
         <legend>Optional protected inward shading</legend>
         <label>Per-photo inward width (native pixels; required) <input id="shadingWidth" type="number" min="0.01" step="0.1" /></label>
@@ -507,6 +610,7 @@
         <button id="shadingDisable">Explicitly disable shading</button>
         <label>Same native crop shading comparison <select id="shadingPreview"><option value="">Saved opacity</option><option value="0">0%</option><option value="0.12">12%</option><option value="0.24">24%</option></select></label>
         <p id="shadingStatus" role="status" class="small"></p>
+        <p id="shadingDraftStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>6 · Recovery and photographic acceptance</legend>
@@ -617,13 +721,28 @@
     let comparisonViewKey = "", comparisonViewUrls = [];
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
     let backgroundDirty = false, backgroundPublished = false;
+    let backgroundLightDraft = null, backgroundLightSubmitted = null;
+    const backgroundLightGeometries = new Map();
+    const backgroundLightControlIds = ["backgroundLightEnabled", "backgroundLightRange", "backgroundLightBrightness", "backgroundLightColor", "backgroundLightHex", "backgroundLightShape", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition", "backgroundLightReverse", "backgroundLightCandidate", "backgroundLightApply", "backgroundLightOff", "backgroundLightReload"];
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let sharpeningArea = {regions: [], protection: []}, sharpeningDirty = false, sharpeningAreaPublished = false;
     let exposureControlsIdentity = null, exposureControlsSubmitted = null;
     let fadeControlsIdentity = null, fadeControlsSubmitted = null;
+    let exposureControlsVersion = 0, fadeControlsVersion = 0;
+    let exposureAreaDraftBinding = null, fadeAreaDraftBinding = null;
+    const effectAreaVersions = {exposure: 0, fade: 0};
+    const appearanceScalarDrafts = new Map(["color_cleanup", "shading", "background"].map(section => [section, {identity: null, version: 0, dirty: false}]));
+    const appearanceLabels = {shadow_fade: "Shadow fade", local_exposure: "Local exposure", color_cleanup: "Color cleanup", background: "Background", shading: "Inward shading", spatial_fade: "Fade-shape defaults"};
+    const appearanceSaveSections = [...Object.keys(appearanceLabels), "spatial_layout"];
+    let appearanceScalarSubmitted = null, appearanceInteractionVersion = 0;
+    let appearanceRecipePreview = null, appearanceRecipeImportSequence = 0, appearanceSaveSequence = 0;
+    let appearanceReferenceUrl = "", appearanceDownloadUrl = "";
+    let appearanceLayoutProposal = null, appearanceLayoutUndo = null, appearanceLayoutSequence = 0;
     let sharpeningControlsIdentity = null, sharpeningControlsSubmitted = null;
     let spatialDraft = null, spatialDirty = false, spatialDraftIdentity = "", spatialDraftVersion = 0;
     let selectedSpatialId = "oval", spatialSubmitted = null, spatialAdding = false, spatialOverlayLoaded = false;
+    const fadeReductionDrafts = new Map();
+    let fadeReductionSubmitted = null, selectedReductionId = "";
     const spatialControlIds = ["spatialMaster","spatialUseOval","spatialUseArcs","spatialSelect","spatialArcEnabled","spatialCenterX","spatialCenterY","spatialRotation","spatialWidth","spatialHeight","spatialSpan","spatialBend","spatialSide","spatialEndSoftness","spatialTransition","spatialStrength","spatialPreserve","spatialCandidate","spatialProtection","spatialApply","spatialDisable","spatialCancel","spatialAdd","spatialDuplicate","spatialRemove","spatialFlip"];
     const framingFields = {left_px:"framingLeft",right_px:"framingRight",top_px:"framingTop",bottom_px:"framingBottom"};
     let framingDirty = false, framingSource = null, framingDigest = null;
@@ -662,6 +781,357 @@
       }
       return response;
     }
+    function effectCurrentIdentity() {
+      return {developed_id: state?.developed_id, base_revision: state?.working_revision,
+        inputs_digest: state?.inputs_digest, authoring_digest: state?.authoring_digest};
+    }
+    function effectIdentityStale(binding) {
+      return !!binding && Object.entries(effectCurrentIdentity()).some(([key, value]) => binding[key] !== value);
+    }
+    function appearanceScalarState(section) {
+      if (section === "local_exposure") return {identity: exposureControlsIdentity, version: exposureControlsVersion, dirty: !!exposureControlsIdentity};
+      if (section === "shadow_fade") return {identity: fadeControlsIdentity, version: fadeControlsVersion, dirty: !!fadeControlsIdentity};
+      if (section === "spatial_fade") return {identity: spatialDraftIdentity, version: spatialDraftVersion, dirty: spatialDirty};
+      return appearanceScalarDrafts.get(section);
+    }
+    function appearanceScalarStale(section) {
+      return section === "spatial_fade" ? spatialDirty && spatialDraftIdentity !== spatialCurrentIdentity()
+        : effectIdentityStale(appearanceScalarState(section)?.identity);
+    }
+    function markAppearanceScalarDirty(section, rebind = false) {
+      const binding = {...(rebind ? effectCurrentIdentity() : identity || effectCurrentIdentity())};
+      if (section === "local_exposure") {
+        exposureControlsIdentity = rebind ? binding : exposureControlsIdentity || binding; exposureControlsVersion++;
+      } else if (section === "shadow_fade") {
+        fadeControlsIdentity = rebind ? binding : fadeControlsIdentity || binding; fadeControlsVersion++;
+      } else {
+        const draft = appearanceScalarDrafts.get(section);
+        draft.identity = rebind ? binding : draft.identity || binding; draft.version++; draft.dirty = true;
+        if (section === "background") backgroundDirty = true;
+      }
+      appearanceInteractionVersion++;
+      renderAppearanceRecipe();
+    }
+    function clearAppearanceScalar(section) {
+      if (section === "local_exposure") {exposureControlsIdentity = null; exposureControlsVersion++;}
+      else if (section === "shadow_fade") {fadeControlsIdentity = null; fadeControlsVersion++;}
+      else {
+        const draft = appearanceScalarDrafts.get(section);
+        draft.identity = null; draft.dirty = false; draft.version++;
+        if (section === "background") backgroundDirty = false;
+      }
+      appearanceInteractionVersion++;
+    }
+    function markEffectAreaDirty(prefix) {
+      const old = prefix === "exposure" ? exposureAreaDraftBinding : fadeAreaDraftBinding;
+      const binding = {identity: old?.identity || {...identity}, version: ++effectAreaVersions[prefix]};
+      if (prefix === "exposure") {exposureAreaDraftBinding = binding; exposureDirty = true; renderExposureArea();}
+      else {fadeAreaDraftBinding = binding; fadeDirty = true; renderFadeArea();}
+      appearanceInteractionVersion++;
+    }
+    function effectAreaDraftStale(prefix) {
+      return effectIdentityStale((prefix === "exposure" ? exposureAreaDraftBinding : fadeAreaDraftBinding)?.identity);
+    }
+    async function reloadEffectArea(prefix) {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const key = appearanceTargetKey(), version = effectAreaVersions[prefix];
+      const dirtyArea = prefix === "exposure" ? exposureDirty : fadeDirty;
+      if (dirtyArea && !await Promise.resolve(confirm("Replace this draft area and its protection with the current saved area? Scalar settings stay unchanged."))) return;
+      if (key !== appearanceTargetKey() || version !== effectAreaVersions[prefix]) return;
+      const current = state.revisions.find(row => row.revision === state.working_revision);
+      if (prefix === "exposure") {exposureArea = structuredClone(current?.exposure_area || {regions: [], protection: []}); exposureDirty = false; exposureAreaDraftBinding = null; renderExposureArea();}
+      else {fadeArea = structuredClone(current?.shadow_fade_area || {regions: [], protection: []}); fadeDirty = false; fadeAreaDraftBinding = null; renderFadeArea();}
+      effectAreaVersions[prefix]++; appearanceInteractionVersion++; draw();
+    }
+    function appearanceTargetBinding() {
+      const revision = state.revisions.find(row => row.revision === state.working_revision);
+      return {developed_id: state.developed_id, revision: state.working_revision,
+        revision_manifest_sha256: revision?.revision_manifest_sha256 || null};
+    }
+    function appearanceTargetKey() {
+      return JSON.stringify([appearanceTargetBinding(), state.inputs_digest, state.authoring_digest]);
+    }
+    function appearanceResponseMatches(result, binding) {
+      return Object.entries(binding).every(([key, value]) => result[key] === value)
+        && result.working_revision === state.working_revision && result.inputs_digest === state.inputs_digest
+        && result.authoring_digest === state.authoring_digest;
+    }
+    function appearanceSavedSettings(revision, section) {
+      const record = revision?.[section === "spatial_layout" ? "spatial_fade" : section];
+      // Cleanup predates the nested settings records; absent-strength snapshots are placeholders.
+      if (section === "color_cleanup") return record?.strength === undefined ? undefined
+        : {enabled: record.enabled, strength: record.strength};
+      return record?.settings;
+    }
+    function appearanceSummary(section, values) {
+      if (!values) return "";
+      if (section === "background") return values.color_srgb + " · variation " + backgroundPercentage(values.variation) + "%";
+      if (section === "local_exposure") return values.ev + " EV";
+      if (section === "color_cleanup") return "Strength " + values.strength;
+      if (section === "shading") return "Width " + values.width_px + " px · direction " + values.direction_degrees + "° · opacity " + backgroundPercentage(values.opacity) + "%";
+      return (section === "spatial_fade" ? "Transition " + values.transition_width + " px · " : "") + "amount " + backgroundPercentage(values.amount) + "% · preserve highlights " + backgroundPercentage(values.preserve_highlights) + "%";
+    }
+    function renderAppearanceRecipe() {
+      if (!state) return;
+      for (const [section, prefix] of [["color_cleanup", "cleanup"], ["shading", "shading"]]) {
+        const draft = appearanceScalarState(section);
+        $(prefix + "DraftStatus").textContent = draft.dirty ? appearanceScalarStale(section)
+          ? "Stale settings retained · explicitly reload recipe values or saved inputs before Apply."
+          : "Unapplied settings · preview still shows the saved result." : "Controls match saved settings.";
+      }
+      const preview = appearanceRecipePreview;
+      $("appearancePreview").hidden = !preview;
+      renderAppearanceLayout();
+      if (!preview) return;
+      $("appearanceName").textContent = preview.recipe.name;
+      const targetChanged = preview.targetKey !== appearanceTargetKey();
+      for (const section of Object.keys(appearanceLabels)) {
+        const present = !!preview.recipe.sections[section], reason = preview.result.unavailable[section];
+        $("appearanceLoad-" + section).disabled = !present || !!reason || authoringBusy();
+        $("appearanceReload-" + section).disabled = !present || authoringBusy();
+        $("appearanceValues-" + section).textContent = !present ? "Not included" : reason || appearanceSummary(section, preview.result.sections[section]);
+        if (present && (targetChanged || appearanceScalarStale(section))) $("appearanceValues-" + section).textContent += " · Stale conversion/settings: explicitly reload for the current revision.";
+      }
+      const selected = $("appearanceTargetShape").value;
+      select("appearanceTargetShape", [["", "Choose current target shape"], ...(spatialDraft ? [["oval", "Current oval"], ...spatialDraft.arcs.map((arc, index) => [arc.id, "Current arc " + (index + 1)])] : [])], selected);
+    }
+    function syncAppearanceSource() {
+      const rows = state.revisions.filter(row => row.final_acceptable);
+      const source = $("appearanceSource").value || state.working_revision || "";
+      select("appearanceSource", [["", "Choose a complete saved revision"], ...rows.map(row => [row.revision, row.revision + " · saved settings only"])], source);
+      const selected = rows.find(row => row.revision === $("appearanceSource").value);
+      for (const section of appearanceSaveSections) {
+        const settings = appearanceSavedSettings(selected, section);
+        $("appearanceSave-" + section).disabled = !settings || authoringBusy();
+        if (!settings) $("appearanceSave-" + section).checked = false;
+        $("appearanceSaved-" + section).textContent = !settings ? "· unavailable" : section === "background" ? "· saved" : "· saved " + (settings.enabled ? "ON" : "OFF");
+      }
+      const spatial = selected?.spatial_fade?.settings;
+      select("appearanceSourceShape", [["", "Choose saved shape"], ...(spatial ? [["oval", "Saved oval · " + (spatial.oval.enabled ? "ON" : "OFF")], ...spatial.arcs.map((arc, index) => [arc.id, "Saved arc " + (index + 1) + " · " + (spatial.arcs_enabled && arc.enabled ? "ON" : "OFF")])] : [])]);
+      renderAppearanceRecipe();
+    }
+    function closeAppearanceRecipe() {
+      invalidateAppearanceLayout();
+      appearanceRecipeImportSequence++; appearanceSaveSequence++; appearanceInteractionVersion++;
+      appearanceRecipePreview = null;
+      for (const url of [appearanceReferenceUrl, appearanceDownloadUrl]) if (url) URL.revokeObjectURL(url);
+      appearanceReferenceUrl = appearanceDownloadUrl = "";
+      $("appearanceReference").src = ""; $("appearanceReference").hidden = true;
+      renderAppearanceRecipe(); draw();
+    }
+    async function loadAppearanceRecipeFile(file) {
+      invalidateAppearanceLayout();
+      const sequence = ++appearanceRecipeImportSequence, interaction = appearanceInteractionVersion;
+      const binding = appearanceTargetBinding(), key = appearanceTargetKey();
+      if (file.size > 1572864) throw Error("Appearance recipe exceeds 1572864 bytes");
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (bytes.byteLength > 1572864) throw Error("Appearance recipe exceeds 1572864 bytes");
+      const raw = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
+      const result = await (await api("/api/appearance-recipe-validate", {...binding, recipe_json: raw})).json();
+      if (sequence !== appearanceRecipeImportSequence || interaction !== appearanceInteractionVersion || key !== appearanceTargetKey()) return;
+      if (!appearanceResponseMatches(result, binding)) throw Error("Recipe target changed; reload the file");
+      if (appearanceReferenceUrl) URL.revokeObjectURL(appearanceReferenceUrl);
+      appearanceReferenceUrl = "";
+      if (result.recipe.reference) {
+        const pixels = Uint8Array.from(atob(result.recipe.reference.png_base64), character => character.charCodeAt(0));
+        appearanceReferenceUrl = URL.createObjectURL(new Blob([pixels], {type: "image/png"}));
+      }
+      $("appearanceReference").src = appearanceReferenceUrl;
+      $("appearanceReference").hidden = $("appearanceReferenceLabel").hidden = !appearanceReferenceUrl;
+      appearanceRecipePreview = {recipe: result.recipe, result, targetKey: key};
+      for (const section of Object.keys(appearanceLabels)) $("appearanceLoad-" + section).checked = false;
+      $("appearanceTargetShape").value = "";
+      renderAppearanceRecipe();
+      $("appearanceStatus").textContent = "Recipe opened. Choose settings to load; no photo settings have been applied.";
+    }
+    async function loadAppearanceRecipeSections(sectionNames, layoutDefaultsShape = undefined) {
+      if (authoringBusy()) throw Error("Wait for the active writer before loading recipe settings");
+      const preview = appearanceRecipePreview;
+      const fallback = layoutDefaultsShape !== undefined && !!preview?.recipe.sections.spatial_layout;
+      if (!preview || !sectionNames.length || new Set(sectionNames).size !== sectionNames.length || sectionNames.some(section => !preview.recipe.sections[section] && !(fallback && section === "spatial_fade"))) throw Error("Choose included recipe sections to load");
+      const spatial = sectionNames.includes("spatial_fade");
+      if (spatial && (!$("appearanceTargetShape").value || $("appearanceTargetShape").value !== selectedSpatialId || !selectedSpatialShape())) throw Error("Choose an explicit current target shape first");
+      if (spatial && spatialDraftIdentity !== spatialCurrentIdentity()) throw Error("Stale fade geometry: cancel/reload or re-author it before loading scalar defaults");
+      const sequence = ++appearanceRecipeImportSequence, interaction = appearanceInteractionVersion;
+      const binding = appearanceTargetBinding(), key = appearanceTargetKey(), shape = selectedSpatialId;
+      const versions = sectionNames.map(section => appearanceScalarState(section).version);
+      const unchanged = () => sequence === appearanceRecipeImportSequence && preview === appearanceRecipePreview
+        && interaction === appearanceInteractionVersion && key === appearanceTargetKey()
+        && (!fallback || $("appearanceLayoutDefaultsShape").value === String(layoutDefaultsShape))
+        && (!spatial || shape === selectedSpatialId && spatialDraftIdentity === spatialCurrentIdentity())
+        && sectionNames.every((section, index) => versions[index] === appearanceScalarState(section).version);
+      const result = await (await api("/api/appearance-recipe-validate", {...binding, recipe_json: JSON.stringify(preview.recipe),
+        ...(fallback ? {layout_defaults_shape: layoutDefaultsShape} : {})})).json();
+      if (!unchanged()) return;
+      if (!appearanceResponseMatches(result, binding)) throw Error("Recipe target changed; reload settings explicitly");
+      for (const section of sectionNames) if (result.unavailable[section] || !result.sections[section]) throw Error(result.unavailable[section] || "Selected settings are unavailable");
+      const replacing = sectionNames.filter(section => appearanceScalarState(section).dirty);
+      if (replacing.length && !await Promise.resolve(confirm("Replace unapplied settings for: " + replacing.map(section => appearanceLabels[section]).join(", ") + "? Areas, protection and switches stay unchanged."))) return;
+      if (!unchanged()) return;
+      for (const section of sectionNames) {
+        const values = result.sections[section];
+        if (section === "local_exposure") {$("exposureEV").value = values.ev; $("exposureRange").value = values.ev;}
+        else if (section === "shadow_fade") {$("fadeAmount").value = backgroundPercentage(values.amount); $("fadeRange").value = $("fadeAmount").value; $("fadePreserve").value = backgroundPercentage(values.preserve_highlights); $("fadePreserveRange").value = $("fadePreserve").value;}
+        else if (section === "color_cleanup") $("cleanupStrength").value = String(values.strength);
+        else if (section === "shading") {$("shadingWidth").value = values.width_px; $("shadingDirection").value = values.direction_degrees; $("shadingOpacity").value = values.opacity;}
+        else if (section === "background") {$("backgroundHex").value = values.color_srgb; $("backgroundColor").value = values.color_srgb.toLowerCase(); $("backgroundVariation").value = backgroundPercentage(values.variation); $("backgroundRange").value = $("backgroundVariation").value;}
+        else {const target = selectedSpatialShape(); target.transition_width = values.transition_width; target.amount = values.amount; spatialDraft.preserve_highlights = values.preserve_highlights; markSpatialDirty(); renderSpatialControls();}
+        if (section !== "spatial_fade") markAppearanceScalarDirty(section, true);
+      }
+      preview.result = result; preview.targetKey = key;
+      renderExposureArea(); renderFadeArea(); backgroundDraftStatus(); renderAppearanceRecipe();
+      $("appearanceStatus").textContent = "Selected values loaded into controls only. Apply each effect explicitly; reload remaining sections after the revision changes.";
+    }
+    function reloadAppearanceRecipeSection(section) {return loadAppearanceRecipeSections([section]);}
+    function appearanceSaveRequest() {
+      const selected = state.revisions.find(row => row.revision === $("appearanceSource").value && row.final_acceptable);
+      if (!selected) throw Error("Choose a complete saved source revision");
+      const sections = appearanceSaveSections.filter(section => $("appearanceSave-" + section).checked);
+      if (!sections.length || ["shading", "spatial_fade", "spatial_layout"].filter(section => sections.includes(section)).length > 1) throw Error("Choose sections and at most one of shading, fade-shape defaults or editable layout");
+      if (sections.includes("spatial_fade") && !$("appearanceSourceShape").value) throw Error("Choose an actual saved shape for defaults");
+      return {developed_id: state.developed_id, revision: selected.revision, revision_manifest_sha256: selected.revision_manifest_sha256,
+        name: $("appearanceSaveName").value, sections, reference_shape_id: sections.includes("spatial_fade") ? $("appearanceSourceShape").value : null,
+        include_reference: $("appearanceIncludeReference").checked};
+    }
+    async function saveAppearanceRecipe() {
+      const request = appearanceSaveRequest(), key = JSON.stringify(request), target = appearanceTargetKey();
+      const sequence = ++appearanceSaveSequence, interaction = appearanceInteractionVersion;
+      const result = await (await api("/api/appearance-recipe-create", request)).json();
+      if (sequence !== appearanceSaveSequence || interaction !== appearanceInteractionVersion || target !== appearanceTargetKey() || key !== JSON.stringify(appearanceSaveRequest())) return;
+      if (!appearanceResponseMatches(result, {developed_id: request.developed_id, revision: request.revision, revision_manifest_sha256: request.revision_manifest_sha256}) || typeof result.recipe_json !== "string" || new TextEncoder().encode(result.recipe_json).byteLength > 1572864) throw Error("Recipe source changed or response is invalid; retry");
+      if (appearanceDownloadUrl) URL.revokeObjectURL(appearanceDownloadUrl);
+      const url = URL.createObjectURL(new Blob([result.recipe_json], {type: "application/json"})); appearanceDownloadUrl = url;
+      try {const link = document.createElement("a"); link.href = url; link.download = "appearance-recipe.json"; link.click(); $("appearanceStatus").textContent = "Recipe download initiated; confirm the saved file in your browser. Pending edits were excluded.";}
+      finally {setTimeout(() => {URL.revokeObjectURL(url); if (appearanceDownloadUrl === url) appearanceDownloadUrl = "";}, 0);}
+    }
+    $("appearanceLoad").onclick = guarded(() => $("appearanceFile").click());
+    $("appearanceFile").onchange = guarded(async () => {const file = $("appearanceFile").files?.[0]; if (!file) return; try {await loadAppearanceRecipeFile(file);} finally {$("appearanceFile").value = "";}});
+    $("appearanceLoadSelected").onclick = guarded(() => loadAppearanceRecipeSections(Object.keys(appearanceLabels).filter(section => $("appearanceLoad-" + section).checked)));
+    $("appearanceSave").onclick = guarded(saveAppearanceRecipe);
+    $("appearanceClose").onclick = guarded(closeAppearanceRecipe);
+    $("appearanceSource").onchange = () => {appearanceSaveSequence++; syncAppearanceSource();};
+    $("appearanceTargetShape").onchange = () => {invalidateAppearanceLayout(); appearanceInteractionVersion++; if ($("appearanceTargetShape").value) {selectedSpatialId = $("appearanceTargetShape").value; renderSpatialControls(); draw();}};
+    for (const section of Object.keys(appearanceLabels)) {
+      $("appearanceReload-" + section).onclick = guarded(() => reloadAppearanceRecipeSection(section));
+      $("appearanceLoad-" + section).onchange = () => {appearanceInteractionVersion++;};
+      $("appearanceSave-" + section).onchange = () => {appearanceSaveSequence++;};
+    }
+    for (const id of ["appearanceSaveName", "appearanceSourceShape", "appearanceIncludeReference"]) $(id).oninput = () => {appearanceSaveSequence++;};
+    $("appearanceSave-spatial_layout").onchange = () => {appearanceSaveSequence++;};
+    globalThis.addEventListener?.("beforeunload", closeAppearanceRecipe);
+    function appearanceSpatialControlValues() {
+      return spatialControlIds.map(id => ({id, value: $(id).value, checked: $(id).checked}));
+    }
+    function appearanceLayoutLocalKey() {
+      const reductionControls = ["reductionTarget", "reductionShape", "reductionRadius", "reductionFeather", "reductionAmount", "reductionRectangle", "reductionSelect", "reductionView"];
+      return JSON.stringify([spatialDraft, spatialDirty, spatialDraftIdentity, spatialDraftVersion,
+        selectedSpatialId, appearanceInteractionVersion, appearanceSpatialControlValues(),
+        [...fadeReductionDrafts], selectedReductionId, reductionControls.map(id => $(id).value),
+        $("reductionCandidate").checked, $("authorMode").value, $("viewRevision").value,
+        $("appearanceTargetShape").value, !!gesture, spatialAdding]);
+    }
+    function appearanceLayoutMatches(record) {
+      return record && record.recipe === appearanceRecipePreview && record.targetKey === appearanceTargetKey()
+        && record.mode === $("appearanceLayoutMode").value && record.localKey === appearanceLayoutLocalKey();
+    }
+    function invalidateAppearanceLayout() {
+      appearanceLayoutSequence++; appearanceLayoutProposal = null; appearanceLayoutUndo = null;
+      renderAppearanceLayout();
+    }
+    function renderAppearanceLayout() {
+      if (!state) return;
+      if (appearanceLayoutProposal && !appearanceLayoutMatches(appearanceLayoutProposal)) {appearanceLayoutProposal = null; appearanceLayoutSequence++;}
+      if (appearanceLayoutUndo && !appearanceLayoutMatches(appearanceLayoutUndo)) {appearanceLayoutUndo = null; appearanceLayoutSequence++;}
+      const layout = appearanceRecipePreview?.recipe.sections.spatial_layout;
+      $("appearanceLayoutControls").hidden = !layout;
+      if (!layout) return;
+      select("appearanceLayoutDefaultsShape", [["", "Choose portable source shape"], ["oval", "Portable oval · " + (layout.oval.enabled ? "ON" : "OFF")],
+        ...layout.arcs.map((arc, index) => [String(index), "Portable arc " + (index + 1) + " · " + (layout.arcs_enabled && arc.enabled ? "ON" : "OFF")])]);
+      for (const id of ["appearanceLayoutMode", "appearanceLayoutPreview", "appearanceLayoutDefaultsShape", "appearanceLayoutSettingsOnly"]) $(id).disabled = authoringBusy();
+      $("appearanceLayoutLoad").disabled = !appearanceLayoutProposal || authoringBusy();
+      $("appearanceLayoutCancel").disabled = !appearanceLayoutProposal;
+      $("appearanceLayoutUndo").disabled = !appearanceLayoutUndo || authoringBusy();
+      $("appearanceLayoutStatus").textContent = appearanceLayoutProposal
+        ? "Placement preview — effects not applied. " + appearanceLayoutProposal.warnings.join(" ")
+        : appearanceLayoutUndo ? "Layout loaded into the native draft. Undo import is available until another edit or action; Apply remains explicit."
+        : "Choose Add arcs or Replace layout, then preview placement. Unavailable placement can still offer explicit settings-only reuse.";
+    }
+    async function previewAppearanceLayout(mode) {
+      if (authoringBusy()) throw Error("Wait for the active writer before previewing layout");
+      const preview = appearanceRecipePreview;
+      if (!preview?.recipe.sections.spatial_layout || !["add_arcs", "replace"].includes(mode)) throw Error("Choose an imported layout and Add arcs or Replace layout");
+      if (!spatialDraft || spatialDraftIdentity !== spatialCurrentIdentity()) throw Error("Stale fade geometry: explicitly recover current saved shapes before layout preview");
+      if (gesture || spatialAdding) throw Error("Finish the current pointer gesture or arc placement first");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view for placement preview");
+      validateSpatialSettings();
+      invalidateAppearanceLayout();
+      const sequence = appearanceLayoutSequence, targetKey = appearanceTargetKey(), localKey = appearanceLayoutLocalKey();
+      const binding = appearanceTargetBinding(), version = spatialDraftVersion;
+      const result = await (await api("/api/appearance-layout-preview", {recipe_json: JSON.stringify(preview.recipe),
+        ...binding, inputs_digest: state.inputs_digest, authoring_digest: state.authoring_digest,
+        spatial_draft: structuredClone(spatialDraft), spatial_draft_version: version, mode})).json();
+      if (sequence !== appearanceLayoutSequence || preview !== appearanceRecipePreview || targetKey !== appearanceTargetKey()
+        || localKey !== appearanceLayoutLocalKey() || mode !== $("appearanceLayoutMode").value || authoringBusy()) return;
+      if (!appearanceResponseMatches(result, binding) || result.mode !== mode || result.spatial_draft_version !== version
+        || !Array.isArray(result.warnings) || result.warnings.some(value => typeof value !== "string")) throw Error("Layout target changed or response is invalid; preview again");
+      validateSpatialSettings(result.spatial_fade);
+      appearanceLayoutProposal = {recipe: preview, targetKey, localKey, mode, settings: structuredClone(result.spatial_fade), warnings: [...result.warnings]};
+      renderAppearanceLayout(); draw();
+    }
+    function cancelAppearanceLayout() {
+      appearanceLayoutSequence++; appearanceLayoutProposal = null;
+      renderAppearanceLayout(); draw();
+    }
+    async function loadAppearanceLayout() {
+      if (gesture || spatialAdding) throw Error("Finish the current pointer gesture or arc placement first");
+      const proposal = appearanceLayoutProposal, sequence = appearanceLayoutSequence;
+      if (!appearanceLayoutMatches(proposal) || authoringBusy()) throw Error("Layout proposal is unavailable or changed; preview the current draft again");
+      if (spatialDraftIdentity !== spatialCurrentIdentity()) throw Error("Stale fade geometry; explicitly recover current saved shapes first");
+      const unchanged = () => sequence === appearanceLayoutSequence && proposal === appearanceLayoutProposal
+        && appearanceLayoutMatches(proposal) && !authoringBusy() && !gesture && !spatialAdding;
+      if (proposal.mode === "replace" && !await Promise.resolve(confirm("Replace the current oval and " + spatialDraft.arcs.length
+        + " arc(s), their internal switches and highlight preservation" + (spatialDirty ? ", including unapplied shape edits" : "")
+        + "? Target master, protection and reduction stay unchanged. Effects still require Apply."))) return;
+      if (!unchanged()) return;
+      const before = {settings: structuredClone(spatialDraft), selected: selectedSpatialId, dirty: spatialDirty,
+        identity: spatialDraftIdentity, controls: appearanceSpatialControlValues(), authorMode: $("authorMode").value,
+        targetShape: $("appearanceTargetShape").value};
+      const firstNewArc = spatialDraft.arcs.length;
+      spatialDraft = structuredClone(proposal.settings);
+      selectedSpatialId = proposal.mode === "replace" ? "oval" : spatialDraft.arcs[firstNewArc].id;
+      markSpatialDirty(); renderSpatialControls(); renderAppearanceRecipe();
+      $("appearanceTargetShape").value = selectedSpatialId;
+      appearanceLayoutUndo = {recipe: proposal.recipe, targetKey: proposal.targetKey, mode: proposal.mode,
+        localKey: appearanceLayoutLocalKey(), before};
+      renderAppearanceLayout(); draw();
+    }
+    function undoAppearanceLayoutImport() {
+      const undo = appearanceLayoutUndo;
+      if (!appearanceLayoutMatches(undo) || authoringBusy() || gesture || spatialAdding) {
+        invalidateAppearanceLayout(); throw Error("Undo import is unavailable after edits, actions or target changes");
+      }
+      appearanceLayoutUndo = null; appearanceLayoutProposal = null; appearanceLayoutSequence++;
+      spatialDraft = structuredClone(undo.before.settings); selectedSpatialId = undo.before.selected;
+      spatialDirty = undo.before.dirty; spatialDraftIdentity = undo.before.identity;
+      spatialDraftVersion++; appearanceInteractionVersion++;
+      renderSpatialControls(); renderAppearanceRecipe();
+      for (const control of undo.before.controls) {$(control.id).value = control.value; $(control.id).checked = control.checked;}
+      $("authorMode").value = undo.before.authorMode; $("appearanceTargetShape").value = undo.before.targetShape;
+      renderAppearanceLayout(); draw();
+    }
+    function loadAppearanceLayoutSettingsOnly() {
+      const selected = $("appearanceLayoutDefaultsShape").value;
+      if (selected !== "oval" && !/^\d+$/.test(selected)) throw Error("Choose an explicit portable shape for settings only");
+      invalidateAppearanceLayout();
+      return loadAppearanceRecipeSections(["spatial_fade"], selected === "oval" ? selected : Number(selected));
+    }
+    $("appearanceLayoutPreview").onclick = guarded(() => previewAppearanceLayout($("appearanceLayoutMode").value));
+    $("appearanceLayoutLoad").onclick = guarded(loadAppearanceLayout);
+    $("appearanceLayoutCancel").onclick = guarded(cancelAppearanceLayout);
+    $("appearanceLayoutUndo").onclick = guarded(undoAppearanceLayoutImport);
+    $("appearanceLayoutSettingsOnly").onclick = guarded(loadAppearanceLayoutSettingsOnly);
+    $("appearanceLayoutMode").onchange = () => {invalidateAppearanceLayout(); draw();};
+    $("appearanceLayoutDefaultsShape").onchange = () => {appearanceInteractionVersion++; invalidateAppearanceLayout(); draw();};
     function select(id, values, selected) {
       const node = $(id),
         previous = selected === undefined ? node.value : selected;
@@ -848,6 +1318,154 @@
       const current = state?.revisions.find(r=>r.revision===state.working_revision);
       return JSON.stringify([state?.developed_id,state?.working_revision,state?.inputs_digest,current?.revision_manifest_sha256]);
     }
+    function reductionTarget() { return $("reductionTarget").value || "spatial_fade"; }
+    function reductionLabel() { return reductionTarget() === "shadow_fade" ? "Shadow fade" : "Fade into background"; }
+    function reductionDraft() { return fadeReductionDrafts.get(reductionTarget()); }
+    function fadeReductionAreaIdentity(area) {
+      // Persisted JSON orders object keys; geometry and region array order still matter.
+      return JSON.stringify(area, (key, value) => value && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.keys(value).sort().map(field => [field, value[field]])) : value);
+    }
+    function reloadFadeReduction(target = reductionTarget()) {
+      invalidateAppearanceLayout();
+      const current = state?.revisions.find(record => record.revision === state.working_revision);
+      const saved = current?.fade_reduction_areas?.[target];
+      const previous = fadeReductionDrafts.get(target);
+      if (saved) fadeReductionDrafts.set(target, {
+        area: structuredClone(saved), identity: spatialCurrentIdentity(),
+        version: (previous?.version || 0) + 1, dirty: false,
+      });
+      else fadeReductionDrafts.delete(target);
+      selectedReductionId = "";
+      renderFadeReduction();
+      draw();
+    }
+    function renderFadeReduction() {
+      const current = state?.revisions.find(record => record.revision === state.working_revision);
+      const targets = [["spatial_fade", "Fade into background"], ["shadow_fade", "Shadow fade"]]
+        .filter(([target]) => current?.fade_reduction_areas?.[target]);
+      const available = targets.length > 0;
+      select("reductionTarget", targets, reductionTarget());
+      const draft = reductionDraft();
+      select("reductionSelect", (draft?.area.regions || []).map(region => [region.shape.id,
+        region.shape.shape + " · " + Math.round(region.amount * 100) + "% · " + region.shape.id]), selectedReductionId);
+      $("reductionDraftStatus").textContent = !available ? "Save Fade into background or Shadow fade settings before adding reduction."
+        : draft?.dirty ? draft.identity !== spatialCurrentIdentity()
+          ? "Stale unapplied reduction · reload saved reduction before Apply; draft retained."
+          : "Unapplied reduction · outlines only; images and coverage still show saved reduction."
+        : "Saved reduction · drawing and numeric edits stay local until Apply.";
+      $("reductionApply").disabled = !available || authoringBusy();
+      $("reductionReload").disabled = authoringBusy();
+    }
+    function syncFadeReduction() {
+      renderFadeReduction();
+      const draft = reductionDraft();
+      const current = state?.revisions.find(record => record.revision === state.working_revision);
+      if ((!draft && current?.fade_reduction_areas?.[reductionTarget()])
+        || (draft && !draft.dirty && !fadeReductionSubmitted && draft.identity !== spatialCurrentIdentity())) reloadFadeReduction();
+    }
+    function markFadeReductionDirty() {
+      invalidateAppearanceLayout();
+      const draft = reductionDraft();
+      if (!draft) throw Error("Save " + reductionLabel() + " settings before adding reduction");
+      draft.dirty = true;
+      draft.version++;
+      $("authorMode").value = "reduction";
+      renderFadeReduction();
+      draw();
+    }
+    function reductionNumbers() {
+      const radius = wholePixels("reductionRadius"), feather = wholePixels("reductionFeather");
+      const text = String($("reductionAmount").value).trim(), amount = Number(text) / 100;
+      const limit = Math.max(...state.dimensions_wh);
+      if (radius < 1 || radius > limit || feather > limit || text === "" || !Number.isFinite(amount) || amount < 0 || amount > 1)
+        throw Error("Use a native radius from 1 to the image size, a bounded inward feather and reduction from 0 to 100%");
+      return {radius, feather, amount};
+    }
+    function requireReductionView() {
+      const draft = reductionDraft();
+      if (!draft) throw Error("Save " + reductionLabel() + " settings before adding reduction");
+      if (draft.identity !== spatialCurrentIdentity()) throw Error("Stale reduction draft; reload saved reduction before Apply");
+      if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision)
+        throw Error("Load the current working native view before editing reduction");
+      return draft;
+    }
+    function addFadeReductionRegion(geometry, shape) {
+      const draft = requireReductionView(), {radius, feather, amount} = reductionNumbers();
+      if (draft.area.regions.length >= 128) throw Error("At most 128 reduction regions");
+      const points = draft.area.regions.reduce((count, region) => count + (region.shape.points?.length || 0), 0);
+      if (shape === "stroke" && points + geometry.length > 8192) throw Error("At most 8192 total reduction stroke points");
+      const region = {id: "reduction-" + crypto.randomUUID(), role: "support", shape, feather_px: feather};
+      if (shape === "rectangle") region.xyxy = geometry;
+      else { region.points = geometry; region.radius_px = radius; }
+      draft.area.regions.push({shape: region, amount});
+      selectedReductionId = region.id;
+      markFadeReductionDirty();
+    }
+    async function applyFadeReduction() {
+      requireSaved();
+      const draft = requireReductionView(), target = reductionTarget();
+      const current = state.revisions.find(record => record.revision === state.working_revision);
+      if (current?.[target]?.stale) throw Error("Rebuild stale " + reductionLabel() + " before applying reduction");
+      if (state.working_revision !== state.accepted_revision && !$("reductionCandidate").checked)
+        throw Error("Use an accepted base or explicitly choose candidate comparison");
+      if (!current?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
+      const submitted = {target, identity: draft.identity, version: draft.version, area: fadeReductionAreaIdentity(draft.area),
+        base_revision: state.working_revision, developed_id: state.developed_id};
+      fadeReductionSubmitted = submitted;
+      draft.dirty = true;
+      renderFadeReduction();
+      try {
+        await action("effects", {scope_xyxy: [0, 0, ...state.dimensions_wh], candidate_comparison: $("reductionCandidate").checked,
+          revision_manifest_sha256: current.revision_manifest_sha256, fade_reduction: {target, area: structuredClone(draft.area)}});
+      } catch (error) { if (fadeReductionSubmitted === submitted) fadeReductionSubmitted = null; throw error; }
+    }
+    $("reductionAddRectangle").onclick = guarded(() => addFadeReductionRegion(bounds("reductionRectangle"), "rectangle"));
+    $("reductionUpdateRectangle").onclick = guarded(() => {
+      const draft = requireReductionView(), region = draft.area.regions.find(item => item.shape.id === selectedReductionId);
+      if (!region || region.shape.shape !== "rectangle") throw Error("Select a reduction rectangle");
+      region.shape.xyxy = bounds("reductionRectangle"); markFadeReductionDirty();
+    });
+    $("reductionSelect").onchange = () => {
+      selectedReductionId = $("reductionSelect").value;
+      const region = reductionDraft()?.area.regions.find(item => item.shape.id === selectedReductionId);
+      if (!region) return;
+      $("reductionAmount").value = region.amount * 100;
+      $("reductionFeather").value = region.shape.feather_px;
+      if (region.shape.points) $("reductionRadius").value = region.shape.radius_px;
+      if (region.shape.xyxy) $("reductionRectangle").value = region.shape.xyxy.join(",");
+      draw();
+    };
+    for (const id of ["reductionAmount", "reductionFeather", "reductionRadius"]) $(id).oninput = guarded(() => {
+      const draft = reductionDraft(), numbers = reductionNumbers();
+      const region = draft?.area.regions.find(item => item.shape.id === selectedReductionId);
+      if (!region) return;
+      region.amount = numbers.amount; region.shape.feather_px = numbers.feather;
+      if (region.shape.points) region.shape.radius_px = numbers.radius;
+      markFadeReductionDirty();
+    });
+    $("reductionRemove").onclick = guarded(() => {
+      const draft = requireReductionView();
+      draft.area.regions = draft.area.regions.filter(region => region.shape.id !== selectedReductionId);
+      selectedReductionId = ""; markFadeReductionDirty();
+    });
+    $("reductionClear").onclick = guarded(() => {requireReductionView().area.regions = []; selectedReductionId = ""; markFadeReductionDirty();});
+    $("reductionApply").onclick = guarded(applyFadeReduction);
+    $("reductionReload").onclick = guarded(() => reloadFadeReduction());
+    $("reductionTarget").onchange = guarded(() => {selectedReductionId = ""; syncFadeReduction(); draw(); return loadImage();});
+    $("reductionView").onchange = guarded(() => {
+      if ($("reductionView").value !== "none") {
+        for (const id of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare", "backgroundLightCompare"]) $(id).checked = false;
+        $("spatialMap").value = "none"; $("shadingPreview").value = "";
+      }
+      return loadImage();
+    });
+    // Raw control/selection edits need invalidation even when no reduction draft version changes.
+    for (const id of ["reductionTarget", "reductionShape", "reductionRadius", "reductionFeather", "reductionAmount", "reductionRectangle", "reductionSelect", "reductionCandidate", "reductionView"])
+      for (const eventName of ["oninput", "onchange"]) {
+        const handler = $(id)[eventName];
+        $(id)[eventName] = event => {invalidateAppearanceLayout(); const result = handler?.(event); draw(); return result;};
+      }
     function selectedSpatialShape() {
       return selectedSpatialId === "oval" ? spatialDraft?.oval : spatialDraft?.arcs.find(arc=>arc.id===selectedSpatialId);
     }
@@ -896,14 +1514,21 @@
     }
     function resetSpatialFromSaved() {
       if(!state) return;
+      invalidateAppearanceLayout();
       const current=state.revisions.find(r=>r.revision===state.working_revision);
       spatialDraft=structuredClone(current?.spatial_fade?.settings || spatialDefaultSettings());
       spatialDirty=false;spatialDraftIdentity=spatialCurrentIdentity();spatialDraftVersion++;spatialSubmitted=null;spatialAdding=false;
       $("spatialCandidate").checked=false;$("spatialProtection").value="";
       renderSpatialControls();draw();refreshSpatialSelectionMap();
     }
+    function syncSpatialFromSaved() {
+      // Polling the same saved identity is not an edit or an explicit draft reset.
+      if (!spatialDraft || (!spatialDirty && !spatialSubmitted && spatialDraftIdentity !== spatialCurrentIdentity())) resetSpatialFromSaved();
+      else spatialDraftStatus();
+    }
     function markSpatialDirty() {
-      spatialDirty=true;spatialDraftVersion++;$("authorMode").value="spatial";
+      invalidateAppearanceLayout();
+      spatialDirty=true;spatialDraftVersion++;appearanceInteractionVersion++;$("authorMode").value="spatial";
       spatialDraftStatus();draw();
     }
     function addSpatialArc(position) {
@@ -933,16 +1558,16 @@
       if(enabled && $("spatialProtection").value.trim()) fields.spatial_fade_protection_file=$("spatialProtection").value.trim();
       const preserveDraft=!!savedSettings && spatialDirty;
       spatialDirty=true;spatialDraftStatus();
-      spatialSubmitted={settings:JSON.stringify(settings),version:spatialDraftVersion,base_revision:state.working_revision,developed_id:state.developed_id,preserve_draft:preserveDraft};
+      spatialSubmitted={settings:fadeReductionAreaIdentity(settings),version:spatialDraftVersion,base_revision:state.working_revision,developed_id:state.developed_id,preserve_draft:preserveDraft};
       try {await action("effects",fields);} catch(error) {spatialSubmitted=null;throw error;}
     }
-    function drawSpatialShapes(scale) {
-      if(!spatialDraft || $("authorMode").value!=="spatial" || $("viewRevision").value!==state.working_revision) return;
-      try {validateSpatialSettings();} catch {return;}
+    function drawSpatialShapes(scale, settings = spatialDraft, preview = false) {
+      if(!settings || !preview && $("authorMode").value!=="spatial" || $("viewRevision").value!==state.working_revision) return;
+      try {validateSpatialSettings(settings);} catch {return;}
       ctx.save();ctx.beginPath();ctx.rect(0,0,image.width,image.height);ctx.clip();
       const pathPoint=(shape,point)=>{const p=spatialToNative(point,shape);return [p[0]-crop[0],p[1]-crop[1]];};
-      for(const [id,shape,group] of [["oval",spatialDraft.oval,true],...spatialDraft.arcs.map(arc=>[arc.id,arc,spatialDraft.arcs_enabled])]) {
-        ctx.strokeStyle=id===selectedSpatialId ? "#55ffff" : "#f2be64";ctx.lineWidth=(id===selectedSpatialId ? 2 : 1)/scale;
+      for(const [id,shape,group] of [["oval",settings.oval,true],...settings.arcs.map(arc=>[arc.id,arc,settings.arcs_enabled])]) {
+        ctx.strokeStyle=preview ? "#ff8bff" : id===selectedSpatialId ? "#55ffff" : "#f2be64";ctx.lineWidth=(preview || id===selectedSpatialId ? 2 : 1)/scale;
         ctx.setLineDash(shape.enabled && group ? [] : [5/scale,4/scale]);
         if(id==="oval") for(const d of [0,shape.transition_width]) {ctx.beginPath();ctx.ellipse(shape.center_xy[0]-crop[0],shape.center_xy[1]-crop[1],shape.inner_radii_xy[0]+d,shape.inner_radii_xy[1]+d,shape.rotation_degrees*Math.PI/180,0,Math.PI*2);ctx.stroke();}
         else {
@@ -954,7 +1579,7 @@
         }
       }
       ctx.setLineDash([]);ctx.fillStyle="#55ffff";
-      for(const handle of spatialHandles(selectedSpatialShape(),selectedSpatialId==="oval")){ctx.beginPath();ctx.arc(handle.point[0]-crop[0],handle.point[1]-crop[1],4/scale,0,Math.PI*2);ctx.fill();}
+      if(!preview) for(const handle of spatialHandles(selectedSpatialShape(),selectedSpatialId==="oval")){ctx.beginPath();ctx.arc(handle.point[0]-crop[0],handle.point[1]-crop[1],4/scale,0,Math.PI*2);ctx.fill();}
       ctx.restore();
     }
     function dragSpatialHandle(gesture, point) {
@@ -973,8 +1598,8 @@
     }
     for(const id of ["spatialCenterX","spatialCenterY","spatialRotation","spatialTransition","spatialStrength","spatialPreserve","spatialWidth","spatialHeight","spatialSpan","spatialBend","spatialEndSoftness"]) $(id).oninput=()=>updateSpatialNumber(id);
     for(const [id,update] of [["spatialMaster",()=>spatialDraft.enabled=$("spatialMaster").checked],["spatialUseOval",()=>spatialDraft.oval.enabled=$("spatialUseOval").checked],["spatialUseArcs",()=>spatialDraft.arcs_enabled=$("spatialUseArcs").checked],["spatialArcEnabled",()=>selectedSpatialShape().enabled=$("spatialArcEnabled").checked],["spatialSide",()=>selectedSpatialShape().fade_side=$("spatialSide").value]]) $(id).oninput=()=>{update();markSpatialDirty();renderSpatialControls();};
-    $("spatialSelect").onchange=()=>{selectedSpatialId=$("spatialSelect").value;renderSpatialControls();draw();if($("spatialMap").value==="selected")loadImage().catch(error=>message(error.message));};
-    $("spatialAdd").onclick=event=>guarded(()=>{if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");if(event?.detail){spatialAdding=true;$("authorMode").value="spatial";spatialDraftStatus();draw();}else addSpatialArc();})();
+    $("spatialSelect").onchange=()=>{invalidateAppearanceLayout();selectedSpatialId=$("spatialSelect").value;appearanceInteractionVersion++;$("appearanceTargetShape").value=selectedSpatialId;renderSpatialControls();draw();if($("spatialMap").value==="selected")loadImage().catch(error=>message(error.message));};
+    $("spatialAdd").onclick=event=>guarded(()=>{invalidateAppearanceLayout();if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");if(event?.detail){spatialAdding=true;$("authorMode").value="spatial";spatialDraftStatus();draw();}else addSpatialArc();})();
     $("spatialDuplicate").onclick=guarded(()=>{if(selectedSpatialId==="oval")throw Error("Select an arc to duplicate");if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");const arc=structuredClone(selectedSpatialShape());arc.id=crypto.randomUUID();spatialDraft.arcs.push(arc);selectedSpatialId=arc.id;markSpatialDirty();renderSpatialControls();refreshSpatialSelectionMap();});
     $("spatialRemove").onclick=guarded(()=>{if(selectedSpatialId==="oval")throw Error("Use the oval switch to disable its contribution");spatialDraft.arcs=spatialDraft.arcs.filter(arc=>arc.id!==selectedSpatialId);selectedSpatialId="oval";markSpatialDirty();renderSpatialControls();refreshSpatialSelectionMap();});
     $("spatialFlip").onclick=guarded(()=>{const arc=selectedSpatialShape();if(selectedSpatialId==="oval")throw Error("Select an arc to flip");arc.fade_side=arc.fade_side==="positive" ? "negative" : "positive";markSpatialDirty();renderSpatialControls();});
@@ -984,14 +1609,14 @@
       if(!saved){spatialDraft.enabled=false;markSpatialDirty();renderSpatialControls();}
       return applySpatial(false,saved);
     });
-    $("spatialCancel").onclick=guarded(()=>{resetSpatialFromSaved();return loadImage();});
-    $("spatialMap").onchange=guarded(()=>loadImage());$("spatialOpacity").oninput=draw;
+    $("spatialCancel").onclick=guarded(()=>{appearanceInteractionVersion++;resetSpatialFromSaved();return loadImage();});
+    $("spatialMap").onchange=guarded(()=>{if($("spatialMap").value!=="none") $("reductionView").value="none";return loadImage();});$("spatialOpacity").oninput=draw;
     $("spatialCandidate").oninput=markSpatialDirty;$("spatialProtection").oninput=markSpatialDirty;
     $("spatialControls").onkeydown=event=>{if(event.key==="Escape"){event.preventDefault();gesture=null;resetSpatialFromSaved();}};
 
     function loadAuthoring(preserveSubjectDrafts = false) {
       const subjectControls = [
-        "cleanupSupport", "cleanupCandidate",
+        "cleanupStrength", "cleanupSupport", "cleanupCandidate",
         "shadingSupport", "shadingProtection", "shadingWidth", "shadingDirection", "shadingOpacity", "shadingCandidate",
         "exposureEV", "exposureRange", "exposureCandidate",
         "fadeAmount", "fadeRange", "fadePreserve", "fadePreserveRange", "fadeCandidate",
@@ -1003,19 +1628,25 @@
       $("trimapReviewed").checked = false;
       $("photoReviewed").checked = false;
       $("viewRevision").value = state.working_revision || "";
-      $("cleanupSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
-      $("cleanupCandidate").checked = false;
-      $("shadingSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
-      $("shadingCandidate").checked = false;
-      $("shadingProtection").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/protection.png" : "";
-      const shadingSettings = state.revisions.find(r => r.revision === state.working_revision)?.shading?.settings;
-      $("shadingWidth").value = shadingSettings?.width_px ?? "";
-      $("shadingDirection").value = shadingSettings?.direction_degrees ?? "";
-      $("shadingOpacity").value = shadingSettings?.opacity ?? 0;
+      if (!appearanceScalarState("color_cleanup").dirty) {
+        $("cleanupStrength").value = appearanceSavedSettings(state.revisions.find(r => r.revision === state.working_revision), "color_cleanup")?.strength ?? .35;
+        $("cleanupSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
+        $("cleanupCandidate").checked = false;
+      }
+      if (!appearanceScalarState("shading").dirty) {
+        $("shadingSupport").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/support16.png" : "";
+        $("shadingCandidate").checked = false;
+        $("shadingProtection").value = state.working_revision ? "revisions/" + state.working_revision + "/supports/protection.png" : "";
+        const shadingSettings = state.revisions.find(r => r.revision === state.working_revision)?.shading?.settings;
+        $("shadingWidth").value = shadingSettings?.width_px ?? "";
+        $("shadingDirection").value = shadingSettings?.direction_degrees ?? "";
+        $("shadingOpacity").value = shadingSettings?.opacity ?? 0;
+      }
       const currentExposure = state.revisions.find(r => r.revision === state.working_revision);
-      if(!spatialDraft || !spatialDirty && !spatialSubmitted) resetSpatialFromSaved();
+      syncSpatialFromSaved();
       if (!exposureDirty) {
         exposureArea = structuredClone(currentExposure?.exposure_area || {regions: [], protection: []});
+        exposureAreaDraftBinding = null; effectAreaVersions.exposure++;
       }
       if (!exposureControlsIdentity) {
         $("exposureEV").value = currentExposure?.local_exposure?.settings?.ev ?? 0;
@@ -1023,7 +1654,7 @@
         $("exposureCandidate").checked = false;
       }
       renderExposureArea();
-      if (!fadeDirty) fadeArea = structuredClone(currentExposure?.shadow_fade_area || {regions: [], protection: []});
+      if (!fadeDirty) {fadeArea = structuredClone(currentExposure?.shadow_fade_area || {regions: [], protection: []}); fadeAreaDraftBinding = null; effectAreaVersions.fade++;}
       if (!fadeControlsIdentity) {
         $("fadeAmount").value = (currentExposure?.shadow_fade?.settings?.amount ?? 0) * 100;
         $("fadeRange").value = $("fadeAmount").value;
@@ -1050,7 +1681,7 @@
         const savedBackground = currentExposure?.background?.settings || (!currentExposure ? state.recipe?.background : null) || {color_srgb: "#000000", variation: 0};
         $("backgroundHex").value = savedBackground.color_srgb;
         $("backgroundColor").value = savedBackground.color_srgb.toLowerCase();
-        $("backgroundVariation").value = Math.round(savedBackground.variation * 100);
+        $("backgroundVariation").value = backgroundPercentage(savedBackground.variation);
         $("backgroundRange").value = $("backgroundVariation").value;
         $("backgroundCandidate").checked = false;
       }
@@ -1183,18 +1814,56 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
+      const reductionSubmission = fadeReductionSubmitted;
+      const reductionCompleted = completed && !a.error && reductionSubmission && a.name === "effects"
+        && (a.result?.reused ? a.result.revision === reductionSubmission.base_revision : a.result?.parent === reductionSubmission.base_revision)
+        && state.developed_id === reductionSubmission.developed_id && current?.revision === a.result?.revision
+        && fadeReductionAreaIdentity(current?.fade_reduction_areas?.[reductionSubmission.target]) === reductionSubmission.area;
+      if (reductionCompleted) {
+        const draft = fadeReductionDrafts.get(reductionSubmission.target);
+        if (draft?.identity === reductionSubmission.identity && draft.version === reductionSubmission.version) draft.dirty = false;
+      }
+      if (completed) fadeReductionSubmitted = null;
+      const lightSubmission = backgroundLightSubmitted;
+      const lightCompleted = completed && !a.error && lightSubmission && a.name === "effects"
+        && state.developed_id === lightSubmission.developed_id && current?.revision === a.result?.revision
+        && (a.result?.reused ? a.result.revision === lightSubmission.base_revision : a.result?.parent === lightSubmission.base_revision);
+      if (lightCompleted && !lightSubmission.preserveDraft && backgroundLightDraft.version === lightSubmission.version
+        && backgroundLightDraft.identity === lightSubmission.identity
+        && fadeReductionAreaIdentity(a.result?.background_light?.settings) === lightSubmission.settings
+        && fadeReductionAreaIdentity(current?.background_light?.settings) === lightSubmission.settings) {
+        reloadBackgroundLight(true);
+      }
+      if (completed) backgroundLightSubmitted = null;
+      if (reload || !backgroundLightDraft || (!backgroundLightDraft.dirty && !backgroundLightSubmitted && backgroundLightDraft.identity !== backgroundLightIdentity())) reloadBackgroundLight(!reload);
+      else backgroundLightDraftStatus();
       const spatialCompleted = completed && !a.error && spatialSubmitted && a.name==="effects" && (a.result?.reused===true ? a.result.revision===spatialSubmitted.base_revision : a.result?.parent===spatialSubmitted.base_revision) && state.developed_id===spatialSubmitted.developed_id;
-      if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && JSON.stringify(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && JSON.stringify(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
+      if(spatialCompleted && !spatialSubmitted.preserve_draft && spatialSubmitted.version===spatialDraftVersion && fadeReductionAreaIdentity(a.result?.spatial_fade?.settings)===spatialSubmitted.settings && current?.revision===a.result?.revision && fadeReductionAreaIdentity(current?.spatial_fade?.settings)===spatialSubmitted.settings) spatialDirty=false;
       if(reload || completed) spatialSubmitted=null;
       if(reload) resetSpatialFromSaved();
-      if (reload || (completed && !a.error && exposureAreaPublished)) exposureDirty = false;
+      const scalarSubmission = appearanceScalarSubmitted;
+      const scalarDraft = scalarSubmission && appearanceScalarState(scalarSubmission.section);
+      const scalarCompleted = completed && !a.error && scalarSubmission && a.name === "effects"
+        && state.developed_id === scalarSubmission.developed_id && current?.revision === a.result?.revision
+        && (a.result?.reused ? a.result.revision === scalarSubmission.base_revision : a.result?.parent === scalarSubmission.base_revision)
+        && scalarDraft.version === scalarSubmission.version
+        && fadeReductionAreaIdentity(scalarDraft.identity) === scalarSubmission.identity
+        && fadeReductionAreaIdentity(appearanceSavedSettings(a.result, scalarSubmission.section)) === scalarSubmission.settings
+        && fadeReductionAreaIdentity(appearanceSavedSettings(current, scalarSubmission.section)) === scalarSubmission.settings;
+      const scalarCompletedSection = scalarCompleted ? scalarSubmission.section : null;
+      if (reload) for (const section of Object.keys(appearanceLabels).filter(section => section !== "spatial_fade")) clearAppearanceScalar(section);
+      else if (scalarCompleted) clearAppearanceScalar(scalarCompletedSection);
+      if (completed) appearanceScalarSubmitted = null;
+      const areaCompleted = (prefix, submitted, key) => completed && !a.error && submitted?.area
+        && a.name === "effects" && state.developed_id === submitted.developed_id && current?.revision === a.result?.revision
+        && (a.result?.reused ? a.result.revision === submitted.base_revision : a.result?.parent === submitted.base_revision)
+        && effectAreaVersions[prefix] === submitted.area.version
+        && fadeReductionAreaIdentity(current?.[key]) === submitted.area.values;
+      if (reload || areaCompleted("exposure", exposureControlsSubmitted, "exposure_area")) {
+        exposureDirty = false; exposureAreaDraftBinding = null; effectAreaVersions.exposure++;
+      }
       const appliedExposure = a.result?.local_exposure?.settings;
-      if (reload || (completed && !a.error && exposureControlsSubmitted &&
-          a.name === "effects" && (a.result?.reused === true
-            ? a.result.revision === exposureControlsSubmitted.base_revision
-            : a.result?.parent === exposureControlsSubmitted.base_revision) &&
-          appliedExposure?.enabled === exposureControlsSubmitted.enabled &&
-          appliedExposure?.ev === exposureControlsSubmitted.ev)) {
+      if (reload || scalarCompletedSection === "local_exposure") {
         exposureControlsIdentity = null;
         if (!reload && completed && a.result?.reused === true) {
           $("exposureEV").value = appliedExposure.ev;
@@ -1206,15 +1875,11 @@
         exposureAreaPublished = false;
         exposureControlsSubmitted = null;
       }
-      if (reload || (completed && !a.error && fadeAreaPublished)) fadeDirty = false;
+      if (reload || areaCompleted("fade", fadeControlsSubmitted, "shadow_fade_area")) {
+        fadeDirty = false; fadeAreaDraftBinding = null; effectAreaVersions.fade++;
+      }
       const appliedFade = a.result?.shadow_fade?.settings;
-      if (reload || (completed && !a.error && fadeControlsSubmitted &&
-          a.name === "effects" && (a.result?.reused === true
-            ? a.result.revision === fadeControlsSubmitted.base_revision
-            : a.result?.parent === fadeControlsSubmitted.base_revision) &&
-          appliedFade?.enabled === fadeControlsSubmitted.enabled &&
-          appliedFade?.amount === fadeControlsSubmitted.amount &&
-          appliedFade?.preserve_highlights === fadeControlsSubmitted.preserve_highlights)) {
+      if (reload || scalarCompletedSection === "shadow_fade") {
         fadeControlsIdentity = null;
         if (!reload && completed && a.result?.reused === true) {
           $("fadeAmount").value = appliedFade.amount * 100;
@@ -1253,12 +1918,14 @@
         sharpeningAreaPublished = false;
         sharpeningControlsSubmitted = null;
       }
-      const backgroundCompleted = completed && backgroundPublished && !a.error;
-      const preserveSubjectDrafts = backgroundCompleted || !!spatialCompleted;
+      const backgroundCompleted = scalarCompletedSection === "background";
+      // A background submission never owns pending subject controls, even when a
+      // newer scalar edit prevents that submission from clearing its own draft.
+      const preserveSubjectDrafts = (completed && backgroundPublished) || !!spatialCompleted || !!reductionCompleted || !!lightCompleted;
       if (reload || backgroundCompleted) backgroundDirty = false;
       if (completed) backgroundPublished = false;
       const savedBackground = current?.background?.settings || {color_srgb: "#000000", variation: 0};
-      $("backgroundStatus").textContent = "Saved background · " + (current?.revision || "no complete result") + " · " + savedBackground.color_srgb + " · variation " + Math.round(savedBackground.variation * 100) + "%" + (current && !current.final_acceptable ? " · prepared only" : "");
+      $("backgroundStatus").textContent = "Saved background · " + (current?.revision || "no complete result") + " · " + savedBackground.color_srgb + " · variation " + backgroundPercentage(savedBackground.variation) + "%" + (current && !current.final_acceptable ? " · prepared only" : "");
       backgroundDraftStatus();
       const savedFade = current?.shadow_fade;
       $("fadeStatus").textContent = savedFade?.enabled
@@ -1280,8 +1947,8 @@
             : "clipping unavailable · complete matte review pending")
         : "Saved local exposure OFF · 0 applied EV";
       renderExposureArea();
-      if(!spatialDraft || !spatialDirty && !spatialSubmitted) resetSpatialFromSaved();
-      else spatialDraftStatus();
+      syncSpatialFromSaved();
+      syncFadeReduction();
       if (!actionSubmitting) actionWasRunning = a.running;
       const authoringPublished = ["save", "prepare", "restore"].includes(
         a.name,
@@ -1332,6 +1999,7 @@
         seriesSubmitted = null;
       }
       syncSeries();
+      syncAppearanceSource();
       select(
         "lockRevision",
         state.revisions
@@ -1383,7 +2051,8 @@
         "cleanupApply",
         "cleanupDisable",
         "exposureApply", "exposureAmount", "exposureReset",
-        "backgroundApply",
+        "backgroundApply", "exposureReloadArea", "fadeReloadArea",
+        "appearanceSave", "appearanceLoad", "appearanceLoadSelected",
         "fadeApply", "fadeAmountApply", "fadeReset",
         "sharpeningApply", "sharpeningAmountApply", "sharpeningReset",
         "framingSave", "framingExportAccepted", "framingExportDraft", "framingReload",
@@ -1419,7 +2088,10 @@
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
         $(id).disabled = authoringBusy();
       for(const id of spatialControlIds) $(id).disabled=authoringBusy();
+      for (const id of backgroundLightControlIds) $(id).disabled = authoringBusy();
+      backgroundLightDraftStatus();
       if(spatialDraft) renderSpatialControls();
+      renderFadeReduction();
       $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.developed_id || !!state?.series_error;
       const selected = state?.revisions.find(record=>record.revision === $("viewRevision").value);
       $("seriesExportAccepted").disabled = authoringBusy() || !selected?.final_acceptable || selected.revision !== state?.accepted_revision;
@@ -1429,13 +2101,14 @@
       const blob = await (await api(path)).blob();
       return createImageBitmap(blob);
     }
-    async function spatialBitmap(view, revision, requestedCrop, panel = "result") {
+    async function spatialBitmap(view, revision, requestedCrop, panel = "result", reduction = false) {
       const record=state.revisions.find(r=>r.revision===revision);
       if(!record?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
       const request={developed_id:state.developed_id,revision,revision_manifest_sha256:record.revision_manifest_sha256,crop_xyxy:[...requestedCrop],view};
       if(view==="selected") request.shape_id=selectedSpatialId;
       if(view==="off") request.panel=panel;
-      const response=await (await api("/api/spatial-preview",request)).json();
+      if(reduction) request.target=reductionTarget();
+      const response=await (await api(reduction ? "/api/fade-reduction-preview" : "/api/spatial-preview",request)).json();
       if(!response || Object.entries(request).some(([key,value])=>JSON.stringify(response[key])!==JSON.stringify(value)) || typeof response.png_base64!=="string" || !response.png_base64.length || response.png_base64.length%4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(response.png_base64)) throw Error("Spatial preview response does not match the saved revision, crop and shape");
       const bytes=Uint8Array.from(atob(response.png_base64),character=>character.charCodeAt(0));
       const decoded=await createImageBitmap(new Blob([bytes],{type:"image/png"}));
@@ -1453,11 +2126,12 @@
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
       const sharpening = $("sharpeningCompare").checked ? "OFF comparison" : viewed?.local_sharpening?.enabled ? "ON" : "OFF";
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
+      const lightLabel = " · Background light " + (["black", "gray", "white"].includes(panel) ? "excluded from diagnostic" : $("backgroundLightCompare").checked ? "OFF comparison" : viewed?.background_light?.settings?.enabled ? "ON" : "OFF");
       const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
-      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF";
+      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel;
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
-      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup;
+      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup + lightLabel;
     }
     async function loadImage() {
       if (!state || !crop) return;
@@ -1466,10 +2140,11 @@
       const panel = $("panel").value,
         revision = $("viewRevision").value;
       const spatialMap=$("spatialMap").value || "none", viewed=state.revisions.find(r=>r.revision===revision);
+      const reductionView = $("reductionView").value || "none";
       const selectedSaved=selectedSpatialId==="oval" || viewed?.spatial_fade?.settings?.arcs.some(arc=>arc.id===selectedSpatialId);
       const requestedCrop = [...crop],
         workingRevision = state.working_revision,
-        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "");
+        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "") + (reductionView === "none" ? "" : " · Saved " + reductionLabel() + " reduction " + reductionView + " · draft excluded");
       const mask =
         $("candidate").value ||
         (!["guides", "none"].includes($("overlay").value)
@@ -1480,7 +2155,10 @@
         $("sharpeningCompare").checked,
         $("fadeCompare").checked,
         $("spatialCompare").checked,
+        $("backgroundLightCompare").checked,
         spatialMap,
+        reductionView,
+        reductionTarget(),
         spatialMap==="selected" ? selectedSpatialId : "",
         viewed?.revision_manifest_sha256,
         panel,
@@ -1507,11 +2185,15 @@
         const path =
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
-        next = $("spatialCompare").checked && !["source","alpha"].includes(panel)
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+        next = reductionView === "off" && !["source", "alpha"].includes(panel)
+          ? await spatialBitmap("off", revision, requestedCrop, panel, true)
+          : $("spatialCompare").checked && !["source","alpha"].includes(panel)
           ? await spatialBitmap("off",revision,requestedCrop,panel) : await bitmap(path);
         if (imageKey !== key) return;
-        if(spatialMap!=="none" && revision && (spatialMap!=="selected" || selectedSaved)) {
+        if (reductionView === "coverage" && revision) {
+          nextOverlay = await spatialBitmap("coverage", revision, requestedCrop, "result", true); nextSpatialOverlay = true;
+        } else if(spatialMap!=="none" && revision && (spatialMap!=="selected" || selectedSaved)) {
           nextOverlay=await spatialBitmap(spatialMap,revision,requestedCrop);nextSpatialOverlay=true;
         } else if (mask && workingRevision)
           nextOverlay = await bitmap(`/mask/${workingRevision}/${mask}`);
@@ -1546,6 +2228,7 @@
       }
     }
     function draw() {
+      renderAppearanceLayout();
       const rect = canvas.getBoundingClientRect();
       canvas.width = Math.max(1, Math.round(rect.width));
       canvas.height = Math.max(1, Math.round(rect.height));
@@ -1575,9 +2258,11 @@
         );
         ctx.globalAlpha = 1;
       }
-      if ($("overlay").value === "guides" || ["exposure", "fade", "sharpening"].includes($("authorMode").value)) {
+      if ($("overlay").value === "guides" || ["exposure", "fade", "sharpening", "reduction"].includes($("authorMode").value)) {
         const area = $("authorMode").value === "sharpening" ? sharpeningArea : $("authorMode").value === "fade" ? fadeArea : exposureArea;
-        const drawnRegions = ["exposure", "fade", "sharpening"].includes($("authorMode").value)
+        const drawnRegions = $("authorMode").value === "reduction"
+          ? (reductionDraft()?.area.regions || []).map(region => region.shape)
+          : ["exposure", "fade", "sharpening"].includes($("authorMode").value)
           ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions;
         for (const region of drawnRegions) {
           ctx.strokeStyle = {
@@ -1628,6 +2313,8 @@
         }
       }
       drawSpatialShapes(scale);
+      drawBackgroundLight(scale);
+      if (appearanceLayoutProposal) drawSpatialShapes(scale, appearanceLayoutProposal.settings, true);
       ctx.restore();
     }
     function nativePosition(event, edge = false) {
@@ -1697,7 +2384,7 @@
       );
     }
     function markExposureControlsDirty() {
-      exposureControlsIdentity ??= {...identity};
+      markAppearanceScalarDirty("local_exposure");
       renderExposureArea();
     }
     function fadeControlsStale() {
@@ -1709,7 +2396,7 @@
       );
     }
     function markFadeControlsDirty() {
-      fadeControlsIdentity ??= {...identity};
+      markAppearanceScalarDirty("shadow_fade");
       renderFadeArea();
     }
     function sharpeningControlsStale() {
@@ -1730,11 +2417,13 @@
     }
     function renderExposureArea() {
       renderEffectArea("exposure", exposureArea, exposureDirty, "exposure");
+      if (effectAreaDraftStale("exposure")) $("exposureDraftStatus").textContent += " Stale area/protection retained; reload the saved area before replacing it. Amount-only uses the current saved area.";
       if (exposureControlsIdentity) $("exposureDraftStatus").textContent += exposureControlsStale()
         ? " Stale exposure settings; reload before applying." : " Unsaved exposure settings.";
     }
     function renderFadeArea() {
       renderEffectArea("fade", fadeArea, fadeDirty, "Shadow fade");
+      if (effectAreaDraftStale("fade")) $("fadeDraftStatus").textContent += " Stale area/protection retained; reload the saved area before replacing it. Amount-only uses the current saved area.";
       if (fadeControlsIdentity) $("fadeDraftStatus").textContent += fadeControlsStale()
         ? " Stale Shadow fade settings; reload before applying." : " Unsaved Shadow fade settings.";
     }
@@ -1756,8 +2445,7 @@
       const area = prefix === "sharpening" ? sharpeningArea : prefix === "fade" ? fadeArea : exposureArea;
       area[kind].push(region);
       if (prefix === "sharpening") { sharpeningDirty = true; renderSharpeningArea(); }
-      else if (prefix === "fade") { fadeDirty = true; renderFadeArea(); }
-      else { exposureDirty = true; renderExposureArea(); }
+      else markEffectAreaDirty(prefix);
       draw();
     }
     function addExposureRegion(geometry, shape = $("exposureShape").value) { addEffectRegion("exposure", geometry, shape); }
@@ -1765,6 +2453,7 @@
     function addSharpeningRegion(geometry, shape = $("sharpeningShape").value) { addEffectRegion("sharpening", geometry, shape); }
     async function exposure(enabled, replaceArea) {
       requireSaved();
+      if (replaceArea && effectAreaDraftStale("exposure")) throw Error("Stale exposure area/protection; reload the saved area before replacing it");
       if (enabled && exposureControlsStale()) throw Error("Exposure settings belong to older project inputs; reload before applying");
       if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing exposure");
       const ev = enabled ? Number($("exposureEV").value) : 0;
@@ -1773,12 +2462,14 @@
       if (replaceArea) fields.exposure_area = structuredClone(exposureArea);
       else if (enabled) fields.exposure_amount_only = true;
       exposureAreaPublished = replaceArea;
-      exposureControlsSubmitted = {base_revision: identity.base_revision, enabled, ev};
+      exposureControlsSubmitted = {base_revision: identity.base_revision, developed_id: state.developed_id, enabled, ev,
+        area: replaceArea ? {version: effectAreaVersions.exposure, values: fadeReductionAreaIdentity(exposureArea)} : null};
       try { return await action("effects", fields); }
       catch(error) { exposureAreaPublished = false; exposureControlsSubmitted = null; throw error; }
     }
     async function shadowFade(enabled, replaceArea) {
       requireSaved();
+      if (replaceArea && effectAreaDraftStale("fade")) throw Error("Stale Shadow fade area/protection; reload the saved area before replacing it");
       if (enabled && fadeControlsStale()) throw Error("Shadow fade settings belong to older project inputs; reload before applying");
       if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before changing Shadow fade");
       const amount = enabled ? Number($("fadeAmount").value) / 100 : 0;
@@ -1788,7 +2479,8 @@
       if (replaceArea) fields.shadow_fade_area = structuredClone(fadeArea);
       else if (enabled) fields.shadow_fade_amount_only = true;
       fadeAreaPublished = replaceArea;
-      fadeControlsSubmitted = {base_revision: identity.base_revision, enabled, amount, preserve_highlights: preserve};
+      fadeControlsSubmitted = {base_revision: identity.base_revision, developed_id: state.developed_id, enabled, amount, preserve_highlights: preserve,
+        area: replaceArea ? {version: effectAreaVersions.fade, values: fadeReductionAreaIdentity(fadeArea)} : null};
       try { return await action("effects", fields); }
       catch(error) { fadeAreaPublished = false; fadeControlsSubmitted = null; throw error; }
     }
@@ -1809,10 +2501,176 @@
       try { return await action("effects", fields); }
       catch(error) { sharpeningAreaPublished = false; sharpeningControlsSubmitted = null; throw error; }
     }
+    function backgroundLightIdentity() {
+      const revision = state?.revisions.find(row => row.revision === state.working_revision);
+      return JSON.stringify({...effectCurrentIdentity(), manifest: revision?.revision_manifest_sha256});
+    }
+    function defaultLightGeometry(type) {
+      const [width, height] = state.dimensions_wh;
+      const geometry = {type, center_xy: [(width - 1) / 2, (height - 1) / 2], rotation_degrees: 0};
+      return type === "oval" ? {...geometry, radii_xy: [Math.max(.5, width * .35), Math.max(.5, height * .35)], softness: 1}
+        : {...geometry, transition_width: Math.max(width, height)};
+    }
+    function validateLightSettings(settings) {
+      const [width, height] = state.dimensions_wh, limit = 2 * Math.max(width, height);
+      const range = (value, low, high) => typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
+      const geometry = settings?.geometry;
+      if (!settings || typeof settings.enabled !== "boolean" || !range(settings.brightness, 0, 1) || !/^#[0-9A-F]{6}$/.test(settings.color_srgb))
+        throw Error("Use a finite brightness from 0 to 100% and a light colour #RRGGBB");
+      if (!geometry || !["oval", "directional"].includes(geometry.type) || !range(geometry.center_xy[0], 0, width) || !range(geometry.center_xy[1], 0, height) || !range(geometry.rotation_degrees, 0, 360) || geometry.rotation_degrees === 360)
+        throw Error("Use finite light centres inside native bounds and rotation from 0 to below 360");
+      if (geometry.type === "oval" ? !geometry.radii_xy.every(value => range(value, .5, limit)) || !range(geometry.softness, .05, 1) : !range(geometry.transition_width, .5, limit))
+        throw Error("Use light radii or transition width from 0.5 to " + limit + " native pixels, and oval softness from 0.05 to 1");
+    }
+    function backgroundLightSettings() {
+      validateLightSettings(backgroundLightDraft?.settings);
+      return structuredClone(backgroundLightDraft.settings);
+    }
+    function backgroundLightDraftStatus() {
+      if (!backgroundLightDraft) return;
+      const stale = backgroundLightDraft.identity !== backgroundLightIdentity();
+      let invalid = ""; try {backgroundLightSettings();} catch (error) {invalid = " · " + error.message;}
+      $("backgroundLightDraftStatus").textContent = (stale ? "Stale unapplied light · Reload saved light before Apply"
+        : backgroundLightDraft.dirty ? "Unapplied light · outlines only; image still shows saved light" : "Controls match saved light") + invalid;
+      const current = state.revisions.find(row => row.revision === state.working_revision);
+      const saved = current?.background_light?.settings;
+      $("backgroundLightStatus").textContent = saved ? "Saved light " + (saved.enabled ? "ON" : "OFF") + " · " + saved.geometry.type + " · " + backgroundPercentage(saved.brightness) + "%"
+        : "No saved light · starts OFF; Apply to save";
+      $("backgroundLightOff").disabled = authoringBusy() || !saved;
+    }
+    function renderBackgroundLightControls() {
+      if (!backgroundLightDraft) return;
+      const settings = backgroundLightDraft.settings, geometry = settings.geometry;
+      $("backgroundLightEnabled").checked = settings.enabled;
+      $("backgroundLightHex").value = settings.color_srgb;
+      if (/^#[0-9A-F]{6}$/.test(settings.color_srgb)) $("backgroundLightColor").value = settings.color_srgb.toLowerCase();
+      $("backgroundLightBrightness").value = Number.isFinite(settings.brightness) ? backgroundPercentage(settings.brightness) : "";
+      $("backgroundLightRange").value = $("backgroundLightBrightness").value;
+      $("backgroundLightShape").value = geometry.type;
+      $("backgroundLightOval").hidden = geometry.type !== "oval";
+      $("backgroundLightDirectional").hidden = geometry.type !== "directional";
+      const fields = {backgroundLightCenterX: geometry.center_xy[0], backgroundLightCenterY: geometry.center_xy[1], backgroundLightRotation: geometry.rotation_degrees,
+        ...(geometry.type === "oval" ? {backgroundLightRadiusX: geometry.radii_xy[0], backgroundLightRadiusY: geometry.radii_xy[1], backgroundLightSoftness: geometry.softness} : {backgroundLightTransition: geometry.transition_width})};
+      for (const [id, value] of Object.entries(fields)) $(id).value = Number.isFinite(value) ? String(value) : "";
+      backgroundLightDraftStatus();
+    }
+    function reloadBackgroundLight(preserveGeometries = false) {
+      if (!state) return;
+      const saved = state.revisions.find(row => row.revision === state.working_revision)?.background_light?.settings;
+      const settings = structuredClone(saved || {enabled: false, brightness: .1, color_srgb: "#FFFFFF", geometry: defaultLightGeometry("oval")});
+      const geometryIdentity = JSON.stringify([state.developed_id, state.dimensions_wh]);
+      if (!preserveGeometries || backgroundLightDraft?.geometryIdentity !== geometryIdentity) backgroundLightGeometries.clear();
+      for (const type of ["oval", "directional"]) backgroundLightGeometries.set(type, type === settings.geometry.type ? settings.geometry : backgroundLightGeometries.get(type) || defaultLightGeometry(type));
+      backgroundLightDraft = {settings, dirty: false, identity: backgroundLightIdentity(), geometryIdentity, version: (backgroundLightDraft?.version || 0) + 1};
+      backgroundLightSubmitted = null; $("backgroundLightCandidate").checked = false;
+      renderBackgroundLightControls(); draw();
+    }
+    function markBackgroundLightDirty() {
+      if (!backgroundLightDraft) return;
+      backgroundLightDraft.dirty = true; backgroundLightDraft.version++;
+      $("authorMode").value = "background-light";
+      backgroundLightDraftStatus(); draw();
+    }
+    function editBackgroundLightNumber(id) {
+      const text = String($(id).value).trim(), value = text === "" ? NaN : Number(text);
+      const settings = backgroundLightDraft.settings, geometry = settings.geometry;
+      if (id === "backgroundLightBrightness") {
+        const [coefficient, exponent = "0"] = text.toLowerCase().split("e");
+        settings.brightness = text === "" ? NaN : Number(coefficient + "e" + (Number(exponent) - 2));
+        $("backgroundLightRange").value = text;
+      } else {
+        const setters = {backgroundLightCenterX: () => geometry.center_xy[0] = value, backgroundLightCenterY: () => geometry.center_xy[1] = value,
+          backgroundLightRotation: () => geometry.rotation_degrees = value, backgroundLightRadiusX: () => geometry.radii_xy[0] = value,
+          backgroundLightRadiusY: () => geometry.radii_xy[1] = value, backgroundLightSoftness: () => geometry.softness = value,
+          backgroundLightTransition: () => geometry.transition_width = value};
+        setters[id]();
+      }
+      markBackgroundLightDirty();
+    }
+    async function applyBackgroundLight(savedOnly = false) {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const revision = state.revisions.find(row => row.revision === state.working_revision);
+      if (savedOnly && !revision?.background_light) return;
+      if (dirty) throw Error("Save or reload pending matting guides before applying light");
+      if (!savedOnly && backgroundLightDraft.identity !== backgroundLightIdentity()) throw Error("Stale light settings; Reload saved light before Apply");
+      if (!savedOnly && (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision)) throw Error("Load the matching working native view before Apply Background light");
+      const settings = savedOnly ? {...structuredClone(revision.background_light.settings), enabled: false} : backgroundLightSettings();
+      validateLightSettings(settings);
+      if (!revision?.revision_manifest_sha256) throw Error("Saved raw revision identity unavailable; reload inputs");
+      const preserveDraft = savedOnly && backgroundLightDraft.dirty;
+      backgroundLightDraft.dirty = true;
+      backgroundLightSubmitted = {settings: fadeReductionAreaIdentity(settings), version: backgroundLightDraft.version, identity: backgroundLightDraft.identity,
+        base_revision: state.working_revision, developed_id: state.developed_id, preserveDraft};
+      try {await action("effects", {scope_xyxy: [0, 0, ...state.dimensions_wh], background_light: settings,
+        candidate_comparison: $("backgroundLightCandidate").checked, revision_manifest_sha256: revision.revision_manifest_sha256});}
+      catch (error) {backgroundLightSubmitted = null; throw error;}
+    }
+    function backgroundLightHandles(geometry) {
+      const distance = geometry.type === "oval" ? geometry.radii_xy[0] : geometry.transition_width / 2;
+      const handles = [{name: "center", local: [0, 0]}, {name: "rotation", local: [distance + Math.max(12, distance / 4), 0]}];
+      if (geometry.type === "oval") handles.push({name: "radius-x", local: [geometry.radii_xy[0], 0]}, {name: "radius-y", local: [0, geometry.radii_xy[1]]});
+      else handles.push({name: "width", local: [distance, 0]});
+      return handles.map(handle => ({name: handle.name, point: spatialToNative(handle.local, geometry)}));
+    }
+    function drawBackgroundLight(scale) {
+      if (!backgroundLightDraft || $("authorMode").value !== "background-light" || $("backgroundLightHide").checked || $("viewRevision").value !== state.working_revision) return;
+      try {backgroundLightSettings();} catch {return;}
+      const geometry = backgroundLightDraft.settings.geometry;
+      const point = local => {const p = spatialToNative(local, geometry); return [p[0] - crop[0], p[1] - crop[1]];};
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, image.width, image.height); ctx.clip();
+      ctx.strokeStyle = "#55ffff"; ctx.fillStyle = "#55ffff"; ctx.lineWidth = 2 / scale;
+      if (geometry.type === "oval") {
+        for (const factor of [1, 1 - geometry.softness]) if (factor > 0) {
+          ctx.beginPath(); ctx.ellipse(geometry.center_xy[0] - crop[0], geometry.center_xy[1] - crop[1], geometry.radii_xy[0] * factor, geometry.radii_xy[1] * factor, geometry.rotation_degrees * Math.PI / 180, 0, 2 * Math.PI); ctx.stroke();
+        }
+      } else {
+        const width = geometry.transition_width, length = 2 * Math.max(...state.dimensions_wh);
+        for (const offset of [-width / 2, 0, width / 2]) {ctx.beginPath(); ctx.moveTo(...point([offset, -length])); ctx.lineTo(...point([offset, length])); ctx.stroke();}
+        ctx.beginPath(); ctx.moveTo(...point([-width / 2, 0])); ctx.lineTo(...point([width / 2, 0])); ctx.stroke();
+        for (const sign of [-1, 1]) {ctx.beginPath(); ctx.moveTo(...point([width / 2, 0])); ctx.lineTo(...point([width / 2 - 8 / scale, sign * 5 / scale])); ctx.stroke();}
+      }
+      for (const handle of backgroundLightHandles(geometry)) {ctx.beginPath(); ctx.arc(handle.point[0] - crop[0], handle.point[1] - crop[1], 4 / scale, 0, 2 * Math.PI); ctx.fill();}
+      ctx.restore();
+    }
+    function dragBackgroundLight(active, point) {
+      const geometry = backgroundLightDraft.settings.geometry, initial = active.lightInitial, [u, v] = spatialToLocal(point, initial);
+      const bound = value => Math.max(.5, Math.min(2 * Math.max(...state.dimensions_wh), value));
+      if (active.lightHandle === "center") geometry.center_xy = point.map((value, index) => Math.max(0, Math.min(state.dimensions_wh[index], initial.center_xy[index] + value - active.points[0][index])));
+      else if (active.lightHandle === "rotation") geometry.rotation_degrees = (Math.atan2(point[1] - geometry.center_xy[1], point[0] - geometry.center_xy[0]) * 180 / Math.PI + 360) % 360;
+      else if (active.lightHandle === "radius-x") geometry.radii_xy[0] = bound(Math.abs(u));
+      else if (active.lightHandle === "radius-y") geometry.radii_xy[1] = bound(Math.abs(v));
+      else if (active.lightHandle === "width") geometry.transition_width = bound(2 * Math.abs(u));
+      markBackgroundLightDirty(); renderBackgroundLightControls();
+    }
+    for (const id of ["backgroundLightBrightness", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition"])
+      $(id).oninput = () => editBackgroundLightNumber(id);
+    $("backgroundLightRange").oninput = () => {$("backgroundLightBrightness").value = $("backgroundLightRange").value; editBackgroundLightNumber("backgroundLightBrightness");};
+    $("backgroundLightEnabled").oninput = () => {backgroundLightDraft.settings.enabled = $("backgroundLightEnabled").checked; markBackgroundLightDirty();};
+    $("backgroundLightColor").oninput = () => {$("backgroundLightHex").value = $("backgroundLightColor").value.toUpperCase(); $("backgroundLightHex").oninput();};
+    $("backgroundLightHex").oninput = () => {backgroundLightDraft.settings.color_srgb = $("backgroundLightHex").value.toUpperCase(); if (/^#[0-9A-F]{6}$/.test(backgroundLightDraft.settings.color_srgb)) $("backgroundLightColor").value = backgroundLightDraft.settings.color_srgb; markBackgroundLightDirty();};
+    $("backgroundLightShape").onchange = () => {backgroundLightDraft.settings.geometry = backgroundLightGeometries.get($("backgroundLightShape").value); markBackgroundLightDirty(); renderBackgroundLightControls();};
+    $("backgroundLightReverse").onclick = guarded(() => {const geometry = backgroundLightDraft.settings.geometry; geometry.rotation_degrees = (geometry.rotation_degrees + 180) % 360; markBackgroundLightDirty(); renderBackgroundLightControls();});
+    $("backgroundLightCandidate").oninput = markBackgroundLightDirty;
+    $("backgroundLightHide").onchange = draw;
+    $("backgroundLightApply").onclick = guarded(() => applyBackgroundLight());
+    $("backgroundLightOff").onclick = guarded(() => applyBackgroundLight(true));
+    $("backgroundLightReload").onclick = guarded(() => {if (!authoringBusy()) reloadBackgroundLight();});
+    $("backgroundLightControls").onkeydown = event => {if (event.key === "Escape" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight();}};
+    function backgroundPercentage(fraction) {
+      // Shift the saved decimal text, avoiding both integer rounding and 0.55*100 noise.
+      const [coefficient, exponent = "0"] = String(fraction).split("e");
+      const [whole, decimal = ""] = coefficient.split(".");
+      const digits = whole + decimal, position = whole.length + Number(exponent) + 2;
+      const shifted = position <= 0 ? "0." + "0".repeat(-position) + digits
+        : position >= digits.length ? digits + "0".repeat(position - digits.length)
+        : digits.slice(0, position) + "." + digits.slice(position);
+      return shifted.replace(/^0+(?=\d)/, "");
+    }
     function backgroundDraftStatus() {
       $("backgroundDraftStatus").textContent = (backgroundDirty ? "Unsaved background · preview still shows saved result" : "Controls match saved background") + ($("backgroundHex").value.toUpperCase() === "#000000" ? " · pure black at every variation" : "");
+      if (appearanceScalarStale("background")) $("backgroundDraftStatus").textContent += " · Stale settings: reload recipe values or saved inputs before Apply.";
     }
-    function editBackground() { backgroundDirty = true; backgroundDraftStatus(); }
+    function editBackground() { markAppearanceScalarDirty("background"); backgroundDraftStatus(); }
     $("backgroundColor").oninput = () => { $("backgroundHex").value = $("backgroundColor").value.toUpperCase(); editBackground(); };
     $("backgroundHex").oninput = () => {
       if (/^#[0-9a-fA-F]{6}$/.test($("backgroundHex").value)) $("backgroundColor").value = $("backgroundHex").value;
@@ -1825,12 +2683,16 @@
     };
     $("backgroundApply").onclick = guarded(async () => {
       if (authoringBusy()) return;
+      if (appearanceScalarStale("background")) throw Error("Stale background settings; explicitly reload before Apply");
       if (dirty) throw Error("Save or reload pending matting guides before Apply background; unrelated drafts are preserved");
       if (imageLoading || !image || !transform || $("viewRevision").value !== state.working_revision) throw Error("Load the current working native view before Apply background");
       const color_srgb = $("backgroundHex").value.toUpperCase(), percent = Number($("backgroundVariation").value);
-      if (!/^#[0-9A-F]{6}$/.test(color_srgb) || $("backgroundVariation").value.trim() === "" || !Number.isInteger(percent) || percent < 0 || percent > 100) throw Error("Use #RRGGBB and a whole variation percentage in [0,100]");
+      if (!/^#[0-9A-F]{6}$/.test(color_srgb) || String($("backgroundVariation").value).trim() === "" || !Number.isFinite(percent) || percent < 0 || percent > 100) throw Error("Use #RRGGBB and a finite variation percentage in [0,100]");
+      const [coefficient, exponent = "0"] = String($("backgroundVariation").value).trim().toLowerCase().split("e");
+      const variation = Number(coefficient + "e" + (Number(exponent) - 2));
+      if (!Number.isFinite(variation)) throw Error("Use a finite decimal variation percentage in [0,100]");
       backgroundPublished = true;
-      try { return await action("effects", {scope_xyxy: [0,0,...state.dimensions_wh], background: {color_srgb, variation: percent / 100}, candidate_comparison: $("backgroundCandidate").checked}); }
+      try { return await action("effects", {scope_xyxy: [0,0,...state.dimensions_wh], background: {color_srgb, variation}, candidate_comparison: $("backgroundCandidate").checked}); }
       catch (error) { backgroundPublished = false; throw error; }
     });
     $("fadeAddRectangle").onclick = guarded(() => addFadeRegion(bounds("fadeRectangle"), "rectangle"));
@@ -1839,11 +2701,11 @@
       const [kind, id] = $("fadeRegions").value.split(":");
       if (!id) return;
       fadeArea[kind] = fadeArea[kind].filter(r => r.id !== id);
-      fadeDirty = true; renderFadeArea(); draw();
+      markEffectAreaDirty("fade"); draw();
     });
     $("fadeClear").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
-      fadeArea = {regions: [], protection: []}; fadeDirty = true; renderFadeArea(); draw();
+      fadeArea = {regions: [], protection: []}; markEffectAreaDirty("fade"); draw();
     });
     $("fadeApply").onclick = guarded(() => shadowFade(true, true));
     $("fadeAmountApply").onclick = guarded(() => shadowFade(true, false));
@@ -1853,6 +2715,12 @@
     $("fadePreserveRange").oninput = () => { $("fadePreserve").value = $("fadePreserveRange").value; markFadeControlsDirty(); };
     $("fadePreserve").oninput = () => { $("fadePreserveRange").value = $("fadePreserve").value; markFadeControlsDirty(); };
     $("fadeCandidate").onchange = markFadeControlsDirty;
+    $("fadeReloadArea").onclick = guarded(() => reloadEffectArea("fade"));
+    $("exposureReloadArea").onclick = guarded(() => reloadEffectArea("exposure"));
+    $("backgroundCandidate").onchange = editBackground;
+    for (const [section, ids] of [["shading", ["shadingWidth", "shadingDirection", "shadingOpacity", "shadingSupport", "shadingProtection", "shadingCandidate"]], ["color_cleanup", ["cleanupStrength", "cleanupSupport", "cleanupCandidate"]]]) {
+      for (const id of ids) $(id).oninput = () => markAppearanceScalarDirty(section);
+    }
     $("sharpeningAddRectangle").onclick = guarded(() => addSharpeningRegion(bounds("sharpeningRectangle"), "rectangle"));
     $("sharpeningRemove").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
@@ -1876,24 +2744,26 @@
     }
     $("sharpeningCandidate").onchange = markSharpeningControlsDirty;
     function compareChanged(id) {
-      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare"]) if (other !== id) $(other).checked = false;
+      $("reductionView").value = "none";
+      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare", "backgroundLightCompare"]) if (other !== id) $(other).checked = false;
       if (id !== "shadingPreview") $("shadingPreview").value = "";
       imageKey = ""; return loadImage();
     }
     $("sharpeningCompare").onchange = guarded(() => compareChanged("sharpeningCompare"));
     $("fadeCompare").onchange = guarded(() => compareChanged("fadeCompare"));
     $("spatialCompare").onchange = guarded(() => compareChanged("spatialCompare"));
+    $("backgroundLightCompare").onchange = guarded(() => compareChanged("backgroundLightCompare"));
     $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
     $("exposureRemove").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
       const [kind, id] = $("exposureRegions").value.split(":");
       if (!id) return;
       exposureArea[kind] = exposureArea[kind].filter(r => r.id !== id);
-      exposureDirty = true; renderExposureArea(); draw();
+      markEffectAreaDirty("exposure"); draw();
     });
     $("exposureClear").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
-      exposureArea = {regions: [], protection: []}; exposureDirty = true; renderExposureArea(); draw();
+      exposureArea = {regions: [], protection: []}; markEffectAreaDirty("exposure"); draw();
     });
     $("exposureApply").onclick = guarded(() => exposure(true, true));
     $("exposureAmount").onclick = guarded(() => exposure(true, false));
@@ -1916,6 +2786,13 @@
       if (!identity) throw Error("Project inputs unavailable");
       if (authoringBusy())
         throw Error("Wait for the active writer before submitting");
+      invalidateAppearanceLayout();
+      const section = name === "effects" && Object.keys(appearanceLabels).find(key => key !== "spatial_fade" && key in extra);
+      const scalarDraft = section && appearanceScalarState(section);
+      const scalarSubmission = section ? {section, version: scalarDraft.version,
+        identity: fadeReductionAreaIdentity(scalarDraft.identity), settings: fadeReductionAreaIdentity(extra[section]),
+        developed_id: state.developed_id, base_revision: state.working_revision} : null;
+      appearanceScalarSubmitted = scalarSubmission;
       message("");
       actionSubmitting = true;
       gesture = null;
@@ -1924,6 +2801,9 @@
         await api("/api/action", { ...identity, action: name, ...extra });
         actionWasRunning = true;
         if (refreshInFlight) await refreshInFlight;
+      } catch (error) {
+        if (appearanceScalarSubmitted === scalarSubmission) appearanceScalarSubmitted = null;
+        throw error;
       } finally {
         actionSubmitting = false;
         updateBusyControls();
@@ -2287,6 +3167,7 @@
     });
     async function cleanup(enabled) {
       requireSaved();
+      if (enabled && appearanceScalarStale("color_cleanup")) throw Error("Stale cleanup settings; explicitly reload before Apply");
       if (imageLoading || !image || !transform) throw Error("Wait for the matching native view before changing cleanup");
       let strength = 0;
       if (enabled) {
@@ -2306,6 +3187,7 @@
     }
     async function shading(enabled, opacityOnly) {
       requireSaved();
+      if (enabled && appearanceScalarStale("shading")) throw Error("Stale shading settings; explicitly reload before Apply");
       if (imageLoading || !image || !transform) throw Error("Wait for the matching native view before changing shading");
       const settings = {enabled, opacity: Number($("shadingOpacity").value)};
       if ($("shadingWidth").value !== "" || $("shadingDirection").value !== "") {
@@ -2455,9 +3337,10 @@
     });
     canvas.onpointerdown = (event) => {
       const spatialMode=$("authorMode").value==="spatial";
-      const effectMode = ["exposure", "fade", "sharpening"].includes($("authorMode").value) ? $("authorMode").value : null;
-      const panMode = event.shiftKey || (!effectMode && !spatialMode && $("shape").value === "pan");
-      const point = nativePosition(event,spatialMode);
+      const lightMode = $("authorMode").value === "background-light";
+      const effectMode = ["exposure", "fade", "sharpening", "reduction"].includes($("authorMode").value) ? $("authorMode").value : null;
+      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && $("shape").value === "pan");
+      const point = nativePosition(event,spatialMode || lightMode);
       if (!panMode && (authoringBusy() || imageLoading)) {
         message(
           "Guide not started while a writer is active or the native view is loading",
@@ -2465,6 +3348,16 @@
         return;
       }
       if (!panMode && !point) return;
+      if (lightMode && !panMode) {
+        if ($("backgroundLightHide").checked || $("viewRevision").value !== state.working_revision) return;
+        try {
+          const geometry = backgroundLightSettings().geometry;
+          const handle = hitSpatialHandle(point, backgroundLightHandles(geometry), 9 / transform.scale);
+          if (!handle) return;
+          gesture = {panMode: false, lightHandle: handle.name, lightInitial: geometry, points: [point]};
+          canvas.setPointerCapture(event.pointerId); return;
+        } catch (error) {message(error.message); return;}
+      }
       if(spatialMode && !panMode) {
         if($("viewRevision").value!==state.working_revision){message("Choose the working revision before editing fade shapes");return;}
         try {
@@ -2485,7 +3378,7 @@
       canvas.setPointerCapture(event.pointerId);
     };
     canvas.onpointermove = (event) => {
-      const point = nativePosition(event,!!gesture?.spatialId);
+      const point = nativePosition(event,!!gesture?.spatialId || !!gesture?.lightHandle);
       $("coordinate").textContent = point
         ? "Native " + point.map(Math.floor).join(", ")
         : "Outside image";
@@ -2496,7 +3389,8 @@
           gesture.pan[1] + event.clientY - gesture.start[1],
         ];
         draw();
-      } else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
+      } else if (point && gesture.lightHandle) dragBackgroundLight(gesture, point);
+      else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
       else if (point && gesture.shape === "stroke")
         gesture.points.push(point);
     };
@@ -2505,7 +3399,7 @@
       const g = gesture;
       gesture = null;
       if (g.panMode) return;
-      if(g.spatialId) return;
+      if(g.spatialId || g.lightHandle) return;
       if (authoringBusy() || imageLoading) {
         message(
           "Guide cancelled because a writer or native view changed; nothing saved",
@@ -2520,7 +3414,7 @@
       try {
         const shape = g.shape,
           start = g.points[0];
-        const add = geometry => g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
+        const add = geometry => g.effectMode === "reduction" ? addFadeReductionRegion(geometry, shape) : g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
         if (shape === "rectangle") {
           const rectangle = nativeBox(start, end);
           if (rectangle[0] === rectangle[2] || rectangle[1] === rectangle[3])
@@ -2534,6 +3428,8 @@
     };
     canvas.onpointercancel = () => (gesture = null);
     canvas.onkeydown = (event) => {
+      if (event.key === "Escape" && $("authorMode").value === "background-light" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight(); return;}
+      if (event.key === "Escape" && $("authorMode").value === "reduction") {event.preventDefault(); gesture = null; reloadFadeReduction(); return;}
       if(event.key==="Escape" && $("authorMode").value==="spatial") {event.preventDefault();gesture=null;if(spatialAdding){spatialAdding=false;spatialDraftStatus();draw();}else resetSpatialFromSaved();return;}
       if (
         [

@@ -432,7 +432,15 @@ def _prepare(
     raster = rasterize_regions(
         guides, scope_xyxy=scope, saved_alpha=saved_alpha, parent_alpha=parent_alpha
     )
-    check_space(project, pixels.nbytes * (9 if recipe.background is not None else 8) + 1024**2)
+    check_space(
+        project,
+        pixels.nbytes
+        * (
+            (9 if recipe.background is not None else 8)
+            + (2 if recipe.background_light is not None else 0)
+        )
+        + 1024**2,
+    )
     revisions = saved_asset(project, "revisions")
     revisions.mkdir(exist_ok=True)
     existing = [
@@ -502,6 +510,7 @@ def _prepare(
         else None
     )
     from .background import inherit_background
+    from .background_light import inherit_background_light
 
     background = inherit_background(
         project,
@@ -510,6 +519,15 @@ def _prepare(
         state["developed_id"],
         (height, width),
         recipe.background,
+        assets=assets,
+    )
+    background_light = inherit_background_light(
+        project,
+        parent,
+        stage,
+        state["developed_id"],
+        (height, width),
+        recipe.background_light,
         assets=assets,
     )
     # RGB8 is a separately labelled proxy. It never becomes a precision output owner.
@@ -636,6 +654,7 @@ def _prepare(
         **({"local_sharpening": sharpening} if sharpening is not None else {}),
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
+        **({"background_light": background_light} if background_light is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
     for path in stage.rglob("*"):
@@ -1232,7 +1251,16 @@ def _matte(
             if ancestor_manifest.get("kind") != "prepare":
                 break
             ancestor = ancestor_manifest["parent"]
-    check_space(project, pixels.nbytes * (42 if recipe.background is not None else 40) + 1024**2)
+    check_space(
+        project,
+        pixels.nbytes
+        * (
+            (42 if recipe.background is not None else 40)
+            + (4 if recipe.background_light is not None else 0)
+        )
+        + (min(height, 64) * width * 128 if recipe.background_light is not None else 0)
+        + 1024**2,
+    )
     foreground = pixels.copy()
     if repairing:
         foreground = tifffile.imread(
@@ -1465,6 +1493,7 @@ def _matte(
         project, parent, stage, state["developed_id"], alpha, rgb_protection, assets=assets
     )
     from .background import inherit_background
+    from .background_light import combine_background_light, inherit_background_light
 
     background = inherit_background(
         project,
@@ -1473,6 +1502,15 @@ def _matte(
         state["developed_id"],
         (height, width),
         recipe.background,
+        assets=assets,
+    )
+    background_light = inherit_background_light(
+        project,
+        parent,
+        stage,
+        state["developed_id"],
+        (height, width),
+        recipe.background_light,
         assets=assets,
     )
     # Preparation snapshots requested drafts. A completed matte applies those
@@ -1487,6 +1525,7 @@ def _matte(
         ("shadow_fade", fade),
         ("spatial_fade", spatial),
         ("background", background),
+        ("background_light", background_light),
     ):
         if inherited is not None:
             effective_recipe[name] = (
@@ -1584,6 +1623,9 @@ def _matte(
             scalar16(stage_asset(project, stage, assets, "effects/spatial-fade/protection16.png"))
             != 0,
             spatial,
+            scalar16(stage_asset(project, stage, assets, "effects/spatial-fade/reduction16.png"))
+            if spatial["schema_version"] == 2
+            else None,
         )
         if spatial is not None and spatial["enabled"] and not stale_effects
         else None
@@ -1595,6 +1637,19 @@ def _matte(
         if spatial_operands is not None
         else None
     )
+    if (
+        background_light is not None
+        and background_light["settings"]["enabled"]
+        and not stale_effects
+    ):
+        light_pixels = read_rgb16(
+            stage_asset(project, stage, assets, "background_light/light_rgb16.tif")
+        )
+        background_pixels = combine_background_light(
+            background_pixels if background_pixels is not None else np.zeros_like(light_pixels),
+            light_pixels,
+            enabled=True,
+        )
     write_revision_overview(
         stage / "review",
         pixels,
@@ -1747,6 +1802,7 @@ def _matte(
         **({"local_sharpening": sharpening} if sharpening is not None else {}),
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
+        **({"background_light": background_light} if background_light is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     collect_stage_assets(project, stage, assets)

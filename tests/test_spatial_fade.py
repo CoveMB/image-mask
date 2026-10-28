@@ -949,7 +949,10 @@ def test_spatial_saved_operands_are_validated_even_off_and_after_cache_warmup(
 
 
 @pytest.mark.parametrize("change_alpha,repairing", [(False, False), (True, False), (True, True)])
-def test_spatial_prepare_matte_repair_stale_locks_and_replay(tmp_path, change_alpha, repairing):
+@pytest.mark.parametrize("reduced", [False, True])
+def test_spatial_prepare_matte_repair_stale_locks_and_replay(
+    tmp_path, change_alpha, repairing, reduced
+):
     from test_effects import fixture_project
     from test_exposure import rectangle
     from test_matte_operations import StubSession, approve, run_matte
@@ -964,6 +967,10 @@ def test_spatial_prepare_matte_repair_stale_locks_and_replay(tmp_path, change_al
 
     project, _, _ = fixture_project(tmp_path)
     first = operations.apply_operation(project, spatial_request(project))
+    if reduced:
+        from test_fade_reduction import reduction_request
+
+        first = operations.apply_operation(project, reduction_request(project))
     master = read_project(project)["developed_id"]
     before_rgb, before_alpha, _ = saved_layers(project, first["revision"], master)
     name = edits(
@@ -1004,6 +1011,8 @@ def test_spatial_prepare_matte_repair_stale_locks_and_replay(tmp_path, change_al
     np.testing.assert_array_equal(rgb[1, 3], before_rgb[1, 3])
     saved = read_spatial_fade(project, project / "revisions" / result["revision"], manifest, alpha)
     assert saved.protection[1, 3]
+    if reduced:
+        np.testing.assert_array_equal(saved.reduction16, np.full(alpha.shape, 32768, np.uint16))
     if repairing:
         np.testing.assert_array_equal(replay_repair(project, result["revision"]), alpha)
     if change_alpha:
@@ -1013,6 +1022,10 @@ def test_spatial_prepare_matte_repair_stale_locks_and_replay(tmp_path, change_al
             project, spatial_request(project, dict(spatial_settings(6, 4), enabled=False))
         )
         assert not disabled["spatial_fade"]["stale"]
+        if reduced:
+            # Disabled stale flags are false, but the saved alpha is still old.
+            with pytest.raises(ProjectError, match="current saved.*alpha"):
+                operations.apply_operation(project, reduction_request(project))
         operations.accept_revision(project, disabled["revision"])
 
 
@@ -1212,7 +1225,8 @@ def test_spatial_native_render_converges_to_target_with_unchanged_partial_alpha(
         )
 
 
-def test_spatial_zero_legacy_and_crop_paths_preserve_exact_pixels():
+@pytest.mark.parametrize("reduced", [False, True])
+def test_spatial_zero_legacy_and_crop_paths_preserve_exact_pixels(reduced):
     from blackmask.export import render_background, render_black, view_rgba
     from blackmask.spatial_fade import SpatialFadeOperands
 
@@ -1221,6 +1235,10 @@ def test_spatial_zero_legacy_and_crop_paths_preserve_exact_pixels():
     alpha = rng.integers(0, 65536, (8, 12), np.uint16)
     background = rng.integers(0, 65536, rgb.shape, np.uint16)
     saved = operands(spatial_settings(12, 8), np.zeros(alpha.shape, np.uint16))
+    if reduced:
+        from dataclasses import replace
+
+        saved = replace(saved, reduction16=rng.integers(0, 65536, alpha.shape, np.uint16))
     for renderer, arguments in (
         (render_black, (rgb, alpha)),
         (render_background, (rgb, alpha, background)),
@@ -1236,7 +1254,10 @@ def test_spatial_zero_legacy_and_crop_paths_preserve_exact_pixels():
     )
     rows, columns = slice(2, 7), slice(3, 11)
     cropped = SpatialFadeOperands(
-        saved.weight16[rows, columns], saved.protection[rows, columns], saved.record
+        saved.weight16[rows, columns],
+        saved.protection[rows, columns],
+        saved.record,
+        None if saved.reduction16 is None else saved.reduction16[rows, columns],
     )
     np.testing.assert_array_equal(
         full[rows, columns],

@@ -358,8 +358,8 @@ def test_corrected_notes_use_new_identity_preserving_prior_version(
     preserved = hashes(Path(prior["directory"]))
     output = export_project(project, variants=("transparent",), **arguments)
     record = json.loads(Path(output["manifest_file"]).read_bytes())
-    assert record["export_version"] == "requested-result-v4"
-    assert record["encoding"]["version"] == "requested-result-v4"
+    assert record["export_version"] == "requested-result-v5"
+    assert record["encoding"]["version"] == "requested-result-v5"
     assert output["directory"] != prior["directory"] and not output["reused"]
     assert hashes(Path(prior["directory"])) == preserved
     with tifffile.TiffFile(Path(prior["directory"]) / "result_rgb16.tif") as old_image:
@@ -423,6 +423,7 @@ def test_sharpening_notes_change_identity_without_rewriting_prior_v4(
         **mode_arguments(mode),
     )
     with monkeypatch.context() as previous:
+        previous.setattr(export, "EXPORT_VERSION", "requested-result-v4")
         previous.setattr(export, "_delivery_request_record", previous_request)
         previous.setattr(export, "_delivery_notes", previous_notes)
         prior = export_project(project, **arguments)
@@ -433,7 +434,8 @@ def test_sharpening_notes_change_identity_without_rewriting_prior_v4(
     assert all(current_hashes[name] == value for name, value in preserved.items())
     record = json.loads(Path(output["manifest_file"]).read_bytes())
     old_record = json.loads(Path(prior["manifest_file"]).read_bytes())
-    assert record["export_version"] == old_record["export_version"] == "requested-result-v4"
+    assert record["export_version"] == "requested-result-v5"
+    assert old_record["export_version"] == "requested-result-v4"
     notes = (Path(output["directory"]) / "README.txt").read_text()
     assert new_warning in notes
     if mode == "native":
@@ -612,7 +614,7 @@ def test_prior_format_deliveries_are_preserved_without_legacy_lookup(tmp_path, m
     before = hashes(exports)
     output = export_project(project, **mode_arguments(mode))
     record = json.loads(Path(output["manifest_file"]).read_bytes())
-    assert record["export_version"] == "requested-result-v4" and not output["reused"]
+    assert record["export_version"] == "requested-result-v5" and not output["reused"]
     assert all(hashes(exports)[name] == value for name, value in before.items())
     assert export_project(project, **mode_arguments(mode))["reused"]
 

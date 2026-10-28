@@ -4,6 +4,7 @@ These behavioral transition checks complement actual-browser evidence; they do
 not substitute for browser rendering, accessibility or human photographic review.
 """
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -51,6 +52,121 @@ globalThis.fetch=async(path,options)=>{
 """
 
 
+LIGHT_SETUP = r"""
+servedState.revisions[0].background_light={settings:{enabled:true,brightness:.12345,color_srgb:'#ABCDEF',
+ geometry:{type:'oval',center_xy:[49.5,49.5],radii_xy:[35.25,30.125],rotation_degrees:37.125,softness:.625}}};
+const lightSaved=structuredClone(servedState.revisions[0].background_light.settings);
+const lightFetch=fetch;globalThis.fetch=async(path,options)=>{
+ if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};
+ return lightFetch(path,options);
+};
+"""
+
+
+def test_background_light_form_fractions_shape_sessions_and_base_independence():
+    run_page(
+        LIGHT_SETUP
+        + r"""
+ await ready();
+ assert.equal(Number($('backgroundLightBrightness').value),12.345);
+ assert.equal(Number($('backgroundLightRadiusX').value),35.25);
+ $('backgroundLightRadiusX').value='27.375';$('backgroundLightRadiusX').oninput();
+ $('backgroundLightShape').value='directional';$('backgroundLightShape').onchange();
+ $('backgroundLightTransition').value='44.125';$('backgroundLightTransition').oninput();
+ await $('backgroundLightReverse').onclick();assert.equal(Number($('backgroundLightRotation').value),180);
+ $('backgroundLightShape').value='oval';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightRadiusX').value),27.375);
+ $('backgroundLightShape').value='directional';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightTransition').value),44.125);
+ const before=backgroundLightSettings();
+ await $('backgroundBlack').onclick();assert.deepEqual(backgroundLightSettings(),before);
+ $('backgroundLightHex').value='#123456';$('backgroundLightHex').oninput();
+ await $('backgroundLightApply').onclick();
+ assert.equal(posts.at(-1).background_light.brightness,.12345);
+ assert.equal(posts.at(-1).background_light.geometry.transition_width,44.125);
+ assert(!('background' in posts.at(-1)));
+ assert.equal(posts.at(-1).revision_manifest_sha256,'a'.repeat(64));
+ assert.equal($('backgroundHex').value,'#000000');
+ const record={...servedState.revisions[0],revision:'rev-002',background_light:{settings:posts.at(-1).background_light}};
+ servedState.revisions.push(record);servedState.working_revision='rev-002';
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-002',parent:'rev-001',background_light:record.background_light}};
+ await refresh();
+ $('backgroundLightShape').value='oval';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightRadiusX').value),27.375,'Apply erased inactive session geometry');
+ $('backgroundLightShape').value='directional';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightTransition').value),44.125);
+ await $('backgroundLightReload').onclick();
+ $('backgroundLightShape').value='oval';$('backgroundLightShape').onchange();
+ assert.equal(Number($('backgroundLightRadiusX').value),35,'Explicit reload resets inactive drafts');
+ """
+    )
+
+
+@pytest.mark.parametrize("pending", ["invalid", "stale"])
+@pytest.mark.parametrize("reused", [False, True])
+def test_background_light_saved_off_preserves_pending_form_and_base(pending, reused):
+    run_page(
+        LIGHT_SETUP
+        + f"const pending={pending!r},reused={json.dumps(reused)};"
+        + r"""
+ if(reused){lightSaved.enabled=false;servedState.revisions[0].background_light.settings.enabled=false;}
+ await ready();
+ $('backgroundLightRadiusX').value=pending==='invalid'?'':'17.125';$('backgroundLightRadiusX').oninput();
+ if(pending==='stale'){servedState.revisions[0].revision_manifest_sha256='b'.repeat(64);await refresh();}
+ $('backgroundHex').value='#123456';$('backgroundHex').oninput();
+ const input=$('backgroundLightRadiusX').value;
+ await $('backgroundLightOff').onclick();
+ assert.deepEqual(posts.at(-1).background_light,{...lightSaved,enabled:false});
+ assert.equal(posts.at(-1).revision_manifest_sha256,(pending==='stale'?'b':'a').repeat(64));
+ const revision=reused?'rev-001':'rev-002', record={...servedState.revisions[0],revision,
+  background_light:{settings:{...lightSaved,enabled:false}}};
+ if(reused)servedState.revisions[0]=record;else servedState.revisions.push(record);
+ servedState.working_revision=revision;
+ servedState.action={running:false,name:'effects',error:null,result:{revision,parent:'rev-001',reused,background_light:record.background_light}};
+ await refresh();
+ assert.equal($('backgroundLightRadiusX').value,input);
+ assert.match($('backgroundLightDraftStatus').textContent,/Unapplied|Stale/);
+ assert.equal($('backgroundHex').value,'#123456');
+ """
+    )
+
+
+@pytest.mark.parametrize("newer", [False, True])
+def test_background_light_reused_completion_owns_only_submitted_version(newer):
+    run_page(
+        LIGHT_SETUP
+        + f"const newer={json.dumps(newer)};"
+        + r"""
+ await ready();await $('backgroundLightApply').onclick();
+ if(newer){$('backgroundLightBrightness').value='23.456';$('backgroundLightBrightness').oninput();}
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-001',parent:'rev-000',reused:true,background_light:{settings:lightSaved}}};
+ await refresh();
+ assert.equal(Number($('backgroundLightBrightness').value),newer?23.456:12.345);
+ assert.equal(/Unapplied/.test($('backgroundLightDraftStatus').textContent),newer);
+ """
+    )
+
+
+def test_background_light_invalid_busy_no_record_off_and_fractional_canvas():
+    run_page(r"""
+ await ready();assert($('backgroundLightOff').disabled);
+ await $('backgroundLightOff').onclick();assert.equal(posts.length,0);
+ $('backgroundLightBrightness').value='';$('backgroundLightBrightness').oninput();
+ await $('backgroundLightApply').onclick();assert.equal(posts.length,0);
+ assert.match($('message').textContent,/finite|brightness/i);
+ await $('backgroundLightReload').onclick();
+ $('authorMode').value='background-light';$('backgroundLightHide').checked=false;
+ const rect=canvas.getBoundingClientRect(),size=[canvas.width,canvas.height];
+ const eventAt=p=>{const [clientX,clientY]=nativeToScreen(p,rect,size,transform,crop);return {clientX,clientY,pointerId:1,shiftKey:false};};
+ canvas.onpointerdown(eventAt([49.5,49.5]));canvas.onpointermove(eventAt([53.25,44.125]));canvas.onpointerup(eventAt([53.25,44.125]));
+ assert.equal(Number($('backgroundLightCenterX').value),53.25);
+ assert.equal(Number($('backgroundLightCenterY').value),44.125);
+ assert.equal(posts.length,0);
+ servedState.writer_busy=true;await refresh();assert($('backgroundLightApply').disabled);
+ await $('backgroundLightApply').onclick();assert.equal(posts.length,0);
+ """)
+
+
 def run_page(scenario):
     page = Path("src/blackmask/ui/review.html").read_text()
     script = page.split("<script>", 1)[1].split("</script>", 1)[0]
@@ -77,6 +193,792 @@ async function ready(){
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+
+
+APPEARANCE_SETUP = r"""
+const appearanceValue={schema_version:1,kind:'appearance-recipe',name:'<img> saved source',reference:null,
+ sections:{shadow_fade:{amount:.38,preserve_highlights:.7},local_exposure:{ev:1.25},
+ color_cleanup:{strength:.45},background:{color_srgb:'#14283C',variation:.125},
+ shading:{width_subject_fraction:.0125,direction_degrees:37,opacity:.4}}};
+const appearanceConverted={shadow_fade:{amount:.38,preserve_highlights:.7},local_exposure:{ev:1.25},
+ color_cleanup:{strength:.45},background:{color_srgb:'#14283C',variation:.125},
+ shading:{width_px:1.25,direction_degrees:37,opacity:.4}};
+const recipeRequests=[];let holdRecipeReply=null, recipeReplyGate=null;
+const originalAppearanceFetch=fetch;
+globalThis.fetch=async(path,options)=>{
+ if(path.startsWith('/api/appearance-recipe-')){
+  const data=JSON.parse(options.body);recipeRequests.push({path,data});
+  const result={...data,working_revision:servedState.working_revision,
+   inputs_digest:servedState.inputs_digest,authoring_digest:servedState.authoring_digest,
+   recipe:structuredClone(appearanceValue),sections:structuredClone(appearanceConverted),unavailable:{},
+   recipe_json:JSON.stringify(appearanceValue)};
+  if(recipeReplyGate)await recipeReplyGate;
+  return {ok:true,json:async()=>result};
+ }
+ return originalAppearanceFetch(path,options);
+};
+function appearanceFile(text=JSON.stringify(appearanceValue)){
+ const bytes=new TextEncoder().encode(text);return {size:bytes.length,arrayBuffer:async()=>bytes.buffer};
+}
+function advanceAppearanceRevision(extra={}){
+ const previous=servedState.working_revision;
+ const next='rev-'+String(Number(previous.slice(4))+1).padStart(3,'0');
+ servedState.working_revision=next;servedState.inputs_digest+='-next';
+ servedState.revisions.push({...structuredClone(servedState.revisions.at(-1)),...extra,
+  revision:next,revision_manifest_sha256:String(servedState.revisions.length+1).repeat(64)});
+ return {previous,next};
+}
+"""
+
+
+LAYOUT_SETUP = (
+    APPEARANCE_SETUP
+    + r"""
+appearanceValue.schema_version=2;
+appearanceValue.sections={spatial_layout:{preserve_highlights:.7,arcs_enabled:false,
+ oval:{enabled:false,center_subject_xy:[.25,-.2],inner_radii_subject_xy:[.2,.1],rotation_degrees:37,transition_subject_fraction:.075,amount:.6},
+ arcs:[{enabled:true,center_subject_xy:[.25,-.2],rotation_degrees:37,transition_subject_fraction:.075,amount:.4,
+ half_span_subject_fraction:.3,bend_subject_fraction:-.1,end_softness_subject_fraction:.02,fade_side:'negative'}]},
+ local_exposure:{ev:1.25}};
+for(const key of Object.keys(appearanceConverted))delete appearanceConverted[key];
+appearanceConverted.local_exposure={ev:1.25};
+const layoutRequests=[];let layoutReplyGate=null, releaseLayoutReply, nextLayoutId=10;
+const layoutFetch=fetch;
+globalThis.fetch=async(path,options)=>{
+ const data=options.body?JSON.parse(options.body):null;
+ if(path==='/api/appearance-layout-preview'){
+  layoutRequests.push(data);
+  const arc={id:'00000000-0000-4000-8000-'+String(++nextLayoutId).padStart(12,'0'),enabled:false,
+   center_xy:[75,30],rotation_degrees:37,transition_width:7.5,amount:.4,half_span:30,bend:-10,end_softness:2,fade_side:'negative'};
+  const proposal=data.mode==='replace'?{enabled:data.spatial_draft.enabled,preserve_highlights:.7,arcs_enabled:false,
+   oval:{enabled:false,center_xy:[75,30],inner_radii_xy:[20,10],rotation_degrees:37,transition_width:7.5,amount:.6},
+   arcs:[{...arc,enabled:true}]}:{...structuredClone(data.spatial_draft),arcs:[...structuredClone(data.spatial_draft.arcs),arc]};
+  const result={spatial_fade:proposal,warnings:data.mode==='add_arcs'?['Target arc group is OFF']:[],
+   developed_id:data.developed_id,revision:data.revision,working_revision:data.revision,
+   revision_manifest_sha256:data.revision_manifest_sha256,inputs_digest:data.inputs_digest,
+   authoring_digest:data.authoring_digest,spatial_draft_version:data.spatial_draft_version,mode:data.mode};
+  if(layoutReplyGate)await layoutReplyGate;
+  return {ok:true,json:async()=>result};
+ }
+ const response=await layoutFetch(path,options);
+ if(path==='/api/appearance-recipe-validate'&&data.layout_defaults_shape!==undefined){
+  const result=await response.json();result.sections={local_exposure:{ev:1.25},spatial_fade:{transition_width:7.5,
+   amount:data.layout_defaults_shape==='oval'?.6:.4,preserve_highlights:.7}};
+  return {ok:true,json:async()=>result};
+ }
+ return response;
+};
+async function readyLayout(){
+ await ready();addSpatialArc();spatialDraft.arcs_enabled=false;markSpatialDirty();
+ $('spatialCandidate').checked=true;$('spatialProtection').value='draft/protected.png';
+ for(const [index,target] of ['spatial_fade','shadow_fade'].entries())fadeReductionDrafts.set(target,{
+  area:{schema_version:1,regions:[{shape:{id:'kept-'+target,role:'support',shape:'rectangle',xyxy:[10,20,30,40],feather_px:0},amount:.4}]},
+  version:index+3,identity:spatialCurrentIdentity(),dirty:true});
+ $('reductionTarget').value='spatial_fade';$('reductionAmount').value='37.50';$('reductionRadius').value='9';
+ $('reductionFeather').value='0';$('reductionRectangle').value='10,20,30,40';$('reductionCandidate').checked=true;
+ selectedReductionId='kept-spatial_fade';$('reductionSelect').value=selectedReductionId;
+ $('exposureEV').value='1.8';$('exposureEV').oninput();
+ await loadAppearanceRecipeFile(appearanceFile());$('appearanceLayoutMode').value='replace';
+}
+function layoutSnapshot(){return JSON.stringify({draft:spatialDraft,dirty:spatialDirty,binding:spatialDraftIdentity,
+ selected:selectedSpatialId,candidate:$('spatialCandidate').checked,protection:$('spatialProtection').value,
+ authorMode:$('authorMode').value,reductions:[...fadeReductionDrafts],selectedReductionId,
+ reductionControls:['reductionTarget','reductionShape','reductionRadius','reductionFeather','reductionAmount','reductionRectangle','reductionSelect','reductionView'].map(id=>[id,$(id).value]),
+ reductionCandidate:$('reductionCandidate').checked,exposure:$('exposureEV').value,exposureDirty:exposureControlsVersion});}
+"""
+)
+
+
+@pytest.mark.parametrize("spatial_dirty", [False, True])
+@pytest.mark.parametrize("reduction_state", ["absent", "clean", "dirty"])
+def test_appearance_layout_survives_unchanged_poll_and_rejects_changed_binding(
+    spatial_dirty, reduction_state
+):
+    run_page(
+        LAYOUT_SETUP
+        + f"\nconst spatialInitiallyDirty={json.dumps(spatial_dirty)}, reductionState={json.dumps(reduction_state)};\n"
+        + r"""
+ await readyLayout();
+ servedState.revisions[0].spatial_fade={enabled:spatialDraft.enabled,settings:structuredClone(spatialDraft)};
+ spatialDirty=spatialInitiallyDirty;
+ if(reductionState==='absent')fadeReductionDrafts.clear();
+ else {
+  servedState.revisions[0].fade_reduction_areas=Object.fromEntries([...fadeReductionDrafts].map(([target,draft])=>[target,structuredClone(draft.area)]));
+  for(const draft of fadeReductionDrafts.values())draft.dirty=reductionState==='dirty';
+ }
+ await refresh(false);
+ const before=layoutSnapshot(), version=spatialDraftVersion;
+ await previewAppearanceLayout('replace');assert(appearanceLayoutProposal);
+ await refresh(false);
+ assert(appearanceLayoutProposal,'Unchanged polling discarded the placement proposal');
+ assert.equal(layoutSnapshot(),before);assert.equal(spatialDraftVersion,version);
+ await loadAppearanceLayout();assert(appearanceLayoutUndo);
+ await refresh(false);assert(appearanceLayoutUndo,'Unchanged polling discarded import Undo');
+ undoAppearanceLayoutImport();assert.equal(layoutSnapshot(),before);
+ await previewAppearanceLayout('replace');assert(appearanceLayoutProposal);
+ servedState.revisions[0].revision_manifest_sha256='f'.repeat(64);
+ await refresh(false);assert.equal(appearanceLayoutProposal,null);
+ assert.equal(appearanceLayoutUndo,null);
+ """
+    )
+
+
+def test_appearance_layout_preview_cancel_and_guarded_undo_preserve_exact_drafts():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();const before=layoutSnapshot(),version=spatialDraftVersion;
+ await previewAppearanceLayout('replace');
+ assert(appearanceLayoutProposal);assert.equal(layoutSnapshot(),before);assert.equal(spatialDraftVersion,version);
+ assert($('appearanceLayoutStatus').textContent.includes('Placement preview — effects not applied'));
+ cancelAppearanceLayout();assert.equal(appearanceLayoutProposal,null);assert.equal(layoutSnapshot(),before);
+ assert.equal(spatialDraftVersion,version);assert.equal(posts.length,0);
+ await previewAppearanceLayout('replace');let confirmed='';globalThis.confirm=text=>{confirmed=text;return false;};
+ await loadAppearanceLayout();assert(confirmed.includes('Replace'));assert.equal(layoutSnapshot(),before);
+ globalThis.confirm=()=>true;await loadAppearanceLayout();
+ assert.equal(spatialDraftVersion,version+1);assert.equal(spatialDraft.enabled,false);
+ assert.deepEqual(spatialDraft.oval.center_xy,[75,30]);assert.equal($('spatialProtection').value,'draft/protected.png');
+ assert.equal([...fadeReductionDrafts][0][1].version,3);assert.equal($('reductionAmount').value,'37.50');
+ assert.equal(posts.length,0);assert(appearanceLayoutUndo);
+ undoAppearanceLayoutImport();assert.equal(layoutSnapshot(),before);assert.equal(spatialDraftVersion,version+2);
+ assert.equal(appearanceLayoutUndo,null);assert.equal(posts.length,0);
+ """
+    )
+
+
+def test_appearance_layout_add_preserves_group_and_existing_ids_then_native_apply():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();$('appearanceLayoutMode').value='add_arcs';
+ const existing=structuredClone(spatialDraft),reductions=JSON.stringify([...fadeReductionDrafts]);
+ await previewAppearanceLayout('add_arcs');await loadAppearanceLayout();
+ assert.equal(spatialDraft.arcs_enabled,false);assert.deepEqual(spatialDraft.oval,existing.oval);
+ assert.equal(spatialDraft.preserve_highlights,existing.preserve_highlights);
+ assert.deepEqual(spatialDraft.arcs.slice(0,-1),existing.arcs);assert.equal(spatialDraft.arcs.at(-1).enabled,false);
+ assert.equal(JSON.stringify([...fadeReductionDrafts]),reductions);
+ $('spatialStrength').value='65';$('spatialStrength').oninput();assert.equal(appearanceLayoutUndo,null);
+ await applySpatial();assert.equal(posts.length,1);assert.equal(posts[0].spatial_fade.arcs.at(-1).amount,.65);
+ assert.equal(posts[0].spatial_fade.arcs_enabled,false);assert.equal(appearanceLayoutUndo,null);
+ """
+    )
+
+
+def test_appearance_layout_replace_confirms_clean_draft_and_second_load_replaces_undo():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();spatialDirty=false;let confirmations=0;globalThis.confirm=()=>{confirmations++;return true;};
+ await previewAppearanceLayout('replace');await loadAppearanceLayout();assert.equal(confirmations,1);
+ const afterFirst=layoutSnapshot(),version=spatialDraftVersion;
+ await previewAppearanceLayout('replace');assert.equal(appearanceLayoutUndo,null);
+ await loadAppearanceLayout();assert.equal(confirmations,2);assert.equal(spatialDraftVersion,version+1);
+ undoAppearanceLayoutImport();assert.equal(layoutSnapshot(),afterFirst);assert.equal(spatialDraftVersion,version+2);
+ """
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "spatial",
+        "reduction",
+        "raw-control",
+        "selection",
+        "mode",
+        "authoring",
+        "file",
+        "apply",
+        "disable",
+        "reset",
+    ],
+)
+def test_appearance_layout_late_preview_and_undo_cannot_overwrite_independent_changes(change):
+    run_page(
+        LAYOUT_SETUP
+        + f"const change={change!r};"
+        + r"""
+ await readyLayout();await previewAppearanceLayout('replace');await loadAppearanceLayout();assert(appearanceLayoutUndo);
+ async function edit(){
+  if(change==='spatial'){$('spatialCenterX').value='44';$('spatialCenterX').oninput();}
+  else if(change==='reduction'){fadeReductionDrafts.get('shadow_fade').version++;markFadeReductionDirty();}
+  else if(change==='raw-control'){$('reductionRectangle').value='20,20,50,50';$('reductionRectangle').oninput();}
+  else if(change==='selection'){$('spatialSelect').value='oval';$('spatialSelect').onchange();}
+  else if(change==='mode'){$('appearanceLayoutMode').value='add_arcs';$('appearanceLayoutMode').onchange();}
+  else if(change==='authoring'){state.authoring_digest+='changed';}
+  else if(change==='file'){await loadAppearanceRecipeFile(appearanceFile());}
+  else if(change==='apply'){await applySpatial();}
+  else if(change==='disable'){await $('spatialDisable').onclick();}
+  else resetSpatialFromSaved();
+ }
+ await edit();const edited=layoutSnapshot();
+ assert.throws(()=>undoAppearanceLayoutImport(),/unavailable|changed|Undo|undo/i);
+ assert.equal(layoutSnapshot(),edited);
+ // A separate pending preview is bound to the same independent change classes.
+ await readyLayout();layoutReplyGate=new Promise(resolve=>releaseLayoutReply=resolve);
+ const pending=previewAppearanceLayout('replace');await Promise.resolve();await edit();
+ const newer=layoutSnapshot();releaseLayoutReply();await pending;
+ assert.equal(appearanceLayoutProposal,null);assert.equal(layoutSnapshot(),newer);
+ """
+    )
+
+
+def test_appearance_layout_late_replace_confirmation_and_active_placement_do_not_load():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();await previewAppearanceLayout('replace');let answer;
+ globalThis.confirm=()=>new Promise(resolve=>answer=resolve);
+ const pending=loadAppearanceLayout();await Promise.resolve();
+ $('reductionCandidate').checked=false;$('reductionCandidate').oninput();const newer=layoutSnapshot();
+ answer(true);await pending;assert.equal(layoutSnapshot(),newer);assert.equal(appearanceLayoutUndo,null);
+ globalThis.confirm=()=>true;await previewAppearanceLayout('replace');spatialAdding=true;
+ await assert.rejects(loadAppearanceLayout(),/placement|gesture|finish/i);
+ assert.equal(layoutSnapshot(),newer);
+ """
+    )
+
+
+def test_appearance_layout_settings_only_fallback_preserves_file_geometry_and_switches():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();const recipe=JSON.stringify(appearanceRecipePreview.recipe),old=structuredClone(spatialDraft);
+ $('appearanceTargetShape').value=selectedSpatialId;$('appearanceLayoutDefaultsShape').value='0';
+ await loadAppearanceLayoutSettingsOnly();
+ assert.equal(recipeRequests.at(-1).data.layout_defaults_shape,0);
+ assert.equal(JSON.stringify(appearanceRecipePreview.recipe),recipe);
+ const selected=spatialDraft.arcs.find(arc=>arc.id===selectedSpatialId);
+ assert.equal(selected.transition_width,7.5);assert.equal(selected.amount,.4);
+ const previous=old.arcs.find(arc=>arc.id===selectedSpatialId);
+ assert.deepEqual(selected.center_xy,previous.center_xy);assert.equal(selected.enabled,previous.enabled);
+ assert.equal(spatialDraft.arcs_enabled,old.arcs_enabled);assert.deepEqual(spatialDraft.oval,old.oval);
+ assert.equal(spatialDraft.preserve_highlights,.7);assert.equal(posts.length,0);
+ spatialDraftIdentity='older';await assert.rejects(loadAppearanceLayoutSettingsOnly(),/Stale/);
+ """
+    )
+
+
+def test_appearance_layout_save_selection_is_explicit_and_exclusive():
+    run_page(
+        LAYOUT_SETUP
+        + r"""
+ await readyLayout();servedState.revisions[0].spatial_fade={enabled:false,settings:structuredClone(spatialDraft)};
+ await refresh();$('appearanceSource').value='rev-001';syncAppearanceSource();
+ assert.equal($('appearanceSave-spatial_layout').checked,false);
+ $('appearanceSaveName').value='Saved layout';$('appearanceSave-spatial_layout').checked=true;
+ const request=appearanceSaveRequest();assert.deepEqual(request.sections,['spatial_layout']);assert.equal(request.reference_shape_id,null);
+ $('appearanceSave-spatial_fade').checked=true;assert.throws(appearanceSaveRequest,/at most one|exclusive/);
+ """
+    )
+
+
+def test_appearance_recipe_loads_selected_scalars_without_geometry_or_jobs():
+    run_page(
+        APPEARANCE_SETUP
+        + r"""
+ await ready();
+ const reductions={schema_version:1,regions:[{shape:{id:'protected',role:'support',shape:'rectangle',xyxy:[0,0,10,10],feather_px:0},amount:.5}]};
+ fadeReductionDrafts.set('spatial_fade',{area:structuredClone(reductions),identity:'older',version:3,dirty:true});
+ fadeReductionDrafts.set('shadow_fade',{area:structuredClone(reductions),identity:'older',version:4,dirty:true});
+ const before=JSON.stringify({groups,regions,identity,exposureArea,fadeArea,spatialDraft,
+  reductions:[...fadeReductionDrafts],accepted:state.accepted_revision});
+ await loadAppearanceRecipeFile(appearanceFile());
+ assert.equal($('appearanceName').textContent,'<img> saved source');
+ for(const section of ['background','local_exposure','color_cleanup'])assert.equal($('appearanceLoad-'+section).checked,false);
+ await loadAppearanceRecipeSections(['shadow_fade','local_exposure','shading']);
+ assert.equal(Number($('fadeAmount').value),38);assert.equal(Number($('exposureEV').value),1.25);
+ assert.equal(Number($('shadingWidth').value),1.25);assert.equal(Number($('shadingDirection').value),37);
+ assert.equal(posts.length,0);assert.equal(Number($('backgroundVariation').value),0);
+ assert.equal(JSON.stringify({groups,regions,identity,exposureArea,fadeArea,spatialDraft,
+  reductions:[...fadeReductionDrafts],accepted:state.accepted_revision}),before);
+ const old=$('exposureEV').value;$('exposureEV').value='2';$('exposureEV').oninput();
+ let prompt='';globalThis.confirm=text=>{prompt=text;return false;};
+ await loadAppearanceRecipeSections(['local_exposure']);
+ assert(prompt.includes('Local exposure'));assert.equal($('exposureEV').value,'2');assert.notEqual(old,'2');
+ """
+    )
+
+
+@pytest.mark.parametrize(
+    "fraction,percentage",
+    [(0, "0"), (0.29, "29"), (0.55, "55"), (0.07, "7"), (0.125, "12.5"), (1, "100")],
+)
+def test_appearance_shadow_percentages_display_cleanly_and_apply_unchanged(fraction, percentage):
+    run_page(
+        APPEARANCE_SETUP
+        + f"const fraction={fraction!r},percentage={json.dumps(percentage)};"
+        + r"""
+ appearanceValue.sections.shadow_fade={amount:fraction,preserve_highlights:fraction};
+ appearanceConverted.shadow_fade={amount:fraction,preserve_highlights:fraction};
+ await ready();await loadAppearanceRecipeFile(appearanceFile());
+ await loadAppearanceRecipeSections(['shadow_fade']);
+ for(const field of ['fadeAmount','fadeRange','fadePreserve','fadePreserveRange'])
+  assert.equal(String($(field).value),percentage);
+ assert.equal(posts.length,0);
+ await $('fadeAmountApply').onclick();
+ assert.deepEqual(posts.at(-1).shadow_fade,{enabled:true,amount:fraction,preserve_highlights:fraction});
+ """
+    )
+
+
+@pytest.mark.parametrize("section", ["shading", "shadow_fade", "spatial_fade"])
+def test_appearance_summaries_display_clean_percentages(section):
+    run_page(
+        APPEARANCE_SETUP
+        + f"const section={json.dumps(section)};"
+        + r"""
+ appearanceValue.sections={
+  [section]:section==='shading'?{width_subject_fraction:.0125,direction_degrees:37,opacity:.29}
+   :{amount:.55,preserve_highlights:.07,...(section==='spatial_fade'?{transition_subject_fraction:.02}:{})}};
+ for(const key of Object.keys(appearanceConverted))delete appearanceConverted[key];
+ appearanceConverted[section]=section==='shading'?{width_px:1.25,direction_degrees:37,opacity:.29}
+  :{amount:.55,preserve_highlights:.07,...(section==='spatial_fade'?{transition_width:2}:{})};
+ await ready();await loadAppearanceRecipeFile(appearanceFile());
+ const percentages=$('appearanceValues-'+section).textContent.match(/[\d.]+%/g);
+ assert.deepEqual(percentages,section==='shading'?['29%']:['55%','7%']);
+ """
+    )
+
+
+def test_appearance_fractional_background_survives_load_and_colour_edit():
+    run_page(
+        APPEARANCE_SETUP
+        + r"""
+ await ready();servedState.revisions[0].background={settings:{color_srgb:'#14283C',variation:.125}};
+ await refresh(true);assert.equal(Number($('backgroundVariation').value),12.5);
+ await loadAppearanceRecipeFile(appearanceFile());await loadAppearanceRecipeSections(['background']);
+ assert.equal(Number($('backgroundVariation').value),12.5);
+ $('backgroundHex').value='#445566';$('backgroundHex').oninput();
+ await $('backgroundApply').onclick();assert.deepEqual(posts.at(-1).background,{color_srgb:'#445566',variation:.125});
+ assert.equal(Number($('backgroundVariation').value),12.5);
+ """
+    )
+
+
+@pytest.mark.parametrize(
+    "prefix,section", [("exposure", "local_exposure"), ("fade", "shadow_fade")]
+)
+def test_appearance_scalar_reload_never_rebinds_stale_area(prefix, section):
+    run_page(
+        APPEARANCE_SETUP
+        + f"const prefix={prefix!r},section={section!r};"
+        + r"""
+ await ready();$(prefix+'Role').value='protection';$(prefix+'Feather').value='0';
+ $(prefix+'Rectangle').value='10,20,30,40';await $(prefix+'AddRectangle').onclick();
+ const originalArea=JSON.stringify(prefix==='exposure'?exposureArea:fadeArea);
+ await loadAppearanceRecipeFile(appearanceFile());
+ const {previous,next}=advanceAppearanceRevision();servedState.action={running:false,name:'effects',error:null,result:{parent:previous,revision:next}};
+ actionWasRunning=true;await refresh();
+ await reloadAppearanceRecipeSection(section);
+ assert.equal(prefix==='exposure'?exposureControlsStale():fadeControlsStale(),false);
+ assert(effectAreaDraftStale(prefix));
+ const count=posts.length;await $(prefix+'Apply').onclick();assert.equal(posts.length,count);
+ assert($('message').textContent.toLowerCase().includes('stale'));
+ await $(prefix==='exposure'?'exposureAmount':'fadeAmountApply').onclick();
+ assert.equal(posts.length,count+1);assert.equal(posts.at(-1).base_revision,next);
+ assert(!('exposure_area' in posts.at(-1)));assert(!('shadow_fade_area' in posts.at(-1)));
+ assert.equal(JSON.stringify(prefix==='exposure'?exposureArea:fadeArea),originalArea);
+ assert(prefix==='exposure'?exposureDirty:fadeDirty);
+ await $(prefix+'ReloadArea').onclick();assert(!effectAreaDraftStale(prefix));
+ assert.equal(prefix==='exposure'?exposureDirty:fadeDirty,false);
+ """
+    )
+
+
+@pytest.mark.parametrize(
+    "section,field,new_value",
+    [
+        ("local_exposure", "exposureEV", "2"),
+        ("shadow_fade", "fadeAmount", "80"),
+        ("shading", "shadingWidth", "4"),
+        ("color_cleanup", "cleanupStrength", ".8"),
+        ("background", "backgroundVariation", "17.5"),
+    ],
+)
+@pytest.mark.parametrize("reused", [False, True])
+def test_appearance_late_apply_keeps_newer_scalar_edits(section, field, new_value, reused):
+    run_page(
+        APPEARANCE_SETUP
+        + f"const section={section!r},field={field!r},newValue={new_value!r},reused={str(reused).lower()};"
+        + r"""
+ if(reused){const settings={...(section==='background'?{}:{enabled:true}),...appearanceConverted[section]};
+  servedState.revisions[0][section]=section==='color_cleanup'?{...settings,stale:false}:{enabled:settings.enabled,stale:false,settings};}
+ await ready();await loadAppearanceRecipeFile(appearanceFile());await loadAppearanceRecipeSections([section]);
+ const original=fetch;
+ globalThis.fetch=async(path,options)=>{if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return original(path,options);};
+ const button={local_exposure:'exposureAmount',shadow_fade:'fadeAmountApply',shading:'shadingOpacityApply',color_cleanup:'cleanupApply',background:'backgroundApply'}[section];
+ await $(button).onclick();assert.equal(posts.length,1,$('message').textContent);
+ $(field).value=newValue;$(field).oninput();
+ const sent=posts[0][section],record=section==='color_cleanup'?{...sent,stale:false}:{enabled:sent.enabled,stale:false,settings:sent};
+ const {previous,next}=reused?{previous:servedState.working_revision,next:servedState.working_revision}:advanceAppearanceRevision({[section]:record});
+ if(reused)assert.deepEqual(section==='color_cleanup'?{enabled:record.enabled,strength:record.strength}:servedState.revisions[0][section].settings,sent);
+ servedState.action={running:false,name:'effects',error:null,result:{parent:previous,revision:next,reused,[section]:record}};
+ await refresh();assert.equal($(field).value,newValue);assert(appearanceScalarState(section).dirty);
+ assert.equal(appearanceScalarStale(section),!reused);assert(appearanceRecipePreview);
+ """
+    )
+
+
+@pytest.mark.parametrize(
+    "enabled,strength,reused",
+    [(True, 0.8, False), (False, 0.8, False), (False, 0, False), (True, 0.45, True)],
+)
+def test_appearance_cleanup_uses_actual_saved_snapshot_and_completion(
+    tmp_path, enabled, strength, reused
+):
+    from test_effects import effect_request, fixture_project
+
+    from blackmask import operations
+    from blackmask.viewer import ReviewServer
+
+    project, _, _ = fixture_project(tmp_path)
+    with ReviewServer(project) as server:
+        empty = server.snapshot()
+        operations.apply_operation(
+            project,
+            effect_request(project, enabled=enabled, strength=strength, candidate_comparison=True),
+        )
+        initial = server.snapshot()
+        completed = operations.apply_operation(
+            project, effect_request(project, strength=0.45, candidate_comparison=True)
+        )
+        assert completed["reused"] is reused
+        server.action = {"running": False, "name": "effects", "error": None, "result": completed}
+        settled = server.snapshot()
+    run_page(
+        APPEARANCE_SETUP
+        + "const savedCleanupEvidence="
+        + json.dumps(
+            {
+                "empty": empty,
+                "initial": initial,
+                "settled": settled,
+                "enabled": enabled,
+                "strength": strength,
+            }
+        )
+        + ";"
+        + r"""
+ Object.assign(servedState,savedCleanupEvidence.empty);await ready();
+ assert($('appearanceSave-color_cleanup').disabled);
+ Object.assign(servedState,savedCleanupEvidence.initial);await refresh(true);
+ $('appearanceSource').value=state.working_revision;syncAppearanceSource();
+ assert.equal(Number($('cleanupStrength').value),savedCleanupEvidence.strength);
+ assert.equal($('appearanceSave-color_cleanup').disabled,false);
+ assert.equal($('appearanceSave-color_cleanup').checked,false);
+ assert($('appearanceSaved-color_cleanup').textContent.includes(savedCleanupEvidence.enabled?'ON':'OFF'));
+ const downloads=[];URL.createObjectURL=()=> 'blob:cleanup';URL.revokeObjectURL=()=>{};
+ globalThis.setTimeout=()=>0;
+ const create=document.createElement;document.createElement=tag=>{const node=create(tag);if(tag==='a')node.click=()=>downloads.push(node.download);return node;};
+ $('appearanceSaveName').value='Saved cleanup';$('appearanceSave-color_cleanup').checked=true;
+ await saveAppearanceRecipe();assert.equal(downloads.length,1);assert.deepEqual(recipeRequests.at(-1).data.sections,['color_cleanup']);
+ await loadAppearanceRecipeFile(appearanceFile());await loadAppearanceRecipeSections(['color_cleanup']);
+ assert.equal(Number($('cleanupStrength').value),.45);assert(appearanceScalarState('color_cleanup').dirty);
+ $('cleanupCandidate').checked=true;$('cleanupCandidate').oninput();
+ const original=fetch;globalThis.fetch=async(path,options)=>{
+  if(path==='/api/action')Object.assign(servedState,structuredClone(savedCleanupEvidence.settled));
+  return original(path,options);
+ };
+ await $('cleanupApply').onclick();assert.equal(posts.length,1,$('message').textContent);
+ assert.deepEqual(posts[0].color_cleanup,{enabled:true,strength:.45});
+ assert.equal(state.working_revision,savedCleanupEvidence.settled.working_revision);
+ assert.equal(Number($('cleanupStrength').value),.45);assert(!appearanceScalarState('color_cleanup').dirty);
+ assert(!appearanceScalarStale('color_cleanup'));assert(appearanceRecipePreview);
+ await refresh(true);assert.equal(Number($('cleanupStrength').value),.45);
+ """
+    )
+
+
+def test_appearance_spatial_defaults_require_current_explicit_shape():
+    run_page(
+        APPEARANCE_SETUP
+        + r"""
+ await ready();appearanceValue.sections={spatial_fade:{transition_subject_fraction:.02,amount:.4,preserve_highlights:.7}};
+ for(const key of Object.keys(appearanceConverted))delete appearanceConverted[key];
+ appearanceConverted.spatial_fade={transition_width:2,amount:.4,preserve_highlights:.7};
+ await loadAppearanceRecipeFile(appearanceFile());const before=JSON.stringify(spatialDraft);
+ await assert.rejects(()=>loadAppearanceRecipeSections(['spatial_fade']),/select|choose/i);
+ assert.equal(JSON.stringify(spatialDraft),before);assert(appearanceRecipePreview);
+ $('appearanceTargetShape').value='oval';$('appearanceTargetShape').onchange();
+ const oldIdentity=spatialDraftIdentity;await loadAppearanceRecipeSections(['spatial_fade']);
+ assert.equal(spatialDraft.oval.transition_width,2);assert.equal(spatialDraft.oval.amount,.4);
+ assert.equal(spatialDraft.preserve_highlights,.7);assert.equal(spatialDraft.enabled,false);
+ assert.equal(spatialDraftIdentity,oldIdentity);assert.deepEqual(spatialDraft.arcs,[]);
+ advanceAppearanceRevision();await refresh();
+ await assert.rejects(()=>reloadAppearanceRecipeSection('spatial_fade'),/stale/i);
+ assert.equal(spatialDraftIdentity,oldIdentity);
+ """
+    )
+
+
+def test_appearance_late_import_and_confirmation_cannot_replace_newer_work():
+    run_page(
+        APPEARANCE_SETUP
+        + r"""
+ await ready();await loadAppearanceRecipeFile(appearanceFile());
+ const retained=appearanceRecipePreview;
+ recipeReplyGate=new Promise(resolve=>holdRecipeReply=resolve);
+ const pending=loadAppearanceRecipeFile(appearanceFile());await Promise.resolve();await Promise.resolve();
+ $('exposureEV').value='2';$('exposureEV').oninput();holdRecipeReply();await pending;
+ assert.equal(appearanceRecipePreview,retained);assert.equal($('exposureEV').value,'2');recipeReplyGate=null;
+ let resolveConfirmation;globalThis.confirm=()=>new Promise(resolve=>resolveConfirmation=resolve);
+ const loading=loadAppearanceRecipeSections(['local_exposure']);
+ for(let i=0;i<20&&!resolveConfirmation;i++)await Promise.resolve();assert(resolveConfirmation);
+ $('exposureEV').value='2.5';$('exposureEV').oninput();resolveConfirmation(true);await loading;
+ assert.equal($('exposureEV').value,'2.5');
+ let reads=0;await assert.rejects(()=>loadAppearanceRecipeFile({size:1572865,arrayBuffer:async()=>{reads++;return new ArrayBuffer(0);}}));assert.equal(reads,0);
+ await assert.rejects(()=>loadAppearanceRecipeFile({size:1,arrayBuffer:async()=>new Uint8Array([255]).buffer}));
+ """
+    )
+
+
+def test_appearance_sequential_apply_requires_explicit_remaining_section_reload():
+    run_page(
+        APPEARANCE_SETUP
+        + r"""
+ await ready();await loadAppearanceRecipeFile(appearanceFile());
+ await loadAppearanceRecipeSections(['shadow_fade','local_exposure','shading']);
+ const preview=appearanceRecipePreview,original=fetch;
+ globalThis.fetch=async(path,options)=>{
+  if(path==='/api/action'){
+   const sent=JSON.parse(options.body),section=['shadow_fade','local_exposure','shading'].find(key=>key in sent);
+   const record={enabled:sent[section].enabled,stale:false,settings:sent[section]};
+   const {previous,next}=advanceAppearanceRevision({[section]:record});
+   servedState.action={running:false,name:'effects',error:null,result:{parent:previous,revision:next,[section]:record}};
+  }
+  return original(path,options);
+ };
+ for(const [index,[section,button]] of [['shadow_fade','fadeAmountApply'],['local_exposure','exposureAmount'],['shading','shadingOpacityApply']].entries()){
+  if(index){assert(appearanceScalarStale(section));const before=posts.length;
+   await $(button).onclick();assert.equal(posts.length,before);
+   await $('appearanceReload-'+section).onclick();assert(!appearanceScalarStale(section));}
+  await $(button).onclick();assert.equal(posts.length,index+1,$('message').textContent);
+  assert.equal(appearanceRecipePreview,preview);assert(!appearanceScalarState(section).dirty);
+ }
+ assert.equal(state.working_revision,'rev-004');assert.equal(Number($('shadingWidth').value),1.25);
+ assert.equal(state.accepted_revision,'rev-001');
+ """
+    )
+
+
+@pytest.mark.parametrize("prefix", ["exposure", "fade"])
+@pytest.mark.parametrize("completion", ["success", "error", "other-action"])
+def test_appearance_newer_area_survives_older_completion(prefix, completion):
+    run_page(
+        APPEARANCE_SETUP
+        + f"const prefix={prefix!r},completion={completion!r};"
+        + r"""
+ await ready();$(prefix+'Role').value='regions';$(prefix+'Feather').value='0';
+ $(prefix+'Rectangle').value='10,20,30,40';await $(prefix+'AddRectangle').onclick();
+ const original=fetch;globalThis.fetch=async(path,options)=>{
+  if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};
+  return original(path,options);};
+ await $(prefix+'Apply').onclick();assert.equal(posts.length,1,$('message').textContent);
+ const area=prefix==='exposure'?exposureArea:fadeArea;
+ area.protection.push({id:'new-protection',role:'protection',shape:'rectangle',xyxy:[40,40,50,50],feather_px:0});
+ markEffectAreaDirty(prefix);const newer=JSON.stringify(area),version=effectAreaVersions[prefix];
+ const key=prefix==='exposure'?'exposure_area':'shadow_fade_area';
+ const section=prefix==='exposure'?'local_exposure':'shadow_fade',sent=posts[0];
+ const record={enabled:true,stale:false,settings:sent[section]};
+ const {previous,next}=advanceAppearanceRevision({[key]:sent[key],[section]:record});
+ servedState.action={running:false,name:completion==='other-action'?'export':'effects',
+  error:completion==='error'?'synthetic failure':null,result:{parent:previous,revision:next,[section]:record}};
+ await refresh();assert.equal(JSON.stringify(prefix==='exposure'?exposureArea:fadeArea),newer);
+ assert.equal(effectAreaVersions[prefix],version);assert(prefix==='exposure'?exposureDirty:fadeDirty);
+ assert(effectAreaDraftStale(prefix));
+ globalThis.confirm=()=>false;await $(prefix+'ReloadArea').onclick();
+ assert.equal(JSON.stringify(prefix==='exposure'?exposureArea:fadeArea),newer);
+ """
+    )
+
+
+@pytest.mark.parametrize(
+    "prefix,section,key",
+    [("exposure", "local_exposure", "exposure_area"), ("fade", "shadow_fade", "shadow_fade_area")],
+)
+def test_appearance_same_revision_area_edit_survives_reused_apply(prefix, section, key):
+    run_page(
+        APPEARANCE_SETUP
+        + f"const prefix={prefix!r},section={section!r},key={key!r};"
+        + r"""
+ const saved={regions:[{id:'saved',role:'support',shape:'rectangle',xyxy:[0,0,10,10],feather_px:0}],protection:[]};
+ servedState.revisions[0][key]=structuredClone(saved);
+ servedState.revisions[0][section]={enabled:true,stale:false,settings:{enabled:true,...appearanceConverted[section]}};
+ await ready();const original=fetch;globalThis.fetch=async(path,options)=>{
+  if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return original(path,options);};
+ await $(prefix+'Apply').onclick();assert.equal(posts.length,1,$('message').textContent);
+ assert.deepEqual(posts[0][key],saved);
+ const area=prefix==='exposure'?exposureArea:fadeArea;
+ area.protection.push({id:'new',role:'protection',shape:'rectangle',xyxy:[0,0,2,2],feather_px:0});
+ markEffectAreaDirty(prefix);const retained=JSON.stringify(area);
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-001',reused:true,[section]:servedState.revisions[0][section]}};
+ await refresh();assert.equal(JSON.stringify(prefix==='exposure'?exposureArea:fadeArea),retained);
+ assert(prefix==='exposure'?exposureDirty:fadeDirty);assert(!effectAreaDraftStale(prefix));
+ """
+    )
+
+
+def test_appearance_save_late_reply_and_reference_urls_have_explicit_ownership():
+    run_page(
+        APPEARANCE_SETUP
+        + r"""
+ const created=[],revoked=[],downloads=[],timers=[];
+ URL.createObjectURL=blob=>{const url='blob:owned-'+created.length;created.push({url,blob});return url;};
+ URL.revokeObjectURL=url=>revoked.push(url);globalThis.setTimeout=callback=>timers.push(callback);
+ const createElement=document.createElement;document.createElement=tag=>{
+  const node=createElement(tag);if(tag==='a')node.click=()=>downloads.push({href:node.href,name:node.download});return node;};
+ servedState.revisions[0].background={settings:{color_srgb:'#14283C',variation:.125}};
+ await ready();$('appearanceSaveName').value='Old saved look';
+ for(const section of ['background','local_exposure','color_cleanup'])assert.equal($('appearanceSave-'+section).checked,false);
+ assert.equal($('appearanceIncludeReference').checked,false);
+ $('appearanceSave-background').checked=true;
+ recipeReplyGate=new Promise(resolve=>holdRecipeReply=resolve);
+ const saving=saveAppearanceRecipe();await Promise.resolve();$('appearanceSaveName').value='New name';$('appearanceSaveName').oninput();
+ holdRecipeReply();await saving;assert.equal(downloads.length,0);recipeReplyGate=null;
+ await saveAppearanceRecipe();assert.equal(downloads.length,1);assert.equal(downloads[0].name,'appearance-recipe.json');
+ assert.equal(recipeRequests.at(-1).data.include_reference,false);assert.equal(posts.length,0);
+ timers.splice(0).forEach(callback=>callback());assert(revoked.includes(downloads[0].href));
+ appearanceValue.reference={mime:'image/png',width:1,height:1,png_base64:'cGl4ZWxz'};
+ await loadAppearanceRecipeFile(appearanceFile());const first=appearanceReferenceUrl;
+ await loadAppearanceRecipeFile(appearanceFile());const second=appearanceReferenceUrl;
+ assert.notEqual(first,second);assert(revoked.includes(first));
+ closeAppearanceRecipe();assert(revoked.includes(second));assert.equal(appearanceRecipePreview,null);
+ assert.equal($('appearanceReference').src,'');
+ """
+    )
+
+
+@pytest.mark.parametrize("fraction", [0, 1, 0.55, 0.12345678901234567, 1e-20])
+def test_appearance_background_decimal_roundtrip_and_range_sync(fraction):
+    run_page(
+        f"const fraction={fraction!r};"
+        + r"""
+ servedState.revisions[0].background={settings:{color_srgb:'#14283C',variation:fraction}};
+ await ready();const percentage=$('backgroundVariation').value;
+ $('backgroundColor').value='#334455';$('backgroundColor').oninput();
+ await $('backgroundApply').onclick();assert.equal(posts.at(-1).background.variation,fraction);
+ assert.equal($('backgroundVariation').value,percentage);
+ $('backgroundRange').value='27';$('backgroundRange').oninput();
+ assert.equal($('backgroundVariation').value,'27');
+ """
+    )
+
+
+@pytest.mark.parametrize("value", ["", "NaN", "Infinity", "-0.01", "100.01", "0x10"])
+def test_appearance_background_rejects_invalid_percentage_before_action(value):
+    run_page(
+        f"const value={value!r};"
+        + r"""
+ await ready();$('backgroundHex').value='#334455';$('backgroundVariation').value=value;
+ await $('backgroundApply').onclick();assert.equal(posts.length,0);assert($('message').textContent.includes('finite'));
+ """
+    )
+
+
+def test_fade_reduction_drafts_keep_edits_local_and_bind_explicit_apply():
+    run_page(r"""
+ await ready();
+ servedState.revisions[0].spatial_fade={enabled:true,stale:false,settings:spatialDefaultSettings()};
+ servedState.revisions[0].fade_reduction_areas={spatial_fade:{schema_version:1,regions:[]}};
+ await refresh(true);
+ $('reductionRadius').value='3';$('reductionFeather').value='4';$('reductionAmount').value='50';
+ $('reductionRectangle').value='10,20,30,40';
+ await $('reductionAddRectangle').onclick();
+ const draft=fadeReductionDrafts.get('spatial_fade');
+ assert.equal(draft.area.regions.length,1);assert(draft.dirty);assert.equal(posts.length,0);
+ const id=draft.area.regions[0].shape.id;
+ assert.deepEqual(draft.area.regions[0].shape.xyxy,[10,20,30,40]);
+ $('reductionAmount').value='75';$('reductionAmount').oninput();
+ assert.equal(draft.area.regions[0].amount,.75);assert.equal(draft.area.regions[0].shape.id,id);
+ await $('reductionApply').onclick();
+ const sent=posts.at(-1);assert.equal(sent.action,'effects');
+ assert.equal(sent.revision_manifest_sha256,'a'.repeat(64));
+ assert.deepEqual(sent.fade_reduction,{target:'spatial_fade',area:draft.area});
+ assert(!('spatial_fade' in sent));
+ assert.deepEqual(sent.scope_xyxy,[0,0,100,100]);
+ await $('reductionClear').onclick();assert.equal(draft.area.regions.length,0);
+ assert.equal(posts.length,1);
+ await $('reductionReload').onclick();assert.equal(fadeReductionDrafts.get('spatial_fade').dirty,false);
+ """)
+
+
+@pytest.mark.parametrize("completion", ["match", "newer", "error", "manifest"])
+def test_fade_reduction_completion_preserves_newer_or_stale_draft(completion):
+    run_page(
+        "const completion="
+        + repr(completion)
+        + r""";
+ await ready();
+ servedState.revisions[0].spatial_fade={enabled:true,stale:false,settings:spatialDefaultSettings()};
+ servedState.revisions[0].fade_reduction_areas={spatial_fade:{schema_version:1,regions:[]}};
+ await refresh(true);$('reductionRadius').value='3';$('reductionFeather').value='0';$('reductionAmount').value='50';
+ $('reductionRectangle').value='10,20,30,40';await $('reductionAddRectangle').onclick();
+ const originalFetch=fetch;
+ globalThis.fetch=async(path,options)=>{if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return originalFetch(path,options);};
+ await $('reductionApply').onclick();const sent=posts.at(-1);
+ if(completion==='newer'){$('reductionAmount').value='80';$('reductionAmount').oninput();}
+ servedState.working_revision='rev-002';
+ // Saved JSON sorts object keys; semantic equality must survive transport ordering.
+ const savedArea=JSON.parse(JSON.stringify(sent.fade_reduction.area,
+   ['amount','feather_px','id','points','radius_px','regions','role','schema_version','shape','xyxy']));
+ assert.notEqual(JSON.stringify(savedArea),JSON.stringify(sent.fade_reduction.area));
+ servedState.revisions.push({...structuredClone(servedState.revisions[0]),revision:'rev-002',revision_manifest_sha256:'b'.repeat(64),fade_reduction_areas:{spatial_fade:savedArea}});
+ servedState.action={running:false,name:'effects',error:completion==='error'?'failed':null,result:{revision:'rev-002',parent:'rev-001',reused:false}};
+ if(completion==='manifest')servedState.revisions[1].fade_reduction_areas.spatial_fade={schema_version:1,regions:[]};
+ await refresh();const draft=fadeReductionDrafts.get('spatial_fade');
+ assert.equal(draft.dirty,completion!=='match');
+ if(completion==='newer')assert.equal(draft.area.regions[0].amount,.8);
+ if(completion!=='match'){
+   const count=posts.length;await $('reductionApply').onclick();assert.equal(posts.length,count);
+   assert($('message').textContent.toLowerCase().includes('stale'));
+ }
+ """
+    )
+
+
+@pytest.mark.parametrize("target", ["spatial_fade", "shadow_fade"])
+def test_reduction_target_switch_and_late_save_keep_other_draft(target):
+    run_page(
+        "const target="
+        + repr(target)
+        + r""";
+ await ready();
+ const other=target==='spatial_fade'?'shadow_fade':'spatial_fade';
+ servedState.revisions[0].fade_reduction_areas={spatial_fade:{schema_version:1,regions:[]},shadow_fade:{schema_version:1,regions:[]}};
+ await refresh(true);
+ assert.deepEqual($('reductionTarget').options.map(option=>option.value),['spatial_fade','shadow_fade']);
+ $('reductionTarget').value=target;await $('reductionTarget').onchange();
+ assert.equal($('reductionTarget').value,target);
+ $('reductionRadius').value='3';$('reductionFeather').value='0';$('reductionAmount').value='50';
+ $('reductionRectangle').value='10,20,30,40';await $('reductionAddRectangle').onclick();
+ const submittedDraft=fadeReductionDrafts.get(target);
+ const originalFetch=fetch;
+ globalThis.fetch=async(path,options)=>{if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};return originalFetch(path,options);};
+ await $('reductionApply').onclick();const sent=posts.at(-1);
+ assert.equal(sent.fade_reduction.target,target);
+ $('reductionTarget').value=other;await $('reductionTarget').onchange();
+ assert.equal($('reductionTarget').value,other);
+ $('reductionRectangle').value='40,40,60,60';await $('reductionAddRectangle').onclick();
+ const otherDraft=fadeReductionDrafts.get(other),otherArea=structuredClone(otherDraft.area);
+ assert(otherDraft.dirty);assert.equal(posts.length,1);
+ servedState.working_revision='rev-002';
+ servedState.revisions.push({...structuredClone(servedState.revisions[0]),revision:'rev-002',revision_manifest_sha256:'b'.repeat(64),
+   fade_reduction_areas:{[target]:structuredClone(sent.fade_reduction.area),[other]:{schema_version:1,regions:[]}}});
+ servedState.action={running:false,name:'effects',error:null,result:{revision:'rev-002',parent:'rev-001',reused:false}};
+ await refresh();
+ assert.equal($('reductionTarget').value,other);
+ assert.equal(fadeReductionDrafts.get(target).dirty,false);
+ assert.deepEqual(fadeReductionDrafts.get(target).area,submittedDraft.area);
+ assert.equal(fadeReductionDrafts.get(other),otherDraft);assert.deepEqual(otherDraft.area,otherArea);
+ assert($('reductionDraftStatus').textContent.includes('Stale'));
+ await $('reductionApply').onclick();assert.equal(posts.length,1);
+ await $('reductionReload').onclick();assert.equal(fadeReductionDrafts.get(other).dirty,false);
+ $('reductionTarget').value=target;await $('reductionTarget').onchange();
+ await $('reductionClear').onclick();assert.equal(fadeReductionDrafts.get(target).area.regions.length,0);
+ assert.equal(fadeReductionDrafts.get(other).area.regions.length,0);assert.equal(posts.length,1);
+ """
+    )
 
 
 def test_spatial_authoring_uses_stable_independent_shapes_and_cancel_preserves_other_drafts():
@@ -166,6 +1068,40 @@ def test_reused_spatial_apply_clears_only_the_matching_submitted_draft(completio
  assert.equal(spatialDirty,completion!=='match');
  assert.deepEqual(spatialDraft,completion==='match'?saved:expectedDraft);
  assert.equal($('backgroundHex').value,'#AB1234');
+ """
+    )
+
+
+@pytest.mark.parametrize("reused", [False, True])
+@pytest.mark.parametrize("newer_edit", [False, True])
+def test_imported_layout_apply_accepts_saved_key_order_without_consuming_newer_edit(
+    reused, newer_edit
+):
+    run_page(
+        LAYOUT_SETUP
+        + f"\nconst reused={json.dumps(reused)},newerEdit={json.dumps(newer_edit)};\n"
+        + r"""
+ await readyLayout();await previewAppearanceLayout('replace');await loadAppearanceLayout();
+ const priorFetch=fetch;globalThis.fetch=async(path,options)=>{
+  if(path==='/api/action')servedState.action={running:true,name:'effects',error:null,result:null};
+  return priorFetch(path,options);
+ };
+ await applySpatial();const submitted=posts.at(-1).spatial_fade;
+ // JSON object member order changes when the server saves a sorted manifest.
+ const reordered={arcs:submitted.arcs,arcs_enabled:submitted.arcs_enabled,enabled:submitted.enabled,
+  oval:{amount:submitted.oval.amount,...submitted.oval},preserve_highlights:submitted.preserve_highlights};
+ assert.notEqual(JSON.stringify(reordered),JSON.stringify(submitted));
+ if(newerEdit){spatialDraft.oval.amount=.23;markSpatialDirty();}
+ const pending=structuredClone(spatialDraft), revision=reused?'rev-001':'rev-002';
+ const record={...servedState.revisions[0],revision,spatial_fade:{enabled:reordered.enabled,settings:reordered}};
+ if(reused)servedState.revisions[0]=record;else servedState.revisions.push(record);
+ servedState.working_revision=revision;
+ servedState.action={running:false,name:'effects',error:null,result:{revision,parent:'rev-001',reused,
+  spatial_fade:{enabled:reordered.enabled,settings:reordered}}};
+ await refresh(false);
+ assert.equal(spatialDirty,newerEdit);
+ assert.deepEqual(spatialDraft,newerEdit?pending:submitted);
+ assert.equal(appearanceLayoutUndo,null);
  """
     )
 

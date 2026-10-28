@@ -26,7 +26,6 @@ from .project import (
     _exclusive_rename,
     _json_bytes,
     _read_json,
-    check_space,
     digest,
     project_lock,
     read_project,
@@ -211,38 +210,9 @@ def result_preview_status(project: Path, config: StorageConfig | None = None) ->
 
 
 def _render_latest(project: Path, state: dict[str, Any]) -> np.ndarray:
-    from .background import read_background
-    from .effects import saved_shading, saved_spatial_fade
-    from .export import render_background, render_black, saved_layers
+    from .export import render_saved_result
 
-    revision = state["latest_result_revision"]
-    foreground, alpha, manifest = saved_layers(project, revision, state["developed_id"])
-    weight, opacity = saved_shading(project, revision, alpha, manifest)
-    spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    background = read_background(project, saved_asset(project, f"revisions/{revision}"), manifest)
-    check_space(project, foreground.nbytes * 8 + 16 * 1024**2)
-    target = (
-        background
-        if background is not None
-        else np.zeros_like(foreground)
-        if spatial is not None
-        else None
-    )
-    return (
-        render_black(
-            foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
-        )
-        if background is None
-        else render_background(
-            foreground,
-            alpha,
-            background,
-            weight,
-            opacity,
-            spatial_fade=spatial,
-            fade_background16=target,
-        )
-    )
+    return render_saved_result(project, state["latest_result_revision"], state["developed_id"])
 
 
 def _encode_preview(pixels: np.ndarray, record: dict[str, Any]) -> tuple[bytes, dict[str, Any]]:

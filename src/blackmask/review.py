@@ -152,6 +152,9 @@ def write_review(
                 spatial_fade.weight16[y0:y1, x0:x1],
                 spatial_fade.protection[y0:y1, x0:x1],
                 spatial_fade.record,
+                None
+                if spatial_fade.reduction16 is None
+                else spatial_fade.reduction16[y0:y1, x0:x1],
             ),
             fade_background16=None
             if fade_background16 is None
@@ -307,6 +310,9 @@ def write_revision_overview(
                 spatial_fade.weight16[y0:y1, x0:x1],
                 spatial_fade.protection[y0:y1, x0:x1],
                 spatial_fade.record,
+                None
+                if spatial_fade.reduction16 is None
+                else spatial_fade.reduction16[y0:y1, x0:x1],
             ),
             fade_background16=None
             if fade_background16 is None
@@ -476,12 +482,12 @@ def _review_project_locked(
     stage = Path(tempfile.mkdtemp(prefix=".review-", dir=root))
     directory = stage / "assets"
     directory_identities = {path: path.lstat() for path in (root, stage)}
-    from .background import read_background
+    from .background_light import saved_backgrounds
 
-    background = (
-        None
+    base_background, background = (
+        (None, None)
         if base_comparison or effects_stale(revision_manifest)
-        else read_background(
+        else saved_backgrounds(
             project, saved_asset(project, f"revisions/{revision}"), revision_manifest
         )
     )
@@ -489,8 +495,8 @@ def _review_project_locked(
         project, revision, alpha, revision_manifest, effects_off=base_comparison
     )
     target = (
-        background
-        if background is not None
+        base_background
+        if base_background is not None
         else np.zeros_like(foreground)
         if spatial is not None
         else None
@@ -818,7 +824,7 @@ def render_presentation_preview(
     presentation: dict[str, Any],
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Shared bounded layout preview; callers own identity capture, locks and rechecks."""
-    from .background import read_background
+    from .background_light import saved_backgrounds
     from .effects import effects_stale, saved_shading, saved_spatial_fade
     from .framing import framing_preview, validate_margins
     from .series_framing import (
@@ -835,9 +841,6 @@ def render_presentation_preview(
         raise ProjectError("Stale framing preview saved layers")
     weight, opacity = saved_shading(project, revision, alpha, loaded_manifest)
     spatial = saved_spatial_fade(project, revision, alpha, loaded_manifest)
-    background = read_background(
-        project, saved_asset(project, f"revisions/{revision}"), loaded_manifest
-    )
     series_mode = presentation["mode"] == "match-series"
     if series_mode:
         settings = validate_series_settings(presentation["settings"])
@@ -849,7 +852,6 @@ def render_presentation_preview(
             max(1, int(height * min(1600, longest) / longest)),
         )
         sampling = series_sampling_plan(layout, display_dimensions_wh=display)
-        del background
         rgb16 = render_series(
             foreground,
             alpha,
@@ -857,6 +859,7 @@ def render_presentation_preview(
             weight16=weight,
             opacity=opacity,
             background_settings=loaded_manifest.get("background", {}).get("settings"),
+            background_light_settings=loaded_manifest.get("background_light", {}).get("settings"),
             spatial_fade=spatial,
         )
         pixels = np.empty((*rgb16.shape[:2], 3), np.uint8)
@@ -875,6 +878,9 @@ def render_presentation_preview(
         margins = validate_margins(
             presentation["margins"], (foreground.shape[1], foreground.shape[0])
         )
+        base_background, background = saved_backgrounds(
+            project, saved_asset(project, f"revisions/{revision}"), loaded_manifest
+        )
         native = (
             render_black(
                 foreground,
@@ -892,7 +898,7 @@ def render_presentation_preview(
                 weight,
                 opacity,
                 spatial_fade=spatial,
-                fade_background16=background,
+                fade_background16=base_background,
             )
         )
         pixels, geometry = framing_preview(native, background, margins)
@@ -1102,7 +1108,7 @@ def _comparison_project_locked(
     presentation: dict[str, Any] | None,
     expected_identity: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    from .background import read_background
+    from .background_light import read_active_background_light, saved_backgrounds
     from .effects import effects_stale, saved_shading, saved_spatial_fade
     from .operations import draft_digest, guidance_draft_digest
 
@@ -1185,6 +1191,13 @@ def _comparison_project_locked(
         captured[f"revisions/{before_revision}/manifest.json"] = saved_asset(
             project, f"revisions/{before_revision}/manifest.json"
         ).read_bytes()
+    has_background = not effects_stale(manifest) and (
+        "background" in manifest
+        or read_active_background_light(
+            project, saved_asset(project, f"revisions/{revision}"), manifest
+        )
+        is not None
+    )
     request = {
         "encoding": "focused-comparison-jpeg-v1",
         "native_evidence_encoding": "native-review-png-v1",
@@ -1208,7 +1221,7 @@ def _comparison_project_locked(
         "crops": crops,
         "retain_native": retain_native,
         "panel_order": ["source", "black", "gray", "white", "alpha"]
-        + (["result"] if "background" in manifest and not effects_stale(manifest) else []),
+        + (["result"] if has_background else []),
         "presentation": presentation,
         "settings_by_revision": {
             name: _comparison_settings(project, name, item) for name, item in manifests.items()
@@ -1289,14 +1302,14 @@ def _comparison_project_locked(
     output.mkdir()
     weight, opacity = saved_shading(project, revision, alpha, manifest)
     spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    background = (
-        None
+    base_background, background = (
+        (None, None)
         if effects_stale(manifest)
-        else read_background(project, saved_asset(project, f"revisions/{revision}"), manifest)
+        else saved_backgrounds(project, saved_asset(project, f"revisions/{revision}"), manifest)
     )
     target = (
-        background
-        if background is not None
+        base_background
+        if base_background is not None
         else np.zeros_like(foreground)
         if spatial is not None
         else None

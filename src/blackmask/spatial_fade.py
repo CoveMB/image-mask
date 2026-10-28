@@ -16,6 +16,17 @@ SPATIAL_FADE_FILES = ("weight16.png", "protection16.png", "alpha16.png", "settin
 SPATIAL_FADE_ALGORITHM = "linear-srgb-oval-arcs-background-fade-v1"
 
 
+def spatial_fade_files(record: dict[str, Any]) -> tuple[str, ...]:
+    """Select the immutable inventory from the saved record, never from enabled state."""
+    if not isinstance(record, dict) or type(record.get("schema_version")) is not int:
+        raise ProjectError("Invalid saved spatial fade schema")
+    if record["schema_version"] == 1:
+        return SPATIAL_FADE_FILES
+    if record["schema_version"] == 2:
+        return (*SPATIAL_FADE_FILES, "reduction16.png", "reduction.json")
+    raise ProjectError("Unsupported saved spatial fade schema")
+
+
 def _number(value: Any, lower: float, upper: float, *, upper_open: bool = False) -> bool:
     return (
         type(value) in {int, float}
@@ -23,6 +34,14 @@ def _number(value: Any, lower: float, upper: float, *, upper_open: bool = False)
         and (value < upper if upper_open else value <= upper)
         and np.isfinite(value)
     )
+
+
+def validate_spatial_transition_width(value: Any, width: int, height: int) -> None:
+    """The native interval stays strict; portable roundoff handling belongs to its converter."""
+    if any(type(item) is not int or item <= 0 for item in (width, height)):
+        raise ProjectError("Spatial fade requires positive native image dimensions")
+    if not _number(value, 0.5, 2 * max(width, height)):
+        raise ProjectError("Invalid spatial fade shape geometry, strength or switch")
 
 
 def validate_spatial_fade(settings: Any, width: int, height: int) -> None:
@@ -91,10 +110,10 @@ def validate_spatial_fade(settings: Any, width: int, height: int) -> None:
             or not _number(centre[0], 0, width)
             or not _number(centre[1], 0, height)
             or not _number(shape["rotation_degrees"], 0, 360, upper_open=True)
-            or not _number(shape["transition_width"], 0.5, limit)
             or not _number(shape["amount"], 0, 1)
         ):
             raise ProjectError("Invalid spatial fade shape geometry, strength or switch")
+        validate_spatial_transition_width(shape["transition_width"], width, height)
 
 
 def _smoothstep(value: np.ndarray) -> np.ndarray:
@@ -194,6 +213,7 @@ class SpatialFadeOperands:
     weight16: np.ndarray
     protection: np.ndarray
     record: dict[str, Any]
+    reduction16: np.ndarray | None = None
 
 
 def spatial_fade_amount(
@@ -212,6 +232,12 @@ def spatial_fade_amount(
         or operands.protection.shape != alpha16.shape
     ):
         raise ProjectError("Spatial fade requires aligned RGB16/A16/W16 and boolean protection")
+    if operands.reduction16 is not None and (
+        not isinstance(operands.reduction16, np.ndarray)
+        or operands.reduction16.dtype != np.uint16
+        or operands.reduction16.shape != alpha16.shape
+    ):
+        raise ProjectError("Spatial fade reduction requires aligned uint16 native samples")
     result = np.zeros(alpha16.shape, np.float64)
     if not operands.record["enabled"] or operands.record["stale"]:
         return result
@@ -226,6 +252,8 @@ def spatial_fade_amount(
             weight *= 1 - preserve * highlight_weight(
                 srgb_to_linear(foreground[rows][eligible].astype(np.float64) / 65535)
             )
+        if operands.reduction16 is not None:
+            weight *= 1 - operands.reduction16[rows][eligible].astype(np.float64) / 65535
         result[rows][eligible] = weight
     return result
 
@@ -289,7 +317,9 @@ def validate_spatial_bindings(project: Path, directory: Path, manifest: dict[str
         if saved.exists() or saved.is_symlink() or listed:
             raise ProjectError("Unbound saved spatial fade operands")
         return
-    required = {f"effects/spatial-fade/{name}" for name in SPATIAL_FADE_FILES}
+    required = {
+        f"effects/spatial-fade/{name}" for name in spatial_fade_files(manifest["spatial_fade"])
+    }
     if listed != required or "base_alpha16.png" not in revision_hashes(manifest):
         raise ProjectError("Incomplete or extra bound spatial fade operands")
     try:
@@ -338,11 +368,13 @@ def read_spatial_fade(
         "candidate_comparison",
         "scope_xyxy",
     }
+    if record.get("schema_version") == 2:
+        keys |= {"reduction_sha256", "reduction_area_sha256", "reduction_algorithm"}
     if (
         not isinstance(record, dict)
         or set(record) != keys
         or type(record["schema_version"]) is not int
-        or record["schema_version"] != 1
+        or record["schema_version"] not in (1, 2)
         or type(record["enabled"]) is not bool
         or type(record["stale"]) is not bool
         or type(record["candidate_comparison"]) is not bool
@@ -393,4 +425,11 @@ def read_spatial_fade(
         record["enabled"] and not np.array_equal(dependency, alpha)
     ):
         raise ProjectError("Invalid saved spatial fade protection/dependency status")
-    return SpatialFadeOperands(weight, protection != 0, record)
+    from .fade_reduction import read_fade_reduction
+
+    return SpatialFadeOperands(
+        weight,
+        protection != 0,
+        record,
+        read_fade_reduction(project, directory, manifest, "spatial_fade", alpha),
+    )

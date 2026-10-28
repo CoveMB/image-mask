@@ -48,9 +48,9 @@ from .project import (
 )
 from .repair import scalar16, validate_support
 from .shadow_fade import (
-    SHADOW_FADE_FILES,
     read_shadow_fade,
     selected_shadow_fade,
+    shadow_fade_files,
     validate_shadow_fade,
 )
 from .sharpening import (
@@ -61,19 +61,20 @@ from .sharpening import (
 )
 from .spatial_fade import (
     SPATIAL_FADE_ALGORITHM,
-    SPATIAL_FADE_FILES,
     SpatialFadeOperands,
     make_spatial_weight,
     read_spatial_fade,
+    spatial_fade_files,
     validate_spatial_fade,
 )
 
 # Bump when validation, request equivalence or effect arithmetic changes.
-EFFECTS_EXECUTION_VERSION = "validated-effects-v4"
+EFFECTS_EXECUTION_VERSION = "validated-effects-v7"
 
 
 def _effects_execution_identity() -> dict[str, Any] | None:
     from .background import ALGORITHM
+    from .background_light import ALGORITHM as LIGHT_ALGORITHM
 
     try:
         packages = {
@@ -92,6 +93,7 @@ def _effects_execution_identity() -> dict[str, Any] | None:
             "local_sharpening": "linear-srgb-local-sharpening-v1",
             "shadow_fade": "linear-srgb-shadow-fade-v1",
             "background": ALGORITHM,
+            "background_light": LIGHT_ALGORITHM,
             "spatial_fade": SPATIAL_FADE_ALGORITHM,
         },
     }
@@ -127,25 +129,51 @@ def _effects_request_identity(
         "local_exposure",
         "shadow_fade",
         "background",
+        "background_light",
         "spatial_fade",
+        "fade_reduction",
     }:
         normalized["color_cleanup"] = settings
     if "background" in normalized:
         normalized["background"] = normalized_background(normalized["background"])
+    if "fade_reduction" in normalized:
+        from .fade_reduction import REDUCTION_ALGORITHM
+
+        reduction = normalized["fade_reduction"]
+        normalized["fade_reduction"] = dict(
+            reduction,
+            algorithm=REDUCTION_ALGORITHM,
+            area=dict(
+                reduction["area"],
+                regions=[
+                    dict(region, amount=float(region["amount"]))
+                    for region in reduction["area"]["regions"]
+                ],
+            ),
+        )
     if "shading" in normalized:
         normalized["shading"] = _effective_shading_settings(normalized["shading"], saved_shading)
-    if "spatial_fade" in normalized:
-        # Validation has already distinguished switches from numeric shape fields.
-        def normalized_shape(shape: dict[str, Any]) -> dict[str, Any]:
-            return {
-                name: [float(number) for number in value]
-                if isinstance(value, list)
-                else float(value)
-                if type(value) in {int, float}
-                else value
-                for name, value in shape.items()
-            }
 
+    # Validation has already distinguished switches from numeric shape fields.
+    def normalized_shape(shape: dict[str, Any]) -> dict[str, Any]:
+        return {
+            name: [float(number) for number in value]
+            if isinstance(value, list)
+            else float(value)
+            if type(value) in {int, float}
+            else value
+            for name, value in shape.items()
+        }
+
+    if "background_light" in normalized:
+        light = normalized["background_light"]
+        normalized["background_light"] = dict(
+            light,
+            brightness=float(light["brightness"]),
+            color_srgb=light["color_srgb"].upper(),
+            geometry=normalized_shape(light["geometry"]),
+        )
+    if "spatial_fade" in normalized:
         spatial = normalized["spatial_fade"]
         normalized["spatial_fade"] = dict(
             spatial,
@@ -169,18 +197,29 @@ def _effects_request_identity(
     return normalized
 
 
-def _spatial_reuse_binding(
+def _background_light_reuse_binding(
     record: dict[str, Any] | None, hashes: dict[str, str]
+) -> dict[str, Any] | None:
+    from .background_light import BACKGROUND_LIGHT_FILES
+
+    return (
+        {"record": record, "files": {name: hashes[name] for name in BACKGROUND_LIGHT_FILES}}
+        if record is not None
+        else None
+    )
+
+
+def _fade_reuse_binding(
+    target: str, record: dict[str, Any] | None, hashes: dict[str, str]
 ) -> dict[str, Any] | None:
     """Bind validated saved output, including OFF/inherited operands, not the old base."""
     if record is None:
         return None
+    files = {"spatial_fade": spatial_fade_files, "shadow_fade": shadow_fade_files}[target](record)
+    prefix = "effects/" + target.replace("_", "-") + "/"
     return {
         "record": record,
-        "files": {
-            f"effects/spatial-fade/{name}": hashes[f"effects/spatial-fade/{name}"]
-            for name in SPATIAL_FADE_FILES
-        },
+        "files": {prefix + name: hashes[prefix + name] for name in files},
     }
 
 
@@ -230,8 +269,11 @@ def _reused_effects_result(
             or result.get("parent") != manifest.get("parent")
             or request["base_revision"] != manifest.get("parent")
             or request["inputs_digest"] != manifest.get("inputs_digest")
-            or _json_bytes({"spatial_fade": result.get("spatial_fade")})
-            != _json_bytes({"spatial_fade": manifest.get("spatial_fade")})
+            or any(
+                _json_bytes({target: result.get(target)})
+                != _json_bytes({target: manifest.get(target)})
+                for target in ("spatial_fade", "shadow_fade", "background_light")
+            )
             or _json_bytes(
                 _effects_request_identity(
                     request,
@@ -253,6 +295,7 @@ def _reused_effects_result(
             "local_exposure",
             "shadow_fade",
             "background",
+            "background_light",
             "spatial_fade",
         ):
             if name not in identity["request"]:
@@ -595,10 +638,7 @@ def inherit_shadow_fade(
         parent,
         stage,
         assets,
-        tuple(
-            "effects/shadow-fade/" + name
-            for name in (*SHADOW_FADE_FILES, *(("area.json",) if record["area_sha256"] else ()))
-        ),
+        tuple("effects/shadow-fade/" + name for name in shadow_fade_files(record)),
     )
     if alpha is not None:
         record["stale"] = bool(
@@ -695,7 +735,7 @@ def inherit_spatial_fade(
         parent,
         stage,
         assets,
-        tuple("effects/spatial-fade/" + name for name in SPATIAL_FADE_FILES),
+        tuple("effects/spatial-fade/" + name for name in spatial_fade_files(record)),
     )
     if alpha is not None:
         record["stale"] = bool(
@@ -828,6 +868,7 @@ def selected_foreground(
     sharpening_off: bool = False,
     exposure_off: bool = False,
     shadow_fade_off: bool = False,
+    shadow_reduction_off: bool = False,
 ) -> np.ndarray:
     record = manifest.get("color_cleanup")
     corrected = read_cleanup(project, revision, foreground, alpha, manifest)
@@ -863,6 +904,7 @@ def selected_foreground(
         alpha,
         manifest,
         shadow_fade_off=shadow_fade_off or effects_off,
+        shadow_reduction_off=shadow_reduction_off,
     )
 
 
@@ -929,6 +971,7 @@ def run_effects(
         - required
         - {
             "background",
+            "background_light",
             "support_file",
             "color_cleanup",
             "shading",
@@ -948,6 +991,7 @@ def run_effects(
             "sharpening_amount_only",
             "spatial_fade",
             "spatial_fade_protection_file",
+            "fade_reduction",
         }
         or type(operation["schema_version"]) is not int
         or operation["schema_version"] != 2
@@ -956,12 +1000,25 @@ def run_effects(
     ):
         raise ProjectError("Invalid schema-2 effects request")
     spatial_changed = "spatial_fade" in operation
+    reduction_changed = "fade_reduction" in operation
+    if reduction_changed:
+        reduction_request = operation["fade_reduction"]
+        if (
+            set(operation) != required | {"fade_reduction"}
+            or not isinstance(reduction_request, dict)
+            or set(reduction_request) != {"target", "area"}
+            or reduction_request["target"] not in ("spatial_fade", "shadow_fade")
+        ):
+            raise ProjectError("Fade reduction requires one exclusive saved effect target and area")
     if spatial_changed:
         if set(operation) - required - {"spatial_fade", "spatial_fade_protection_file"}:
             raise ProjectError("Spatial fade must be an exclusive effects operation")
     elif "spatial_fade_protection_file" in operation:
         raise ProjectError("Spatial protection requires spatial fade settings")
     background_changed = "background" in operation
+    light_changed = "background_light" in operation
+    if light_changed and set(operation) != required | {"background_light"}:
+        raise ProjectError("Background light must be an exclusive effects operation")
     if background_changed:
         from .background import validate_background
 
@@ -1035,7 +1092,9 @@ def run_effects(
         or not fade_changed
         and not sharpening_changed
         and not background_changed
+        and not light_changed
         and not spatial_changed
+        and not reduction_changed
         and "support_file" not in operation
     ):
         raise ProjectError("Invalid effects support/exposure fields")
@@ -1073,6 +1132,8 @@ def run_effects(
     elif set(operation) & fade_fields:
         raise ProjectError("Shadow fade fields require shadow_fade settings")
     operation = json.loads(_json_bytes(operation))
+    if reduction_changed:
+        reduction_request = operation["fade_reduction"]
     request_bytes = request_file.read_bytes() if request_file else _json_bytes(operation)
     if json.loads(request_bytes) != operation:
         raise ProjectError("Stale effects request file")
@@ -1092,7 +1153,9 @@ def run_effects(
         or sharpening_changed
         or fade_changed
         or background_changed
+        or light_changed
         or spatial_changed
+        or reduction_changed
     )
     settings = operation.get(
         "color_cleanup",
@@ -1113,6 +1176,61 @@ def run_effects(
     source, _ = load_developed(project, state["developed_id"])
     height, width = alpha.shape
     scope = coordinates(operation["scope_xyxy"], width, height, box=True)
+    if light_changed:
+        from .background_light import validate_background_light
+
+        validate_background_light(operation["background_light"], width, height)
+        if scope != [0, 0, width, height]:
+            raise ProjectError("Background light scope must cover the full native image")
+        if parent != state["accepted_revision"] and not operation["candidate_comparison"]:
+            raise ProjectError(
+                "Background light requires accepted base or explicit candidate comparison"
+            )
+    reduction16 = None
+    reduction_area_bytes = None
+    retained_reduction_bytes = alpha.nbytes * sum(
+        manifest.get(target, {}).get("schema_version") == version
+        for target, version in (("spatial_fade", 2), ("shadow_fade", 3))
+    )
+    if reduction_changed:
+        from .fade_reduction import (
+            rasterize_fade_reduction,
+            read_fade_reduction,
+            validate_fade_reduction,
+        )
+
+        reduction_target = reduction_request["target"]
+        reduction_prefix = "effects/" + reduction_target.replace("_", "-")
+        previous_record = manifest.get(reduction_target)
+        if previous_record is None:
+            raise ProjectError("Fade reduction requires a saved selected fade effect")
+        previous_reduction = read_fade_reduction(
+            project, saved_asset(project, f"revisions/{parent}"), manifest, reduction_target, alpha
+        )
+        if previous_record["stale"] or not np.array_equal(
+            scalar16(saved_asset(project, f"revisions/{parent}/{reduction_prefix}/alpha16.png")),
+            alpha,
+        ):
+            raise ProjectError("Fade reduction requires current saved selected effect alpha")
+        if parent != state["accepted_revision"] and not operation["candidate_comparison"]:
+            raise ProjectError(
+                "Fade reduction requires accepted base or explicit candidate comparison"
+            )
+        validate_fade_reduction(reduction_request["area"], state["developed_id"], width, height)
+        check_space(
+            project, source.nbytes * 45 + alpha.nbytes * 32 + retained_reduction_bytes + 1024**2
+        )
+        reduction16 = rasterize_fade_reduction(
+            reduction_request["area"], state["developed_id"], width, height
+        )
+        reduction_area_bytes = _json_bytes(reduction_request["area"])
+        outside = reduction16 != 0
+        if previous_reduction is not None:
+            outside |= previous_reduction != 0
+        x0, y0, x1, y1 = scope
+        outside[y0:y1, x0:x1] = False
+        if outside.any():
+            raise ProjectError("Fade reduction scope must contain previous and replacement areas")
     if spatial_changed:
         validate_spatial_fade(operation["spatial_fade"], width, height)
         if scope != [0, 0, width, height]:
@@ -1169,6 +1287,7 @@ def run_effects(
             "shadow_fade",
             "spatial_fade",
             "background",
+            "background_light",
             "notes",
         }
     ):
@@ -1560,6 +1679,7 @@ def run_effects(
                     "local_exposure",
                     "shadow_fade",
                     "background",
+                    "background_light",
                     "spatial_fade",
                     "notes",
                 }
@@ -1586,8 +1706,14 @@ def run_effects(
         dict(
             identity,
             local_sharpening=_sharpening_reuse_binding(manifest, revision_hashes(manifest)),
-            spatial_fade=_spatial_reuse_binding(
-                manifest.get("spatial_fade"), revision_hashes(manifest)
+            background_light=_background_light_reuse_binding(
+                manifest.get("background_light"), revision_hashes(manifest)
+            ),
+            spatial_fade=_fade_reuse_binding(
+                "spatial_fade", manifest.get("spatial_fade"), revision_hashes(manifest)
+            ),
+            shadow_fade=_fade_reuse_binding(
+                "shadow_fade", manifest.get("shadow_fade"), revision_hashes(manifest)
             ),
         ),
     )
@@ -1597,7 +1723,14 @@ def run_effects(
     check_space(
         project,
         source.nbytes * (47 if background_changed or "background" in manifest else 45)
+        + (
+            source.nbytes * 4 + min(height, 64) * width * 128
+            if light_changed or "background_light" in manifest
+            else 0
+        )
         + (alpha.nbytes * 3 if sharpening_changed else 0)
+        + retained_reduction_bytes
+        + (0 if reduction16 is None else reduction16.nbytes)
         + 1024**2,
     )
     revisions = saved_asset(project, "revisions")
@@ -1784,7 +1917,8 @@ def run_effects(
         ):
             Image.fromarray(value).save(directory / (name + ".png"))
         spatial_record = {
-            "schema_version": 1,
+            **(spatial_record or {}),
+            "schema_version": spatial_record["schema_version"] if spatial_record else 1,
             "enabled": spatial_settings["enabled"],
             "settings": spatial_settings,
             "stale": False,
@@ -1871,7 +2005,8 @@ def run_effects(
             # Stage is new; omit inherited authored geometry when replacing with scalar inputs.
             (directory / "area.json").unlink()
         fade_record = {
-            "schema_version": 2,
+            **(fade_record or {}),
+            "schema_version": fade_record["schema_version"] if fade_record else 2,
             "enabled": fade_settings["enabled"],
             "settings": fade_settings,
             "stale": bool(fade_settings["enabled"] and not np.array_equal(fade_dependency, alpha)),
@@ -1890,6 +2025,30 @@ def run_effects(
             },
         }
         (directory / "settings.json").write_bytes(_json_bytes(fade_record))
+    if reduction_changed:
+        from .fade_reduction import REDUCTION_ALGORITHM
+
+        selected_record = spatial_record if reduction_target == "spatial_fade" else fade_record
+        assert (
+            selected_record is not None
+            and reduction16 is not None
+            and reduction_area_bytes is not None
+        )
+        directory = stage / reduction_prefix
+        Image.fromarray(reduction16).save(directory / "reduction16.png")
+        (directory / "reduction.json").write_bytes(reduction_area_bytes)
+        selected_record = dict(
+            selected_record,
+            schema_version=2 if reduction_target == "spatial_fade" else 3,
+            reduction_sha256=digest((directory / "reduction16.png").read_bytes()),
+            reduction_area_sha256=digest(reduction_area_bytes),
+            reduction_algorithm=REDUCTION_ALGORITHM,
+        )
+        (directory / "settings.json").write_bytes(_json_bytes(selected_record))
+        if reduction_target == "spatial_fade":
+            spatial_record = selected_record
+        else:
+            fade_record = selected_record
     sharpening_record = inherit_local_sharpening(
         project, parent, stage, state["developed_id"], assets=assets
     )
@@ -1932,6 +2091,11 @@ def run_effects(
         }
         (directory / "settings.json").write_bytes(_json_bytes(sharpening_record))
     from .background import inherit_background, save_background
+    from .background_light import (
+        apply_background_light,
+        combine_background_light,
+        inherit_background_light,
+    )
 
     background_record: dict[str, Any] | None
     if background_changed:
@@ -1948,7 +2112,30 @@ def run_effects(
             parent_recipe.get("background"),
             assets=assets,
         )
+    light_record = (
+        apply_background_light(
+            project,
+            parent,
+            stage,
+            state["developed_id"],
+            (height, width),
+            operation["background_light"],
+            assets=assets,
+        )
+        if light_changed
+        else inherit_background_light(
+            project,
+            parent,
+            stage,
+            state["developed_id"],
+            (height, width),
+            parent_recipe.get("background_light"),
+            assets=assets,
+        )
+    )
     effect_records = {}
+    if light_record is not None:
+        effect_records["background_light"] = light_record
     if sharpening_record is not None:
         effect_records["local_sharpening"] = sharpening_record
     if background_record is not None:
@@ -1991,6 +2178,7 @@ def run_effects(
             and spatial_record is not None,
         ),
         ("background", background_changed),
+        ("background_light", light_changed),
     ):
         if changed:
             effective_recipe[name] = dict(effect_records[name]["settings"])
@@ -2049,6 +2237,9 @@ def run_effects(
             scalar16(stage_asset(project, stage, assets, "effects/spatial-fade/protection16.png"))
             != 0,
             spatial_record,
+            scalar16(stage_asset(project, stage, assets, "effects/spatial-fade/reduction16.png"))
+            if spatial_record["schema_version"] == 2
+            else None,
         )
         if spatial_record is not None and spatial_record["enabled"] and not stale
         else None
@@ -2058,6 +2249,16 @@ def run_effects(
         if background_record is not None and not stale
         else None
     )
+    review_base = review_background
+    if light_record is not None and light_record["settings"]["enabled"] and not stale:
+        light_pixels = read_rgb16(
+            stage_asset(project, stage, assets, "background_light/light_rgb16.tif")
+        )
+        review_background = combine_background_light(
+            review_base if review_base is not None else np.zeros_like(light_pixels),
+            light_pixels,
+            enabled=True,
+        )
     review = write_revision_overview(
         stage / "review",
         source,
@@ -2067,8 +2268,8 @@ def run_effects(
         revision=revision,
         background16=review_background,
         spatial_fade=spatial_operands,
-        fade_background16=review_background
-        if review_background is not None
+        fade_background16=review_base
+        if review_base is not None
         else np.zeros_like(appearance)
         if spatial_operands is not None
         else None,
@@ -2126,15 +2327,30 @@ def run_effects(
             },
         },
     )
-    identity["spatial_fade"] = _spatial_reuse_binding(
-        spatial_record,
+    for target, saved_record, inventory in (
+        ("spatial_fade", spatial_record, spatial_fade_files),
+        ("shadow_fade", fade_record, shadow_fade_files),
+    ):
+        prefix = "effects/" + target.replace("_", "-") + "/"
+        identity[target] = _fade_reuse_binding(
+            target,
+            saved_record,
+            {
+                prefix + name: digest(
+                    stage_asset(project, stage, assets, prefix + name).read_bytes()
+                )
+                for name in inventory(saved_record)
+            }
+            if saved_record is not None
+            else {},
+        )
+    identity["background_light"] = _background_light_reuse_binding(
+        light_record,
         {
-            f"effects/spatial-fade/{name}": digest(
-                stage_asset(project, stage, assets, f"effects/spatial-fade/{name}").read_bytes()
-            )
-            for name in SPATIAL_FADE_FILES
+            name: digest(stage_asset(project, stage, assets, name).read_bytes())
+            for name in ("background_light/light_rgb16.tif", "background_light/settings.json")
         }
-        if spatial_record is not None
+        if light_record is not None
         else {},
     )
     result = {
@@ -2170,7 +2386,7 @@ def run_effects(
 
     recheck()
     destination = revisions / revision
-    if spatial_record is not None:
+    if spatial_record is not None or light_record is not None:
         _validate_revision_directory(
             project, revision, state["developed_id"], str(stage.relative_to(project))
         )
@@ -2187,9 +2403,16 @@ def run_effects(
         record_generated_result(state, revision, new_manifest)
         _atomic_json(saved_asset(project, "state.json"), state, validate_before_replace=recheck)
     except OSError as error:
-        if spatial_record is not None and destination.exists():
+        if (spatial_record is not None or light_record is not None) and destination.exists():
+            effect_name = (
+                "Background light"
+                if light_changed
+                else "Fade into background"
+                if spatial_changed
+                else "Effects"
+            )
             raise ProjectError(
-                f"Fade into background publication durability unconfirmed: visible revision {destination}. "
+                f"{effect_name} publication durability unconfirmed: visible revision {destination}. "
                 "Reload project status and inspect or explicitly restore this revision before retrying; "
                 "its files and earlier accepted work were retained."
             ) from error

@@ -475,8 +475,40 @@ accepted/candidate gate; it retains operands and protection. Invalid or corrupte
 saved assets must be recovered from a valid revision rather than silently repaired.
 Other stale effects require their own recovery. Earlier accepted work remains saved.
 
+To reduce Fade into background or Shadow fade in selected areas, first save that effect's settings, then use
+**Reduce fade locally**, choose its **Target**, and select **Canvas authoring mode → Fade reduction**. Draw a brush
+stroke or enter a half-open native rectangle and choose **Add reduction rectangle**.
+Set the native brush radius, inward feather and reduction amount. Select a saved
+region to edit its amount/feather, update a rectangle or remove it. Overlaps use
+the strongest reduction; 100% restores this effect's input locally. Other effects
+remain applied. Feathering stays inside the region, so a narrow region with wide
+feather may never reach full reduction. Limits are 128 regions and 8192 total
+stroke points per target.
+
+Drawing, numeric changes and **Clear target reduction** only change the draft.
+Choose **Apply reduction** to save a new revision; use an accepted base or explicitly
+select candidate comparison. **Cancel / reload saved reduction** discards this
+target's unapplied edits. Saved coverage displays the stored reduction, while
+**Reduction OFF** shows the selected effect's original fade strength. **Compare Fade OFF** and
+**Compare Shadow fade OFF** turn off their entire effect for comparison. These views do not save changes.
+Each target keeps its own draft. Switching targets, clearing or reloading one does not erase the other's edits;
+a successful save makes an older draft on the other target stale.
+
+Shadow reduction restores its unfaded input by reducing the darkening exponent. It leaves
+Fade into background's settings and reduction unchanged. Its brighter input can change
+downstream highlight preservation, so compare the complete saved result as well as each effect.
+
+A draft retains its original revision identity. If saved inputs change, it stays
+visible as stale and must be reloaded before Apply; failed saves and late responses
+do not consume newer edits. Reduction cannot repair an old alpha dependency, even
+when the effect is disabled. Rebuild the effect explicitly first. Settings changes
+and effect OFF retain reduction; clearing it saves an empty reduction in a new
+revision. Older software may reject revisions with reduction. Preserve earlier
+revisions/exports and use updated software, or restore a pre-feature revision with
+compatible tooling. No existing revision is rewritten.
+
 Native export with editable selected retains pre-spatial foreground, alpha, combined weight, protection,
-settings and background as separate editable operands. Transparent viewing RGB
+settings, reduction geometry/raster when present, and background as separate editable operands. Transparent viewing RGB
 retains the tint toward the selected background; alpha is unchanged. Black/gray/
 white diagnostics change the backdrop but keep that same fade target.
 
@@ -543,7 +575,7 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
 2. Under **Background appearance**, choose **Background tone** or enter a six-digit
    `#RRGGBB` colour. **Pure black** selects `#000000`; **Warm dark** selects
    `#120708`. Shortcuts keep the variation slider unchanged.
-3. Set **Background variation** with the slider or whole numeric percentage.
+3. Set **Background variation** with the slider or a fractional numeric percentage.
    Zero is uniform; 55% gives up to ±0.55 stops and 100% up to ±1 stop over one
    fixed broad wash. Pure black stays exactly black at every strength. New
    projects explicitly start at warm dark / 55%; older saved projects remain
@@ -578,6 +610,78 @@ and saved; crops slice those same pixels and screen resizing happens afterward.
 No model, internet, noise generation or photographed-detail synthesis is involved.
 RGB8 previews may band; inspect native RGB16 in a suitable colour-managed viewer.
 A processed sRGB RGB16 TIFF is not sensor RAW. See the [saved contract](file-contract.md#saved-background-appearance).
+
+## Background light
+
+**Background light** adds one reversible light behind the saved matte. It starts
+OFF and is independent of Background appearance's tone and variation. It preserves
+the selected foreground RGB, alpha, protection and foreground-effect settings.
+Partially transparent edges naturally show the changed backdrop, including
+protected translucent pixels; the underlying protected data stays unchanged.
+
+1. Complete the matte and select the current working native view. Use an accepted
+   base, or explicitly select candidate comparison for a draft.
+2. Under **Background light**, select **Light ON** and **Soft oval**. Begin with
+   the neutral white tint and a low brightness; the initial 10% is an example,
+   not a photographic recommendation. Brightness is a peak light level on black,
+   not exposure EV or opacity. Numeric percentages retain fractions.
+3. Choose **Canvas authoring mode → Background light**. Move the centre, resize the
+   two outer radii and rotate with handles or their labelled numeric fields.
+   **Softness** controls the transition inside the outer ellipse. A smaller
+   softness leaves a wider plateau; 1 softens all the way from the centre.
+4. Select **Apply Background light**. Until Apply, only the labelled draft outlines
+   change; the image continues to show saved pixels. Apply saves this control
+   even with Light ON unchecked. It does not consume pending base or subject edits.
+5. Hide the light outlines and use **Compare Background light OFF**. Inspect dark
+   detail and partially transparent edges. This read-only comparison retains
+   the base and foreground effects; Source/Alpha and black/gray/white diagnostics
+   keep their existing meanings.
+6. For a broad side light, switch to **Broad directional gradient**. Set centre,
+   rotation and transition width. The arrow points from light toward dark;
+   **Reverse gradient direction** rotates it by 180 degrees. Each shape retains
+   its own draft geometry while switching in this session. Apply replaces the
+   single saved light; earlier saved shapes remain in revision history.
+7. **Turn light OFF** uses the current saved light with only its enabled flag
+   changed, preserving the exact saved field. It retains even invalid or stale
+   pending light edits. **Reload saved light** explicitly replaces only this
+   control's pending edits. Turn OFF is unavailable before a light has been saved.
+   For a stale draft, reload and re-enter intended edits before Apply.
+
+Pure-black base shortcuts and portable appearance loads affect the base or their
+selected foreground controls; they do not change this light. The light cannot be
+transferred in an appearance recipe. If a bright backdrop clips, lower light
+brightness to preserve its variation. This feature adds no rim detail or missing
+subject detail and does not repair alpha.
+
+Native Result, crops, saved review and gallery use the saved RGB16 light. **Add
+margins** copies that native Result and extends its displayed backdrop at the edge.
+**Match series** regenerates the base on the output canvas and evaluates the light
+with the same subject-relative transform, including outside the native rectangle.
+Its reduced preview is approximate. Black and transparent deliveries omit the
+visible light while retaining the unlit fade target.
+
+For recovery, request **editable**. Native editable delivery keeps the unlit
+`background_rgb16.tif` separately from `background_light_rgb16.tif` and
+`background_light_settings.json`, even OFF. Presentation editable delivery has a
+bound native companion; keep both folders. See the [saved light contract](file-contract.md#saved-background-light)
+for reconstruction. Restore prior revisions through the ordinary workflow;
+restoring never grants photographic acceptance.
+
+### Gentle local exposure on the subject
+
+When captured subject detail itself needs brightening, **Local exposure** is a
+separate, optional adjustment. Complete the matte, choose **Local exposure area**,
+and draw a feathered Apply area over the dark detail with Protect areas over
+highlights or details to retain. An optional +0.1 EV comparison can be a starting
+point; try +0.2 or +0.3 only if useful, within the existing -3 to +3 range.
+Use **Apply / replace exposure area** once, then **Apply amount to saved area**.
+
+Compare exposure OFF with authoring marks hidden. Inspect noise, clipping and
+fine edges. **Reset exposure** retains the saved area. Exposure changes selected
+subject RGB by design, with source and alpha recoverable; it cannot restore
+missing or clipped detail or fix a mask. Downstream fade highlight weighting can
+change because exposure precedes fading, and exposure OFF recalculates that
+weighting. Background light never enables exposure automatically.
 
 ## Add presentation margins
 
@@ -736,6 +840,80 @@ Repeating an intact delivery validates its
 actual files and current source/revision authorization before returning without rendering.
 See [preservation and recovery](troubleshooting.md#series-framing-recovery).
 
+
+## Reuse appearance settings
+
+Open **Appearance recipes** in the local viewer. Choose a complete saved source
+revision, give the recipe a name, and check each setting you want to save. The
+labels show saved ON/OFF status; even an OFF effect needs explicit selection.
+Pending form edits and the current editable recipe are excluded. For fade-shape
+defaults, choose one saved oval or arc. Choose only one of inward shading,
+fade-shape defaults or **Editable oval and arc layout** in one file.
+
+**Include a small source-photo reference** is unchecked. If selected, the file
+contains a sanitized RGB8 thumbnail of that revision's saved Result, including
+its saved background and effects. It contains photographed content: keep it local
+or share only deliberately. It is not a target preview or an editable source.
+**Save recipe file** initiates a browser download; check that the file was saved.
+
+On another photo, choose **Open recipe file**, inspect the name, included values
+and optional reference, then select the sections to load. All selections start
+unchecked. Loading scalar sections changes controls only. It preserves effect switches, masks,
+areas, protection, both fade-reduction drafts, source development, framing and
+acceptance. Confirming replacement affects only the selected unapplied scalar
+settings; Cancel keeps them. The portable [file contract](file-contract.md#portable-appearance-recipes)
+defines the accepted fields and limits.
+
+Widths scale by the maximum side of the saved nonzero-alpha subject bounds,
+including faint pixels. They remain fractional native pixels. A missing/empty
+matte or an out-of-range width makes that section unavailable; independent
+sections remain usable. Fade-shape defaults require an explicit current target
+shape, change only transition width, strength and highlight preservation, and
+never create geometry or enable its switches. Recover a stale spatial draft
+before loading these defaults.
+
+For a file containing an editable fade layout, choose **Add arcs** or **Replace
+layout**, then **Preview placement**. The separate magenta outlines show proposed
+geometry; they do not render the target appearance or change its draft. Cancel
+discards the proposal. Add retains the target oval, highlight setting and arc
+group switch. If that group is OFF, imported arcs stay invisible until you
+explicitly turn it on. Replace imports the oval, arcs, their internal switches
+and highlight setting; it always asks for confirmation. Both retain the target
+master switch, protection, reduction drafts and candidate comparison choice.
+
+**Load layout into draft** installs editable shapes in the normal Fade controls. Each
+imported arc has a fresh identity. **Undo import** restores the previous
+draft exactly while the target, recipe and controls remain unchanged; subsequent
+edits, selections, mode changes or Apply invalidate that Undo. Use ordinary
+**Apply fade shapes** to save the layout, then the usual revision Restore for
+recovery after Apply. The source recipe and source project are not needed to
+reopen, edit or export the saved native result.
+
+Layout geometry uses one subject-relative scale in both axes, preserving angles
+and bends. An empty matte or a shape outside native limits blocks the proposal;
+shapes are not silently fitted or dropped. To reuse just values instead, choose
+an explicit source oval/arc under **Portable shape for settings only**, select a current
+target shape, and use **Use settings only on the selected target shape**. This transfers only transition
+width, strength and highlight preservation, leaving target geometry and switches.
+
+Apply effects individually through their existing controls. For example, after
+loading Shadow fade, exposure and shading, Apply Shadow fade first. The recipe
+preview and other loaded values remain visible, but their bindings become stale.
+Use **Reload exposure settings** before applying exposure, then **Reload shading
+settings** against that new revision. Review each result; a loaded recipe never
+supplies photographic acceptance.
+
+Exposure and Shadow area/protection drafts have independent bindings. Reloading
+their recipe values does not make an older area safe to apply. A stale area blocks
+replace-area Apply; amount-only Apply uses the current saved area and preserves
+the older draft. Use the section's **Reload saved area** control to recover it
+explicitly, or re-author against current inputs. The main Reload discards pending
+controls explicitly; saved revisions remain recoverable through Restore.
+
+Background variation accepts fractional percentages: saved `0.125` appears as
+`12.5%` and survives a colour-only edit. Synchronizing the slider does not round
+the number; moving the slider deliberately sets its chosen percentage. Closing
+the recipe preview leaves already loaded values in their controls.
 
 ## Local sharpening
 

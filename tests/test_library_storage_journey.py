@@ -4,7 +4,9 @@ import hashlib
 import importlib
 import json
 import os
+import select
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -44,6 +46,486 @@ class CachedPrediction:
 
     def predict(self, pixels, trimap, device):
         return np.full(trimap.shape, 0.5), {"fixture": "synthetic", "device": device}
+
+
+@pytest.mark.parametrize("light_kind", [None, "oval", "directional", "off"])
+def test_fade_reduction_cache_clear_preserves_frozen_deliveries_and_standalone_reconstruction(
+    tmp_path,
+    light_kind,
+):
+    """Transferred layout and both reductions survive cache clearing and isolated delivery replay."""
+    import inspect
+    import tomllib
+
+    import tomli_w
+    from test_appearance_recipes import saved_recipe
+    from test_background import scalar_background
+    from test_background_light import (
+        light_request,
+        light_settings,
+        scalar_decode,
+        scalar_encode,
+        scalar_light,
+    )
+    from test_cache_management import predictions
+    from test_effects import fixture_project
+    from test_fade_reduction import area, rectangle, reduction_request, saved_reduction
+    from test_series_framing import (
+        scalar_background_blend,
+        scalar_matrices,
+        scalar_sample,
+        scalar_weights,
+    )
+    from test_shadow_fade import fade_request, scalar_fade
+    from test_spatial_fade import arc_settings, spatial_request, spatial_settings
+    from test_viewer import appearance_layout_request, running
+
+    from blackmask.project import digest
+    from blackmask.series_framing import SeriesSettings
+
+    source = (np.arange(72).reshape(4, 6, 3) * 617 + 123).astype(np.uint16)
+    project, _, accepted = fixture_project(tmp_path, source)
+    protected = np.zeros((4, 6), np.uint16)
+    protected[1, 3] = 65535
+    Image.fromarray(protected).save(project / "protected.png")
+    settings = spatial_settings(6, 4)
+    settings["preserve_highlights"] = 0.65
+    settings["oval"].update(center_xy=[0, 0], inner_radii_xy=[0.5, 0.5], transition_width=0.5)
+    operations.apply_operation(
+        project, spatial_request(project, settings, spatial_fade_protection_file="protected.png")
+    )
+    document = area(
+        rectangle(amount=0.5, box=[0, 0, 6, 4]), rectangle("full", 1.0, box=[5, 0, 6, 4])
+    )
+    result = operations.apply_operation(project, reduction_request(project, document))
+    _, saved = saved_reduction(project, result["revision"])
+    assert saved.protection[1, 3] and saved.weight16[1, 3] > 0 and saved.reduction16[1, 3] == 32768
+    from test_exposure import rectangle as effect_rectangle
+
+    operations.apply_operation(
+        project,
+        fade_request(
+            project,
+            amount=0.35,
+            preserve=0.4,
+            area={
+                "regions": [effect_rectangle("all", [0, 0, 6, 4])],
+                "protection": [effect_rectangle("protected", [3, 1, 4, 2])],
+            },
+        ),
+    )
+    result = operations.apply_operation(
+        project, reduction_request(project, document, target="shadow_fade")
+    )
+    if light_kind:
+        saved_light = light_settings(
+            kind="oval" if light_kind == "off" else light_kind,
+            enabled=light_kind != "off",
+            brightness=0.45,
+            color_srgb="#91D3EF",
+        )
+        saved_light["geometry"]["rotation_degrees"] = 37
+        result = operations.apply_operation(project, light_request(project, saved_light))
+        draft = tomllib.loads((project / "recipe.toml").read_text())
+        draft["background_light"]["brightness"] = 0.2345
+        (project / "recipe.toml").write_text(tomli_w.dumps(draft))
+    # A different saved source supplies geometry; target operands stay target-owned.
+    layout_root = tmp_path / "layout-source"
+    layout_root.mkdir()
+    layout_project, _, _ = fixture_project(layout_root, np.full((4, 11, 3), 30000, np.uint16))
+    source_settings = spatial_settings(11, 4)
+    source_settings.update(enabled=False, preserve_highlights=0.65, arcs_enabled=True)
+    source_settings["oval"].update(
+        center_xy=[1, 0], inner_radii_xy=[1, 1], transition_width=1, rotation_degrees=37
+    )
+    source_settings["arcs"] = [
+        arc_settings(
+            center_xy=[6, 2],
+            half_span=4,
+            bend=-2,
+            end_softness=1,
+            transition_width=1,
+            rotation_degrees=37,
+        )
+    ]
+    source_result = operations.apply_operation(
+        layout_project,
+        dict(spatial_request(layout_project, source_settings), scope_xyxy=[0, 0, 11, 4]),
+    )
+    portable = saved_recipe(
+        layout_project, source_result["revision"], ["spatial_layout", "background"]
+    )
+    recipe_path = layout_root / "saved-layout.json"
+    recipe_path.write_bytes(portable)
+    source_before = inventory(layout_root)
+    target_before = inventory(project)
+    previous_revision = project / "revisions" / result["revision"]
+    with running(project) as server:
+        data = appearance_layout_request(server)
+        data.update(recipe_json=portable.decode(), spatial_draft=settings)
+        status, body, _ = http(server, "/api/appearance-layout-preview", "POST", data)
+        assert status == 200, body
+        proposal = json.loads(body)["spatial_fade"]
+        validate = {
+            key: data[key]
+            for key in ("developed_id", "revision", "revision_manifest_sha256", "recipe_json")
+        }
+        status, body, _ = http(server, "/api/appearance-recipe-validate", "POST", validate)
+        assert status == 200, body
+        imported_base = json.loads(body)["sections"]["background"]
+    assert inventory(project) == target_before
+    assert proposal["enabled"] is True  # Source master is OFF; target master is retained.
+    assert proposal["oval"]["center_xy"] == [1, 1]
+    assert proposal["oval"]["inner_radii_xy"] == [0.5, 0.5]
+    assert proposal["oval"]["transition_width"] == 0.5
+    assert proposal["oval"]["rotation_degrees"] == 37
+    imported_arc = proposal["arcs"][0]
+    assert imported_arc["center_xy"] == [3.5, 2]
+    assert (imported_arc["half_span"], imported_arc["bend"], imported_arc["end_softness"]) == (
+        2,
+        -1,
+        0.5,
+    )
+    assert imported_arc["id"] != source_settings["arcs"][0]["id"]
+    if light_kind:
+        from test_background import background_request
+
+        operations.apply_operation(
+            project,
+            background_request(project, imported_base["color_srgb"], imported_base["variation"]),
+        )
+    result = operations.apply_operation(project, spatial_request(project, proposal, candidate=True))
+    selected_directory = project / "revisions" / result["revision"]
+    manifest = read_revision(project, result["revision"], read_project(project)["developed_id"])
+    assert manifest["spatial_fade"]["settings"] == proposal
+    assert manifest["spatial_fade"]["candidate_comparison"] is True
+    for name in (
+        "base_alpha16.png",
+        "effects/spatial-fade/protection16.png",
+        "effects/spatial-fade/reduction.json",
+        "effects/spatial-fade/reduction16.png",
+        "effects/shadow-fade/protection16.png",
+        "effects/shadow-fade/reduction.json",
+        "effects/shadow-fade/reduction16.png",
+    ):
+        assert (
+            saved_raster(selected_directory / name).read_bytes()
+            == saved_raster(previous_revision / name).read_bytes()
+        )
+    assert inventory(layout_root) == source_before
+    if light_kind:
+        assert manifest["background_light"]["settings"] == saved_light
+        assert (
+            tomllib.loads((project / "recipe.toml").read_text())["background_light"]["brightness"]
+            == 0.2345
+        )
+        # Ordinary explicit Apply consumes only the light draft after layout/base transfer.
+        result = operations.apply_operation(project, light_request(project, saved_light))
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
+    selected = result["revision"]
+    flat = export_project(project, revision=selected, draft=True, variants=("transparent",))
+    assert not flat.get("editable_companion")
+    assert not any("reduction" in path.name for path in Path(flat["directory"]).iterdir())
+    margins = {"left_px": 1, "right_px": 2, "top_px": 2, "bottom_px": 1}
+    modes = [
+        {"variants": ("editable", "transparent")},
+        {"variants": ("editable",), "framing": margins, "framed_transparent": True},
+        {
+            "variants": ("editable",),
+            "series": SeriesSettings(output_width_px=17, output_height_px=19).to_dict(),
+            "framed_transparent": True,
+        },
+    ]
+    deliveries = [export_project(project, revision=selected, draft=True, **mode) for mode in modes]
+    frozen = {}
+    for delivery in deliveries:
+        paths = [Path(delivery["directory"])]
+        if delivery.get("editable_companion"):
+            paths.append(Path(delivery["editable_companion"]["directory"]))
+        for directory in paths:
+            frozen[directory] = {p.name: digest(p.read_bytes()) for p in directory.iterdir()}
+    predictions(project, count=1)
+    permanent_before = inventory(project)
+    inspected = operations.inspect_processing_cache(project)
+    assert inspected["candidates"] and not inspected["blockers"]
+    cleared = operations.clear_processing_cache(project, inspected["candidate_digest"])
+    assert inventory(project) == {
+        name: value for name, value in permanent_before.items() if name not in cleared["removed"]
+    }
+    for directory, hashes in frozen.items():
+        assert hashes == {p.name: digest(p.read_bytes()) for p in directory.iterdir()}
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
+    isolated = tmp_path / "delivered-only"
+    isolated.mkdir()
+    for directory in frozen:
+        shutil.copytree(directory, isolated / directory.name)
+    retained_project = tmp_path / "project-unavailable"
+    project.rename(retained_project)
+    capture = tmp_path / "capture-unavailable.tif"
+    (tmp_path / "source.tif").rename(capture)
+    model_root = tmp_path / "unavailable-models"
+    model_root.mkdir()
+    model_probe = model_root / "synthetic-model.bin"
+    model_probe.write_bytes(b"Synthetic denial probe; no model weights")
+    cache_probe = retained_project / "cache" / "guard-probe.bin"
+    cache_probe.parent.mkdir(exist_ok=True)
+    cache_probe.write_bytes(b"Synthetic retained cache denial probe")
+    probes = [
+        retained_project / "state.json",
+        capture,
+        layout_project / "state.json",
+        recipe_path,
+        retained_project / next(iter(frozen)).relative_to(project) / "result_rgb16.tif",
+        model_probe,
+        cache_probe,
+    ]
+    probe_hashes = [digest(path.read_bytes()) for path in probes]
+    forbidden_roots = [
+        project,
+        retained_project,
+        tmp_path / "source.tif",
+        capture,
+        layout_root,
+        model_root,
+    ]
+    program = (
+        """import ctypes,errno,fcntl,json,math,os,socket,struct,sys,threading
+from pathlib import Path
+from types import SimpleNamespace
+import numpy as np,tifffile
+from PIL import Image
+"""
+        + inspect.getsource(install_guard)
+        + r"""
+root=Path(sys.argv[1]).resolve()
+probes=json.loads(sys.argv[2]); port=int(sys.argv[3]); mode=sys.argv[4]
+runtime_roots=[Path(sys.base_prefix).resolve(),Path(sys.prefix).resolve()]
+runtime_roots += [Path(module.__file__).resolve().parent for module in (np,tifffile,Image)]
+assert all(not Path(probe).is_relative_to(allowed) for probe in probes for allowed in runtime_roots)
+libc=ctypes.CDLL(None,use_errno=True)
+def native_connect():
+ descriptor=libc.socket(socket.AF_INET,socket.SOCK_STREAM,0)
+ assert descriptor>=0,('socket',ctypes.get_errno())
+ try:
+  family=bytes((16,socket.AF_INET)) if sys.platform=='darwin' else struct.pack('H',socket.AF_INET)
+  address=ctypes.create_string_buffer(family+struct.pack('!H',port)+socket.inet_aton('127.0.0.1')+bytes(8))
+  status=libc.connect(descriptor,address,16)
+  return status,ctypes.get_errno()
+ finally: libc.close(descriptor)
+if mode=='control':
+ for probe in probes:
+  assert Path(probe).read_bytes()
+  descriptor=libc.open(probe.encode(),0); assert descriptor>=0
+  libc.close(descriptor)
+ assert native_connect()[0]==0
+ print('unguarded existing-file and native loopback controls passed')
+ sys.exit(0)
+release,observed=install_guard(root,read_roots=[root,*runtime_roots])
+for probe in probes:
+ try: Path(probe).read_bytes()
+ except PermissionError: pass
+ else: raise AssertionError('Python read guard failed: '+probe)
+ if mode=='sandbox':
+  assert libc.open(probe.encode(),0)==-1
+  assert ctypes.get_errno() in (errno.EPERM,errno.EACCES)
+with socket.socket() as connection:
+ try: connection.connect(('127.0.0.1',port))
+ except PermissionError: pass
+ else: raise AssertionError('Python network guard failed')
+if mode=='sandbox':
+ status,error=native_connect()
+ assert status==-1 and error in (errno.EPERM,errno.EACCES),(status,error)
+"""
+        + "\n".join(
+            inspect.getsource(helper)
+            for helper in (
+                scalar_background,
+                scalar_background_blend,
+                scalar_weights,
+                scalar_matrices,
+                scalar_sample,
+                scalar_fade,
+                scalar_decode,
+                scalar_encode,
+                scalar_light,
+            )
+        )
+        + r"""
+root=Path(sys.argv[1])
+def scalar(path):
+ with Image.open(path) as image: return np.array(image)
+def highlights(foreground):
+ result=np.empty(foreground.shape[:2])
+ for y,x in np.ndindex(result.shape):
+  linear=[v/65535/12.92 if v/65535<=0.04045 else ((v/65535+0.055)/1.055)**2.4 for v in foreground[y,x]]
+  luminance=sum(v*c for v,c in zip(linear,(0.2126,0.7152,0.0722)))
+  t=max(0,min(1,(luminance-.10)/.65)); result[y,x]=t*t*(3-2*t)
+ return result
+def operands(directory, factor=1, shadow_factor=1):
+ record=json.loads((directory/'manifest.json').read_bytes())
+ foreground=tifffile.imread(directory/'foreground_rgb16.tif').astype(float)
+ unfaded=tifffile.imread(directory/'unfaded_foreground_rgb16.tif')
+ alpha=scalar(directory/'alpha16.png').astype(float)/65535
+ shadow=json.loads((directory/'shadow_fade_settings.json').read_bytes())
+ assert shadow['schema_version']==3 and shadow['enabled']
+ support=scalar(directory/'shadow_fade_support16.png')
+ shadow_protected=scalar(directory/'shadow_fade_protection16.png')!=0
+ shadow_reduction=scalar(directory/'shadow_fade_reduction16.png').astype(float)/65535
+ assert json.loads((directory/'shadow_fade_reduction.json').read_bytes())['regions']
+ assert np.any(shadow_protected & (alpha>0) & (alpha<1) & (support>0) & (shadow_reduction<1))
+ replay=unfaded.copy(); doubled=foreground.copy()
+ for y,x in np.ndindex(alpha.shape):
+  if alpha[y,x]>0 and support[y,x]>0 and not shadow_protected[y,x]:
+   settings=shadow['settings']; r=(1-(1-shadow_reduction[y,x])**shadow_factor)*65535
+   replay[y,x]=scalar_fade(unfaded[y,x],int(support[y,x]),settings['amount'],settings['preserve_highlights'],r)
+   doubled[y,x]=scalar_fade(foreground[y,x],int(support[y,x]),settings['amount'],settings['preserve_highlights'],shadow_reduction[y,x]*65535)
+ if shadow_factor==1:
+  np.testing.assert_array_equal(replay,foreground)
+  assert np.any(doubled!=foreground),'fixture must detect applying Shadow fade twice'
+ foreground=replay.astype(float)
+ weight=scalar(directory/'spatial_fade_weight16.png').astype(float)/65535
+ protected=scalar(directory/'spatial_fade_protection16.png')!=0
+ reduction=scalar(directory/'spatial_fade_reduction16.png').astype(float)/65535
+ assert record['spatial_fade']['schema_version']==2
+ preserve=record['spatial_fade']['settings']['preserve_highlights']; assert preserve>0
+ assert np.any(protected & (alpha>0) & (alpha<1) & (weight>0) & (reduction<1))
+ assert json.loads((directory/'spatial_fade_reduction.json').read_bytes())['regions']
+ amount=weight*(1-preserve*highlights(foreground))*(1-reduction)**factor
+ amount[protected | (alpha==0)]=0
+ stale_highlights=weight*(1-preserve*highlights(unfaded))*(1-reduction)**factor
+ stale_highlights[protected | (alpha==0)]=0
+ assert np.any(amount!=stale_highlights),'fixture must exercise downstream highlight recalculation'
+ return foreground,alpha,amount
+def displayed_light(background,record,field):
+ if not record.get('background_light',{}).get('settings',{}).get('enabled'): return background
+ result=np.empty_like(background)
+ for y,x,c in np.ndindex(background.shape):
+  result[y,x,c]=scalar_encode(scalar_decode(int(background[y,x,c])/65535)+scalar_decode(int(field[y,x,c])/65535)) if field[y,x,c] else background[y,x,c]
+ return result
+def native_displayed(directory,record,background):
+ if 'background_light' not in record:return background
+ field=tifffile.imread(directory/'background_light_rgb16.tif')
+ assert json.loads((directory/'background_light_settings.json').read_bytes())==record['background_light']['settings']
+ return displayed_light(background,record,field)
+def composite(foreground,alpha,amount,background,displayed=None):
+ if displayed is None: displayed=background
+ straight=np.empty_like(foreground)
+ for y,x,c in np.ndindex(foreground.shape):
+  straight[y,x,c]=scalar_background_blend(foreground[y,x,c],int(background[y,x,c]),amount[y,x])
+ rgb=np.rint(straight*alpha[...,None]+displayed*(1-alpha[...,None])).astype(np.uint16)
+ rgba=np.dstack((np.rint(straight/257).astype(np.uint8),np.rint(alpha*255).astype(np.uint8)))
+ return rgb,rgba
+native_count=0
+for directory in root.iterdir():
+ record=json.loads((directory/'manifest.json').read_bytes())
+ if not (directory/'spatial_fade_reduction16.png').exists(): continue
+ foreground,alpha,amount=operands(directory)
+ background=tifffile.imread(directory/'background_rgb16.tif')
+ displayed=native_displayed(directory,record,background)
+ expected,rgba=composite(foreground,alpha,amount,background,displayed)
+ actual=tifffile.imread(directory/'result_rgb16.tif')
+ np.testing.assert_array_equal(expected,actual)
+ for wrong in (0,2):
+  f,a,q=operands(directory,wrong)
+  assert np.any(composite(f,a,q,background,displayed)[0]!=actual),'fixture must detect dropped/double reduction'
+  f,a,q=operands(directory,shadow_factor=wrong)
+  assert np.any(composite(f,a,q,background,displayed)[0]!=actual),'fixture must detect dropped/double Shadow reduction'
+ if record.get('background_light',{}).get('settings',{}).get('enabled'):
+  assert np.any(composite(foreground,alpha,amount,background)[0]!=actual),'fixture must detect missing light'
+  assert np.any(composite(foreground,alpha,amount,displayed)[0]!=actual),'fixture must detect B1 fade target'
+ if (directory/'transparent_RGBA8_VIEW.png').exists():
+  np.testing.assert_array_equal(rgba,scalar(directory/'transparent_RGBA8_VIEW.png'))
+ native_count+=1
+for directory in root.iterdir():
+ record=json.loads((directory/'manifest.json').read_bytes())
+ companion=record.get('editable_companion')
+ if not companion: continue
+ native=root/companion['directory_name']
+ foreground,alpha,amount=operands(native)
+ if 'margins' in record:
+  margins=record['margins']; pad=((margins['top_px'],margins['bottom_px']),(margins['left_px'],margins['right_px']),(0,0))
+  background=tifffile.imread(native/'background_rgb16.tif')
+  displayed=native_displayed(native,record,background)
+  rgb,rgba=composite(foreground,alpha,amount,background,displayed)
+  expected=np.pad(displayed,pad,mode='edge')
+  x,y=margins['left_px'],margins['top_px']; expected[y:y+rgb.shape[0],x:x+rgb.shape[1]]=rgb
+  transparent=np.pad(rgba,pad,mode='constant')
+  np.testing.assert_array_equal(expected,tifffile.imread(directory/'result_rgb16.tif'))
+  np.testing.assert_array_equal(transparent,scalar(directory/'transparent_RGBA8_VIEW.png'))
+ else:
+  sampling=json.loads(json.dumps(record['sampling']),object_hook=lambda value:SimpleNamespace(**value))
+  width,height=record['layout']['output_dimensions_wh']
+  settings=record['background']['settings']; color=[int(settings['color_srgb'][i:i+2],16) for i in (1,3,5)]
+  background=scalar_background(height,width,color,settings['variation'])
+  displayed=background
+  if 'background_light' in record:
+   light=record['background_light']['settings']; transform=record['background_light_transform']
+   scale=transform['scale']; tx,ty=transform['translation_xy']
+   field=np.array([[scalar_light(light,(x+.5-tx)/scale-.5,(y+.5-ty)/scale-.5) for x in range(width)] for y in range(height)],np.uint16)
+   displayed=displayed_light(background,record,field)
+  x0,y0,x1,y1=record['layout']['subject_bounds_xyxy']; core=np.s_[y0:y1,x0:x1]
+  a=np.clip(scalar_sample(alpha[core],sampling,effective=True),0,1)
+  q=np.clip(scalar_sample((alpha*amount)[core],sampling,effective=True),0,a)
+  ratio=np.divide(q,a,out=np.zeros_like(q),where=a>0)
+  straight=np.zeros((*a.shape,3))
+  for channel in range(3):
+   p=np.clip(scalar_sample((alpha*foreground[...,channel])[core],sampling,effective=True),0,65535*a)
+   straight[...,channel]=np.divide(p,a,out=np.zeros_like(p),where=a>0)
+  x,y=sampling.x.output_start,sampling.y.output_start; h,w=a.shape
+  expected=displayed.copy(); rgb,rgba=composite(straight,a,ratio,background[y:y+h,x:x+w],displayed[y:y+h,x:x+w])
+  expected[y:y+h,x:x+w]=rgb
+  transparent=np.zeros((height,width,4),np.uint8); rgba[rgba[...,3]==0,:3]=0
+  transparent[y:y+h,x:x+w]=rgba
+  np.testing.assert_allclose(expected.astype(int),tifffile.imread(directory/'result_rgb16.tif').astype(int),atol=2,rtol=0)
+  np.testing.assert_allclose(transparent.astype(int),scalar(directory/'transparent_RGBA8_VIEW.png').astype(int),atol=1,rtol=0)
+assert native_count>=1
+assert not any(name=='blackmask' or name.startswith('blackmask.') for name in sys.modules)
+assert Image.__version__==Image.core.PILLOW_VERSION=='13.0.0'
+print('retained native/margins/series deliveries reconstructed without application/project/capture/cache; Pillow/core 13.0.0')
+print(json.dumps({'isolation':mode,'denied_existing_files':len(probes),'native_network_denied':mode=='sandbox','observed_reads':sorted(observed)}))
+"""
+    )
+    sandboxed = sys.platform == "darwin" and Path("/usr/bin/sandbox-exec").is_file()
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        arguments = [
+            sys.executable,
+            "-B",
+            "-c",
+            program,
+            str(isolated),
+            json.dumps(list(map(str, probes))),
+            str(listener.getsockname()[1]),
+        ]
+        options = {
+            "cwd": isolated,
+            "env": dict(os.environ, PYTHONPATH=""),
+            "capture_output": True,
+            "text": True,
+            "timeout": 30,
+        }
+        control = subprocess.run([*arguments, "control"], check=False, **options)
+        assert control.returncode == 0, control.stdout + control.stderr
+        assert select.select([listener], [], [], 3)[0], "Positive connection did not reach listener"
+        connection, _ = listener.accept()
+        connection.close()
+        arguments.append("sandbox" if sandboxed else "python-audit-only")
+        if sandboxed:
+            permissions = " ".join(
+                "(subpath " + json.dumps(str(path)) + ")" for path in forbidden_roots
+            )
+            profile = (
+                "(version 1)(allow default)(deny network*)(deny file-read* " + permissions + ")"
+            )
+            arguments = ["/usr/bin/sandbox-exec", "-p", profile, *arguments]
+        child = subprocess.run(arguments, check=False, **options)
+        assert not select.select([listener], [], [], 0)[0], "Guarded child reached listener"
+    assert child.returncode == 0, child.stdout + child.stderr
+    assert "retained native/margins/series deliveries reconstructed" in child.stdout
+    assert [digest(path.read_bytes()) for path in probes] == probe_hashes
+    print(control.stdout.strip())
+    print(child.stdout.strip())
 
 
 def imported_project(tmp_path):

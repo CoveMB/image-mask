@@ -54,6 +54,19 @@ the user separately requests it. Keep photographic evaluation local, preserve bo
 export folders, and label any assistant-selected result a draft until explicit
 human photographic acceptance.
 
+For requested local reduction, use the same brush/rectangle controls or an exclusive
+schema-2 `effects` request containing `fade_reduction:{"target":"spatial_fade","area":...}`
+or the same exclusive field with `target:"shadow_fade"`
+with the common identities, scope and explicit candidate choice. The
+[reduction contract](file-contract.md#local-fade-reduction) defines the bounded
+geometry and saved dependencies. Scope must contain both old and replacement
+nonzero reduction. Do not substitute alpha edits, effect disable or a changed
+oval/arc. The target must have a current saved alpha dependency even while OFF.
+Coverage and reduction-OFF comparisons use saved state; draft outlines are not a
+rendered result. Shadow reduction changes its exponent weight; downstream spatial highlights
+are recalculated from the changed Shadow result, with spatial settings and reduction retained.
+Keep unrelated effects and human photographic acceptance separate.
+
 ## Inspect and classify
 
 Read the project's current recipe, guides, state, user keep/remove request and
@@ -236,6 +249,29 @@ effects or imply photographic acceptance. See the [manual steps](workflow.md#bac
 and [saved contract](file-contract.md#saved-background-appearance).
 
 
+## Explicit Background light
+
+Use Background light only for explicit backdrop-light intent. Follow the
+[manual light workflow](workflow.md#background-light) and
+[saved contract](file-contract.md#saved-background-light). Submit one exclusive
+schema2 effects request with complete `background_light` settings, full native
+scope and current source/base/draft identities; viewer actions additionally bind
+the raw revision manifest. Do not enable Local exposure automatically.
+
+Keep the base B0 and saved light L16 separate. Light changes the displayed
+backdrop B1, while foreground contribution and the B0 fade target remain unchanged.
+Protected partial-alpha composites can change without changing protected RGB or
+alpha. Compare saved light OFF, with authoring marks hidden, before presenting a
+result for human acceptance. Lower brightness if the backdrop clips.
+
+Turn OFF from validated saved settings, retaining pending edits and exact L16;
+Apply explicitly saves visible settings even OFF. Preserve unrelated base,
+foreground, reduction and layout drafts. No-record OFF creates nothing. Light is
+not a portable appearance-recipe section. For final assisted deliveries request
+editable and retain the native companion for margins/series; native replay uses
+saved fields, while series analytically evaluates light through its saved transform.
+Human photographic acceptance remains separate from completed processing.
+
 ## Presentation framing
 
 Framing is a separate composition decision. Use the saved source and current
@@ -281,7 +317,15 @@ combined when requested. Current user choices override example values; preserve
 source development, protected detail and unrelated settings, adapt native-pixel
 widths and protection to the target, and use fresh identities with existing controls.
 
-Appearance settings are descriptive recipes, not an automatic preset loader.
+Named reference cards remain descriptive guidance. A supported portable v1/v2
+appearance file can be opened through **Appearance recipes → Open recipe file**;
+see [the manual workflow](workflow.md#reuse-appearance-settings). Load only the
+requested scalar sections or explicitly requested editable layout, then use the
+existing per-effect Apply controls with fresh target identities. Scalar loading
+does not transfer geometry or switches. Layout Add/Replace and its guarded Undo
+follow the manual workflow; they retain the target master switch, protection,
+fade reduction, source development and acceptance. A source
+thumbnail is optional private photo content, not a prediction for the target.
 A supported portable series preset can be loaded through **Match series → Load
 preset file**. Keep references local; do not upload or include them in distributions.
 Ignored references need their own backup; Git does not back them up.
