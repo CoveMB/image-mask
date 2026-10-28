@@ -1384,13 +1384,16 @@ one identity.
 
 Native editable includes selected pre-shading `foreground_rgb16.tif`, `alpha16.png`,
 `source_rgb16.tif`, saved corrected RGB and W16/settings where present, independent
-background B/settings, and saved exposure/fade source, unexposed/unfaded, support,
-protection, alpha, area and settings operands where present. F already contains
+unlit background B0/settings, optional light L16/settings, and saved exposure/fade
+source, unexposed/unfaded, support, protection, alpha, area and settings operands
+where present. F already contains
 local sharpening/exposure/Shadow fade; never apply them twice. Spatial F remains pre-spatial,
 with all four saved spatial operands retained even OFF; use the
-[active-mode reconstruction](#optional-fade-into-background). Delivered F/A/W/opacity/B reproduce Result
-without the project, original, models or cache using the saved float64 ties-to-even
-renderer. A missing backdrop means zero B. Flattened Result is never editable F.
+[active-mode reconstruction](#optional-fade-into-background). Delivered F/A/W/opacity/B0
+and optional L16 reproduce native Result without the project, original, models or
+cache using the saved float64 ties-to-even renderer and
+[B0/B1 light composition](#saved-background-light). A missing base backdrop means
+zero B0; absent or disabled light uses B1=B0. Flattened Result is never editable F.
 Recovery uses the saved opacity only when the delivered shading record is enabled;
 disabled or absent shading means effective opacity zero, regardless of retained
 nonzero W/opacity. A missing W means zero. Keep retained editing settings unchanged.
@@ -1404,9 +1407,10 @@ request-record hash identifies `exports/<revision[-DRAFT]>-native-<sha256>/`,
 actual bytes/hash and raster dimensions/precision/mode/profile. The frozen recipe
 comes from that revision, never the mutable root draft. Notes contain no timestamps
 or capture paths. Inference provenance stays bound through the raw revision hash.
-Version 4 retains the effective-opacity recovery rule, spatial identity/operands
-and explicit optional sibling delivery, and adds Local sharpening operands.
-Unversioned, v1, v2 and v3 files remain preserved at their existing paths; no legacy
+Version 5 retains v4's effective-opacity recovery rule, spatial identity/operands,
+Local sharpening operands and explicit optional sibling delivery, and adds
+Background light identity/operands and presentation transform metadata.
+Unversioned and v1–v4 files remain preserved at their existing paths; no legacy
 lookup, recreation, migration or rewrite is performed.
 
 For presentation+editable, the native child is a native requested delivery with

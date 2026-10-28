@@ -1,0 +1,6 @@
+interface:
+  display_name: "Photo Directions"
+  short_description: "Photo directions with optional AI concepts"
+  default_prompt: "Use $photo-directions to suggest directions for this selected photo and intention; include extra ideas or AI concepts only when requested."
+policy:
+  allow_implicit_invocation: false

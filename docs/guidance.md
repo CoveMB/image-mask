@@ -141,9 +141,11 @@ cache. Missing key dependencies miss cache. Saved revision assets remain durable
 Inspect the returned categorical trimap, source proxy and support/protection overlays
 in the [local review window](workflow.md), or inspect the saved paths in an external viewer. All-unknown is an
 honest fallback, not an automatic quality result. Preserve source-visible fine
-features by unknown corridors; never paint invented foreground. Human trimap
-review is still required before native matting. `accept --revision` rejects every prepared
-revision, including one carrying parent alpha. See [recovery](troubleshooting.md).
+features by unknown corridors; never paint invented foreground. Trimap confirmation
+is optional: you can run native matting directly and review the masked photograph.
+Final-photo acceptance remains separate. `accept --revision` rejects every prepared
+revision, including one carrying parent alpha. See [native matting](matting.md) and
+[recovery](troubleshooting.md).
 
 
 ## Optional native morphology proposal

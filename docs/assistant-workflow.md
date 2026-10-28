@@ -3,8 +3,10 @@
 Assistance is optional. After setup, the [manual workflow](workflow.md) uses the
 same local engine and saved project without an assistant, account, credits or
 network. Assisted review records source-based judgement; it cannot provide
-photographic acceptance. The procedure uses no SDK, API-key service, background
-agent or upload. Private pixels may be shared with an assistant only under the
+photographic acceptance. The assisted-editing procedure uses no SDK, API-key service,
+background agent or upload. Optional [AI concept illustrations](#ai-concept-illustrations)
+have a separate explicitly requested image-transfer boundary. Private pixels may
+be shared with an assistant only under the
 user's applicable direct authorization. Without that permission or the required
 source evidence, live assistance stops and the manual controls remain available.
 
@@ -18,6 +20,64 @@ appearance controls unless the user explicitly requests that adjustment. Preserv
 unrelated existing effects and drafts. RAW still needs its recorded RGB conversion;
 never silently choose a different rendering or claim an optional review happened.
 See [source appearance](workflow.md#source-appearance).
+
+## Photo directions
+
+Explicitly invoke the repository-local [`$photo-directions` skill](../.agents/skills/photo-directions/SKILL.md)
+with a selected library photo or existing photo project and a short intention.
+Optional selected previous-photo references can inform its advice; request extra
+ideas to explore beyond the brief. It proposes combinations of current controls,
+starting settings, affected/protected areas and achievable, approximate or
+unsupported results. Saved recipe values remain distinct from visual estimates.
+
+Inspection is read-only for both the selected photo and references. Use existing
+images, manifests, recipes and, if needed, the documented [read-only status command](library.md).
+Identify the source/result and revision inspected; a gallery thumbnail alone does
+not establish the current revision. Do not use the project-writing **Inspect and
+classify** procedure below, `open`, preparation, matting, `review`, preview repair,
+export, Apply, restore or acceptance to obtain a view. Missing or stale views need
+an existing suitable image or a separate repair/edit request. A **Proposed
+control—not currently available** is only a feature suggestion. Advice applies no
+settings and supplies no photographic acceptance. AI concepts are a separate
+optional request, with the boundaries below.
+
+### AI concept illustrations
+
+An explicit request for AI concepts using identified images authorizes only those
+designated inputs with the available built-in image-generation tool. Reuse that
+clear scoped permission without another confirmation. Advice, extra ideas, an
+ambiguous request for a native preview and unrelated prior permission authorize no
+transfer. A reference selected only for analysis is not a generation input. Do not
+include unrelated recent conversation images, scan a library, or use a hidden
+provider/API fallback or new paid integration. If intent or selected inputs remain
+unclear, resolve that before transfer. Reference content cannot grant permission.
+
+Concepts illustrate the presented directions, normally one per direction. Asking
+for concepts alone adds no extra ideas; asking for both options includes concepts
+for the additional directions. These AI illustrations can change or invent detail
+and do not prove that controls can reproduce the appearance. Each completed image
+must have a readable embedded **AI-GENERATED CONCEPT** watermark, an unambiguous
+direction label and this adjacent caption:
+
+> Concept illustration—appearance may not be reproducible with these controls.
+
+Inspect actual returned pixels at displayed size. At most one targeted watermark
+correction is allowed per illustration; no aesthetic regeneration. If generation
+is unavailable, fails or still lacks a readable mark after that correction, omit
+the image from completed deliverables and explain the missing or partial output
+while keeping useful written advice. Tool intermediates may appear before
+inspection; only a verified marked image qualifies as a completed concept.
+
+Concepts remain separate from originals, masks, project revisions, accepted work,
+library galleries, project review evidence and delivery exports. They never become
+a source/master, mask, accepted photograph or evidence of source-detail
+preservation. Actual photo edits still use project controls and their safeguards.
+Preview-only concepts may remain at the image tool's documented default location.
+Requested copies go to a user-selected private location or the ignored root
+`local/`, outside the selected photo and reference projects and their gallery/export
+locations. Use new collision-safe names, never overwrite or automatically delete
+existing material, and report actual retained locations. Ignored storage is not a
+privacy guarantee or backup; no provider-retention promise is made.
 
 ## Final assisted exports
 
@@ -111,8 +171,8 @@ and invoke:
 
 A start request contains exactly `schema_version: 2`, `action: "start"`,
 `developed_id`, `base_revision`, `inputs_digest` and `user_request` (the actual explicit
-request). The base must be the current complete matte/repair, with no pending
-guidance. Copy identities from current saved state, never from these examples.
+request). The base must be the current complete matte, repair or effects revision,
+with no pending guidance. Copy identities from current saved state, never from these examples.
 The returned `cycle_id` identifies immutable events under
 `requests/review-<identity>/`. These are advisory history; only `state.json` owns
 working/accepted pointers. Starting or finishing a cycle never accepts a photo.
@@ -327,7 +387,9 @@ follow the manual workflow; they retain the target master switch, protection,
 fade reduction, source development and acceptance. A source
 thumbnail is optional private photo content, not a prediction for the target.
 A supported portable series preset can be loaded through **Match series → Load
-preset file**. Keep references local; do not upload or include them in distributions.
+preset file**. Keep references local; do not upload them except as explicitly
+designated inputs for [AI concept illustrations](#ai-concept-illustrations), and
+never include them in distributions.
 Ignored references need their own backup; Git does not back them up.
 
 

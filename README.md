@@ -193,6 +193,15 @@ See [bounded assisted review](docs/assistant-workflow.md), [native matting and e
 Setup requires public package downloads; subsequent processing is local/offline. See [selection and guides](docs/guidance.md)
 for explicit model setup, typed preparation and human review.
 
+The repository-local [`$photo-directions` skill](.agents/skills/photo-directions/SKILL.md)
+offers read-only advice for a selected photo and intention, using current controls.
+Extra ideas and watermarked AI concept illustrations are independent options. For
+example: `$photo-directions Suggest directions for this selected photo to make the
+subject stand out. Include an extra idea and AI concepts using only this image.`
+Concepts are illustrative and may not be reproducible with current controls; the
+skill applies no photo edits. See [photo directions](docs/assistant-workflow.md#photo-directions)
+for selected-image, reference and image-transfer boundaries.
+
 ## Source map
 
 | Area | Owner |
