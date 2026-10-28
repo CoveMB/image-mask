@@ -75,7 +75,7 @@ closed and the photo Draft. This is not successful photographic correction.
 
 A copied accepted spider project also rendered in a fresh process without access
 to the real library or models. All sixteen delivered image/settings payloads matched
-its historical export exactly; current v4 manifest/README changes were reconciled
+its historical export exactly; then-current v4 manifest/README changes were reconciled
 against the older v3 contract. Native web/source crops were inspected, and all 214
 real-library file hashes and modes stayed unchanged. Those are bounded replay and
 agent-observation results, not new human acceptance. Missing flower/dragonfly
@@ -203,8 +203,7 @@ regular review's active-mode export reconstruction instructions. Its targeted
 independent recheck found no remaining material improvement. The last metadata
 repair had 3 failing portable replay regressions before correction and 3 passing
 after; the affected export/reconstruction suite passed **280 tests**, exit 0
-(46.88 s), with no warnings. Rendering was unchanged by that last repair. See the
-[implementation review record](superpowers/plans/2026-10-22-fade-into-background-reviews.md#implementation-execution).
+(46.88 s), with no warnings. Rendering was unchanged by that last repair.
 
 Hosted CodeRabbit reviewed all 28 feature files on MR #25. Its two findings were
 verified and fixed: Disable now submits saved geometry with only the master

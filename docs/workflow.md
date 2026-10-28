@@ -139,17 +139,25 @@ accepted state and diagnostic artifacts. Fix the displayed cause before retrying
 After a successful matte or repair, choose **View → Result · saved background**
 before comparing the result; the page keeps the previously selected view.
 Use **Source / result**, the revision selector, Result and black/gray/white diagnostics and
-alpha view on identical native crops. For photographic comparison, set **Candidate
-preview → None**, **Canvas authoring mode → Matting guides** and **Overlay → None**.
-Exposure and fade shapes remain visible in their authoring modes even with Overlay
-set to None. Switching to Matting guides hides those marks without clearing saved
-or draft areas; switch back to the effect's authoring mode when drawing again.
+alpha view on identical native crops. For an unobstructed view of the saved appearance:
+
+- Set **Candidate preview → None**, **Canvas authoring mode → Matting guides** and
+  **Overlay → None**. Exposure, sharpening, fade, reduction and light marks remain
+  visible in their authoring modes even with Overlay set to None. Switching modes
+  hides those marks without clearing saved or draft areas; switch back when drawing.
+- Set **Saved strength map → None** and **Saved reduction view → Normal**. These
+  separate controls can overlay or replace the image even with Overlay set to None.
+- Clear any **Compare … OFF** and **Compare BASE** checkboxes, and set **Same native
+  crop shading comparison → Saved opacity**. Use the comparison controls again
+  deliberately when judging an individual effect. If an appearance layout placement
+  preview is visible, choose **Cancel placement preview** to remove its outlines.
+
 Inspect fragile detail, gaps, transparency and seams at native scale. Cached tile
 counts describe verified computation reuse, never visual quality. Previews are
 RGB8/alpha8 approximations; authoritative saved assets retain RGB16/alpha16 precision.
-To save the selected native crop, use **Focused comparison → Save comparison**.
-The default saves only a labelled JPEG and exact manifest. **Retain native
-inspection evidence** also saves separate PNG crops for correction work. Choose
+To save the selected native crop, use **Save a focused comparison → Save comparison**.
+The default saves only a labelled JPEG and exact manifest. Selecting **Also retain
+this native crop as inspection evidence** saves separate PNG crops for correction work. Choose
 an optional presentation mode to include the current margin or series form for
 the same selected saved revision. These controls retain unsaved forms and do not
 accept the photograph or update the Result gallery. Status reports the actual
@@ -266,14 +274,18 @@ correction is warranted, record that limitation rather than changing good detail
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
    success in computation alone does not mean the photograph improved.
-7. If cleanup, shading, Local sharpening, Local exposure or Shadow fade was enabled, changed alpha can make it
+7. If cleanup, shading, Local sharpening, Local exposure, Shadow fade or Fade into
+   background was enabled, changed alpha can make it
    **STALE** and switch comparisons to labelled BASE views. Before accepting or
    exporting the current appearance, rebuild each stale effect from its reviewed
    support/protection or explicitly disable it: **Explicitly disable cleanup**,
-   **Explicitly disable shading**, **Reset Local sharpening**, **Reset exposure**, or **Reset Shadow fade**. Follow the existing
+   **Explicitly disable shading**, **Reset Local sharpening**, **Reset exposure**,
+   **Reset Shadow fade**, or **Disable fade**. Follow the existing
    [cleanup recovery](#compare-accept-and-export),
-   [shading recovery](#protected-inward-shading) and
-   [exposure recovery](#local-exposure) and [fade recovery](#shadow-fade) instructions; an amount/opacity change alone
+   [shading recovery](#protected-inward-shading),
+   [sharpening recovery](#local-sharpening), [exposure recovery](#local-exposure),
+   [Shadow fade recovery](#shadow-fade) and [spatial fade recovery](#fade-into-background)
+   instructions; an amount/opacity change alone
    does not rebuild an alpha dependency. Earlier accepted results/exports stay saved.
 8. Compare source, prior saved result and current result on the same native crop,
    with overlays off, on black/gray/white and alpha. Check the corrected background,

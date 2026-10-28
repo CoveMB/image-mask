@@ -7,8 +7,12 @@
   recognizes a conservative canonical ICC representation; an sRGB name alone is
   insufficient. Do not convert high-depth data through Pillow RGB8.
 - **Multi-frame PNG/MPO or multi-image JPEG (including Ultra HDR gain maps):**
-  export a single-image SDR JPEG/PNG8 or trusted uncompressed sRGB RGB16 TIFF.
-  Gain maps are not decoded; the importer refuses to silently use only the base image.
+  rejected by default. For a supported SDR-base gain-map JPEG, explicitly add
+  `--jpeg-sdr-primary` to `open` or `import` to use its ordinary SDR image. The
+  original remains intact; the gain map is not decoded and HDR brightness is omitted.
+  Other multi-image formats remain unsupported. Export a single-image SDR JPEG/PNG8
+  or trusted uncompressed sRGB RGB16 TIFF when needed. See the
+  [SDR-primary import contract](file-contract.md#explicit-sdr-primary-jpeg-import).
 - **Camera white balance multipliers unavailable:** supported RGB DNGs can use
   their stored `AsShotWhiteXY` and calibration profiles automatically, without
   substituting daylight. The error means the reader's multipliers are unavailable
@@ -252,6 +256,28 @@ pointer is marked unreadable and retired. Existing request records are preserved
 This recovers saved inputs, not missing accepted dependencies; use an independent
 backup for those. Reinspect the restored inputs before processing or accepting.
 
+
+## Appearance control recovery
+
+Use the effect's maintained workflow for its own draft and recovery controls:
+
+- [Local sharpening](workflow.md#local-sharpening): stale alpha needs a reviewed
+  area rebuild or **Reset Local sharpening**; stale settings need the main
+  **Reload saved inputs** before retrying.
+- [Fade into background and local fade reduction](workflow.md#fade-into-background):
+  reload stale shape drafts before Apply. Rebuild or disable a stale effect;
+  reduction cannot refresh its alpha dependency. Each reduction target retains
+  its own draft and **Cancel / reload saved reduction** action.
+- [Appearance recipes](workflow.md#reuse-appearance-settings): loading settings
+  does not apply effects. Reload remaining settings after each effect Apply;
+  area drafts have separate bindings. The layout's **Undo import** is available
+  only while its bound target and controls remain unchanged.
+- [Background light](workflow.md#background-light): use **Reload saved light**
+  after a stale draft; **Turn light OFF** preserves pending controls.
+  Keep the separate light field/settings and native companion for editable recovery.
+
+These controls do not replace final-photo acceptance. For interrupted publication,
+inspect actual saved state and retain failed stages before using ordinary Restore.
 
 ## Shadow fade recovery
 

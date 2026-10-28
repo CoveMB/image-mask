@@ -20,7 +20,8 @@ Maintain a local, single-photo workflow for black-background photography with ed
 - Reuse established helpers and shared processing contracts across interfaces; keep one canonical owner for each behavior.
 - Follow existing conventions and supported platforms. Verify current official compatibility, security and licence information before changing dependencies, model loading or execution backends. Pin reproducible dependencies through the repository's established tooling.
 - Ask the user about material design choices or changes to public interfaces, saved projects, file formats or compatibility. Provide migration and recovery where existing data or users are affected.
-- Keep durable contracts and operating documentation synchronized with behavior. Do not make runtime behavior depend on agent memory or temporary development artifacts. Do not describe unsupported commands or unverified capabilities as available.
+- For every feature change or control addition, update, rename or removal (UI, CLI or request fields), complete a documentation pass in the same change before reporting completion. Check affected maintained workflows, examples and file/recovery/export contracts against implemented behavior and actual control/help text, including defaults, units, ranges and limitations. Correct drift and validate affected links and examples with applicable checks. Report the documents checked, corrections made (or why no edits were needed), verification and remaining gaps. Historical plans do not substitute for maintained documentation.
+- Do not make runtime behavior depend on agent memory or temporary development artifacts. Do not describe unsupported commands or unverified capabilities as available.
 
 ## Code quality
 
@@ -36,7 +37,7 @@ Maintain a local, single-photo workflow for black-background photography with ed
 
 ## Image integrity and recovery
 
-- Whenever the user requests an image modification, perform it only through this project's controls. Never use AI image-generation or image-editing tools to modify the image directly. If the project's controls cannot perform the requested change, explain the limitation instead of bypassing them.
+- Whenever the user requests an image modification, perform it only through this project's controls. Never use AI image-generation or image-editing tools to modify source or project photographs. The sole exception is an explicitly requested `$photo-directions` concept illustration using only the user-designated inputs under the [AI concept boundaries](docs/assistant-workflow.md#ai-concept-illustrations). It creates separate illustrative outputs and never authorizes replacing or editing photo work. If the project's controls cannot perform an actual photo change, explain the limitation instead of bypassing them.
 - Preserve original captures, accepted results and their dependencies. Never invent or reconstruct photographed detail absent from the source.
 - Perform only requested adjustments. Masking preserves saved source lighting and colours; do not change white balance, exposure, colour or enable other appearance effects unless explicitly requested. Source-development approval is optional; follow the [source-appearance workflow](docs/workflow.md#source-appearance) without inventing an approval.
 - Preserve image precision, color interpretation, orientation, coordinate registration and transparency. Label previews, approximations and lossy exports honestly; a larger output container does not create captured precision.
