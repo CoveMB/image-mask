@@ -2403,9 +2403,16 @@ def run_effects(
         record_generated_result(state, revision, new_manifest)
         _atomic_json(saved_asset(project, "state.json"), state, validate_before_replace=recheck)
     except OSError as error:
-        if spatial_record is not None and destination.exists():
+        if (spatial_record is not None or light_record is not None) and destination.exists():
+            effect_name = (
+                "Background light"
+                if light_changed
+                else "Fade into background"
+                if spatial_changed
+                else "Effects"
+            )
             raise ProjectError(
-                f"Fade into background publication durability unconfirmed: visible revision {destination}. "
+                f"{effect_name} publication durability unconfirmed: visible revision {destination}. "
                 "Reload project status and inspect or explicitly restore this revision before retrying; "
                 "its files and earlier accepted work were retained."
             ) from error

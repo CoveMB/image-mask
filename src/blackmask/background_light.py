@@ -304,6 +304,16 @@ def inherit_background_light(
     return record
 
 
+def read_active_background_light(
+    project: Path, directory: Path, manifest: dict[str, Any]
+) -> np.ndarray | None:
+    """Read validated saved light, returning no field when disabled or entirely zero."""
+    light = read_background_light(project, directory, manifest)
+    if light is None or not manifest["background_light"]["settings"]["enabled"] or not light.any():
+        return None
+    return light
+
+
 def saved_backgrounds(
     project: Path, directory: Path, manifest: dict[str, Any], *, light_off: bool = False
 ) -> tuple[np.ndarray | None, np.ndarray | None]:
@@ -311,13 +321,8 @@ def saved_backgrounds(
     from .background import read_background
 
     base = read_background(project, directory, manifest)
-    light = read_background_light(project, directory, manifest)
-    if (
-        light is None
-        or light_off
-        or not manifest["background_light"]["settings"]["enabled"]
-        or not light.any()
-    ):
+    light = read_active_background_light(project, directory, manifest)
+    if light is None or light_off:
         return base, base
     if base is None:
         base = np.zeros_like(light)

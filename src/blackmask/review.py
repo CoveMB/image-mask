@@ -841,9 +841,6 @@ def render_presentation_preview(
         raise ProjectError("Stale framing preview saved layers")
     weight, opacity = saved_shading(project, revision, alpha, loaded_manifest)
     spatial = saved_spatial_fade(project, revision, alpha, loaded_manifest)
-    base_background, background = saved_backgrounds(
-        project, saved_asset(project, f"revisions/{revision}"), loaded_manifest
-    )
     series_mode = presentation["mode"] == "match-series"
     if series_mode:
         settings = validate_series_settings(presentation["settings"])
@@ -855,7 +852,6 @@ def render_presentation_preview(
             max(1, int(height * min(1600, longest) / longest)),
         )
         sampling = series_sampling_plan(layout, display_dimensions_wh=display)
-        del base_background, background
         rgb16 = render_series(
             foreground,
             alpha,
@@ -881,6 +877,9 @@ def render_presentation_preview(
     elif presentation["mode"] == "add-margins":
         margins = validate_margins(
             presentation["margins"], (foreground.shape[1], foreground.shape[0])
+        )
+        base_background, background = saved_backgrounds(
+            project, saved_asset(project, f"revisions/{revision}"), loaded_manifest
         )
         native = (
             render_black(
@@ -1109,7 +1108,7 @@ def _comparison_project_locked(
     presentation: dict[str, Any] | None,
     expected_identity: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    from .background_light import saved_backgrounds
+    from .background_light import read_active_background_light, saved_backgrounds
     from .effects import effects_stale, saved_shading, saved_spatial_fade
     from .operations import draft_digest, guidance_draft_digest
 
@@ -1192,6 +1191,13 @@ def _comparison_project_locked(
         captured[f"revisions/{before_revision}/manifest.json"] = saved_asset(
             project, f"revisions/{before_revision}/manifest.json"
         ).read_bytes()
+    has_background = not effects_stale(manifest) and (
+        "background" in manifest
+        or read_active_background_light(
+            project, saved_asset(project, f"revisions/{revision}"), manifest
+        )
+        is not None
+    )
     request = {
         "encoding": "focused-comparison-jpeg-v1",
         "native_evidence_encoding": "native-review-png-v1",
@@ -1215,7 +1221,7 @@ def _comparison_project_locked(
         "crops": crops,
         "retain_native": retain_native,
         "panel_order": ["source", "black", "gray", "white", "alpha"]
-        + (["result"] if "background" in manifest and not effects_stale(manifest) else []),
+        + (["result"] if has_background else []),
         "presentation": presentation,
         "settings_by_revision": {
             name: _comparison_settings(project, name, item) for name, item in manifests.items()

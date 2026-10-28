@@ -309,6 +309,52 @@ def light_request(project, settings=None, **extra):
     )
 
 
+@pytest.mark.parametrize("with_background", [False, True])
+@pytest.mark.parametrize("enabled,brightness", [(True, 0.1), (False, 0.1), (True, 0.0)])
+@pytest.mark.parametrize("retain_native", [False, True])
+def test_light_comparison_reuses_matching_panel_layout(
+    tmp_path, monkeypatch, with_background, enabled, brightness, retain_native
+):
+    from pathlib import Path
+
+    from test_background import legacy_project
+    from test_effects import fixture_project
+
+    from blackmask import background_light, operations
+    from blackmask.project import read_project, read_revision
+    from blackmask.review import review_project
+
+    if with_background:
+        project, _, accepted = fixture_project(tmp_path)
+    else:
+        project, accepted = legacy_project(tmp_path)
+    result = operations.apply_operation(
+        project, light_request(project, light_settings(enabled=enabled, brightness=brightness))
+    )
+    manifest = read_revision(project, result["revision"], result["developed_id"])
+    assert ("background" in manifest) == with_background
+    first = review_project(project, comparison=True, retain_native=retain_native)
+    path = Path(first["comparison_manifest_file"])
+    preserved = {item.name: item.read_bytes() for item in path.parent.iterdir()}
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Comparison reuse must not compose an unused native background")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(background_light, "combine_background_light", forbidden)
+        assert review_project(project, comparison=True, retain_native=retain_native) == {
+            **first,
+            "reused": True,
+        }
+    record = json.loads(path.read_bytes())
+    expected = ["source", "black", "gray", "white", "alpha"]
+    if with_background or (enabled and brightness > 0):
+        expected.append("result")
+    assert record["panel_order"] == record["request"]["panel_order"] == expected
+    assert {item.name: item.read_bytes() for item in path.parent.iterdir()} == preserved
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
+
+
 @pytest.mark.parametrize("kind", ["oval", "directional"])
 @pytest.mark.parametrize("enabled", [True, False])
 def test_saved_light_preserves_foreground_assets_and_effective_recipe(tmp_path, kind, enabled):
@@ -1012,14 +1058,16 @@ def test_series_resource_estimate_accounts_for_light_base_and_bounded_scratch():
 
 @pytest.mark.parametrize("kind", ["oval", "directional"])
 @pytest.mark.parametrize("consumer", ["export", "preview"])
-def test_series_delivery_and_preview_extend_saved_light_on_output_canvas(tmp_path, kind, consumer):
+def test_series_delivery_and_preview_extend_saved_light_on_output_canvas(
+    tmp_path, monkeypatch, kind, consumer
+):
     from pathlib import Path
 
     import tifffile
     from test_background import scalar_background
     from test_effects import fixture_project
 
-    from blackmask import operations
+    from blackmask import background_light, operations
     from blackmask.export import export_project, saved_layers
     from blackmask.project import read_project
     from blackmask.review import render_presentation_preview
@@ -1068,6 +1116,11 @@ def test_series_delivery_and_preview_extend_saved_light_on_output_canvas(tmp_pat
         ).read_bytes()
         np.testing.assert_array_equal(actual[0], expected_empty[0])
     else:
+
+        def forbidden(*args, **kwargs):
+            pytest.fail("Series previews must not compose an unused native background")
+
+        monkeypatch.setattr(background_light, "saved_backgrounds", forbidden)
         actual, metadata = render_presentation_preview(
             project,
             revision,
@@ -1171,17 +1224,22 @@ def test_background_light_http_rejects_duplicate_keys_before_start(tmp_path, fie
         assert server.action == before
 
 
+@pytest.mark.parametrize("inherited_spatial", [False, True])
+@pytest.mark.parametrize("failure", ["revision-sync", "recipe", "state"])
 def test_light_writer_failures_orphan_restore_and_legacy_absence_preserve_acceptance(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, inherited_spatial, failure
 ):
     from test_effects import fixture_project
+    from test_spatial_fade import spatial_request
 
-    from blackmask import effects, operations
+    from blackmask import effects, export, operations
     from blackmask.project import ProjectError, project_lock, read_project, read_revision
 
     project, _, parent = fixture_project(tmp_path)
     master = read_project(project)["developed_id"]
     assert "background_light" not in read_revision(project, parent["revision"], master)
+    if inherited_spatial:
+        operations.apply_operation(project, spatial_request(project))
     before = (project / "state.json").read_bytes()
     recipe = (project / "recipe.toml").read_bytes()
     with project_lock(project), pytest.raises(ProjectError, match="[Bb]usy|writer"):
@@ -1196,22 +1254,41 @@ def test_light_writer_failures_orphan_restore_and_legacy_absence_preserve_accept
             operations.apply_operation(project, light_request(project))
     assert (project / "state.json").read_bytes() == before
     assert (project / "recipe.toml").read_bytes() == recipe
-    original = effects._atomic_json
+    original_json = effects._atomic_json
+    original_bytes = effects._atomic_bytes
+    original_sync = export._sync_directory
 
     def interrupt(path, *args, **kwargs):
-        if path.name == "state.json":
+        if failure == "state" and path.name == "state.json":
             raise OSError("synthetic state-last interruption")
-        return original(path, *args, **kwargs)
+        return original_json(path, *args, **kwargs)
+
+    def interrupt_recipe(path, *args, **kwargs):
+        if failure == "recipe" and path == project / "recipe.toml":
+            raise OSError("synthetic recipe interruption")
+        return original_bytes(path, *args, **kwargs)
+
+    def interrupt_sync(path):
+        if failure == "revision-sync" and path == project / "revisions":
+            raise OSError("synthetic revision sync interruption")
+        return original_sync(path)
 
     with monkeypatch.context() as scoped:
         scoped.setattr(effects, "_atomic_json", interrupt)
-        with pytest.raises(OSError, match="state-last"):
+        scoped.setattr(effects, "_atomic_bytes", interrupt_recipe)
+        scoped.setattr(export, "_sync_directory", interrupt_sync)
+        with pytest.raises(
+            ProjectError, match="Background light publication durability unconfirmed"
+        ) as error:
             operations.apply_operation(
                 project, light_request(project, light_settings(enabled=False))
             )
     assert (project / "state.json").read_bytes() == before
     orphan = max((project / "revisions").glob("rev-*"))
     assert orphan.name != parent["revision"]
+    assert str(orphan) in str(error.value)
+    assert "restore" in str(error.value)
+    assert isinstance(error.value.__cause__, OSError)
     record = read_revision(project, orphan.name, master)["background_light"]
     assert not record["settings"]["enabled"]
     operations.restore_revision(project, orphan.name, replace_drafts=True)
