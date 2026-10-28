@@ -1042,6 +1042,26 @@ def _validate_comparison_bundle(
 def _validate_comparison_geometry(
     project: Path, record: dict[str, Any], request: dict[str, Any]
 ) -> None:
+    presentation_metadata = None
+    presentation_dimensions = None
+    if request["presentation"] is not None:
+        manifest = read_revision(project, request["revision"], request["developed_id"])
+        pixels, presentation_metadata = render_presentation_preview(
+            project, request["revision"], request["developed_id"], manifest, request["presentation"]
+        )
+        with Image.fromarray(pixels) as image:
+            image.thumbnail((1600, 776), Image.Resampling.LANCZOS)
+            presentation_dimensions = image.size
+    _validate_comparison_layout(record, request, presentation_metadata, presentation_dimensions)
+
+
+def _validate_comparison_layout(
+    record: dict[str, Any],
+    request: dict[str, Any],
+    presentation_metadata: dict[str, Any] | None,
+    presentation_dimensions: tuple[int, int] | None,
+) -> None:
+    """Check generated and reused layout metadata without rendering additional pixels."""
     order = request["panel_order"]
     crops = record.get("crops")
     limit = (800 if request["presentation"] else 1600) // len(request["crops"]) - 24
@@ -1074,23 +1094,21 @@ def _validate_comparison_geometry(
         sheet_width = max(sheet_width, width * len(order))
     expected_presentation = None
     if request["presentation"] is not None:
-        manifest = read_revision(project, request["revision"], request["developed_id"])
-        pixels, expected_presentation = render_presentation_preview(
-            project, request["revision"], request["developed_id"], manifest, request["presentation"]
+        if presentation_metadata is None or presentation_dimensions is None:
+            raise ProjectError("Comparison presentation geometry is missing")
+        width, height = presentation_dimensions
+        expected_presentation = dict(
+            presentation_metadata,
+            panel_box_xyxy=[0, top + 24, width, top + 24 + height],
+            displayed_dimensions_wh=[width, height],
+            output_to_display_scale_xy=[
+                presentation_metadata["output_dimensions_wh"][0] / width,
+                presentation_metadata["output_dimensions_wh"][1] / height,
+            ],
+            native_authoring_allowed=False,
         )
-        with Image.fromarray(pixels) as image:
-            image.thumbnail((1600, 776), Image.Resampling.LANCZOS)
-            expected_presentation.update(
-                panel_box_xyxy=[0, top + 24, image.width, top + 24 + image.height],
-                displayed_dimensions_wh=list(image.size),
-                output_to_display_scale_xy=[
-                    expected_presentation["output_dimensions_wh"][0] / image.width,
-                    expected_presentation["output_dimensions_wh"][1] / image.height,
-                ],
-                native_authoring_allowed=False,
-            )
-            top += 24 + image.height
-            sheet_width = max(sheet_width, image.width)
+        top += 24 + height
+        sheet_width = max(sheet_width, width)
     if record.get("presentation") != expected_presentation or record["dimensions_wh"] != [
         sheet_width,
         top,
@@ -1339,14 +1357,17 @@ def _comparison_project_locked(
         for path in (stage / "preview.jpg", stage / "review/manifest.json")
     }
     presentation_record = None
+    presentation_metadata = None
+    presentation_dimensions = None
     with Image.open(stage / "preview.jpg") as native_sheet:
         sheet = native_sheet.copy()
     if presentation is not None:
-        pixels, presentation_record = render_presentation_preview(
+        pixels, presentation_metadata = render_presentation_preview(
             project, revision, state["developed_id"], manifest, presentation
         )
         panel = Image.fromarray(pixels)
         panel.thumbnail((1600, 776), Image.Resampling.LANCZOS)
+        presentation_dimensions = panel.size
         combined = Image.new(
             "RGB", (max(sheet.width, panel.width), sheet.height + panel.height + 24)
         )
@@ -1358,12 +1379,13 @@ def _comparison_project_locked(
         )
         top = sheet.height + 24
         combined.paste(panel, (0, top))
-        presentation_record.update(
+        presentation_record = dict(
+            presentation_metadata,
             panel_box_xyxy=[0, top, panel.width, top + panel.height],
             displayed_dimensions_wh=list(panel.size),
             output_to_display_scale_xy=[
-                presentation_record["output_dimensions_wh"][0] / panel.width,
-                presentation_record["output_dimensions_wh"][1] / panel.height,
+                presentation_metadata["output_dimensions_wh"][0] / panel.width,
+                presentation_metadata["output_dimensions_wh"][1] / panel.height,
             ],
             native_authoring_allowed=False,
         )
@@ -1416,6 +1438,7 @@ def _comparison_project_locked(
         }
         (output / "manifest.json").write_bytes(_json_bytes(record))
         recheck()
+        _validate_comparison_layout(record, request, presentation_metadata, presentation_dimensions)
         _validate_comparison_native(project, destination, record, request)
         if destination.exists() or destination.is_symlink():
             raise ProjectError(
