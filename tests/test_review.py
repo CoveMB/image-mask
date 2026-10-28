@@ -952,13 +952,26 @@ def test_comparison_native_parent_sync_failure_remains_unconfirmed_until_retry(
 
 
 @pytest.mark.parametrize("mode", ["add-margins", "match-series"])
-def test_comparison_presentation_binds_layout_and_keeps_native_coordinates(tmp_path, mode):
+def test_comparison_presentation_binds_layout_and_keeps_native_coordinates(
+    tmp_path, monkeypatch, mode
+):
     from test_effects import fixture_project
     from test_framing import margins
     from test_series_framing import series_settings
 
+    from blackmask import review
     from blackmask.project import ProjectError, digest, read_project
     from blackmask.review import review_project
+
+    render_calls = 0
+    render = review.render_presentation_preview
+
+    def counted_render(*args, **kwargs):
+        nonlocal render_calls
+        render_calls += 1
+        return render(*args, **kwargs)
+
+    monkeypatch.setattr(review, "render_presentation_preview", counted_render)
 
     project, _, revision = fixture_project(tmp_path)
     presentation = {
@@ -978,6 +991,7 @@ def test_comparison_presentation_binds_layout_and_keeps_native_coordinates(tmp_p
     result = review_project(
         project, comparison=True, presentation=presentation, crops=[[1, 0, 6, 4], [5, 3, 6, 4]]
     )
+    assert render_calls == 1
     path = Path(result["comparison_manifest_file"])
     record = json.loads(path.read_bytes())
     assert record["request"]["presentation"] == presentation
@@ -989,6 +1003,7 @@ def test_comparison_presentation_binds_layout_and_keeps_native_coordinates(tmp_p
     assert review_project(
         project, comparison=True, presentation=presentation, crops=[[1, 0, 6, 4], [5, 3, 6, 4]]
     ) == {**result, "reused": True}
+    assert render_calls == 2
     with pytest.raises(ProjectError, match="Stale comparison presentation"):
         review_project(
             project,
@@ -996,6 +1011,83 @@ def test_comparison_presentation_binds_layout_and_keeps_native_coordinates(tmp_p
             presentation={**presentation, "revision_manifest_sha256": "0" * 64},
         )
     assert (project / "state.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("mode", [None, "add-margins", "match-series"])
+@pytest.mark.parametrize("damage", ["order", "origin", "scale", "panel", "sheet"])
+def test_comparison_rejects_generated_layout_before_publication(
+    tmp_path, monkeypatch, mode, damage
+):
+    from test_effects import fixture_project
+    from test_framing import margins
+    from test_library import inventory
+    from test_series_framing import series_settings
+
+    from blackmask import review
+    from blackmask.project import ProjectError, digest, read_project
+
+    project, _, revision = fixture_project(tmp_path)
+    first = review.review_project(project, comparison=True, crops=[[0, 0, 2, 2]])
+    comparison_root = Path(first["comparison_manifest_file"]).parent.parent
+    preserved = inventory(project)
+    published = set(comparison_root.glob("rev-*"))
+    presentation = None
+    if mode is not None:
+        presentation = {
+            "mode": mode,
+            "revision": revision["revision"],
+            "developed_id": read_project(project)["developed_id"],
+            "revision_manifest_sha256": digest(
+                (project / "revisions" / revision["revision"] / "manifest.json").read_bytes()
+            ),
+            **(
+                {"margins": margins()}
+                if mode == "add-margins"
+                else {
+                    "settings": series_settings(output_width_px=40, output_height_px=50).to_dict()
+                }
+            ),
+        }
+    overview = review.write_revision_overview
+
+    def inconsistent_overview(directory, *args, **kwargs):
+        record = overview(directory, *args, **kwargs)
+        if damage == "order":
+            record["panel_order"] = record["panel_order"][:-1]
+        elif damage == "origin":
+            record["crops"][0]["native_origin_xy"] = [0, 0]
+        elif damage == "scale":
+            record["crops"][0]["scale_xy"] = [2, 2]
+        elif damage == "panel":
+            record["crops"][0]["panel_boxes_xyxy"]["source"][0] += 1
+        else:
+            path = directory.parent / "preview.jpg"
+            with (
+                Image.open(path) as image,
+                image.crop((0, 0, image.width, image.height + 1)) as changed,
+            ):
+                changed.save(path)
+        return record
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(review, "write_revision_overview", inconsistent_overview)
+        with pytest.raises(ProjectError, match="Comparison (crop|presentation)") as error:
+            review.review_project(
+                project, comparison=True, presentation=presentation, crops=[[1, 0, 6, 4]]
+            )
+    assert set(comparison_root.glob("rev-*")) == published
+    assert "staging preserved" in str(error.value)
+    stages = list(comparison_root.glob(".comparison-*"))
+    assert len(stages) == 1
+    assert (stages[0] / "bundle/manifest.json").is_file()
+    assert (stages[0] / "bundle/comparison_RGB8_VIEW.jpg").is_file()
+    current = inventory(project)
+    assert all(current.get(name) == value for name, value in preserved.items())
+    recovered = review.review_project(
+        project, comparison=True, presentation=presentation, crops=[[1, 0, 6, 4]]
+    )
+    assert not recovered["reused"]
+    assert stages[0].is_dir()
 
 
 @pytest.mark.parametrize(
