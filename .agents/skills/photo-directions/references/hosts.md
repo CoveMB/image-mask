@@ -21,8 +21,10 @@ path, use `referenced_image_paths`. Otherwise use
 every intended input and no unselected image. Never supply both mechanisms.
 If neither selects exactly the intended inputs, ask for those images to be
 attached again. Reuse clear image-specific permission under the shared rules.
-Inspect actual returned pixels, then deliver verified concepts with
-`generatedImage`, direction labels and the shared skill's exact caption.
+Inspect actual returned pixels, then deliver verified concepts with direction
+labels and the shared skill's exact caption. In code mode, use `generatedImage`
+when that helper is exposed; otherwise use the actual session's supported native
+inline delivery mechanism.
 
 These mechanics preserve the existing Codex contract. Tool availability and
 successful invocation, viewing and delivery must still be observed in the session.

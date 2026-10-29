@@ -1,10 +1,10 @@
 # Photo directions portability — verification and independent reviews
 
-**Status:** Local instruction candidate implemented; all four independent reviews complete.
-Native compatibility acceptance remains pending. Draft publication is authorized
-by the 2026-10-29 grant recorded below; earlier no-publication statements describe C1.
+**Status:** Source/documentation implementation and focused reviews are complete,
+including the accepted C2 delivery correction and post-publication documentation/CLI
+audit. Native compatibility acceptance remains pending; PR #40 stays draft.
 
-## Authority and comparison
+## Authority and C1 comparison
 
 The implementation-chat dispatch authorizes local implementation and four separate
 read-only reviews of the [plan](2026-10-28-photo-directions-portability.md) and
@@ -245,3 +245,66 @@ Codex CLI, OpenCode 2 CLI, Antigravity CLI and the related blackmask commands.
 The implementation chat will stop mutations at the published checkpoint and
 remain sole writer for any precise follow-up fixes. Draft publication is for
 source/documentation review, not a declaration of runtime support or merge readiness.
+
+## Post-publication documentation/CLI audit and local correction
+
+Published comparison: draft [PR #40](https://github.com/CoveMB/image-mask/pull/40)
+at head `8a1931500b7c2885aee21c8cc3da1108a4d9244f`, base main
+`24aa7d6827841632873158a289bb62f89aed8799`.
+The parent assigned `/root/published_cli_docs_review`, a fresh-context read-only
+`gpt-6-astra` reviewer at `xhigh`, after publication.
+
+**Finding P2:** `references/hosts.md` required the code-mode `generatedImage`
+helper for every Codex session. Direct-tool sessions can lack that helper, so
+the unconditional instruction could obstruct an otherwise supported native
+inline delivery. The parent verified upstream support for both output paths;
+the implementing controller independently corroborated the finding in the
+official source links retained in the implementation plan. Context7's response
+did not establish this exact distinction; the tool description and implementation
+own the correction.
+
+**Local disposition:** corrected only the delivery sentence: use
+`generatedImage` when code mode exposes it; otherwise use the actual session's
+supported native inline delivery. Actual-pixel inspection, direction labels and
+the exact adjacent caption remain explicit. The shared skill and every
+authorization, selected-input, watermark, retry, missing-output and storage
+requirement are unchanged. This is a tool-mode distinction, not an App/CLI rule.
+
+The parent reports no other material documentation/CLI drift and blackmask
+`--help`/`status --help` exits of 0, with relevant source owners matching the
+published candidate. Those supplied results were not rerun by the implementation
+controller and do not establish native model/image behavior.
+
+The earlier four C1 reports are preserved as historical scope-specific evidence.
+The host-reference bytes differ from C1 and the initial published head; only the
+delivery delta and its evidence records required targeted re-review. No generic
+review was added. `rtk proxy git diff --check` exited **0**. A bounded check of the
+three affected files exited **0**: **10 local links/anchors** resolve, whitespace
+and local-path checks pass, HEAD remains the published head, and no staged or
+untracked files exist. Eleven external links were excluded from that static
+check; the three owning Codex sources were inspected separately. Unchanged skill
+metadata validation and application tests were not repeated. These checks do not
+exercise native/model/image delivery.
+
+Frozen correction C2 was the working-tree diff against the published head above.
+The corrected host reference SHA-256 is
+`35342e6553ff2f260269ff4003528a4d9a43d05a773ed71f131cec5755975a26`.
+The external evidence packet identifies all three actual candidate file hashes
+and its exact diff, including the final evidence text. The publication hold at
+that freeze was released by the targeted disposition below.
+
+### Accepted C2 disposition
+
+`/root/published_cli_docs_review` returned **No material improvements recommended**.
+It verified the actual three-file diff, every frozen hash, published HEAD and
+exact unstaged scope. The parent independently checked those inputs, the unchanged
+shared skill/README/AGENTS/assisted workflow/UI metadata and retained checks.
+The P2 is resolved; pixel inspection, labels, caption, missing-capability fallback
+and all shared safeguards remain intact. The completed documentation/CLI audit
+covers Codex CLI, OpenCode 2 CLI, Antigravity CLI and the blackmask examples.
+
+The parent authorized committing the three scoped files, normal-pushing the
+existing branch and updating draft PR #40. Only compact evidence/status updates
+follow this review; the approved host-reference hash above remains unchanged.
+No material finding remains open. Native V1–V9/model/image acceptance is still
+pending, and neither the audit nor publication supplies that evidence.

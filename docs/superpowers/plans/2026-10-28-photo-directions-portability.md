@@ -2,7 +2,8 @@
 
 > **For agentic workers:** Use `superpowers:executing-plans` for the recommended native sequential execution, or `superpowers:subagent-driven-development` if the user selects that method. Repository authorization boundaries override automatic implementation, Git or external-action steps. Checkboxes record actual work, not planned success.
 
-**Status:** Implementation plan prepared; implementation and live evaluations have not started.
+**Current status:** Local implementation and focused reviews are complete, including the accepted C2 delivery correction. Native V1–V9 acceptance remains pending; PR #40 stays draft.
+**Planning status (2026-10-28, historical):** Implementation plan prepared; implementation and live evaluations had not started.
 **Goal:** Support the existing `photo-directions` workflow in OpenCode 2 and Antigravity while retaining Codex and the current photo/privacy contracts.
 **Architecture:** One canonical repository skill and one host reference, with host-neutral advice and conditional built-in image generation. Keep policy in maintained documentation and use native host discovery rather than copies or installation adapters.
 **Tech Stack:** Markdown, existing YAML metadata, existing skill validator and already-installed host capabilities; no application or dependency change.
@@ -252,3 +253,45 @@ The draft's source reviewability does not establish native compatibility or merg
 readiness. Publication identity and actual staged checks are reported in the PR
 and implementation-chat handoff; this record does not claim a future operation
 has already succeeded.
+
+## Post-publication delivery correction — 2026-10-29
+
+Draft [PR #40](https://github.com/CoveMB/image-mask/pull/40) was published at
+`8a1931500b7c2885aee21c8cc3da1108a4d9244f`, against main at
+`24aa7d6827841632873158a289bb62f89aed8799`. The parent then obtained the requested
+fresh-context documentation/CLI audit from `/root/published_cli_docs_review`.
+It found one P2: the Codex host section required `generatedImage` for every
+session, although that helper belongs to code mode and upstream also supports
+direct-tool output.
+
+The implementing controller verified the finding against the current official
+[tool description](https://github.com/openai/codex/blob/main/codex-rs/ext/image-generation/imagegen_description.md),
+[image output implementation](https://github.com/openai/codex/blob/main/codex-rs/ext/image-generation/src/tool.rs)
+and [tool-mode selection](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/mod.rs).
+Context7 was consulted; the owning source establishes the specific delivery
+distinction. These are source observations, not a live host/generation test.
+
+The bounded correction uses `generatedImage` when code mode exposes it and
+otherwise uses the actual session's supported native inline delivery. It does
+not classify delivery by App versus CLI. Pixel inspection, direction labels,
+the exact caption, input selection and all shared watermark, authorization,
+fallback and storage safeguards remain unchanged.
+
+The parent reports the remainder of the published CLI audit found no material
+drift, including Codex CLI, OpenCode 2 CLI, Antigravity CLI and the blackmask
+examples. Its blackmask `--help` and `status --help` runs exited 0 using the
+primary checkout's existing environment; relevant source owners matched the
+published candidate. Those checks were not rerun here.
+
+At the initial C2 freeze, approval covered only the host-reference correction and
+plan/review evidence updates, with publication held for targeted re-review.
+C1 reports remain historical evidence for unchanged scope.
+
+The targeted reviewer returned **No material improvements recommended** for C2;
+the parent independently verified the diff, frozen hashes and unchanged shared
+instructions. The P2 is resolved and the post-publication documentation/CLI audit
+is complete for Codex CLI, OpenCode 2 CLI, Antigravity CLI and blackmask examples.
+The parent authorized the three-file commit, normal push and draft PR-body update.
+Only these evidence records change after review; the approved host-reference
+SHA-256 remains `35342e6553ff2f260269ff4003528a4d9a43d05a773ed71f131cec5755975a26`.
+Native V1–V9 acceptance remains pending; no runtime, provider or image run is added.
