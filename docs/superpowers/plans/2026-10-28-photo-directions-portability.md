@@ -42,7 +42,7 @@ Do not edit `src/`, application tests, packaging, global configuration or histor
 
 ## Task 1: Establish the host contract and verification baseline
 
-**Files:** Read the design, all files in the ownership table, [existing QA plan](../../incremental-plans/photo-directions/qa-plan.md), `MANIFEST.in`, `.gitignore`, [library commands](../../library.md) and [file contract](../../file-contract.md). Record preparation evidence here.
+**Files:** Read the design, all files in the ownership table, the historical QA plan (`docs/incremental-plans/photo-directions/qa-plan.md` at Git commit `7a62aa3d52b54134da62c3e3ce4606b452a748ff`; now retired), `MANIFEST.in`, `.gitignore`, [library commands](../../library.md) and [file contract](../../file-contract.md). Record preparation evidence here.
 **Consumes:** Existing skill and maintained contracts.
 **Produces:** Exact host/version/surface/model records, applicable tool schemas, baseline skill inventory/description lengths and a bounded synthetic evaluation packet.
 
@@ -117,3 +117,138 @@ Before any later live evaluation, resolve only missing access or authority for t
 ## Plan self-review
 
 The design's OpenCode 2 restriction, shared location, Codex preservation, Antigravity distinction, read-only advice, selected-image permission, optional concepts, watermark/caption/retry/storage rules and evidence categories map to Tasks 1–3 and V1–V9. All five review-focus risks have an acceptance owner. No application API, data format, processing behavior or dependency changes are proposed. Historical evidence is reusable only for unchanged applicable behavior; native support in the two new hosts remains a separate required observation.
+
+## Implementation record — 2026-10-28
+
+The implementation-chat dispatch grants bounded local implementation and relevant
+verification of this design/plan, followed by four distinct independent reviews.
+It supersedes the planning-only authority above for this execution; the earlier
+status and handoff remain historical evidence. Commits, pushes, PRs, publication,
+installation, account/configuration/permission changes, paid evaluations,
+private-source/image transfers and live concept generation remain unauthorized.
+
+### Baseline and execution rulings
+
+- Verified clean primary `main` and isolated app-managed detached worktree, both
+  at `24aa7d6827841632873158a289bb62f89aed8799`. Local refs were not fetched.
+  Comparison is that base against all task changes, including untracked files.
+- Input SHA-256 matched dispatch: design
+  `bf1b6e6f4286ffd2cc2651ccc5e121cbf6ee3357392c4078b502060cf93277bc`;
+  plan before execution
+  `39744f7a5d95a281ae3b264486e7af9a4911387979d88bba6ca46d6f45847498`.
+  No nested repository instructions were found.
+- Baseline catalog: one repository skill, `photo-directions`, with a
+  179-character description. Codex UI metadata has implicit invocation disabled.
+- Ruling: use this existing plan as the execution ledger and temporary evidence
+  outside tracked source. This avoids helper-created scaffolding, automatic
+  commits/deletion and repeated checks, as required by the current dispatch.
+  No implementation or dependency setup is needed for this documentation change.
+- Ruling: the baseline portability gap is directly inspectable: the description,
+  README and invocation guidance use Codex syntax, OpenCode selection metadata is
+  absent, and shared instructions name Codex-only image parameters. Address that
+  gap with metadata/contract checks and the four requested reviews. No source-text
+  tests, unrelated application tests or simulated native success are substituted
+  for missing host runs. Writing-skills behavioral RED/GREEN remains unperformed;
+  this limits runtime confidence, not authority to prepare the instructions.
+- Pre-flight: Task 1 host facts feed Task 2 mechanics; Task 2 contracts feed Task 3
+  checks. The only unresolved interface is native host/model evidence. Conditional
+  mechanics and explicit pending labels preserve the design without inventing APIs.
+- Ruling: retain the design bytes, including its now-retired QA link; recover that
+  QA through the Git object identified in Task 1. Its old model choices, reviews,
+  approvals and successful runs do not govern or validate this candidate.
+
+### Task 1 — preparation completed; native observations pending
+
+Read the skill/UI metadata, maintained README, assisted workflow, manual workflow,
+library commands, file identity/recovery/export contracts, ignore/package rules
+and historical QA plan. Python 3.14.6 with PyYAML 6.0.3 and the installed
+skill-creator `scripts/quick_validate.py` are available without installation.
+
+Read-only application inventory found OpenCode Desktop **2.2.0**, with bundled
+`opencode-cli.version` also **2.2.0**, and Antigravity **2.28.0**. Neither CLI was on
+the inspected PATH. The bundled OpenCode `--version` probe exited **1** because
+the sandbox denied opening its normal user log (`EPERM`); it was not retried with
+different storage, elevated permissions or settings. This is a host-startup
+limitation, not a failed skill invocation or evidence that image tools are absent.
+Antigravity was not launched. No active model or native schema was observed for
+either host, and no photo projects or synthetic evaluation workspaces were opened.
+
+Context7's official OpenCode V2 and Antigravity libraries were consulted. Official
+V2 skills/tools/attachments documentation and the **v2.2.0** release parser confirm
+the planned metadata string and V2 ID loading contract. A matching metadata key
+also exists in the installed binary; this static observation does not execute the
+parser. Antigravity's current documentation distinguishes App/CLI slash invocation
+from IDE discovery; installed-surface behavior remains pending. Primary links are
+retained in the [host reference](../../../.agents/skills/photo-directions/references/hosts.md).
+
+### Task 2 — instruction and documentation candidate implemented
+
+One canonical skill now has a host-neutral explicit-request trigger, OpenCode 2
+metadata, an execution guard, image/permission prerequisites and one host reference.
+Codex selection and delivery mechanics moved to that reference; `openai.yaml`
+is unchanged. Shared concepts retain exact-input, watermark, caption, correction,
+partial-result and storage rules. README and the assisted workflow explain
+invocation and pending capability evidence. AGENTS changes only the skill label
+in its existing concept exception.
+
+Documentation pass: checked README, `docs/assistant-workflow.md`,
+`docs/library.md`, `docs/workflow.md` and `docs/file-contract.md`.
+The status command and explicit-config position remain valid; read-only advice
+must not use mutating preparation/recovery/export paths. Manual controls, saved
+identity, recovery, exports, source appearance and packaging are unchanged, so
+library/workflow/file-contract/`MANIFEST.in` need no edits. No runtime instruction
+depends on this plan or the excluded historical records.
+
+### Task 3 — verification status
+
+Static results, the V1–V9 evidence matrix, exact frozen candidate identities and
+the four independent reports will be recorded in
+[the review record](2026-10-28-photo-directions-portability-reviews.md).
+Native discovery/invocation, visual advice and concept generation/delivery remain
+separate pending observations for this revision on all three hosts. A candidate
+review is not a successful host session.
+
+## Publication grant and preparation — 2026-10-29
+
+The user explicitly authorized completing this change, its distinct focused
+reviews and a merge/pull request, followed by a separate documentation/CLI pass.
+The owning orchestrator relayed the concrete grant: create a task branch, commit
+the scoped files, push normally to the existing `CoveMB/image-mask` origin and
+open a **draft PR against main** while the native acceptance gaps remain.
+This supersedes the earlier no-commit/no-PR restriction for this change only.
+It does not authorize merge, force push, amend, unrelated changes, review replies,
+installation, account/configuration/permission changes, paid/provider evaluation,
+private-source/image transmission to another model provider or real generation.
+
+The existing isolated worktree remains the sole writing workspace. The
+briefly created continuation chat is idle/interrupted and does not own writes.
+All six frozen C1 instruction/ledger hashes matched before this evidence update.
+An authorized `git fetch origin main` completed successfully; `HEAD`,
+`origin/main` and `FETCH_HEAD` all resolve to
+`24aa7d6827841632873158a289bb62f89aed8799`. No upstream reconciliation is needed.
+The intended task branch `photo-directions-portability` did not exist locally or
+on origin, and no existing PR used that head.
+
+The four reports in the review record remain applicable to unchanged instruction
+bytes. Only authority/publication evidence is added to the plan and review record;
+no new generic review or repeated successful implementation check is warranted.
+The prior static, metadata and link results remain applicable to their unchanged
+inputs. The staged seven-file payload passed `git diff --cached --check` and a
+bounded inspection of exact scope, bytes, metadata, **92 local links/anchors**,
+whitespace and private/local-data patterns (both commands exited **0**). Five
+maintained instruction files still match C1; Codex UI metadata is byte-identical.
+Only these evidence records changed after that payload check.
+
+“All CLIs” in this scope means Codex CLI, OpenCode 2 CLI, Antigravity CLI and the
+documented `blackmask` commands. App/IDE distinctions remain explicit; OpenCode 1
+and unrelated hosts remain excluded. Native V1–V9 evidence is still pending.
+Synthetic preparation and deterministic local inspection are now authorized where
+useful; no fixture was prepared merely to imply a native test occurred.
+
+After the draft PR exists, the owning orchestrator performs the separately
+requested documentation/CLI coverage pass against the stable published candidate.
+The implementation chat remains sole writer for any precise resulting fixes.
+The draft's source reviewability does not establish native compatibility or merge
+readiness. Publication identity and actual staged checks are reported in the PR
+and implementation-chat handoff; this record does not claim a future operation
+has already succeeded.

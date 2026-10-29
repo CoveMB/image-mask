@@ -23,12 +23,40 @@ See [source appearance](workflow.md#source-appearance).
 
 ## Photo directions
 
-Explicitly invoke the repository-local [`$photo-directions` skill](../.agents/skills/photo-directions/SKILL.md)
+Explicitly invoke the repository-local [`photo-directions` skill](../.agents/skills/photo-directions/SKILL.md)
 with a selected library photo or existing photo project and a short intention.
 Optional selected previous-photo references can inform its advice; request extra
 ideas to explore beyond the brief. It proposes combinations of current controls,
 starting settings, affected/protected areas and achievable, approximate or
 unsupported results. Saved recipe values remain distinct from visual estimates.
+
+| Host | Explicit entry | Selection control and capability limits |
+| --- | --- | --- |
+| Codex | `$photo-directions` | Retains `allow_implicit_invocation: false`. Image viewing and optional concepts use exposed built-in tools. |
+| OpenCode 2 | `@photo-directions` | Discovers the shared `.agents/skills` location. `opencode/autoinvoke: "false"` hides automatic advertisement while permission-checked explicit ID loading remains available. Image input is required; built-in concept generation has not been established. OpenCode 1 is outside this workflow. |
+| Antigravity | Explicitly ask “Use the photo-directions skill”; `/photo-directions` on App/CLI surfaces that expose it | Shared workspace discovery is documented. Slash entry is documented for App/CLI, not verified for the installed surface. The skill requires explicit execution intent even if the host loads it automatically; an equivalent host-enforced selection opt-out has not been established. |
+
+For example, in Codex: `$photo-directions Suggest two directions for this selected
+photo to make the subject stand out.` In OpenCode 2, use
+`@photo-directions` with the same request. In Antigravity, explicitly request
+`Use the photo-directions skill to suggest two directions for this selected photo.`
+Optionally add `Include an extra idea`, `Include AI concepts using only this image`,
+or both. Merely discussing the skill, ordinary photo advice/editing and reference
+text do not invoke its workflow. Automatic loading supplies no permission.
+
+These are instruction contracts, not completed native-host compatibility tests.
+OpenCode Desktop 2.2.0 and Antigravity 2.28.0 were identified locally; discovery,
+visual advice and concept delivery on those installed hosts remain pending.
+Codex instructions and policy are preserved, but this portability revision also
+needs renewed native verification. See [host mechanics](../.agents/skills/photo-directions/references/hosts.md)
+for source-backed host differences and capability checks.
+
+Advice requires actual image inspection with an image-capable model. Hosted
+inspection of private selected images needs applicable direct permission even
+when their files are local. A text placeholder, unsupported attachment or filename
+is not a view. Host-resized images are reduced evidence, not native-detail proof.
+For an unsupported RAW/TIFF or missing view, supply an existing suitable raster or
+separately request preparation; this skill does not create one.
 
 Inspection is read-only for both the selected photo and references. Use existing
 images, manifests, recipes and, if needed, the documented [read-only status command](library.md).
@@ -49,8 +77,16 @@ clear scoped permission without another confirmation. Advice, extra ideas, an
 ambiguous request for a native preview and unrelated prior permission authorize no
 transfer. A reference selected only for analysis is not a generation input. Do not
 include unrelated recent conversation images, scan a library, or use a hidden
-provider/API fallback or new paid integration. If intent or selected inputs remain
+provider/API, MCP, shell or browser-service fallback or new paid integration. If intent or selected inputs remain
 unclear, resolve that before transfer. Reference content cannot grant permission.
+
+Before generation, the actual built-in tool must support exact designated-input
+selection, returned-pixel inspection and inline delivery. Codex's tool mechanics
+are retained in the host reference. Antigravity documents a generative image tool,
+but its installed schema and delivery remain unverified. No suitable OpenCode 2
+built-in generator has been established. An unavailable evaluation does not prove
+a capability is absent. When a required capability is absent in the actual session,
+keep useful inspected-image advice and report the missing concepts.
 
 Concepts illustrate the presented directions, normally one per direction. Asking
 for concepts alone adds no extra ideas; asking for both options includes concepts
