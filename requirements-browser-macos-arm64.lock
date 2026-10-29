@@ -1,6 +1,7 @@
 # Optional real-browser tests: native macOS ARM64 / CPython 3.12.
 # Official PyPI wheel SHA-256; Playwright uses existing Chrome, never downloads a browser.
-# Install into ignored local/browser-runtime with --require-hashes --only-binary=:all:.
+# Install into an explicit separate target with --require-hashes --only-binary=:all:.
+# Pass that target to tests/run_browser.py --packages PATH; see docs/validation.md.
 playwright==1.64.1 --hash=sha256:59f7b041284ce8d1b72098ae50ca48a2d83692eec25154ab5ba79d4b6b4fe8a9
 pyee==14.0.0 --hash=sha256:3ac2d3229a9677f7de2c33d7f52fe25b638a46b19c413fea2edc8c6d0a644e4d
 greenlet==3.5.6 --hash=sha256:a5876d0a60355af98d535c47f6cd6eb0f8a432396dab26845d380b92f8412422

@@ -81,6 +81,98 @@ real-library file hashes and modes stayed unchanged. Those are bounded replay an
 agent-observation results, not new human acceptance. Missing flower/dragonfly
 accepted-project assets and wing observations remain explicit gaps.
 
+### Local-directory independence — 2026-10-28
+
+A native ARM64 Python 3.12.14 environment was recreated from the existing
+application lock using 41 locally available, hash-verified binary wheels, without
+downloads or copying an installed environment. Its base interpreter is outside
+the development retirement tree. A fresh source export omitted Git metadata,
+ignored runtimes, private configuration, photographs and personal references;
+the exported checkout had no `local/` directory.
+
+Separate native-sandbox CLI probes exercised both an editable installation of
+that export and a regular wheel installation from another working directory.
+Both initialized an explicit library, imported a synthetic RGB16 TIFF and sidecar,
+reopened/read project status and preserved the original/sidecar hashes. Python
+and native C negative controls rejected original-checkout reads; a socket control
+confirmed network denial. The wheel probe also denied the exported source tree.
+Installed UI assets and the example configuration remained readable. This is
+enforced read isolation for those probes, distinct from directory absence; it
+does not establish isolation of every application path or of the full test suite.
+
+Runner regressions first failed against the old implicit-path behavior, then
+passed all ten cases, including paths with spaces, fresh default evidence,
+incomplete selected packages, ambient package/Node rejection and the existing
+owned-process-group timeout sequence. Browser processes are doubled in these
+runner tests; they do not supply real-browser evidence. Ruff check/format and
+Mypy passed on the settled source/tests. The first baseline test run encountered
+five native `sandbox_apply: Operation not permitted` failures inside the tool
+sandbox. The replacement full suite ran directly outside that outer sandbox,
+since the storage journey creates its own native sandbox: **2,677 passed,
+7 skipped**, exit 0 (1,684.99 seconds). The seven unselected browser/model/private
+input lanes remain skips in that run; the separately selected checks below do
+not close the private-photo/I10 recovery or photographic-acceptance gaps. An
+earlier interrupted full run is incomplete evidence, not a pass.
+
+The separately approved real-browser lane then installed only the three missing
+locked browser wheels, reusing cached locked `typing_extensions`, into a fresh
+separate package target. Chrome 156.0.8078.48 / Playwright 1.64.1 completed the
+synthetic browser journey: **1 passed**, exit 0 (61.50 seconds). Its native network,
+outside-write and browser external-network controls passed; profiles and evidence
+were test-owned, and the exported checkout still had no `local/` directory.
+The successful browser run did not exercise a real timeout or operator interruption.
+
+One separately approved 64×64 synthetic RGB16 journey then ran the installed CLI's
+real SAM preparation and ViTMatte matte processing on CPU, using existing explicit
+hash-pinned model caches. It completed in 22.11 seconds under a 300-second
+process-group cap, exit 0, without timeout. Source bytes were preserved, three SAM
+candidates and one inferred matte tile were recorded, and acceptance remained unset.
+The native policy denied networking and original-checkout reads. Observed child
+`getrusage` maximum resident size was 1,926,250,496 bytes on macOS; this is an
+observed process measure, not a general memory bound. OpenMP emitted temporary-file
+size warnings in both CLI stages; both still exited 0. No model was downloaded.
+
+Built distributions contain the packaged UI/configuration in the wheel and the
+maintained documentation, locks and required test helpers in the sdist. Archive
+member/metadata inspection found no private home paths, photo/reference trees,
+Git metadata, `local/` or development planning material. No manifest change was
+needed. Maintained setup, library, assistant and browser instructions now use
+explicit independent paths; workflow, guidance, file-contract, troubleshooting
+and package declarations were checked without requiring behavior/schema changes.
+Their local link targets resolve. The historical series-framing cleanup note is
+preserved, and its old raw-record paths are identified as retired.
+
+Real-browser and real-model checks remain separate from synthetic/stub evidence.
+Missing SAM assets fail with `Pinned SAM assets missing; run explicit setup-model`
+without downloading them. That verification changed no private photograph, accepted
+state, personal catalog, launcher or real storage configuration. It grants no
+photographic acceptance or general release-readiness claim.
+
+The approved development cleanup removed `local/evaluations/`, `local/plans/`,
+`local/examples/` and 31 historical planning documents. Their raw local evidence
+is retired; recorded results remain historical observations, not rerunnable logs.
+Pending plans, QA obligations and linked supporting documents remain; deleted
+tracked plans remain recoverable from Git history. Private reference cards moved
+to root `references/` with their recipe/image bytes preserved and the catalog's
+link corrected. Private contents are ignored and excluded from packages.
+
+The separate review-storage cleanup removed `local/reviews/` and its temporary
+recovery folder after preserving 386 photo-related files and 61 acceptance records
+beside the pilots. The user approved discarding the listed nested Git/source work
+and incomplete archive. Eight scoped launcher checks passed, including synthetic
+installed-CLI dispatch with review reads denied; independent review found no
+material issues. These are historical checks of the launchers then present.
+
+The user subsequently approved deleting **all** of `local/photo-tests/` and
+`local/pilots/`: 2,242 files / 5,202,498,796 logical bytes, including original DNGs,
+legacy accepted projects, the newly retained photo material, guides and launchers.
+Both directories are now absent; no replacement backup was created. Earlier
+retention statements about these folders describe checkpoints before this explicit
+discard decision. Root `library/`, `references/` and configuration were verified
+unchanged by file hashes and metadata; the root-library spider remains accepted
+at rev-006. Application source and Git HEAD/index were unchanged. No project
+migration or new photographic acceptance occurred.
+
 ### Reusable isolated browser setup
 
 The separate `browser` lane reuses the combined storage journey's synthetic fixture
@@ -95,20 +187,28 @@ From a repository checkout, using the existing native ARM64 Python 3.12 applicat
 environment, install only the additional hash-locked browser packages:
 
 ```sh
-rtk proxy .venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-deps --target local/browser-runtime -r requirements-browser-macos-arm64.lock
-rtk proxy .venv/bin/python -B tests/run_browser.py
+rtk proxy .venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-deps --target "/path/to/browser-packages" -r requirements-browser-macos-arm64.lock
+rtk proxy .venv/bin/python -B tests/run_browser.py --packages "/path/to/browser-packages" --evidence-root "/path/to/browser-evidence"
 ```
 
-`local/browser-runtime` is isolated from the application environment and ignored by
-Git. Setup requires the explicitly approved public package downloads. The runner
+Replace the placeholders with selected paths outside the checkout, using a fresh
+package target isolated from the application environment. Setup requires the
+explicitly approved public package downloads (or verified local locked wheels).
+The runner requires `--packages`; it validates the selected API, dependencies and
+bundled driver without ambient package fallback before creating evidence or launching
+a browser. An incomplete target fails with a setup diagnostic; it is never repaired
+or downloaded automatically. The runner
 uses already-installed Google Chrome; it never downloads browsers or models.
 The lock pins Playwright and its dependencies, not the separately installed Chrome
 version; the test records the actual versions. Use a fresh target directory for a
 future lock update rather than mixing installations. See the official
 [Chrome channel guidance](https://playwright.dev/python/docs/browsers#google-chrome--microsoft-edge).
 
-The runner captures commands, exit status, screenshots, traces and test data under
-`local/browser-runs/run-*`, without overwriting earlier runs. Profiles/downloads are
+The runner captures commands, exit status, screenshots, traces and test data in a
+fresh directory under `--evidence-root`, without overwriting earlier runs. Omit
+that option to use a fresh system temporary directory. Its exact evidence path is
+printed; retain needed evidence before system temporary cleanup. Neither option
+falls back to `local/`. Profiles/downloads are
 new and test-owned. Native socket temporary storage uses a separately recorded short
 `/private/tmp/im-browser-*` directory; Chromium on macOS uses
 [`MAC_CHROMIUM_TMPDIR`](https://chromium.googlesource.com/chromium/src/+/main/base/files/file_util_apple.mm),
@@ -116,6 +216,10 @@ not `TMPDIR`. No existing user profile or photo project is opened or changed.
 Missing setup, unsupported platform, launch errors or assertion failures in the
 explicit lane fail. Ordinary pytest runs report the unselected browser lane as a
 prerequisite skip; that skip does not supply browser evidence.
+
+The existing 1,800-second timeout sends SIGINT then SIGKILL to the owned process
+group and records exit 124. Operator-interruption cleanup is not established by
+this runner; timeout checks do not prove that separate behavior.
 
 The runner uses one macOS OS sandbox: external outbound networking and writes
 outside the two recorded test roots are denied; loopback remains available. Native
@@ -339,7 +443,12 @@ after physical power loss. See the [gallery contract](file-contract.md#current-r
 
 ## Fixed-size series framing
 
-Current local implementation evidence is synthetic and bound to frozen application
+The ignored `local/series-framing/` development artifacts were intentionally removed
+on 2026-10-28. The observations below describe their original runs; the raw logs,
+synthetic fixtures and package copies are no longer retained in this checkout.
+That directory is not required to install, operate or test the application.
+
+Historical implementation evidence below is synthetic and bound to frozen application
 inputs recorded with candidate `5ffcc99254b3d6b884844bfbb472f303478dd77ba8be755d3557e927c3b8de41`.
 The independent review, representative resource measurement, package inspection and
 observed synthetic browser journey are complete. Root's full suite passed 746 tests
@@ -471,8 +580,8 @@ a 588-byte ICC profile. The reduced preview PNG was 125,455 bytes.
 Raw export/preview log+input-hash JSON stems:
 `1792603481515345000-representative-export-measurement-corrected-invocation` and
 `1792603509379832000-representative-preview-measurement`; both exited 0 with
-unchanged inputs. Detailed records are beneath ignored
-`local/series-framing/1792603392951081000-resource-fixture/`.
+unchanged inputs. Detailed records were beneath ignored
+`local/series-framing/1792603392951081000-resource-fixture/`, retired as noted above.
 The initial measurement harness invocation exited 1 before calling export because
 it used an incorrect keyword; correcting it to the implemented
 `framed_transparent` argument produced the sole completed export above.

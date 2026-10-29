@@ -353,15 +353,24 @@ margins; acceptance of its source revision does not accept the composition.
 ## Named local references
 
 This section owns the shared workflow for creating, maintaining and using named
-local references. Keep names, aliases and links in the photo workspace's optional
-`local/references/README.md`; keep complete recipes in the individual folders.
+local references. Keep names, aliases and links in an optional catalog at a
+user-selected photo-workspace path; supply that exact catalog path with the task.
+In this checkout, `references/README.md` can hold that catalog, with one named
+subfolder per reference. Keep complete recipes in those individual folders, using
+the card structure below. All catalog/card contents are Git-ignored; only the empty
+`references/.gitkeep` placeholder belongs in Git. The whole directory is excluded from
+installable packages. An external catalog remains supported; there is no automatic
+catalog lookup or application configuration key.
 
 When a user names a look or framing reference, resolve its name or alias through
 that catalog, then read the selected folder's README and settings and actually view
 its reference image. If the catalog is absent, a name is ambiguous or a required
 file is missing, report that instead of guessing. This private, Git-ignored catalog
-is not installed with the package or copied into new worktrees; use the photo
-workspace identified by the task.
+is not installed with the package or copied into new worktrees; use the explicit
+catalog identified by the task. Missing references limit only the requested named
+look or framing guidance; ordinary manual editing remains available. When moving
+an existing catalog under separately authorized scope, preserve names, aliases,
+self-contained card contents and reference bytes, and verify its internal links.
 
 Each reference folder must be usable alone: include complete manual steps, settings
 or a supported preset, example images and provenance. Keep required files and links

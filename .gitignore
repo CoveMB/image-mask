@@ -30,8 +30,10 @@ htmlcov/
 *.egg-info/
 
 # Private photos, photo projects, model downloads and evaluation output
-# Keep these outside the repository or beneath this root-only directory.
+# Keep these outside the repository or in the explicitly ignored locations below.
 /local/
+/references/*
+!/references/.gitkeep
 /library/Comparisons/
 /library/Results Preview/
 /library/Photos/
@@ -49,7 +51,7 @@ htmlcov/
 /photo-workflow-guide-older-materials.docx
 
 # Captures and viewing/working images, including common camera RAW formats.
-# Store all private data under local/ or outside the checkout, regardless of suffix.
+# Use the ignored local, library or reference locations above, or external storage.
 *.[jJ][pP][gG]
 *.[jJ][pP][eE][gG]
 *.[pP][nN][gG]

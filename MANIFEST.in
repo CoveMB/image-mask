@@ -17,6 +17,7 @@ include config/storage.example.toml docs/library.md
 exclude config/storage.local.toml
 prune library
 prune local
+prune references
 prune Photo-workflow-reference
 prune docs/incremental-plans
 prune docs/superpowers

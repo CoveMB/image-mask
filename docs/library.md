@@ -5,11 +5,18 @@ schema-2 project. Standalone projects remain supported. Processing stays local;
 model setup is separate and never runs during library initialization or import.
 
 Copy `config/storage.example.toml` to the ignored `config/storage.local.toml` and
-choose a destination in `[storage]`. The example uses `../local`. Relative paths
+choose a destination in `[storage]`. Replace the example's `/path/to/photo-library`
+with your selected durable library location before initialization. The config may
+also live outside the checkout when passed explicitly with `--config FILE`. Relative paths
 are resolved against the selected configuration file's parent, so the same explicit
 file selects the same library from another working directory or code checkout.
 There is no automatic config search or fallback destination. Changing the setting
 does not move an existing library or its pending imports.
+
+The application environment, library and installed pinned model directories are
+independent locations. No existing repository `local/` directory is required;
+existing explicitly selected destinations there remain supported. Optional personal
+references and developer/browser evidence are separate from the library.
 
 Use the installed `blackmask` command, or `.venv/bin/blackmask` from the repository:
 

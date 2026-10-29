@@ -128,6 +128,21 @@ python3.12 -m venv .venv
 .venv/bin/blackmask open --project /path/to/new-photo-project --sam-cache /path/to/sam-cache --model-cache /path/to/vitmatte-cache
 ```
 
+Choose three independent locations: the installed application environment (here
+`.venv` with this source checkout), your photo project or optional
+[configured library](docs/library.md), and your explicitly installed
+[pinned models](docs/model-provenance.md). Replace every `/path/to/...` placeholder
+with your selected path. No pre-existing `local/` directory, pilot project,
+assistant history, personal reference or paid service is required. Model setup is
+separate from the package install; retain those assets for offline processing.
+Use the absolute path to the environment's `bin/blackmask` when working from
+another directory; the relative `.venv/bin/blackmask` examples assume the checkout
+root. Keep an editable installation's source checkout in place; recreate its
+environment from the lock if changing its location rather than copying a venv.
+Optional [browser verification](docs/validation.md#reusable-isolated-browser-setup)
+and [named references](docs/assistant-workflow.md#named-local-references) use
+separately selected locations and are not needed for ordinary manual editing.
+
 `open` starts one foreground server bound to `127.0.0.1` on an available port and
 opens the packaged review page in your browser. Keep that terminal open; Ctrl-C
 stops the server without discarding saved work. Reuse its printed launch URL if
@@ -246,16 +261,22 @@ for selected-image, reference and image-transfer boundaries.
 Keep private captures, working projects, model assets, credentials and evaluation
 output outside this repository, under the ignored root `local/` directory, or in an
 explicitly configured ignored [photo library](docs/library.md).
+Private named references may also live in root-level `references/`, with a catalog
+at `references/README.md` and one self-contained folder per reference. Its contents
+are ignored except for the empty `.gitkeep` placeholder and excluded from packages.
+Supply the catalog path explicitly; see the
+[reference and recipe workflow](docs/assistant-workflow.md#named-local-references).
 Ignored files are not disposable and are not backed up by Git. Arrange independent
 backups. Common photo formats are ignored; only deliberately owned synthetic test
 fixtures may be included beneath `tests/fixtures/`. Review actual staged content
 before publishing: ignore rules do not remove existing history or prevent force-add.
 
 The application history contains no photographs or frozen reference archives.
-Reviewed development plans are retained in Git under `docs/incremental-plans/` and
-`docs/superpowers/`, alongside the original
+Pending plans, QA obligations and their supporting records remain under
+`docs/incremental-plans/` and `docs/superpowers/`, alongside the original
 [v4 product specification](single-photo-black-background-implementation-plan-v4-2026-10-11.txt).
-These records preserve requirements, decisions and evidence from their stated
+Retired implementation plans remain recoverable from Git history. These records
+preserve requirements, decisions and evidence from their stated
 baselines. Historical checkout paths, test counts and approvals describe those
 baselines; they do not establish the state or authority for new work. Private
 reference material and local evaluation evidence stay ignored. Development plans
