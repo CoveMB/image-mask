@@ -804,6 +804,19 @@ def _validate_local_sharpening_semantics(
 
 
 @lru_cache(maxsize=128)
+def _validate_local_tone_curve_semantics(
+    project: Path, directory: Path, manifest_bytes: bytes
+) -> None:
+    from .assets import revision_asset
+    from .repair import scalar16
+    from .tone_curve import read_local_tone_curve
+
+    manifest = json.loads(manifest_bytes)
+    alpha = scalar16(revision_asset(project, directory, manifest, "base_alpha16.png"))
+    read_local_tone_curve(project, directory, manifest, alpha)
+
+
+@lru_cache(maxsize=128)
 def _validate_background_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
     from .background import read_background
 
@@ -890,6 +903,33 @@ def _validate_revision_directory(
     from .background_light import validate_background_light_bindings
     from .shadow_fade import validate_shadow_fade_bindings
     from .spatial_fade import validate_spatial_bindings
+    from .tone_curve import TONE_CURVE_PREFIX, TONE_CURVE_RASTERS
+
+    tone_curve = manifest.get("local_tone_curve")
+    tone_area_name = TONE_CURVE_PREFIX + "area.json"
+    has_tone_area = isinstance(tone_curve, dict) and tone_curve.get("area_sha256") is not None
+    if not has_tone_area and _asset(project, f"{directory}/{tone_area_name}").exists():
+        raise ProjectError("Unbound saved Local tone curve authored area")
+    if "local_tone_curve" in manifest:
+        expected_rasters = {
+            "base_alpha16.png",
+            *(TONE_CURVE_PREFIX + name for name in TONE_CURVE_RASTERS),
+        }
+        expected_text = {TONE_CURVE_PREFIX + "settings.json"}
+        if has_tone_area:
+            expected_text.add(tone_area_name)
+        if not expected_rasters <= set(manifest["assets"]) or not expected_text <= set(
+            manifest["files"]
+        ):
+            raise ProjectError("Incomplete bound Local tone curve operands")
+        if not has_tone_area and tone_area_name in manifest["files"]:
+            raise ProjectError("Unbound saved Local tone curve authored area")
+    elif any(
+        name.startswith(TONE_CURVE_PREFIX)
+        for group in (manifest["files"], manifest["assets"])
+        for name in group
+    ):
+        raise ProjectError("Missing Local tone curve record for bound operands")
 
     validate_background_bindings(project, _asset(project, directory), manifest)
     validate_background_light_bindings(project, _asset(project, directory), manifest)
@@ -998,6 +1038,10 @@ def _validate_revision_directory(
         ):
             raise ProjectError("Missing bound Local sharpening authored area")
         _validate_local_sharpening_semantics(
+            project, _asset(project, directory), _json_bytes(manifest)
+        )
+    if "local_tone_curve" in manifest:
+        _validate_local_tone_curve_semantics(
             project, _asset(project, directory), _json_bytes(manifest)
         )
     if "spatial_fade" in manifest:

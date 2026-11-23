@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import numpy as np
 from PIL import Image
@@ -14,7 +14,7 @@ from .project import ProjectError, digest, read_project, read_revision
 ORDER = "directional P/C; float64 P*(1-w)+D*w; rint ties-to-even; copy locks"
 
 
-def scalar16(path: Path) -> np.ndarray:
+def scalar16(path: Path | BinaryIO) -> np.ndarray:
     with Image.open(path) as image:
         if image.format != "PNG" or image.mode not in {"I;16", "I;16B", "I;16L"}:
             raise ProjectError("Repair operand must be grayscale16 PNG")

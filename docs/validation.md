@@ -1,5 +1,48 @@
 # Verification
 
+## Local tone curve
+
+The synthetic kernel and saved-project tests cover the RGB16 reference values,
+gamut limiting before feathering, strict settings, exact protected partial
+samples, and the original pre-Exposure clipping count. They exercise prepare,
+matte, repair, stale BASE review, Disable, rebuilt alpha and earlier accepted
+export. Failed writes and changed inputs preserve the revision pointers.
+Acceptance and export diagnostics name the effects that need a rebuild or
+explicit disable, including cleanup and the tone curve.
+[Kernel and lifecycle tests](../tests/test_tone_curve.py)
+
+The delivery tests replay selected and composed RGB16 from the native operands
+after removing access to the project and capture. They cover an enabled and
+disabled curve, native and both presentation modes, and Shadow fade without
+an Exposure record. A separate retry of the pre-curve v5 native, add-margins
+and companion folders from `0bf8ed5` reused all three original paths and all 31
+member hashes, including manifests and README files.
+[Delivery tests](../tests/test_tone_curve_delivery.py)
+
+Chrome 158.0.8127.36 on macOS ran the shipped loopback page against a synthetic
+64×64 RGB16 project. The isolated Playwright target was unavailable. The
+installed Chrome was driven through DevTools with a dedicated macOS sandbox
+that allowed writes only to the test folder and outbound network only on
+loopback. Native controls confirmed that external connections and writes
+outside the test folder were denied. Keyboard entry and Apply preserved
+focus, Compare OFF loaded the corresponding native crop without publishing
+a revision, and a new viewer server and browser profile reopened the saved
+points and shapes. A browser-initiated native editable Draft export replayed
+selected and composed RGB16 exactly. The protected partial-alpha sample kept
+its RGB16 and the complete alpha16 matched. The browser displayed RGB8.
+This synthetic run supplied no private-photo or photographic acceptance evidence.
+
+The documented schema-2 example ran through the installed `blackmask run`
+command after providing synthetic project identities. Its adjusted and
+protected RGB16 and alpha16 were checked against the fixture and the documented
+controls and links were checked against the shipped page and maintained files.
+[Request example](assistant-workflow.md#local-tone-curve-assistance) ·
+[HTTP and keyboard tests](../tests/test_tone_curve_viewer.py)
+
+An independent read-only review checked the five planned risks across the
+kernel, saved locks, clipping diagnostics, v5 replay and viewer draft
+ownership. It reported no material findings.
+
 ## Photo lifecycle acceptance coverage
 
 `test_library_storage_journey.py` remains the single combined deterministic

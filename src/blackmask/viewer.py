@@ -150,6 +150,16 @@ class ReviewServer(ThreadingHTTPServer):
                             self.project, f"revisions/{path.name}/effects/sharpening/area.json"
                         ).read_bytes()
                     )
+                tone_curve = manifest.get("local_tone_curve")
+                tone_curve_area = (
+                    json.loads(
+                        saved_asset(
+                            self.project, f"revisions/{path.name}/effects/tone-curve/area.json"
+                        ).read_bytes()
+                    )
+                    if tone_curve is not None and tone_curve["area_sha256"] is not None
+                    else None
+                )
                 reduction_areas = {}
                 for target, version in (("spatial_fade", 2), ("shadow_fade", 3)):
                     if target in manifest:
@@ -197,6 +207,8 @@ class ReviewServer(ThreadingHTTPServer):
                             "local_sharpening", {"enabled": False, "stale": False}
                         ),
                         "sharpening_area": sharpening_area,
+                        "local_tone_curve": tone_curve,
+                        "tone_curve_area": tone_curve_area,
                         "spatial_fade": manifest.get("spatial_fade"),
                         "fade_reduction_areas": reduction_areas,
                         "background": manifest.get("background"),
@@ -756,6 +768,10 @@ class ReviewServer(ThreadingHTTPServer):
                 "exposure_amount_only",
                 "shadow_fade",
                 "local_sharpening",
+                "local_tone_curve",
+                "tone_curve_area",
+                "tone_curve_protection_file",
+                "tone_curve_settings_only",
                 "shadow_fade_area",
                 "sharpening_area",
                 "shadow_fade_protection_file",
@@ -770,7 +786,13 @@ class ReviewServer(ThreadingHTTPServer):
             }
             fields["effects"] |= set(data) & optional
             if any(
-                field in data for field in ("spatial_fade", "fade_reduction", "background_light")
+                field in data
+                for field in (
+                    "spatial_fade",
+                    "fade_reduction",
+                    "background_light",
+                    "local_tone_curve",
+                )
             ):
                 fields["effects"].add("revision_manifest_sha256")
         if action not in fields or set(data) != fields[action] | {
@@ -974,6 +996,10 @@ class ReviewServer(ThreadingHTTPServer):
                         "exposure_amount_only",
                         "shadow_fade",
                         "local_sharpening",
+                        "local_tone_curve",
+                        "tone_curve_area",
+                        "tone_curve_protection_file",
+                        "tone_curve_settings_only",
                         "shadow_fade_area",
                         "sharpening_area",
                         "shadow_fade_protection_file",
@@ -997,7 +1023,8 @@ class ReviewServer(ThreadingHTTPServer):
                 f"revisions/{state['working_revision']}/supports/support16.png"
             )
         bound_action = any(
-            field in data for field in ("spatial_fade", "fade_reduction", "background_light")
+            field in data
+            for field in ("spatial_fade", "fade_reduction", "background_light", "local_tone_curve")
         )
         expected_manifest = data.get("revision_manifest_sha256") if bound_action else None
         if bound_action and (
@@ -1011,6 +1038,9 @@ class ReviewServer(ThreadingHTTPServer):
                 request,
                 model_cache=self.model_cache,
                 expected_revision_manifest_sha256=expected_manifest,
+                expected_authoring_digest=data["authoring_digest"]
+                if "local_tone_curve" in request
+                else None,
                 storage_config=self.storage_config,
             )
         return operations.apply_operation(
@@ -1021,7 +1051,9 @@ class ReviewServer(ThreadingHTTPServer):
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
-            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/([0-9]+,[0-9]+,[0-9]+,[0-9]+)(/base|/background-light-off|/exposure-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
+            r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/"
+            r"([0-9]+,[0-9]+,[0-9]+,[0-9]+)"
+            r"(/base|/background-light-off|/exposure-off|/tone-curve-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -1052,6 +1084,7 @@ class ReviewServer(ThreadingHTTPServer):
                 effects_off=bool(base == "/base" or stale),
                 sharpening_off=base == "/sharpening-off",
                 exposure_off=base == "/exposure-off",
+                tone_curve_off=base == "/tone-curve-off",
                 shadow_fade_off=base == "/shadow-fade-off",
             )
             weight, opacity = saved_shading(

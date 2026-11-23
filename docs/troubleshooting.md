@@ -264,6 +264,14 @@ Use the effect's maintained workflow for its own draft and recovery controls:
 - [Local sharpening](workflow.md#local-sharpening): stale alpha needs a reviewed
   area rebuild or **Reset Local sharpening**; stale settings need the main
   **Reload saved inputs** before retrying.
+- [Local tone curve](workflow.md#local-tone-curve): an enabled curve with stale
+  alpha needs **Apply / replace tone curve area** or **Disable tone curve**.
+  Reload stale point and area drafts separately. For an invalid point, enter
+  both coordinates in 0.01% steps and check that the outputs increase with the
+  inputs. For an empty selection, cover positive alpha outside hard protection.
+  Restore a complete saved revision through
+  [Repair and restore recovery](#repair-and-restore-recovery). The earlier
+  accepted result remains available while the working curve is stale.
 - [Fade into background and local fade reduction](workflow.md#fade-into-background):
   reload stale shape drafts before Apply. Rebuild or disable a stale effect;
   reduction cannot refresh its alpha dependency. Each reduction target retains

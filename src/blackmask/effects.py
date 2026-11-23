@@ -6,8 +6,9 @@ import re
 import tempfile
 import tomllib
 from importlib.metadata import PackageNotFoundError, version
+from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import numpy as np
 import tifffile
@@ -67,9 +68,19 @@ from .spatial_fade import (
     spatial_fade_files,
     validate_spatial_fade,
 )
+from .tone_curve import (
+    TONE_CURVE_ALGORITHM,
+    TONE_CURVE_PREFIX,
+    TONE_CURVE_RASTERS,
+    check_tone_curve_scope,
+    inherit_local_tone_curve,
+    read_local_tone_curve,
+    selected_local_tone_curve,
+    validate_local_tone_curve,
+)
 
 # Bump when validation, request equivalence or effect arithmetic changes.
-EFFECTS_EXECUTION_VERSION = "validated-effects-v7"
+EFFECTS_EXECUTION_VERSION = "validated-effects-v8"
 
 
 def _effects_execution_identity() -> dict[str, Any] | None:
@@ -90,6 +101,7 @@ def _effects_execution_identity() -> dict[str, Any] | None:
             "color_cleanup": "nearest-confirmed-empty-inverse-mixture-v1",
             "shading": "inward-smoothstep-thickness-direction-highlight-v1",
             "local_exposure": "linear-srgb-local-exposure-v1",
+            "local_tone_curve": TONE_CURVE_ALGORITHM,
             "local_sharpening": "linear-srgb-local-sharpening-v1",
             "shadow_fade": "linear-srgb-shadow-fade-v1",
             "background": ALGORITHM,
@@ -127,6 +139,7 @@ def _effects_request_identity(
         "shading",
         "local_sharpening",
         "local_exposure",
+        "local_tone_curve",
         "shadow_fade",
         "background",
         "background_light",
@@ -242,6 +255,28 @@ def _sharpening_reuse_binding(
     }
 
 
+def _tone_curve_reuse_binding(
+    manifest: dict[str, Any], hashes: dict[str, str]
+) -> dict[str, Any] | None:
+    if "local_tone_curve" not in manifest:
+        return None
+    return {
+        "record": manifest["local_tone_curve"],
+        "upstream": {
+            name: manifest[name]
+            for name in ("color_cleanup", "local_sharpening", "local_exposure")
+            if name in manifest
+        },
+        "files": {
+            name: checksum
+            for name, checksum in hashes.items()
+            if name.startswith((TONE_CURVE_PREFIX, "effects/sharpening/", "effects/exposure/"))
+            or (name.startswith("effects/") and name.count("/") == 1)
+            or name in {"foreground_rgb16.tif", "corrected_rgb16.tif", "base_alpha16.png"}
+        },
+    }
+
+
 def _reused_effects_result(
     project: Path, state: dict[str, Any], manifest: dict[str, Any], identity: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -272,7 +307,12 @@ def _reused_effects_result(
             or any(
                 _json_bytes({target: result.get(target)})
                 != _json_bytes({target: manifest.get(target)})
-                for target in ("spatial_fade", "shadow_fade", "background_light")
+                for target in (
+                    "spatial_fade",
+                    "shadow_fade",
+                    "background_light",
+                    "local_tone_curve",
+                )
             )
             or _json_bytes(
                 _effects_request_identity(
@@ -293,6 +333,7 @@ def _reused_effects_result(
             "shading",
             "local_sharpening",
             "local_exposure",
+            "local_tone_curve",
             "shadow_fade",
             "background",
             "background_light",
@@ -346,7 +387,7 @@ def validate_shading(settings: Any) -> None:
         raise ProjectError("Shading requires positive width and direction in [0,360)")
 
 
-def read_shading_protection(path: Path) -> np.ndarray:
+def read_shading_protection(path: Path | BinaryIO) -> np.ndarray:
     """Accept canonical authored categorical8 guides or explicit categorical16 masks."""
     with Image.open(path) as image:
         if image.format == "PNG" and image.mode == "L":
@@ -496,18 +537,24 @@ SHADING_FILES = (
 )
 
 
-def effects_stale(manifest: dict[str, Any]) -> bool:
-    return any(
-        manifest.get(name, {}).get("enabled") and manifest[name].get("stale")
-        for name in (
-            "color_cleanup",
-            "shading",
-            "local_sharpening",
-            "local_exposure",
-            "shadow_fade",
-            "spatial_fade",
+def stale_effect_names(manifest: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        label
+        for name, label in (
+            ("color_cleanup", "cleanup"),
+            ("shading", "shading"),
+            ("local_sharpening", "Local sharpening"),
+            ("local_exposure", "Local exposure"),
+            ("local_tone_curve", "Local tone curve"),
+            ("shadow_fade", "Shadow fade"),
+            ("spatial_fade", "Fade into background"),
         )
+        if manifest.get(name, {}).get("enabled") and manifest[name].get("stale")
     )
+
+
+def effects_stale(manifest: dict[str, Any]) -> bool:
+    return bool(stale_effect_names(manifest))
 
 
 def inherit_shading(
@@ -867,9 +914,12 @@ def selected_foreground(
     effects_off: bool = False,
     sharpening_off: bool = False,
     exposure_off: bool = False,
+    tone_curve_off: bool = False,
     shadow_fade_off: bool = False,
     shadow_reduction_off: bool = False,
 ) -> np.ndarray:
+    """Render a published revision after validated_layer_inputs has checked its geometry."""
+    directory = saved_asset(project, f"revisions/{revision}")
     record = manifest.get("color_cleanup")
     corrected = read_cleanup(project, revision, foreground, alpha, manifest)
     unexposed = (
@@ -883,7 +933,7 @@ def selected_foreground(
     )
     unexposed = selected_local_sharpening(
         project,
-        saved_asset(project, f"revisions/{revision}"),
+        directory,
         unexposed,
         alpha,
         manifest,
@@ -891,16 +941,52 @@ def selected_foreground(
     )
     exposed = selected_exposure(
         project,
-        saved_asset(project, f"revisions/{revision}"),
+        directory,
         unexposed,
         alpha,
         manifest,
         exposure_off=exposure_off or effects_off,
     )[0]
+    return select_post_exposure_foreground(
+        project,
+        directory,
+        exposed,
+        alpha,
+        manifest,
+        effects_off=effects_off,
+        tone_curve_off=tone_curve_off,
+        shadow_fade_off=shadow_fade_off,
+        shadow_reduction_off=shadow_reduction_off,
+        verify_tone_geometry=False,
+    )
+
+
+def select_post_exposure_foreground(
+    project: Path,
+    directory: Path,
+    foreground: np.ndarray,
+    alpha: np.ndarray,
+    manifest: dict[str, Any],
+    *,
+    effects_off: bool = False,
+    tone_curve_off: bool = False,
+    shadow_fade_off: bool = False,
+    shadow_reduction_off: bool = False,
+    verify_tone_geometry: bool = True,
+) -> np.ndarray:
+    curved = selected_local_tone_curve(
+        project,
+        directory,
+        foreground,
+        alpha,
+        manifest,
+        tone_curve_off=tone_curve_off or effects_off,
+        verify_geometry=verify_tone_geometry,
+    )
     return selected_shadow_fade(
         project,
-        saved_asset(project, f"revisions/{revision}"),
-        exposed,
+        directory,
+        curved,
         alpha,
         manifest,
         shadow_fade_off=shadow_fade_off or effects_off,
@@ -938,6 +1024,17 @@ def saved_effect_lock_layers(project: Path, revision: str, developed_id: str):
             if name.startswith("effects/sharpening/") or name == "base_alpha16.png"
         ):
             raise ProjectError("Prepared lock must retain inherited Local sharpening and alpha")
+        if "local_tone_curve" in manifest or "local_tone_curve" in parent:
+            before, prepared = revision_hashes(parent), revision_hashes(manifest)
+            tone_dependencies = {
+                name
+                for name in before.keys() | prepared.keys()
+                if name.startswith(TONE_CURVE_PREFIX)
+            } | {"base_alpha16.png"}
+            if manifest.get("local_tone_curve") != parent.get("local_tone_curve") or any(
+                before.get(name) != prepared.get(name) for name in tone_dependencies
+            ):
+                raise ProjectError("Prepared lock must retain inherited Local tone curve and alpha")
         if manifest.get("spatial_fade") != parent.get("spatial_fade") or any(
             manifest["files"].get(name) != parent["files"].get(name)
             for name in parent["files"]
@@ -979,6 +1076,10 @@ def run_effects(
             "opacity_only",
             "local_sharpening",
             "local_exposure",
+            "local_tone_curve",
+            "tone_curve_area",
+            "tone_curve_protection_file",
+            "tone_curve_settings_only",
             "exposure_area",
             "exposure_protection_file",
             "exposure_amount_only",
@@ -999,6 +1100,32 @@ def run_effects(
         or type(operation["candidate_comparison"]) is not bool
     ):
         raise ProjectError("Invalid schema-2 effects request")
+    tone_fields = {"tone_curve_area", "tone_curve_protection_file", "tone_curve_settings_only"}
+    tone_changed = "local_tone_curve" in operation
+    tone_replacement = False
+    if tone_changed:
+        tone_settings = operation["local_tone_curve"]
+        validate_local_tone_curve(tone_settings)
+        if set(operation) - required - tone_fields - {"local_tone_curve", "support_file"}:
+            raise ProjectError("Local tone curve must be an exclusive effects operation")
+        settings_only = operation.get("tone_curve_settings_only", False)
+        if type(settings_only) is not bool:
+            raise ProjectError("tone_curve_settings_only must be boolean")
+        tone_replacement = tone_settings["enabled"] and not settings_only
+        area_fields = set(operation) & {
+            "support_file",
+            "tone_curve_area",
+            "tone_curve_protection_file",
+        }
+        if tone_replacement and area_fields not in (
+            {"tone_curve_area"},
+            {"support_file", "tone_curve_protection_file"},
+        ):
+            raise ProjectError("Local tone curve requires exactly one registered area source")
+        if not tone_replacement and area_fields:
+            raise ProjectError("Tone curve settings-only/disable cannot replace area or protection")
+    elif set(operation) & tone_fields:
+        raise ProjectError("Tone curve fields require local_tone_curve settings")
     spatial_changed = "spatial_fade" in operation
     reduction_changed = "fade_reduction" in operation
     if reduction_changed:
@@ -1091,6 +1218,7 @@ def run_effects(
         set(operation) & exposure_fields
         or not fade_changed
         and not sharpening_changed
+        and not tone_changed
         and not background_changed
         and not light_changed
         and not spatial_changed
@@ -1132,10 +1260,15 @@ def run_effects(
     elif set(operation) & fade_fields:
         raise ProjectError("Shadow fade fields require shadow_fade settings")
     operation = json.loads(_json_bytes(operation))
+    if tone_changed:
+        tone_settings = operation["local_tone_curve"]
     if reduction_changed:
         reduction_request = operation["fade_reduction"]
     request_bytes = request_file.read_bytes() if request_file else _json_bytes(operation)
-    if json.loads(request_bytes) != operation:
+    request_snapshot = json.loads(request_bytes)
+    if request_snapshot != operation or (
+        tone_changed and _json_bytes(request_snapshot) != _json_bytes(operation)
+    ):
         raise ProjectError("Stale effects request file")
     project = _root(project)
     state = read_project(project)
@@ -1151,6 +1284,7 @@ def run_effects(
         "shading" in operation
         or exposure_changed
         or sharpening_changed
+        or tone_changed
         or fade_changed
         or background_changed
         or light_changed
@@ -1254,11 +1388,15 @@ def run_effects(
         _input_file(project, operation["support_file"]) if "support_file" in operation else None
     )
     support_bytes = support_path.read_bytes() if support_path else b""
-    support = scalar16(support_path) if support_path else np.zeros(alpha.shape, dtype=np.uint16)
+    support = (
+        scalar16(BytesIO(support_bytes) if tone_changed else support_path)
+        if support_path is not None
+        else np.zeros(alpha.shape, dtype=np.uint16)
+    )
     if cleanup_changed and enabled:
         validate_support(support, alpha.shape, [0, 0, width, height], scope)
     elif support.shape != alpha.shape:
-        raise ProjectError("Cleanup support must align with master even when disabled")
+        raise ProjectError("Effects support must align with master even when disabled")
     snapshots = {
         name: saved_asset(project, name).read_bytes()
         for name in ("state.json", "source.json", "recipe.toml", "guides.json")
@@ -1270,6 +1408,8 @@ def run_effects(
     ):
         raise ProjectError("Stale effects snapshot before processing")
     parent_bytes = saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()
+    if tone_changed and _json_bytes(json.loads(parent_bytes)) != _json_bytes(manifest):
+        raise ProjectError("Stale Local tone curve base manifest")
     parent_guides = saved_asset(project, f"revisions/{parent}/guides.json").read_bytes()
     parent_recipe = tomllib.loads(
         saved_asset(project, f"revisions/{parent}/recipe.toml").read_text()
@@ -1284,6 +1424,7 @@ def run_effects(
             "shading",
             "local_sharpening",
             "local_exposure",
+            "local_tone_curve",
             "shadow_fade",
             "spatial_fade",
             "background",
@@ -1323,6 +1464,56 @@ def run_effects(
         lock_values[mask] = rgb[mask]
         locked |= mask
     protection |= locked
+    tone_input_bytes = {}
+    tone_area_bytes = None
+    if tone_changed:
+        parent_directory = saved_asset(project, f"revisions/{parent}")
+        saved_tone = read_local_tone_curve(project, parent_directory, manifest, alpha)
+        if (
+            tone_settings["enabled"]
+            and parent != state["accepted_revision"]
+            and not operation["candidate_comparison"]
+        ):
+            raise ProjectError(
+                "Local tone curve requires accepted base or explicit candidate comparison"
+            )
+        if saved_tone is not None:
+            check_tone_curve_scope(saved_tone[0], scope)
+        if tone_replacement:
+            if "tone_curve_area" in operation:
+                tone_support, tone_protection = rasterize_effect_area(
+                    operation["tone_curve_area"], state["developed_id"], width, height
+                )
+                tone_area_bytes = _json_bytes(operation["tone_curve_area"])
+            else:
+                tone_support = support
+                path = _input_file(project, operation["tone_curve_protection_file"])
+                protection_bytes = path.read_bytes()
+                tone_input_bytes["tone_curve_protection_file"] = protection_bytes
+                mask = read_shading_protection(BytesIO(protection_bytes))
+                if mask.shape != alpha.shape or np.any((mask != 0) & (mask != 65535)):
+                    raise ProjectError(
+                        "Local tone curve protection must be aligned categorical PNG8/16"
+                    )
+                tone_protection = mask != 0
+            tone_protection |= protection
+            check_tone_curve_scope(tone_support, scope)
+        else:
+            if saved_tone is None:
+                raise ProjectError("Tone curve settings-only/disable requires a saved area")
+            tone_support, tone_protection, prior_tone = saved_tone
+            if tone_settings["enabled"]:
+                dependency = scalar16(
+                    saved_asset(project, f"revisions/{parent}/{TONE_CURVE_PREFIX}alpha16.png")
+                )
+                if not np.array_equal(dependency, alpha):
+                    raise ProjectError("Stale Local tone curve alpha: rebuild area or disable")
+            elif tone_settings["points"] != prior_tone["settings"]["points"]:
+                raise ProjectError("Disabling Local tone curve requires its saved points")
+        if tone_settings["enabled"] and not np.any(
+            (tone_support != 0) & (alpha != 0) & ~tone_protection
+        ):
+            raise ProjectError("Enabled Local tone curve requires a nonempty eligible selection")
     shading_record = manifest.get("shading")
     shading_inputs = {}
     if "shading" in operation:
@@ -1559,9 +1750,9 @@ def run_effects(
             (sharpening_support != 0) & (alpha != 0) & ~sharpening_protection
         ):
             raise ProjectError("Enabled Local sharpening requires a nonempty eligible selection")
-    if not spatial_changed and current_recipe.get("spatial_fade") != parent_recipe.get(
+    if not (spatial_changed or tone_changed) and current_recipe.get(
         "spatial_fade"
-    ):
+    ) != parent_recipe.get("spatial_fade"):
         raise ProjectError("Changed spatial fade recipe requires explicit spatial fade operation")
     spatial_inputs = {}
     if spatial_changed:
@@ -1634,8 +1825,7 @@ def run_effects(
                 raise ProjectError("Stale cleanup saved RGB lock")
 
     # saved_layers above validates all inherited effects, including disabled operands.
-    input_hashes: dict[str, str] = {}
-    request_inputs: dict[str, bytes] = {}
+    request_inputs: dict[str, bytes] = dict(tone_input_bytes)
     for name in (
         "sharpening_protection_file",
         "support_file",
@@ -1660,7 +1850,7 @@ def run_effects(
             if captured is None:
                 captured = path.read_bytes()
             request_inputs[name] = captured
-            input_hashes[name] = digest(captured)
+    input_hashes = {name: digest(data) for name, data in request_inputs.items()}
     identity = {
         "schema_version": 1,
         "execution": _effects_execution_identity(),
@@ -1677,6 +1867,7 @@ def run_effects(
                     "shading",
                     "local_sharpening",
                     "local_exposure",
+                    "local_tone_curve",
                     "shadow_fade",
                     "background",
                     "background_light",
@@ -1706,6 +1897,7 @@ def run_effects(
         dict(
             identity,
             local_sharpening=_sharpening_reuse_binding(manifest, revision_hashes(manifest)),
+            local_tone_curve=_tone_curve_reuse_binding(manifest, revision_hashes(manifest)),
             background_light=_background_light_reuse_binding(
                 manifest.get("background_light"), revision_hashes(manifest)
             ),
@@ -1729,6 +1921,7 @@ def run_effects(
             else 0
         )
         + (alpha.nbytes * 3 if sharpening_changed else 0)
+        + (alpha.nbytes * 3 if tone_replacement else 0)
         + retained_reduction_bytes
         + (0 if reduction16 is None else reduction16.nbytes)
         + 1024**2,
@@ -2133,6 +2326,43 @@ def run_effects(
             assets=assets,
         )
     )
+    tone_record = (
+        None
+        if tone_replacement
+        else inherit_local_tone_curve(project, parent, stage, state["developed_id"], assets=assets)
+    )
+    if tone_changed:
+        directory = stage / TONE_CURVE_PREFIX
+        if tone_replacement:
+            directory.mkdir(parents=True, exist_ok=True)
+            for name, values in (
+                ("support16.png", tone_support),
+                ("protection16.png", tone_protection.astype(np.uint16) * 65535),
+                ("alpha16.png", alpha),
+            ):
+                Image.fromarray(values).save(directory / name)
+            if tone_area_bytes is not None:
+                (directory / "area.json").write_bytes(tone_area_bytes)
+            tone_record = {
+                "schema_version": 2,
+                "developed_id": state["developed_id"],
+                "algorithm": TONE_CURVE_ALGORITHM,
+                "area_sha256": digest(tone_area_bytes) if tone_area_bytes is not None else None,
+                **{
+                    key: digest((directory / name).read_bytes())
+                    for name, key in TONE_CURVE_RASTERS.items()
+                },
+            }
+        assert tone_record is not None
+        tone_record.update(
+            enabled=tone_settings["enabled"],
+            settings=tone_settings,
+            stale=False,
+            scope_xyxy=scope,
+            candidate_comparison=operation["candidate_comparison"],
+        )
+        (directory / "settings.json").write_bytes(_json_bytes(tone_record))
+
     effect_records = {}
     if light_record is not None:
         effect_records["background_light"] = light_record
@@ -2146,6 +2376,8 @@ def run_effects(
         effect_records["shading"] = shading_record
     if exposure_record is not None:
         effect_records["local_exposure"] = exposure_record
+    if tone_record is not None:
+        effect_records["local_tone_curve"] = tone_record
     if fade_record is not None:
         effect_records["shadow_fade"] = fade_record
     if spatial_record is not None:
@@ -2169,6 +2401,7 @@ def run_effects(
         ),
         ("local_sharpening", sharpening_changed),
         ("local_exposure", exposure_changed),
+        ("local_tone_curve", tone_changed),
         ("shadow_fade", fade_changed),
         (
             "spatial_fade",
@@ -2215,13 +2448,13 @@ def run_effects(
         dict(effect_records, developed_id=state["developed_id"], assets=assets),
         exposure_off=stale,
     )
-    appearance = selected_shadow_fade(
+    appearance = select_post_exposure_foreground(
         project,
         stage,
         appearance,
         alpha,
         dict(effect_records, developed_id=state["developed_id"], assets=assets),
-        shadow_fade_off=stale,
+        effects_off=stale,
     )
     review_weight, opacity = (
         (
@@ -2294,6 +2527,12 @@ def run_effects(
         review["label"] += (
             "; Shadow fade ON" if fade_record["enabled"] and not stale else "; Shadow fade OFF"
         )
+    if tone_record is not None:
+        review["label"] += (
+            "; Local tone curve ON"
+            if tone_record["enabled"] and not stale
+            else "; Local tone curve OFF"
+        )
     if spatial_record is not None:
         review["label"] += (
             "; Fade into background ON; diagnostic backdrops retain its selected target"
@@ -2311,9 +2550,8 @@ def run_effects(
     (stage / "review/manifest.json").write_bytes(_json_bytes(review))
     # Input snapshots remain consumed-input evidence. Bind the new output only
     # after its actual record and all four operands exist, so first repeats hit.
-    identity["local_sharpening"] = _sharpening_reuse_binding(
-        effect_records,
-        {
+    if sharpening_record is not None or tone_record is not None:
+        upstream_hashes = {
             **{name: reference["sha256"] for name, reference in assets.items()},
             **{
                 str(path.relative_to(stage)): digest(path.read_bytes())
@@ -2325,8 +2563,11 @@ def run_effects(
                     in {"foreground_rgb16.tif", "corrected_rgb16.tif", "base_alpha16.png"}
                 )
             },
-        },
-    )
+        }
+    else:
+        upstream_hashes = {}
+    identity["local_sharpening"] = _sharpening_reuse_binding(effect_records, upstream_hashes)
+    identity["local_tone_curve"] = _tone_curve_reuse_binding(effect_records, upstream_hashes)
     for target, saved_record, inventory in (
         ("spatial_fade", spatial_record, spatial_fade_files),
         ("shadow_fade", fade_record, shadow_fade_files),
@@ -2386,7 +2627,7 @@ def run_effects(
 
     recheck()
     destination = revisions / revision
-    if spatial_record is not None or light_record is not None:
+    if spatial_record is not None or light_record is not None or tone_record is not None:
         _validate_revision_directory(
             project, revision, state["developed_id"], str(stage.relative_to(project))
         )
@@ -2403,12 +2644,16 @@ def run_effects(
         record_generated_result(state, revision, new_manifest)
         _atomic_json(saved_asset(project, "state.json"), state, validate_before_replace=recheck)
     except OSError as error:
-        if (spatial_record is not None or light_record is not None) and destination.exists():
+        if (
+            spatial_record is not None or light_record is not None or tone_record is not None
+        ) and destination.exists():
             effect_name = (
                 "Background light"
                 if light_changed
                 else "Fade into background"
                 if spatial_changed
+                else "Local tone curve"
+                if tone_changed
                 else "Effects"
             )
             raise ProjectError(

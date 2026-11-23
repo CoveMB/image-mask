@@ -40,6 +40,7 @@ from .spatial_fade import (
     spatial_fade_amount,
     spatial_fade_files,
 )
+from .tone_curve import TONE_CURVE_PREFIX, TONE_CURVE_RASTERS
 
 if TYPE_CHECKING:
     from .framing import Margins
@@ -284,6 +285,7 @@ def saved_layers(
     effects_off: bool = False,
     sharpening_off: bool = False,
     exposure_off: bool = False,
+    tone_curve_off: bool = False,
     shadow_fade_off: bool = False,
     shadow_reduction_off: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -299,6 +301,7 @@ def saved_layers(
         effects_off=effects_off or effects_stale(manifest),
         sharpening_off=sharpening_off,
         exposure_off=exposure_off,
+        tone_curve_off=tone_curve_off,
         shadow_fade_off=shadow_fade_off,
         shadow_reduction_off=shadow_reduction_off,
     )
@@ -468,8 +471,14 @@ def _export_execution_identity() -> dict[str, Any]:
 
 def _delivery_notes(record: dict[str, Any]) -> bytes:
     mode = record["mode"]
+    has_curve = "local_tone_curve" in record["effects"]
+    foreground_effects = (
+        "Local sharpening, local exposure, Local tone curve and Shadow fade"
+        if has_curve
+        else "Local sharpening, local exposure and Shadow fade"
+    )
     text = record["label"] + "\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. "
-    text += "Selected foreground already includes Local sharpening, local exposure and Shadow fade; apply none again. "
+    text += f"Selected foreground already includes {foreground_effects}; apply none again. "
     text += "Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\n"
     if "background_light" in record:
         text += "Background light is separate from the unlit base B0. Native editable deliveries retain background_rgb16.tif as B0 (missing means zero), background_light_rgb16.tif as L16, and background_light_settings.json, including OFF. When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)); encode to RGB16 with float64 ties-to-even and copy zero-light pixels exactly. OFF uses B1=B0. Native replay reads saved L16 without generating it. Light never changes the foreground contribution or alpha; it can clip a bright backdrop, so lower brightness to retain variation. Black/transparent diagnostics never display light.\n"
@@ -502,15 +511,30 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
             if record["spatial_fade"]["schema_version"] == 2:
                 text += "Also retain spatial_fade_reduction16.png and spatial_fade_reduction.json. Multiply q by (1-reduction16/65535) exactly once after protection/highlights and before blending or series sampling of A*q. Alpha is eligibility only; zero reduction preserves the original fade, full reduction removes only this effect. The raster is the rounded maximum of amount times each authored support16 field; overlaps never accumulate.\n"
     if "local_sharpening" in record and "editable" in record["requested_variants"]:
+        post_exposure = "Local tone curve, Shadow fade" if has_curve else "Shadow fade"
+        unfaded_effects = (
+            "sharpening, exposure and the curve" if has_curve else "sharpening and exposure"
+        )
+        selected_effects = "all four" if has_curve else "all three"
         text += (
             "Replay Local sharpening from unsharpened_foreground_rgb16.tif (cleanup-selected RGB), "
             "sharpening_support16.png/protection16.png/alpha16.png and sharpening_settings.json. "
-            "Apply linear-srgb-local-sharpening-v1 once, then exposure, Shadow fade, shading or "
+            f"Apply linear-srgb-local-sharpening-v1 once, then exposure, {post_exposure}, shading or "
             "spatial fade, then alpha/background composition. Unexposed RGB already includes "
-            "sharpening; unfaded RGB includes sharpening and exposure; foreground includes all "
-            "three. These are alternative starting points: never sharpen them twice. "
+            f"sharpening; unfaded RGB includes {unfaded_effects}; foreground includes "
+            f"{selected_effects}. These are alternative starting points: never sharpen them twice. "
             "Optional sharpening_area.json retains authored geometry. Older applications cannot "
             "reliably read new sharpening records; keep pre-feature projects/exports for them.\n"
+        )
+    if "local_tone_curve" in record:
+        text += (
+            "For Local tone curve replay, start with uncurved_foreground_rgb16.tif after Exposure. "
+            "Apply linear-srgb-local-tone-curve-v1 with tone_curve_support16.png, "
+            "tone_curve_protection16.png, tone_curve_alpha16.png and tone_curve_settings.json. "
+            "Retain tone_curve_area.json when present. OFF copies uncurved RGB exactly. "
+            "Apply Shadow fade next when enabled. Unfaded RGB already includes the curve. "
+            "Starting from foreground_rgb16.tif, proceed directly to shading or spatial fade and "
+            "alpha/background composition. Curve-bearing revisions require the updated reader.\n"
         )
     if "result_compositing" in record:
         text += "Saved compositing: " + record["result_compositing"] + "\n"
@@ -578,6 +602,13 @@ def _delivery_members(
             for name in files:
                 if f"effects/{directory}/{name}" in saved:
                     names.add(prefix + "_" + name)
+        if "local_tone_curve" in manifest:
+            names.add("uncurved_foreground_rgb16.tif")
+            names.update(
+                "tone_curve_" + name
+                for name in (*TONE_CURVE_RASTERS, "settings.json", "area.json")
+                if TONE_CURVE_PREFIX + name in saved
+            )
         if "spatial_fade" in manifest:
             names.update(
                 "spatial_fade_" + name for name in spatial_fade_files(manifest["spatial_fade"])
@@ -646,6 +677,15 @@ def _validate_delivery(
             or set(files) != set(members)
         ):
             raise ValueError("Delivery request/member mismatch")
+        curve_record = request_record.get("local_tone_curve")
+        curve_hashes = (
+            {
+                "tone_curve_" + name: curve_record[key]
+                for name, key in {**TONE_CURVE_RASTERS, "area.json": "area_sha256"}.items()
+            }
+            if curve_record is not None
+            else {}
+        )
         for name, expected in members.items():
             path = directory / name
             metadata = files[name]
@@ -665,6 +705,13 @@ def _validate_delivery(
                 raise ValueError("Recipe binding mismatch")
             if name == "README.txt" and path.read_bytes() != _delivery_notes(request_record):
                 raise ValueError("Notes binding mismatch")
+            if name in curve_hashes and metadata["sha256"] != curve_hashes[name]:
+                raise ValueError("Local tone curve operand binding mismatch")
+            if name == "tone_curve_settings.json" and (
+                curve_record is None
+                or _json_bytes(json.loads(path.read_bytes())) != _json_bytes(curve_record)
+            ):
+                raise ValueError("Local tone curve settings binding mismatch")
             if name.endswith(".tif"):
                 with tifffile.TiffFile(path) as image:
                     page = image.pages[0]
@@ -995,6 +1042,20 @@ def _delivery_request_record(
             )
     if companion_request is not None:
         record["editable_companion_request"] = companion_request
+    if "local_tone_curve" in manifest:
+        curve = manifest["local_tone_curve"]
+        record["effects"]["local_tone_curve"] = {
+            "enabled": curve["enabled"],
+            "record_sha256": digest(_json_bytes(curve)),
+        }
+        if mode == "native" and "editable" in variants:
+            record["local_tone_curve"] = _delivery_effect_record(curve)
+        for field in ("views", "result_compositing"):
+            if field in record:
+                record[field] = record[field].replace(
+                    "local exposure and Shadow fade",
+                    "local exposure, Local tone curve and Shadow fade",
+                )
     record["identity_sha256"] = digest(_json_bytes(record))
     return record
 
@@ -1017,7 +1078,7 @@ def _export_delivery(
     expected_developed_id: str | None,
     expected_revision_manifest_sha256: str | None,
 ) -> dict[str, Any]:
-    from .effects import effects_stale, selected_foreground
+    from .effects import selected_foreground, stale_effect_names
     from .framing import framed_geometry, validate_margins
 
     captured = {
@@ -1046,9 +1107,11 @@ def _export_delivery(
     base, alpha, manifest = validated_layer_inputs(project, revision, state["developed_id"])
     if _json_bytes(json.loads(captured[manifest_name])) != _json_bytes(manifest):
         raise ProjectError("Stale export revision manifest")
-    if effects_stale(manifest):
+    stale = stale_effect_names(manifest)
+    if stale:
         raise ProjectError(
-            "Stale enabled cleanup/shading/local exposure/Shadow fade: scoped rebuild or explicit disable required before export"
+            f"Stale enabled appearance for {', '.join(stale)}. "
+            "Rebuild or explicitly disable these effects before export."
         )
     source = json.loads(captured["source.json"])
     size = (base.shape[1], base.shape[0])
@@ -1176,6 +1239,13 @@ def _export_delivery(
     pending += (16 + (10 if "black" in variants else 0)) * width * height + 2 * 1024**2
     if native_record is not None and binding is None:
         pending += base.nbytes * 22 + 2 * 1024**2
+    tone_editable_bytes = (
+        base.nbytes + 3 * alpha.nbytes + 1024**2
+        if "local_tone_curve" in manifest and "editable" in variants
+        else 0
+    )
+    if mode == "native" or (native_record is not None and binding is None):
+        pending += tone_editable_bytes
     check_space(project, pending)
     if sampling is not None:
         from .series_framing import estimate_series_resources
@@ -1188,7 +1258,9 @@ def _export_delivery(
             if manifest.get("spatial_fade", {}).get("enabled")
             else 0,
             black_background="black" in variants,
-            native_export_peak_bytes=base.nbytes * 22 if native_record is not None else 0,
+            native_export_peak_bytes=base.nbytes * 22 + tone_editable_bytes
+            if native_record is not None
+            else 0,
             background_light=bool(
                 manifest.get("background_light", {}).get("settings", {}).get("enabled")
             ),
@@ -1527,6 +1599,15 @@ def _write_editable(
                 saved_asset(project, f"revisions/{revision}/{saved}").read_bytes()
             )
     write_developed(stage / "foreground_rgb16.tif", foreground)
+    master = state["developed_id"]
+    if any(name in manifest for name in ("local_sharpening", "local_exposure", "shadow_fade")):
+        unexposed, _, _ = saved_layers(
+            project, revision, master, exposure_off=True, tone_curve_off=True, shadow_fade_off=True
+        )
+        write_developed(stage / "unexposed_foreground_rgb16.tif", unexposed)
+        (stage / "base_foreground_rgb16.tif").write_bytes(
+            saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
+        )
     if "local_sharpening" in manifest:
         unsharpened, _, _ = saved_layers(
             project,
@@ -1534,20 +1615,10 @@ def _write_editable(
             state["developed_id"],
             sharpening_off=True,
             exposure_off=True,
+            tone_curve_off=True,
             shadow_fade_off=True,
         )
         write_developed(stage / "unsharpened_foreground_rgb16.tif", unsharpened)
-        unexposed, _, _ = saved_layers(
-            project,
-            revision,
-            state["developed_id"],
-            exposure_off=True,
-            shadow_fade_off=True,
-        )
-        write_developed(stage / "unexposed_foreground_rgb16.tif", unexposed)
-        (stage / "base_foreground_rgb16.tif").write_bytes(
-            saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
-        )
         for name in (
             "support16.png",
             "protection16.png",
@@ -1561,12 +1632,6 @@ def _write_editable(
                     saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
                 )
     if "local_exposure" in manifest:
-        unexposed, _, _ = saved_layers(
-            project, revision, state["developed_id"], exposure_off=True, shadow_fade_off=True
-        )
-        write_developed(stage / "unexposed_foreground_rgb16.tif", unexposed)
-        base = saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif")
-        (stage / "base_foreground_rgb16.tif").write_bytes(base.read_bytes())
         for name in (
             "support16.png",
             "protection16.png",
@@ -1579,14 +1644,21 @@ def _write_editable(
                 (stage / ("exposure_" + name)).write_bytes(
                     saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
                 )
+    if "local_tone_curve" in manifest:
+        uncurved, _, _ = saved_layers(
+            project, revision, master, tone_curve_off=True, shadow_fade_off=True
+        )
+        write_developed(stage / "uncurved_foreground_rgb16.tif", uncurved)
+        hashes = revision_hashes(manifest)
+        for name in (*TONE_CURVE_RASTERS, "settings.json", "area.json"):
+            asset = TONE_CURVE_PREFIX + name
+            if asset in hashes:
+                (stage / ("tone_curve_" + name)).write_bytes(
+                    saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
+                )
     if "shadow_fade" in manifest:
         unfaded, _, _ = saved_layers(project, revision, state["developed_id"], shadow_fade_off=True)
         write_developed(stage / "unfaded_foreground_rgb16.tif", unfaded)
-        if "local_exposure" not in manifest:
-            write_developed(stage / "unexposed_foreground_rgb16.tif", unfaded)
-            (stage / "base_foreground_rgb16.tif").write_bytes(
-                saved_asset(project, f"revisions/{revision}/foreground_rgb16.tif").read_bytes()
-            )
         for name in shadow_fade_files(manifest["shadow_fade"]):
             asset = f"effects/shadow-fade/{name}"
             if asset in revision_hashes(manifest):

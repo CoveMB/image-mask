@@ -562,6 +562,14 @@ def _review_project_locked(
         "local_sharpening"
     ].get("stale"):
         stale.append("local_sharpening_stale")
+    tone_curve = revision_manifest.get("local_tone_curve")
+    if tone_curve is not None:
+        if tone_curve["stale"]:
+            stale.append("local_tone_curve_stale")
+        tone_on = tone_curve["enabled"] and not (
+            base_comparison or effects_stale(revision_manifest)
+        )
+        record["label"] += f"; Local tone curve {'ON' if tone_on else 'OFF'}"
     from .exposure import selected_exposure
 
     unexposed = saved_layers(
@@ -569,6 +577,7 @@ def _review_project_locked(
         revision,
         state["developed_id"],
         exposure_off=True,
+        tone_curve_off=True,
         shadow_fade_off=True,
         effects_off=base_comparison,
     )[0]
@@ -665,6 +674,9 @@ def _review_project_locked(
             "local_exposure": f"{prefix}/effects/exposure/settings.json"
             if "local_exposure" in revision_manifest
             else None,
+            "local_tone_curve": f"{prefix}/effects/tone-curve/settings.json"
+            if tone_curve is not None
+            else None,
             "shadow_fade": f"{prefix}/effects/shadow-fade/settings.json"
             if "shadow_fade" in revision_manifest
             else None,
@@ -673,7 +685,7 @@ def _review_project_locked(
                 if "spatial_fade" in revision_manifest
                 else {}
             ),
-            "foreground_selection": "base, optional cleanup, local sharpening once, local exposure once, Shadow fade once; shading at render",
+            "foreground_selection": "base, optional cleanup, Local sharpening, Local exposure, Local tone curve, Shadow fade; shading or spatial fade at render",
             "base_foreground_rgb16": str(
                 saved_asset(project, f"{prefix}/foreground_rgb16.tif").relative_to(project)
             ),
@@ -688,6 +700,9 @@ def _review_project_locked(
             "local_sharpening": revision_manifest.get(
                 "local_sharpening", {"enabled": False, "stale": False}
             ),
+            "local_tone_curve": tone_curve
+            if tone_curve is not None
+            else {"enabled": False, "stale": False},
             "shadow_fade": revision_manifest.get("shadow_fade", {"enabled": False, "stale": False}),
             **(
                 {"spatial_fade": revision_manifest["spatial_fade"]}
