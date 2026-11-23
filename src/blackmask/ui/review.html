@@ -443,7 +443,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -563,6 +563,31 @@
         <label><input id="toneCurveCompare" type="checkbox" /> Compare Local tone curve OFF</label>
         <p id="toneCurveStatus" role="status" class="small"></p>
         <p id="toneCurveDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset id="textureControls">
+        <legend>Local texture</legend>
+        <label>Strength (%) <input id="textureStrength" type="number" min="0" max="100" step="any" /></label>
+        <label>Detail scale (native px) <input id="textureScale" type="number" min="2" max="16" step="any" /></label>
+        <label>Grain guard (% linear luminance) <input id="textureGrain" type="number" min="0" max="2" step="any" /></label>
+        <label>Protect highlights (%) <input id="textureHighlights" type="number" min="0" max="100" step="any" /></label>
+        <label>Texture drawing <select id="textureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
+        <label>Texture shape <select id="textureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+        <label>Brush radius (native pixels) <input id="textureRadius" type="number" min="1" step="1" value="10" /></label>
+        <label>Inward feather (native pixels, Apply only) <input id="textureFeather" type="number" min="0" step="1" value="0" /></label>
+        <label>Texture rectangle x0,y0,x1,y1 <input id="textureRectangle" class="wide" /></label>
+        <button id="textureAddRectangle">Add texture rectangle</button>
+        <label>Texture shapes <select id="textureRegions" class="wide" size="4"></select></label>
+        <button id="textureRemove">Remove texture shape</button>
+        <button id="textureClear">Clear draft texture area</button>
+        <button id="textureReloadArea">Reload saved area</button>
+        <button id="textureReloadSettings">Reload saved texture settings</button>
+        <label><input id="textureCandidate" type="checkbox" /> Explicitly compare texture on an unaccepted candidate</label>
+        <button id="textureApply">Apply / replace texture area</button>
+        <button id="textureSavedApply">Apply texture settings to saved area</button>
+        <button id="textureDisable">Disable texture</button>
+        <label><input id="textureCompare" type="checkbox" /> Compare Local texture OFF</label>
+        <p id="textureStatus" role="status" class="small"></p>
+        <p id="textureDraftStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>Shadow fade</legend>
@@ -775,12 +800,20 @@
     const backgroundLightControlIds = ["backgroundLightEnabled", "backgroundLightRange", "backgroundLightBrightness", "backgroundLightColor", "backgroundLightHex", "backgroundLightShape", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition", "backgroundLightReverse", "backgroundLightCandidate", "backgroundLightApply", "backgroundLightOff", "backgroundLightReload"];
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let sharpeningArea = {regions: [], protection: []}, sharpeningDirty = false, sharpeningAreaPublished = false;
-    const nativeAreaModes = ["exposure", "fade", "sharpening", "toneCurve"];
-    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "spatialCompare", "backgroundLightCompare"];
+    const nativeAreaModes = ["exposure", "fade", "sharpening", "toneCurve", "texture"];
+    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "textureCompare", "spatialCompare", "backgroundLightCompare"];
     let toneCurveArea = {regions: [], protection: []}, toneCurvePointRows = [];
     let toneCurvePointsIdentity = null, toneCurveAreaIdentity = null;
     let toneCurvePointsVersion = 0, toneCurveAreaVersion = 0;
     let toneCurveSavedPoints = null, toneCurveSubmitted = null;
+    let textureArea = {regions: [], protection: []};
+    let textureAreaDraft = null, textureSettingsDraft = null, textureSubmitted = null;
+    const textureFields = [
+      ["textureStrength", "strength", 100, 0, 100],
+      ["textureScale", "scale_px", 1, 2, 16],
+      ["textureGrain", "grain_guard", 100, 0, 2],
+      ["textureHighlights", "preserve_highlights", 100, 0, 100],
+    ];
     let exposureControlsIdentity = null, exposureControlsSubmitted = null;
     let fadeControlsIdentity = null, fadeControlsSubmitted = null;
     let exposureControlsVersion = 0, fadeControlsVersion = 0;
@@ -1870,6 +1903,7 @@
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
       syncToneCurve(current, a, completed);
+      syncTexture(current, a, completed);
       const reductionSubmission = fadeReductionSubmitted;
       const reductionCompleted = completed && !a.error && reductionSubmission && a.name === "effects"
         && (a.result?.reused ? a.result.revision === reductionSubmission.base_revision : a.result?.parent === reductionSubmission.base_revision)
@@ -2141,6 +2175,7 @@
         $(id).disabled = authoringBusy();
       $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
       updateToneCurveControls();
+      updateTextureControls();
       $("previewRepair").disabled = authoringBusy() || !state?.preview || ["not_applicable","no_result"].includes(state.preview.status) || state.preview.reason === "configuration_required";
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
         $(id).disabled = authoringBusy();
@@ -2177,15 +2212,16 @@
       if (panel === "alpha") return "Alpha8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       const viewed = state.revisions.find(r => r.revision === revision),
         working = state.revisions.find(r => r.revision === state.working_revision);
-      const stale = record => ["color_cleanup", "shading", "local_sharpening", "local_exposure", "local_tone_curve", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
+      const stale = record => ["color_cleanup", "shading", "local_sharpening", "local_exposure", "local_tone_curve", "local_texture", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
       const isStale = stale(viewed) || stale(working);
-      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · Local sharpening OFF · local exposure OFF · Local tone curve OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
+      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · Local sharpening OFF · local exposure OFF · Local tone curve OFF · Local texture OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
       const sharpening = $("sharpeningCompare").checked ? "OFF comparison" : viewed?.local_sharpening?.enabled ? "ON" : "OFF";
       const toneCurve = $("toneCurveCompare").checked ? "OFF comparison" : viewed?.local_tone_curve?.enabled ? "ON" : "OFF";
+      const texture = $("textureCompare").checked ? "OFF comparison" : viewed?.local_texture?.enabled ? "ON" : "OFF";
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
       const lightLabel = " · Background light " + (["black", "gray", "white"].includes(panel) ? "excluded from diagnostic" : $("backgroundLightCompare").checked ? "OFF comparison" : viewed?.background_light?.settings?.enabled ? "ON" : "OFF");
-      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Local tone curve " + toneCurve + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · curve and fade recalculated from exposure-OFF RGB" : "");
+      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Local tone curve " + toneCurve + " · Local texture " + texture + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · curve, texture and fade recalculated from exposure-OFF RGB" : "");
       if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel;
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
@@ -2212,6 +2248,7 @@
         $("exposureCompare").checked,
         $("sharpeningCompare").checked,
         $("toneCurveCompare").checked,
+        $("textureCompare").checked,
         $("fadeCompare").checked,
         $("spatialCompare").checked,
         $("backgroundLightCompare").checked,
@@ -2244,7 +2281,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("textureCompare").checked ? "/texture-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = reductionView === "off" && !["source", "alpha"].includes(panel)
           ? await spatialBitmap("off", revision, requestedCrop, panel, true)
           : $("spatialCompare").checked && !["source","alpha"].includes(panel)
@@ -2495,12 +2532,14 @@
         ? " Stale Local sharpening settings; reload before applying." : " Unsaved Local sharpening settings.";
     }
     function effectArea(prefix) {
-      return {exposure: exposureArea, fade: fadeArea, sharpening: sharpeningArea, toneCurve: toneCurveArea}[prefix];
+      return {exposure: exposureArea, fade: fadeArea, sharpening: sharpeningArea, toneCurve: toneCurveArea, texture: textureArea}[prefix];
     }
     function addEffectRegion(prefix, geometry, shape) {
       if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before area authoring");
       if (prefix === "toneCurve" && $("viewRevision").value !== state.working_revision)
         throw Error("Choose the working revision before authoring a tone curve area");
+      if (prefix === "texture" && $("viewRevision").value !== state.working_revision)
+        throw Error("Choose the working revision before authoring a texture area");
       const kind = $(prefix + "Role").value, [w, h] = state.dimensions_wh;
       const feather = kind === "protection" ? 0 : Number($(prefix + "Feather").value);
       const radius = Number($(prefix + "Radius").value);
@@ -2513,6 +2552,7 @@
       area[kind].push(region);
       if (prefix === "sharpening") { sharpeningDirty = true; renderSharpeningArea(); }
       else if (prefix === "toneCurve") markToneCurveAreaDirty();
+      else if (prefix === "texture") markTextureAreaDirty();
       else markEffectAreaDirty(prefix);
       draw();
     }
@@ -2792,6 +2832,134 @@
     $("toneCurveSavedApply").onclick = guarded(() => localToneCurve("saved"));
     $("toneCurveDisable").onclick = guarded(() => localToneCurve("disable"));
     $("toneCurveCompare").onchange = guarded(() => compareChanged("toneCurveCompare"));
+
+    function workingTextureRevision() {
+      return state?.revisions.find(row => row.revision === state.working_revision);
+    }
+    function markTextureSettingsDirty() {
+      textureSettingsDraft = {target: textureSettingsDraft?.target ?? appearanceTargetKey()};
+      updateTextureControls();
+    }
+    function markTextureAreaDirty() {
+      textureAreaDraft = {target: textureAreaDraft?.target ?? appearanceTargetKey()};
+      renderEffectAreaRegions("texture", textureArea);
+      updateTextureControls();
+    }
+    function updateTextureControls() {
+      const busy = authoringBusy(), current = workingTextureRevision(), saved = current?.local_texture;
+      for (const id of [...textureFields.map(([id]) => id), "textureCandidate", "textureRole", "textureShape",
+        "textureRadius", "textureFeather", "textureRectangle", "textureAddRectangle", "textureRegions",
+        "textureRemove", "textureClear", "textureReloadArea", "textureReloadSettings"])
+        $(id).disabled = busy;
+      $("textureApply").disabled = busy || !current?.final_acceptable;
+      $("textureSavedApply").disabled = $("textureApply").disabled || !saved || !current.texture_alpha_current;
+      $("textureDisable").disabled = $("textureApply").disabled || !saved?.enabled;
+      const status = !saved ? "No saved texture area" : `Local texture ${saved.enabled ? "ON" : "OFF"}`
+        + (current.texture_alpha_current ? "" : " · Saved alpha differs. Rebuild the area before applying settings.");
+      const draftStatus = [
+        [textureAreaDraft, "area", "Reload saved area"], [textureSettingsDraft, "settings", "Reload saved settings"],
+      ].filter(([draft]) => draft).map(([draft, label, reload]) => draft.target === appearanceTargetKey()
+        ? `Unsaved ${label}` : `Stale ${label}. ${reload}.`).join(" · ");
+      if ($("textureStatus").textContent !== status) $("textureStatus").textContent = status;
+      if ($("textureDraftStatus").textContent !== draftStatus) $("textureDraftStatus").textContent = draftStatus;
+    }
+    function syncTexture(current, actionState, completed) {
+      const saved = current?.local_texture, submission = textureSubmitted, result = actionState.result;
+      const request = result?.effects_reuse?.request;
+      if (completed && !actionState.error && submission && actionState.name === "effects"
+        && state.developed_id === submission.master && current?.revision === result?.revision
+        && (result?.reused ? result.revision : result?.parent) === submission.parent
+        && fadeReductionAreaIdentity(request?.local_texture) === submission.settings
+        && request?.candidate_comparison === submission.candidate
+        && Boolean(request?.texture_settings_only) === submission.settingsOnly
+        && fadeReductionAreaIdentity(request?.texture_area) === submission.area
+        && fadeReductionAreaIdentity(saved?.settings) === submission.settings) {
+        if (submission.enable && textureSettingsDraft === submission.settingsDraft)
+          textureSettingsDraft = null;
+        if (submission.area && textureAreaDraft === submission.areaDraft
+          && fadeReductionAreaIdentity(current?.texture_area) === submission.area)
+          textureAreaDraft = null;
+      }
+      if (completed) textureSubmitted = null;
+      const settings = saved?.settings || state.texture_defaults;
+      if (!textureSettingsDraft && settings) {
+        for (const [id, field, factor] of textureFields) $(id).value = String(settings[field] * factor);
+        $("textureCandidate").checked = false;
+      }
+      const area = current?.texture_area || {regions: [], protection: []};
+      if (!textureAreaDraft && fadeReductionAreaIdentity(textureArea) !== fadeReductionAreaIdentity(area)) {
+        textureArea = structuredClone(area);
+        renderEffectAreaRegions("texture", textureArea);
+      }
+      updateTextureControls();
+    }
+    async function localTexture(mode) {
+      requireSaved();
+      const current = workingTextureRevision(), saved = current?.local_texture;
+      if (!current?.final_acceptable || imageLoading || !image || !transform ||
+        $("viewRevision").value !== current.revision || !current.revision_manifest_sha256)
+        throw Error("Load the current complete native view before changing Local texture");
+      if (authoringBusy()) throw Error("Wait for the active writer before submitting");
+      const enable = mode !== "disable", replace = mode === "replace", target = appearanceTargetKey();
+      if (replace && textureAreaDraft && textureAreaDraft.target !== target)
+        throw Error("Stale texture area. Reload saved area before replacing it.");
+      if (enable && textureSettingsDraft && textureSettingsDraft.target !== target)
+        throw Error("Stale texture settings. Reload saved settings before applying.");
+      if (!replace && !saved) throw Error("Apply a texture area first");
+      if (mode === "saved" && !current.texture_alpha_current) throw Error("Saved alpha differs. Rebuild the texture area.");
+      if (replace && !textureArea.regions.length) throw Error("Draw a Texture Apply area");
+      const candidate = enable && $("textureCandidate").checked;
+      if (enable && state.working_revision !== state.accepted_revision && !candidate)
+        throw Error("Use an accepted base or explicitly compare texture on an unaccepted candidate");
+      const settings = enable ? {enabled: true} : {...saved.settings, enabled: false};
+      if (enable) for (const [id, field, factor, low, high] of textureFields) {
+        const raw = String($(id).value).trim(), number = Number(raw);
+        if (!raw || !Number.isFinite(number) || number < low || number > high)
+          throw Error(`Use a value from ${low} to ${high} for ${field.replaceAll("_", " ")}`);
+        settings[field] = number / factor;
+      }
+      const fields = {...effectCurrentIdentity(), revision_manifest_sha256:current.revision_manifest_sha256,
+        scope_xyxy:[0,0,...state.dimensions_wh], candidate_comparison:candidate, local_texture:settings};
+      if (replace) fields.texture_area = structuredClone(textureArea);
+      if (mode === "saved") fields.texture_settings_only = true;
+      textureSubmitted = {master: fields.developed_id, parent: fields.base_revision, enable, candidate,
+        settingsOnly: mode === "saved",
+        settings: fadeReductionAreaIdentity(settings), area: fadeReductionAreaIdentity(fields.texture_area),
+        settingsDraft: textureSettingsDraft, areaDraft: textureAreaDraft};
+      try { await action("effects", fields); }
+      catch (error) { textureSubmitted = null; throw error; }
+    }
+    for (const [id] of textureFields) $(id).oninput = markTextureSettingsDirty;
+    $("textureCandidate").onchange = markTextureSettingsDirty;
+    $("textureAddRectangle").onclick = guarded(() => addEffectRegion("texture", bounds("textureRectangle"), "rectangle"));
+    $("textureRemove").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const [kind, id] = $("textureRegions").value.split(":");
+      if (!id) return;
+      textureArea[kind] = textureArea[kind].filter(region => region.id !== id);
+      markTextureAreaDirty(); draw();
+    });
+    $("textureClear").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      textureArea = {regions: [], protection: []};
+      markTextureAreaDirty(); draw();
+    });
+    $("textureReloadArea").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      if (textureAreaDraft && !confirm("Replace the draft texture area with the saved area?")) return;
+      textureAreaDraft = null;
+      syncTexture(workingTextureRevision(), {}, false); draw();
+    });
+    $("textureReloadSettings").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      if (textureSettingsDraft && !confirm("Replace draft texture settings with the saved settings?")) return;
+      textureSettingsDraft = null;
+      syncTexture(workingTextureRevision(), {}, false);
+    });
+    $("textureApply").onclick = guarded(() => localTexture("replace"));
+    $("textureSavedApply").onclick = guarded(() => localTexture("saved"));
+    $("textureDisable").onclick = guarded(() => localTexture("disable"));
+    $("textureCompare").onchange = guarded(() => compareChanged("textureCompare"));
     function backgroundLightIdentity() {
       const revision = state?.revisions.find(row => row.revision === state.working_revision);
       return JSON.stringify({...effectCurrentIdentity(), manifest: revision?.revision_manifest_sha256});

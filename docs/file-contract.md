@@ -915,7 +915,7 @@ shapes as `C=max(amount*G)` and quantize once, `W16=round(65535*C)` ties-to-even
 Master OFF does not erase W. Generation holds one W16 plus 64-row geometry scratch,
 not full-frame fields for each arc. A weaker arc cannot subtract from an oval.
 
-Selected foreground F includes applicable cleanup, sharpening, exposure, Local tone curve and independent Shadow
+Selected foreground F includes applicable cleanup, sharpening, exposure, Local tone curve, Local texture and independent Shadow
 fade. For alpha-positive, unprotected pixels, `q=W16/65535*(1-p*h(F))`: p is this
 feature's highlight setting, h is cubic linear-sRGB luminance weighting using
 .2126/.7152/.0722 and thresholds .10/.75. Alpha gates eligibility only. Master OFF,
@@ -1092,7 +1092,7 @@ atomic publication under the canonical writer lock. Accepted state is unchanged.
 
 Selection order is original saved foreground, optional saved cleanup, Local
 sharpening, Local exposure, [Local tone curve](#optional-local-tone-curve),
-Shadow fade, then either inward shading or
+[Local texture](#optional-local-texture), Shadow fade, then either inward shading or
 [Fade into background](#optional-fade-into-background), and alpha composition. For eligible pixels,
 decode sRGB to linear RGB, multiply by `2 ** (ev * support16 / 65535)`, clamp to
 [0,1], encode to sRGB and quantize once with float64/ties-to-even RGB16.
@@ -1122,9 +1122,9 @@ When exposure is present, native exports with `--variant editable` retain select
 `exposure_alpha16.png`, `exposure_settings.json`, and authored
 `exposure_area.json` where present. Shading W16/opacity remain independent.
 The unexposed export includes selected sharpening after cleanup, before exposure,
-the curve and Shadow fade.
+the curve, texture and Shadow fade.
 To replay from the unexposed layer, apply exposure once. Apply the saved Local
-tone curve if enabled, followed by Shadow fade if enabled. Then apply inward
+tone curve, Local texture and Shadow fade where enabled. Then apply inward
 shading or spatial fade and alpha/background composition. Replay from the
 selected foreground starts at that final rendering step. Reduced-precision
 views remain explicitly labelled. Restore selects immutable saved inputs and
@@ -1191,22 +1191,85 @@ require the updated reader for reliable rendering. Keep earlier revisions and
 deliveries for older readers.
 
 Native editable deliveries retain `uncurved_foreground_rgb16.tif`, the stage
-after Exposure and before the curve and Shadow fade. They also retain
+after Exposure and before the curve, Texture and Shadow fade. They also retain
 `tone_curve_support16.png`, `tone_curve_protection16.png`,
 `tone_curve_alpha16.png`, `tone_curve_settings.json` and authored
 `tone_curve_area.json` when present. These members are included for a saved
 disabled curve. Use `uncurved` and the delivered operands to replay the curve,
-then continue through Shadow fade, shading or spatial fade, and composition
+then continue through Local texture, Shadow fade, shading or spatial fade, and composition
 with the unchanged alpha. Saved `foreground_rgb16.tif` already includes the
-curve and Shadow fade. Replay RGB16 in a compatible runtime using the delivered
+curve, Texture and Shadow fade. Replay RGB16 in a compatible runtime using the delivered
 data alone. RGB8/RGBA8 previews show reduced precision.
 
 Add-margins and Match-series deliveries bind the saved curve identity. Their
 optional native editable companion carries the same curve members and binds
 their exact hashes. Keep the folders together for portable editing. Compact
-deliveries still contain five files. The additive metadata applies to
-curve-bearing revisions only. Curve-free `requested-result-v5` deliveries keep
+deliveries still contain five files. Curve metadata applies to curve-bearing
+revisions. Deliveries without a curve or texture keep
 their frozen identity, membership and notes.
+
+## Optional Local texture
+
+The project recipe accepts an optional `local_texture` table with exactly
+`enabled` (boolean), `strength` in [0,1], `scale_px` in [2,16] native pixels,
+`grain_guard` in [0,0.02] linear luminance, and `preserve_highlights` in [0,1].
+Numeric values must be finite JSON/TOML numbers, excluding booleans. Defaults
+are false, 0, 4, 0.0005 and 1 when absent. Existing schema-2 recipes and revisions
+open without migration. An authored record requires the updated reader, including
+when disabled. Retain pre-Texture revisions and exports for older readers.
+
+A schema-2 `kind:"effects"` request supplies the common developed/base/draft
+identities, half-open native `scope_xyxy`, `candidate_comparison` and exclusive
+`local_texture` settings. Enable with either `texture_area` (the existing
+`regions` and `protection` geometry) or `texture_settings_only: true` (saved area
+with current alpha). The scope contains both old and replacement support. Enable
+needs a nonempty eligible area and either an accepted base or explicit candidate
+comparison. Disable submits the saved settings with `enabled: false` and retains
+the existing area and alpha dependency. Enable, replace and disable publish through
+the existing writer lock, snapshots and state-last revision protocol. The viewer
+also binds the raw working manifest and authoring digest.
+
+The immutable record and `effects/texture/settings.json` bind schema 2,
+`linear-srgb-local-texture-v1`, developed ID, scope, settings, candidate comparison,
+enabled/stale status and SHA-256 of `area.json`, `support16.png`, `protection16.png`
+and `alpha16.png` in `effects/texture/`. Area and RGB locks determine categorical
+protection. Validate hashes, raster registration and area equivalence even OFF.
+Prepare inherits the prior operands. Matte and repair preserve captured RGB locks,
+merge them into protection and mark enabled Texture stale if the saved alpha
+dependency differs. A stale working candidate uses labelled BASE review and needs
+area replacement or Disable before acceptance/export. Viewer status also shows
+whether a disabled adjustment needs its alpha rebound before settings-only Apply.
+
+Texture runs after the tone curve and before Shadow fade. In float64 linear RGB,
+form luminance `Y = .2126 R + .7152 G + .0722 B`. The band is the difference of
+`G(Y*A)/G(A)` at sigmas `scale_px/2` and `scale_px`, where `A = alpha16/65535`.
+Reflect boundaries and radii `ceil(4*sigma)` apply. Zero denominator uses the input
+luminance. Subtract `grain_guard` from the magnitude, flooring at zero, then
+restore the sign. The edge guard takes the larger of the two axial luminance
+differences across each native pixel, divided by the pair sum with a 0.05 floor.
+Weight each by the smaller pair alpha times four, capped at one. Over the wider
+Gaussian footprint, the maximum edge score tapers the band using a reversed
+smoothstep from 0.08 to 0.18. Multiply the band by strength and the shared highlight
+weight `1-preserve_highlights*h(Y)` used for Shadow fade. Cap the common RGB gain
+to all-channel headroom without introducing new RGB16 endpoints. Blend the gain
+toward unity using `support16/65535`, then encode and round once to RGB16.
+
+Only positive-alpha, nonzero-support, unprotected samples are writable. Copy
+excluded RGB16 and the entire A16 exactly. OFF, zero strength and zero luminance
+also preserve exact RGB16. Protected and out-of-area positive-alpha values may
+contribute read-only neighborhood context. Saved RGB locks may therefore affect
+unprotected neighbors within the authored area. The native OFF comparison uses
+the same crop and recomputes later stages without publishing a revision.
+
+Native editable deliveries retain `untextured_foreground_rgb16.tif` and
+`texture_{support16.png,protection16.png,alpha16.png,settings.json,area.json}`,
+including when disabled. Verify the derived RGB16 input against the saved
+revision when writing or reusing a delivery. Replay Texture once from untextured
+RGB16, then Shadow fade and applicable shading or spatial fade. Compose with
+the delivered `alpha16.png`. Unfaded RGB already includes Texture. Selected
+foreground already includes both Texture and Shadow fade. Add margins and Match
+series bind the verified native companion when editable layers are requested.
+Texture adds no compact delivery files. Replay uses the recorded numerical runtime.
 
 ## Optional Shadow fade
 
@@ -1233,7 +1296,7 @@ rejects replacement fields. Enabled selections need nonempty eligible pixels,
 even at amount 0. Explicit disable works without a previous area and with stale
 alpha; it retains saved operands. UI whole-adjustment requests use full-image scope.
 
-Fade follows cleanup, Local sharpening, Local exposure and Local tone curve,
+Fade follows cleanup, Local sharpening, Local exposure, Local tone curve and Local texture,
 before shading or spatial fade and alpha composition.
 Start every render from unfaded RGB16, never from flattened or previously faded
 pixels. Decode normalized sRGB with threshold .04045. In float64, compute linear
@@ -1280,14 +1343,14 @@ recomputes the curve and fade using exposure-OFF RGB. BASE disables all optional
 The UI selects one comparison at a time. Comparison writes no revision.
 Reset saves fade OFF / amount 0, retaining area, other effects and pending area edits.
 
-Exports retain selected `foreground_rgb16.tif` (exposure, curve and fade applied once),
-`unfaded_foreground_rgb16.tif` (cleanup, sharpening, exposure and curve),
+Exports retain selected `foreground_rgb16.tif` (exposure, curve, texture and fade applied once),
+`unfaded_foreground_rgb16.tif` (cleanup, sharpening, exposure, curve and texture),
 `unexposed_foreground_rgb16.tif` (cleanup and sharpening before exposure, even
 when there is no saved Exposure record),
 `base_foreground_rgb16.tif`, source/alpha and all existing exposure/shading operands.
 Fade operands are `shadow_fade_support16.png`, `shadow_fade_protection16.png`,
 `shadow_fade_alpha16.png`, `shadow_fade_settings.json`, optional
-`shadow_fade_area.json`. Replay unexposed -> exposure -> curve -> unfaded -> fade
+`shadow_fade_area.json`. Replay unexposed -> exposure -> curve -> texture -> unfaded -> fade
 -> selected -> encoded-sRGB shading/alpha once. Alternatively render selected RGB
 directly with shading/alpha; applying fade again is incorrect. RGB8/RGBA8 views
 remain reduced-precision, with baked shading labelled. Retain all dependencies;
@@ -1470,9 +1533,9 @@ one identity.
 Native editable includes selected pre-shading `foreground_rgb16.tif`, `alpha16.png`,
 `source_rgb16.tif`, saved corrected RGB and W16/settings where present, independent
 unlit background B0/settings, optional light L16/settings, and saved exposure/fade
-source, unexposed/uncurved/unfaded, support, protection, alpha, area and settings operands
+source, unexposed/uncurved/untextured/unfaded, support, protection, alpha, area and settings operands
 where present. F already contains
-Local sharpening, Local exposure, Local tone curve and Shadow fade. Spatial F remains pre-spatial,
+Local sharpening, Local exposure, Local tone curve, Local texture and Shadow fade. Spatial F remains pre-spatial,
 with all four saved spatial operands retained even OFF; use the
 [active-mode reconstruction](#optional-fade-into-background). Delivered F/A/W/opacity/B0
 and optional L16 reproduce native Result without the project, original, models or
@@ -1937,7 +2000,7 @@ Alpha weights context, not write strength. Changed RGB encodes/quantizes once wi
 float64 ties-to-even. Full-width strips retain the full kernel halo and write only
 core rows; previews crop the native result and use this same kernel.
 
-Order is cleanup → sharpening → exposure → Local tone curve → Shadow fade → shading or spatial fade →
+Order is cleanup → sharpening → exposure → Local tone curve → Local texture → Shadow fade → shading or spatial fade →
 alpha/background composition. New selected-RGB locks are protected from reapplication;
 their captured values become part of subsequent neighborhood context. Alpha changes
 make enabled sharpening stale, blocking acceptance/export until whole-adjustment
@@ -1949,7 +2012,7 @@ Editable native deliveries add `unsharpened_foreground_rgb16.tif` (cleanup-selec
 and `sharpening_support16.png`, `sharpening_protection16.png`,
 `sharpening_alpha16.png`, `sharpening_settings.json`, plus
 `sharpening_area.json` when authored. Unexposed RGB includes sharpening; unfaded RGB
-includes sharpening, exposure and the curve. Selected foreground also includes Shadow fade. Replay from
+includes sharpening, exposure, curve and texture. Selected foreground also includes Shadow fade. Replay from
 one appropriate starting layer; never sharpen selected RGB twice. Framed/series
 editable companions bind these same native operands. Export variants stay independent.
 

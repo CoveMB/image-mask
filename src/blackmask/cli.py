@@ -125,7 +125,8 @@ def main() -> int:
     setup.add_argument("--model-cache", type=Path, required=True)
     setup.add_argument("--model", choices=("sam", "vitmatte"), default="sam")
     running = commands.add_parser(
-        "run", help="Prepare guidance, run native matte or apply scoped repair from a typed request"
+        "run",
+        help="Prepare guidance, run matte or repair, or apply appearance from a typed request",
     )
     running.add_argument("project", type=Path)
     running.add_argument("--request", type=Path, required=True)
@@ -423,9 +424,14 @@ def main() -> int:
                 raise ProjectError("Preview repair requires explicit --config FILE")
             result = refresh_result_preview(arguments.project, config)
         elif arguments.command == "run":
-            request = json.loads(arguments.request.read_bytes())
+            raw_request = arguments.request.read_bytes()
+            request = json.loads(raw_request)
             if not isinstance(request, dict):
                 raise ProjectError("Operation request must be a JSON object")
+            if "local_texture" in request:
+                from .texture import parse_texture_json
+
+                request = parse_texture_json(raw_request)
             result = apply_operation(
                 arguments.project,
                 request,

@@ -274,17 +274,17 @@ correction is warranted, record that limitation rather than changing good detail
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
    success in computation alone does not mean the photograph improved.
-7. If cleanup, shading, Local sharpening, Local exposure, Local tone curve, Shadow fade or Fade into
+7. If cleanup, shading, Local sharpening, Local exposure, Local tone curve, Local texture, Shadow fade or Fade into
    background was enabled, changed alpha can make it
    **STALE** and switch comparisons to labelled BASE views. Before accepting or
    exporting the current appearance, rebuild each stale effect from its reviewed
    support/protection or explicitly disable it: **Explicitly disable cleanup**,
    **Explicitly disable shading**, **Reset Local sharpening**, **Reset exposure**,
-   **Disable tone curve**, **Reset Shadow fade**, or **Disable fade**. Follow the existing
+   **Disable tone curve**, **Disable texture**, **Reset Shadow fade**, or **Disable fade**. Follow the existing
    [cleanup recovery](#compare-accept-and-export),
    [shading recovery](#protected-inward-shading),
    [sharpening recovery](#local-sharpening), [exposure recovery](#local-exposure),
-   [tone curve recovery](#local-tone-curve), [Shadow fade recovery](#shadow-fade)
+   [tone curve recovery](#local-tone-curve), [texture recovery](#local-texture), [Shadow fade recovery](#shadow-fade)
    and [spatial fade recovery](#fade-into-background)
    instructions; an amount/opacity change alone
    does not rebuild an alpha dependency. Earlier accepted results/exports stay saved.
@@ -387,7 +387,8 @@ or restore captured sharpness. Final photographic acceptance remains your decisi
    remain separate. Repeated application starts from unexposed RGB, so it never
    stacks exposure on previous exposure.
 5. **Compare exposure OFF** previews the same alpha with saved cleanup/shading
-   retained, with Local tone curve and Shadow fade recalculated from the exposure-OFF input. Source/alpha views are unaffected; the BASE checkbox turns all
+   retained, with Local tone curve, Local texture and Shadow fade recalculated from
+   the exposure-OFF input. Source/alpha views are unaffected; the BASE checkbox turns all
    optional effects off. Comparison is read-only. [Hide authoring marks](#compare-accept-and-export)
    before judging native black/gray/white
    views, feather edges, noise and highlights. The clipping count is affected
@@ -412,7 +413,7 @@ The exposure-only comparison is distinct from all-effects-off BASE comparison.
 
 Use **Local tone curve** to adjust the brightness of existing detail across a
 selected part of the subject. The curve runs after Local exposure and before
-Shadow fade. It uses the same gain for all three linear RGB channels, with less
+Local texture and Shadow fade. It uses the same gain for all three linear RGB channels, with less
 lift where a channel is close to clipping. Alpha is preserved.
 
 1. Load the complete working revision. In **Canvas authoring mode**, choose
@@ -437,7 +438,7 @@ lift where a channel is close to clipping. Alpha is preserved.
    or **Reload saved area**, then re-enter any changes you still need.
 4. Choose **Compare Local tone curve OFF** and inspect the same native crop on
    a diagnostic backdrop with authoring marks hidden. Alpha stays the same,
-   and downstream Shadow fade and spatial highlights are recomputed. Compare
+   and downstream Local texture, Shadow fade and spatial highlights are recomputed. Compare
    leaves the selected revision unchanged. If alpha changes, the enabled curve
    becomes stale. Replace its area against the new alpha or **Disable tone
    curve**. Disable keeps the saved points and operands for recovery.
@@ -447,6 +448,43 @@ lift where a channel is close to clipping. Alpha is preserved.
    editable companion. Inspect the result before accepting the photograph.
 
 See [Local tone curve settings and replay](file-contract.md#optional-local-tone-curve).
+
+## Local texture
+
+Use **Local texture** to bring out captured tonal variation at a chosen size,
+such as feather bands. Try a wider [Local sharpening](#local-sharpening) Detail
+size or a restrained [Local tone curve](#local-tone-curve) first when either can
+give the desired separation. Texture runs after the curve and before Shadow fade.
+
+1. On the complete working revision, choose **Canvas authoring mode → Local
+   texture area**. Draw **Apply area** or hard **Protect area** shapes with
+   **Brush** or **Rectangle**. For keyboard authoring enter a native half-open
+   rectangle and choose **Add texture rectangle**. Inward feather softens the
+   Apply boundary. Protect keeps incoming RGB16 exact, including partial-alpha pixels.
+2. Set **Strength** (0–100%, default 0%) and **Detail scale** (2–16 native pixels,
+   default 4). The scale is the wider Gaussian sigma and is independent of brush
+   radius. At 4 px it favors repeating detail about 13 px apart. **Grain guard**
+   (0–2% linear luminance, default 0.05%) suppresses weak changes, which can include
+   faint subject detail. **Protect highlights** (0–100%, default 100%) reduces both
+   directions of the adjustment in bright areas. Texture starts OFF.
+3. Use **Apply / replace texture area** to save settings and shapes, or **Apply
+   texture settings to saved area** to keep the saved shapes. Enable the explicit
+   candidate comparison checkbox for an unaccepted working revision. Area and
+   settings drafts are independent. Reload either saved draft if the target changes.
+4. Use **Compare Local texture OFF** on the same native crop with marks hidden.
+   Check the subject detail, grain, highlights and silhouette on black, gray and
+   white. Check the whole frame for lighting or color drift. Compare creates no
+   revision. Reject visible rims, flattened tones or amplified grain.
+5. **Disable texture** retains the saved area and settings. A changed matte makes
+   enabled Texture stale. Rebuild with **Apply / replace texture area** or disable
+   before accepting or exporting that stale candidate. Settings-only Apply requires
+   a current alpha dependency even after disabling. A new RGB lock keeps its native
+   RGB exact and can change nearby Texture pixels within the saved Apply area.
+6. Choose **Include complete editable layers at original size** for replay from the
+   post-curve RGB16 input and independent masks. Keep the native companion with a
+   presentation export. Inspect the result before accepting the photograph.
+
+See the [Local texture settings and replay contract](file-contract.md#optional-local-texture).
 
 ## Fade into background
 
@@ -986,7 +1024,7 @@ captured contamination. Start gently and inspect at native scale.
    sharpening amount to saved area** uses the saved geometry and current settings.
    Pending area edits and unrelated effect drafts remain separate. On an unaccepted
    draft, explicitly enable candidate comparison.
-4. **Compare Local sharpening OFF** retains cleanup, exposure, Local tone curve, Shadow fade,
+4. **Compare Local sharpening OFF** retains cleanup, exposure, Local tone curve, Local texture, Shadow fade,
    shading/spatial fade and background, recalculating downstream RGB from the
    unsharpened input. Source and alpha stay unchanged. Compare creates no revision.
    Inspect black, gray and white diagnostics for halos or noise amplification.
@@ -1002,7 +1040,7 @@ it. Overshoot guards limit new luminance extrema, but do not guarantee invisible
 
 For portable editing, explicitly request editable export. It includes the unsharpened
 cleanup-selected RGB and independent support, protection, alpha, settings and authored
-area. Replay sharpening, exposure, Local tone curve, Shadow fade, then shading/spatial fade and
+area. Replay sharpening, exposure, Local tone curve, Local texture, Shadow fade, then shading/spatial fade and
 alpha/background composition. Selected foreground already includes sharpening;
 do not apply it twice. Framed and match-series exports bind a complete native companion:
 keep both folders together. See the [saved contract](file-contract.md#optional-local-sharpening).

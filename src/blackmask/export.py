@@ -40,6 +40,7 @@ from .spatial_fade import (
     spatial_fade_amount,
     spatial_fade_files,
 )
+from .texture import TEXTURE_PREFIX, TEXTURE_RASTERS, TEXTURE_TEXT
 from .tone_curve import TONE_CURVE_PREFIX, TONE_CURVE_RASTERS
 
 if TYPE_CHECKING:
@@ -286,6 +287,7 @@ def saved_layers(
     sharpening_off: bool = False,
     exposure_off: bool = False,
     tone_curve_off: bool = False,
+    texture_off: bool = False,
     shadow_fade_off: bool = False,
     shadow_reduction_off: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -302,6 +304,7 @@ def saved_layers(
         sharpening_off=sharpening_off,
         exposure_off=exposure_off,
         tone_curve_off=tone_curve_off,
+        texture_off=texture_off,
         shadow_fade_off=shadow_fade_off,
         shadow_reduction_off=shadow_reduction_off,
     )
@@ -472,11 +475,16 @@ def _export_execution_identity() -> dict[str, Any]:
 def _delivery_notes(record: dict[str, Any]) -> bytes:
     mode = record["mode"]
     has_curve = "local_tone_curve" in record["effects"]
+    has_texture = "local_texture" in record["effects"]
     foreground_effects = (
         "Local sharpening, local exposure, Local tone curve and Shadow fade"
         if has_curve
         else "Local sharpening, local exposure and Shadow fade"
     )
+    if has_texture:
+        foreground_effects = foreground_effects.replace(
+            " and Shadow fade", ", Local texture and Shadow fade"
+        )
     text = record["label"] + "\nProcessed sRGB RGB16 TIFF; PNGs are reduced-precision views. "
     text += f"Selected foreground already includes {foreground_effects}; apply none again. "
     text += "Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\n"
@@ -516,6 +524,10 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
             "sharpening, exposure and the curve" if has_curve else "sharpening and exposure"
         )
         selected_effects = "all four" if has_curve else "all three"
+        if has_texture:
+            post_exposure = post_exposure.replace("Shadow fade", "Local texture, Shadow fade")
+            unfaded_effects = "sharpening, exposure, the curve if saved, and texture"
+            selected_effects = foreground_effects
         text += (
             "Replay Local sharpening from unsharpened_foreground_rgb16.tif (cleanup-selected RGB), "
             "sharpening_support16.png/protection16.png/alpha16.png and sharpening_settings.json. "
@@ -527,14 +539,25 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
             "reliably read new sharpening records; keep pre-feature projects/exports for them.\n"
         )
     if "local_tone_curve" in record:
+        next_stage = "Local texture, then Shadow fade" if has_texture else "Shadow fade"
         text += (
             "For Local tone curve replay, start with uncurved_foreground_rgb16.tif after Exposure. "
             "Apply linear-srgb-local-tone-curve-v1 with tone_curve_support16.png, "
             "tone_curve_protection16.png, tone_curve_alpha16.png and tone_curve_settings.json. "
             "Retain tone_curve_area.json when present. OFF copies uncurved RGB exactly. "
-            "Apply Shadow fade next when enabled. Unfaded RGB already includes the curve. "
+            f"Apply {next_stage} next when enabled. Unfaded RGB already includes the curve. "
             "Starting from foreground_rgb16.tif, proceed directly to shading or spatial fade and "
             "alpha/background composition. Curve-bearing revisions require the updated reader.\n"
+        )
+    if "local_texture" in record:
+        text += (
+            "For Local texture replay, start with untextured_foreground_rgb16.tif after the tone curve. "
+            "Apply linear-srgb-local-texture-v1 with texture_support16.png, texture_protection16.png, "
+            "texture_alpha16.png and texture_settings.json. Retain texture_area.json for editing. "
+            "OFF copies untextured RGB exactly. Apply saved Shadow fade next, then shading or spatial "
+            "fade and composition using the delivered alpha16.png. Starting from unfaded RGB skips "
+            "Texture. Starting from selected foreground skips both Texture and Shadow fade. "
+            "Use the recorded numerical runtime for exact Texture replay.\n"
         )
     if "result_compositing" in record:
         text += "Saved compositing: " + record["result_compositing"] + "\n"
@@ -609,6 +632,9 @@ def _delivery_members(
                 for name in (*TONE_CURVE_RASTERS, "settings.json", "area.json")
                 if TONE_CURVE_PREFIX + name in saved
             )
+        if "local_texture" in manifest:
+            names.add("untextured_foreground_rgb16.tif")
+            names.update("texture_" + name for name in (*TEXTURE_RASTERS, *TEXTURE_TEXT))
         if "spatial_fade" in manifest:
             names.update(
                 "spatial_fade_" + name for name in spatial_fade_files(manifest["spatial_fade"])
@@ -647,7 +673,7 @@ def _validate_delivery(
 ) -> None:
     _check_flat_delivery(directory, {*members, "manifest.json"})
     signatures = {name: _member_signature(directory / name) for name in (*members, "manifest.json")}
-    # Bound the compact file table before reading; no raster is decoded for reuse.
+    # Bound the file table before reading. Only Texture's derived input needs pixel verification here.
     if signatures["manifest.json"][2] > len(_json_bytes(request_record)) + len(
         members
     ) * 1024 + 1024 + (
@@ -686,6 +712,15 @@ def _validate_delivery(
             if curve_record is not None
             else {}
         )
+        texture_record = request_record.get("local_texture")
+        texture_hashes = (
+            {
+                "texture_" + name: texture_record[key]
+                for name, key in {**TEXTURE_RASTERS, "area.json": "area_sha256"}.items()
+            }
+            if texture_record is not None
+            else {}
+        )
         for name, expected in members.items():
             path = directory / name
             metadata = files[name]
@@ -707,6 +742,12 @@ def _validate_delivery(
                 raise ValueError("Notes binding mismatch")
             if name in curve_hashes and metadata["sha256"] != curve_hashes[name]:
                 raise ValueError("Local tone curve operand binding mismatch")
+            if name in texture_hashes and metadata["sha256"] != texture_hashes[name]:
+                raise ValueError("Local texture operand binding mismatch")
+            if name == "texture_settings.json" and (
+                texture_record is None or path.read_bytes() != _json_bytes(texture_record)
+            ):
+                raise ValueError("Local texture settings binding mismatch")
             if name == "tone_curve_settings.json" and (
                 curve_record is None
                 or _json_bytes(json.loads(path.read_bytes())) != _json_bytes(curve_record)
@@ -730,6 +771,12 @@ def _validate_delivery(
                         or page.tags[34675].value != srgb_profile()
                     ):
                         raise ValueError("Invalid delivery TIFF header/profile")
+                    if name == "untextured_foreground_rgb16.tif" and (
+                        _pixel_digest(page.asarray()) != request_record["untextured_pixel_sha256"]
+                    ):
+                        raise ValueError(
+                            "Local texture input pixels differ from the saved revision"
+                        )
             elif name.endswith(".png"):
                 with path.open("rb") as stream:
                     header = stream.read(26)
@@ -868,6 +915,7 @@ def _delivery_request_record(
     margins_settings: Margins | None = None,
     settings: dict[str, Any] | None = None,
     companion_request: dict[str, Any] | None = None,
+    untextured_digest: str | None = None,
 ) -> dict[str, Any]:
     """Build lookup identity entirely from validated request facts, never delivery bytes."""
     from .framing import framed_geometry
@@ -1056,6 +1104,23 @@ def _delivery_request_record(
                     "local exposure and Shadow fade",
                     "local exposure, Local tone curve and Shadow fade",
                 )
+    if "local_texture" in manifest:
+        texture = manifest["local_texture"]
+        record["encoding"]["packages"]["scipy"] = importlib.metadata.version("scipy")
+        record["effects"]["local_texture"] = {
+            "enabled": texture["enabled"],
+            "record_sha256": digest(_json_bytes(texture)),
+        }
+        if mode == "native" and "editable" in variants:
+            if untextured_digest is None:
+                raise ProjectError("Missing verified Local texture export input")
+            record["local_texture"] = _delivery_effect_record(texture)
+            record["untextured_pixel_sha256"] = untextured_digest
+        for field in ("views", "result_compositing"):
+            if field in record:
+                record[field] = record[field].replace(
+                    " and Shadow fade", ", Local texture and Shadow fade"
+                )
     record["identity_sha256"] = digest(_json_bytes(record))
     return record
 
@@ -1139,6 +1204,15 @@ def _export_delivery(
         settings = margins_settings.to_dict()
         mode = "add-margins"
     recipe = saved_asset(project, f"revisions/{revision}/recipe.toml").read_bytes()
+    untextured_digest = (
+        _pixel_digest(
+            selected_foreground(
+                project, revision, base, alpha, manifest, texture_off=True, shadow_fade_off=True
+            )
+        )
+        if "local_texture" in manifest and "editable" in variants
+        else None
+    )
     native_record = None
     native_directory = None
     companion_request = None
@@ -1152,6 +1226,7 @@ def _export_delivery(
             draft=draft,
             variants=("editable",),
             native_dimensions_wh=size,
+            untextured_digest=untextured_digest,
         )
         native_directory = _delivery_destination(project, native_record)
         companion_request = {
@@ -1171,6 +1246,7 @@ def _export_delivery(
         margins_settings=margins_settings,
         settings=settings,
         companion_request=companion_request,
+        untextured_digest=untextured_digest,
     )
     destination = _delivery_destination(project, record)
     members = _delivery_members(record, manifest)
@@ -1246,6 +1322,8 @@ def _export_delivery(
     )
     if mode == "native" or (native_record is not None and binding is None):
         pending += tone_editable_bytes
+        if untextured_digest is not None:
+            pending += base.nbytes + 3 * alpha.nbytes + 1024**2
     check_space(project, pending)
     if sampling is not None:
         from .series_framing import estimate_series_resources
@@ -1602,7 +1680,13 @@ def _write_editable(
     master = state["developed_id"]
     if any(name in manifest for name in ("local_sharpening", "local_exposure", "shadow_fade")):
         unexposed, _, _ = saved_layers(
-            project, revision, master, exposure_off=True, tone_curve_off=True, shadow_fade_off=True
+            project,
+            revision,
+            master,
+            exposure_off=True,
+            tone_curve_off=True,
+            texture_off=True,
+            shadow_fade_off=True,
         )
         write_developed(stage / "unexposed_foreground_rgb16.tif", unexposed)
         (stage / "base_foreground_rgb16.tif").write_bytes(
@@ -1616,6 +1700,7 @@ def _write_editable(
             sharpening_off=True,
             exposure_off=True,
             tone_curve_off=True,
+            texture_off=True,
             shadow_fade_off=True,
         )
         write_developed(stage / "unsharpened_foreground_rgb16.tif", unsharpened)
@@ -1646,7 +1731,7 @@ def _write_editable(
                 )
     if "local_tone_curve" in manifest:
         uncurved, _, _ = saved_layers(
-            project, revision, master, tone_curve_off=True, shadow_fade_off=True
+            project, revision, master, tone_curve_off=True, texture_off=True, shadow_fade_off=True
         )
         write_developed(stage / "uncurved_foreground_rgb16.tif", uncurved)
         hashes = revision_hashes(manifest)
@@ -1656,6 +1741,15 @@ def _write_editable(
                 (stage / ("tone_curve_" + name)).write_bytes(
                     saved_asset(project, f"revisions/{revision}/{asset}").read_bytes()
                 )
+    if "local_texture" in manifest:
+        untextured, _, _ = saved_layers(
+            project, revision, master, texture_off=True, shadow_fade_off=True
+        )
+        write_developed(stage / "untextured_foreground_rgb16.tif", untextured)
+        for name in (*TEXTURE_RASTERS, *TEXTURE_TEXT):
+            (stage / ("texture_" + name)).write_bytes(
+                saved_asset(project, f"revisions/{revision}/{TEXTURE_PREFIX}{name}").read_bytes()
+            )
     if "shadow_fade" in manifest:
         unfaded, _, _ = saved_layers(project, revision, state["developed_id"], shadow_fade_off=True)
         write_developed(stage / "unfaded_foreground_rgb16.tif", unfaded)

@@ -817,6 +817,25 @@ def _validate_local_tone_curve_semantics(
 
 
 @lru_cache(maxsize=128)
+def _validate_local_texture_semantics(
+    project: Path, directory: Path, manifest_bytes: bytes
+) -> None:
+    """Reuse a successful geometry check only after the revision operands have been rehashed."""
+    from .assets import revision_asset
+    from .repair import scalar16
+    from .texture import read_local_texture, validate_local_texture
+
+    manifest = json.loads(manifest_bytes)
+    alpha = scalar16(revision_asset(project, directory, manifest, "base_alpha16.png"))
+    read_local_texture(project, directory, manifest, alpha)
+    if manifest.get("kind") in {"matte", "repair", "effects"}:
+        settings = tomllib.loads((directory / "recipe.toml").read_text()).get("local_texture")
+        validate_local_texture(settings)
+        if settings != manifest["local_texture"]["settings"]:
+            raise ProjectError("Saved Local texture recipe differs from revision settings")
+
+
+@lru_cache(maxsize=128)
 def _validate_background_semantics(project: Path, directory: Path, manifest_bytes: bytes) -> None:
     from .background import read_background
 
@@ -903,7 +922,24 @@ def _validate_revision_directory(
     from .background_light import validate_background_light_bindings
     from .shadow_fade import validate_shadow_fade_bindings
     from .spatial_fade import validate_spatial_bindings
+    from .texture import TEXTURE_PREFIX, TEXTURE_RASTERS, TEXTURE_TEXT
     from .tone_curve import TONE_CURVE_PREFIX, TONE_CURVE_RASTERS
+
+    has_texture = "local_texture" in manifest
+    texture_rasters = {name for name in manifest["assets"] if name.startswith(TEXTURE_PREFIX)}
+    texture_text = {name for name in manifest["files"] if name.startswith(TEXTURE_PREFIX)}
+    texture_directory = _asset(project, f"{directory}/{TEXTURE_PREFIX}")
+    if has_texture:
+        if (
+            texture_rasters != {TEXTURE_PREFIX + name for name in TEXTURE_RASTERS}
+            or texture_text != {TEXTURE_PREFIX + name for name in TEXTURE_TEXT}
+            or "base_alpha16.png" not in manifest["assets"]
+            or not texture_directory.is_dir()
+            or {path.name for path in texture_directory.iterdir()} != set(TEXTURE_TEXT)
+        ):
+            raise ProjectError("Incomplete or unbound saved Local texture operands")
+    elif texture_rasters or texture_text or texture_directory.exists():
+        raise ProjectError("Missing Local texture record for saved operands")
 
     tone_curve = manifest.get("local_tone_curve")
     tone_area_name = TONE_CURVE_PREFIX + "area.json"
@@ -1040,6 +1076,16 @@ def _validate_revision_directory(
         _validate_local_sharpening_semantics(
             project, _asset(project, directory), _json_bytes(manifest)
         )
+    if has_texture:
+        _validate_local_texture_semantics(
+            project, _asset(project, directory), _json_bytes(manifest)
+        )
+    elif manifest.get("kind") in {
+        "matte",
+        "repair",
+        "effects",
+    } and "local_texture" in tomllib.loads(_asset(project, f"{directory}/recipe.toml").read_text()):
+        raise ProjectError("Saved Local texture recipe has no revision settings")
     if "local_tone_curve" in manifest:
         _validate_local_tone_curve_semantics(
             project, _asset(project, directory), _json_bytes(manifest)

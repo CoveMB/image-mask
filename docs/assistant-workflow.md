@@ -493,3 +493,49 @@ additional private photographs without authority. Export a clearly labelled DRAF
 with complete editable layers, including unsharpened input and sharpening operands,
 and verify saved-only replay. Human photographic acceptance remains separate from
 engineering checks and assistant judgment.
+
+## Local texture assistance
+
+Use a local project copy and only the real-photo crops the user has authorized.
+Compare existing sharpening at a suitable Detail size and a restrained tone
+curve first. Apply Texture where a clear, source-supported band still needs
+separation. Keep other saved appearance settings and the matte in the comparison.
+
+Use the current developed ID, working revision and draft digest with the existing
+`blackmask run PROJECT --request FILE` command. This schema-2 request uses one
+native authored area with hard protection.
+
+```json
+{
+  "schema_version": 2,
+  "kind": "effects",
+  "developed_id": "DEVELOPED_ID",
+  "base_revision": "rev-002",
+  "inputs_digest": "INPUTS_DIGEST",
+  "scope_xyxy": [0, 0, 600, 400],
+  "candidate_comparison": false,
+  "local_texture": {
+    "enabled": true,
+    "strength": 0.25,
+    "scale_px": 4,
+    "grain_guard": 0.0005,
+    "preserve_highlights": 1
+  },
+  "texture_area": {
+    "regions": [
+      {"id": "detail", "role": "support", "shape": "rectangle", "xyxy": [140, 130, 460, 350], "feather_px": 12}
+    ],
+    "protection": [
+      {"id": "glint", "role": "support", "shape": "rectangle", "xyxy": [220, 170, 250, 195], "feather_px": 0}
+    ]
+  }
+}
+```
+
+Set `candidate_comparison: true` only for an explicitly authorized refinement of
+an unaccepted draft. Use **Compare Local texture OFF** on matching native crops.
+Inspect feather separation, smooth shadow grain, clipping and any rims on black,
+gray and white. Stop on ambiguity, visible artifacts or lack of improvement.
+The bounded assisted cycle permits at most two candidates. Keep the earlier draft,
+export with editable native layers and verify saved-only replay. Photographic
+acceptance belongs to the user. [Saved Texture contract](file-contract.md#optional-local-texture)

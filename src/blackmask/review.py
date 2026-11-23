@@ -570,6 +570,14 @@ def _review_project_locked(
             base_comparison or effects_stale(revision_manifest)
         )
         record["label"] += f"; Local tone curve {'ON' if tone_on else 'OFF'}"
+    texture = revision_manifest.get("local_texture")
+    if texture is not None:
+        if texture["stale"]:
+            stale.append("local_texture_stale")
+        texture_on = texture["enabled"] and not (
+            base_comparison or effects_stale(revision_manifest)
+        )
+        record["label"] += f"; Local texture {'ON' if texture_on else 'OFF'}"
     from .exposure import selected_exposure
 
     unexposed = saved_layers(
@@ -578,6 +586,7 @@ def _review_project_locked(
         state["developed_id"],
         exposure_off=True,
         tone_curve_off=True,
+        texture_off=True,
         shadow_fade_off=True,
         effects_off=base_comparison,
     )[0]
@@ -677,6 +686,11 @@ def _review_project_locked(
             "local_tone_curve": f"{prefix}/effects/tone-curve/settings.json"
             if tone_curve is not None
             else None,
+            **(
+                {"local_texture": f"{prefix}/effects/texture/settings.json"}
+                if texture is not None
+                else {}
+            ),
             "shadow_fade": f"{prefix}/effects/shadow-fade/settings.json"
             if "shadow_fade" in revision_manifest
             else None,
@@ -685,7 +699,9 @@ def _review_project_locked(
                 if "spatial_fade" in revision_manifest
                 else {}
             ),
-            "foreground_selection": "base, optional cleanup, Local sharpening, Local exposure, Local tone curve, Shadow fade; shading or spatial fade at render",
+            "foreground_selection": "base, optional cleanup, Local sharpening, Local exposure, Local tone curve, "
+            + ("Local texture, " if texture is not None else "")
+            + "Shadow fade; shading or spatial fade at render",
             "base_foreground_rgb16": str(
                 saved_asset(project, f"{prefix}/foreground_rgb16.tif").relative_to(project)
             ),
@@ -703,6 +719,7 @@ def _review_project_locked(
             "local_tone_curve": tone_curve
             if tone_curve is not None
             else {"enabled": False, "stale": False},
+            **({"local_texture": texture} if texture is not None else {}),
             "shadow_fade": revision_manifest.get("shadow_fade", {"enabled": False, "stale": False}),
             **(
                 {"spatial_fade": revision_manifest["spatial_fade"]}
