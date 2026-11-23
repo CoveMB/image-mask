@@ -11,6 +11,7 @@ import uuid
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,27 @@ from .project import (
     record_generated_result,
 )
 from .recipe import Recipe
+
+
+@dataclass(frozen=True)
+class EdgePreview:
+    """A single server-owned, unapplied comparison at native context size."""
+
+    operation: bytes
+    bindings: dict[str, Any]
+    model: dict[str, Any]
+    source: np.ndarray
+    foreground: np.ndarray
+    before: np.ndarray
+    candidate: np.ndarray
+    merged: np.ndarray
+    support: np.ndarray
+    protection: np.ndarray
+    stale_effects: tuple[str, ...]
+
+    @property
+    def changed_pixels(self) -> int:
+        return int(np.count_nonzero(self.before != self.merged))
 
 
 def _result_preview(
@@ -1137,12 +1159,57 @@ def reopen_project_status(project: Path, *, storage_config: StorageConfig) -> di
     return status
 
 
+def preview_edge_repair(
+    project: Path,
+    identity: dict[str, Any],
+    area: Any,
+    *,
+    model_cache: Path | None,
+    storage_config: StorageConfig | None = None,
+) -> EdgePreview:
+    project = _root(project)
+    validate_library_project(project, storage_config)
+    with project_lock(project):
+        _check_draft_identity(project, identity)
+        operation = {
+            "schema_version": 2,
+            "kind": "repair",
+            **{key: identity[key] for key in ("developed_id", "base_revision", "inputs_digest")},
+            "edge_area": area,
+            "reason": "Refine alpha within the reviewed native edge area",
+        }
+        preview: EdgePreview = _matte(
+            project, operation, model_cache, None, [], preview_identity=identity
+        )["edge_preview"]
+        return preview
+
+
+def apply_edge_repair(
+    project: Path,
+    identity: dict[str, Any],
+    preview: EdgePreview,
+    *,
+    storage_config: StorageConfig | None = None,
+) -> dict[str, Any]:
+    project = _root(project)
+    validate_library_project(project, storage_config)
+    with project_lock(project):
+        _check_draft_identity(project, identity)
+        result = _matte(
+            project, json.loads(preview.operation), None, None, [], reviewed_edge=preview
+        )
+        return _result_preview(project, result, storage_config, generated=True)
+
+
 def _matte(
     project: Path,
     operation: dict[str, Any],
     model_cache: Path | None,
     request_file: Path | None,
     recovery: list[Path],
+    *,
+    preview_identity: dict[str, Any] | None = None,
+    reviewed_edge: EdgePreview | None = None,
 ) -> dict[str, Any]:
     import tifffile
 
@@ -1150,6 +1217,8 @@ def _matte(
     from .matte import native_matte
     from .repair import (
         ORDER,
+        edge_support,
+        merge_alpha,
         prepared_parent_layers,
         replay_directory,
         scalar16,
@@ -1159,11 +1228,16 @@ def _matte(
     from .review import write_revision_overview
 
     repairing = operation["kind"] == "repair"
+    edge = preview_identity is not None or reviewed_edge is not None
     required = {"schema_version", "kind", "base_revision", "developed_id", "inputs_digest"}
     optional = {"reason"}
     if repairing:
-        required |= {"context_xyxy", "scope_xyxy", "support_file"}
-        optional |= {"merge_policy", "assisted_review"}
+        if edge:
+            required.add("edge_area")
+            optional |= {"context_xyxy", "scope_xyxy"}
+        else:
+            required |= {"context_xyxy", "scope_xyxy", "support_file"}
+            optional |= {"merge_policy", "assisted_review"}
     if (
         set(operation) - required - optional
         or not required <= set(operation)
@@ -1188,13 +1262,22 @@ def _matte(
     ):
         raise ProjectError("Stale matte master, revision or inputs_digest")
     manifest = read_revision(project, parent, state["developed_id"])
-    if manifest.get("kind") != "prepare":
+    if not edge and manifest.get("kind") != "prepare":
         raise ProjectError("Prepare the trimap before each matte rerun")
-    if manifest["draft_digest"] != operation["inputs_digest"]:
+    if manifest.get("kind") == "prepare" and manifest["draft_digest"] != operation["inputs_digest"]:
         raise ProjectError("Stale prepared draft; prepare changed guides/settings")
     approval_path = saved_asset(project, f"approvals/{parent}-trimap.json")
-    approval_bytes = approval_path.read_bytes() if approval_path.is_file() else None
+    approval_bytes = (
+        approval_path.read_bytes()
+        if manifest.get("kind") == "prepare" and approval_path.is_file()
+        else None
+    )
     parent_bytes = saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()
+    if json.loads(parent_bytes) != manifest or (
+        preview_identity is not None
+        and preview_identity.get("revision_manifest_sha256") != digest(parent_bytes)
+    ):
+        raise ProjectError("Stale repair parent manifest")
     if approval_bytes is not None:
         approval = json.loads(approval_bytes)
         if not isinstance(approval, dict):
@@ -1225,7 +1308,20 @@ def _matte(
         max_margin_px=max(width, height),
         dimensions_wh=(width, height),
     )
+    background_settings = recipe.background
+    light_settings = recipe.background_light
     guides = json.loads(saved_asset(project, f"revisions/{parent}/guides.json").read_bytes())
+    if edge:
+        parent_recipe = tomllib.loads(
+            saved_asset(project, f"revisions/{parent}/recipe.toml").read_text()
+        )
+        current_recipe = tomllib.loads(snapshots["recipe.toml"].decode())
+        if json.loads(snapshots["guides.json"]) != guides or any(
+            parent_recipe.get(key) != current_recipe.get(key) for key in ("groups", "matting")
+        ):
+            raise ProjectError("Prepare changed matting guides or settings before edge refinement")
+        background_settings = manifest.get("background", {}).get("settings")
+        light_settings = manifest.get("background_light", {}).get("settings")
     saved = {
         r["revision"]: _alpha(project, r["revision"], state["developed_id"], (height, width))
         for r in guides["regions"]
@@ -1235,7 +1331,7 @@ def _matte(
         rev: digest(saved_asset(project, f"revisions/{rev}/manifest.json").read_bytes())
         for rev in saved
     }
-    raster = rasterize_regions(guides, scope_xyxy=manifest["scope_xyxy"], saved_alpha=saved)
+    raster = rasterize_regions(guides, scope_xyxy=manifest.get("scope_xyxy"), saved_alpha=saved)
     with Image.open(saved_asset(project, f"revisions/{parent}/trimap.png")) as image:
         trimap = np.array(image)
     if not np.array_equal(trimap, raster.trimap):
@@ -1248,24 +1344,39 @@ def _matte(
     parent_alpha = None
     ancestor_hashes: dict[str, str] = {}
     if repairing:
-        context = coordinates(operation["context_xyxy"], width, height, box=True)
-        scope = coordinates(operation["scope_xyxy"], width, height, box=True)
         if not isinstance(operation.get("reason"), str) or not operation["reason"].strip():
             raise ProjectError("Repair requires source-supported requested change/rationale")
-        expected_support = saved_asset(project, f"revisions/{parent}/supports/support16.png")
-        support_path = (
-            expected_support
-            if operation["support_file"] == str(expected_support)
-            else _input_file(project, operation["support_file"])
-        )
-        if support_path != expected_support:
-            raise ProjectError("Repair must consume returned immutable prepared support")
-        support_bytes = support_path.read_bytes()
-        support = scalar16(support_path)
+        if edge:
+            context, scope, support = edge_support(
+                operation["edge_area"], state["developed_id"], raster.protection
+            )
+            operation.update(context_xyxy=context, scope_xyxy=scope)
+            with Image.open(
+                saved_asset(project, f"revisions/{parent}/supports/protection.png")
+            ) as image:
+                protected = np.array(image) != 0
+            if not np.array_equal(protected, raster.protection) or not np.array_equal(
+                raster.lock_values16,
+                scalar16(saved_asset(project, f"revisions/{parent}/supports/lock_values16.png")),
+            ):
+                raise ProjectError("Saved edge repair lock assets differ from the bound guides")
+        else:
+            context = coordinates(operation["context_xyxy"], width, height, box=True)
+            scope = coordinates(operation["scope_xyxy"], width, height, box=True)
+            expected_support = saved_asset(project, f"revisions/{parent}/supports/support16.png")
+            support_path = (
+                expected_support
+                if operation["support_file"] == str(expected_support)
+                else _input_file(project, operation["support_file"])
+            )
+            if support_path != expected_support:
+                raise ProjectError("Repair must consume returned immutable prepared support")
+            support_bytes = support_path.read_bytes()
+            support = scalar16(support_path)
+            validate_support(support, (height, width), context, scope)
+            if not np.array_equal(support, raster.support16):
+                raise ProjectError("Saved support differs from prepared guides")
         parent_alpha = _alpha(project, parent, state["developed_id"], (height, width))
-        validate_support(support, (height, width), context, scope)
-        if not np.array_equal(support, raster.support16):
-            raise ProjectError("Saved support differs from prepared guides")
         validate_merge(
             parent_alpha, support, raster.protection, raster.lock_values16, trimap, policy
         )
@@ -1279,16 +1390,17 @@ def _matte(
             if ancestor_manifest.get("kind") != "prepare":
                 break
             ancestor = ancestor_manifest["parent"]
-    check_space(
-        project,
-        pixels.nbytes
-        * (
-            (42 if recipe.background is not None else 40)
-            + (4 if recipe.background_light is not None else 0)
+    if preview_identity is None:
+        check_space(
+            project,
+            pixels.nbytes
+            * (
+                (42 if background_settings is not None else 40)
+                + (4 if light_settings is not None else 0)
+            )
+            + (min(height, 64) * width * 128 if light_settings is not None else 0)
+            + 1024**2,
         )
-        + (min(height, 64) * width * 128 if recipe.background_light is not None else 0)
-        + 1024**2,
-    )
     foreground = pixels.copy()
     if repairing:
         foreground = tifffile.imread(
@@ -1344,6 +1456,10 @@ def _matte(
                 mask & (support == 0) & np.any(applicable_parent_foreground != values, axis=2)
             ):
                 raise ProjectError("Saved RGB lock differs from parent outside repair support")
+            if edge and np.any(values[mask] != foreground[mask]):
+                raise ProjectError(
+                    "Complete the existing RGB lock with scoped repair before refining alpha"
+                )
             foreground[mask] = values[mask]
             rgb_protection |= mask
     cache = model_cache or (
@@ -1353,14 +1469,15 @@ def _matte(
     )
     x0, y0, x1, y1 = context
     local_trimap = trimap[y0:y1, x0:x1]
-    if np.any(local_trimap == 128) and cache is None:
+    if reviewed_edge is None and np.any(local_trimap == 128) and cache is None:
         raise ProjectError(
             "Unknown pixels require explicit local ViTMatte model cache; no downloads"
         )
     from .review import reserve_assisted
 
-    reserve_assisted(project, operation, resuming=bool(recovery))
-    if not recovery:
+    if not edge:
+        reserve_assisted(project, operation, resuming=bool(recovery))
+    if not edge and not recovery:
         dependencies = (
             {f"approvals/{parent}-trimap.json": digest(approval_bytes)}
             if approval_bytes is not None
@@ -1392,33 +1509,139 @@ def _matte(
                 project, operation, snapshots, dependencies, request_file, request_bytes
             )
         )
-    _atomic_json(recovery[0] / "progress.json", {"status": "running", "phase": "tiles"})
-    session = VitMatteSession(cache) if np.any(local_trimap == 128) and cache else None
-
-    def predict(rgb, guide, device):
-        if session is None:
-            raise ProjectError("ViTMatte session missing")
-        return session.predict(rgb, guide, device)
-
-    alpha, model_record = native_matte(
-        np.rint(pixels[y0:y1, x0:x1].astype(np.float64) / 257).astype(np.uint8),
-        local_trimap,
-        predict,
-        recipe.device,
-        cache_dir=saved_asset(project, "cache/matte"),
-        cache_identity={
-            "developed_id": state["developed_id"],
-            **session.identity,
-            **({"context_xyxy": context} if repairing else {}),
+    edge_bindings: dict[str, Any] = {}
+    if edge:
+        edge_bindings = {
+            "snapshots": {name: digest(data) for name, data in snapshots.items()},
+            "authoring_digest": guidance_draft_digest(project),
+            "parent_manifest_sha256": digest(parent_bytes),
+            "lock_manifests": lock_hashes,
+            "ancestors": ancestor_hashes,
+            "trimap_approval": digest(approval_bytes) if approval_bytes is not None else None,
         }
-        if session
-        else None,
-    )
+        if (
+            preview_identity is not None
+            and preview_identity.get("authoring_digest") != edge_bindings["authoring_digest"]
+            or reviewed_edge is not None
+            and reviewed_edge.bindings != edge_bindings
+        ):
+            raise ProjectError("Stale edge preview; review the current project again")
+
+    def recheck() -> None:
+        if "assisted_review" in operation:
+            from .review import validate_assisted
+
+            validate_assisted(project, operation, resuming=True)
+        if support_path is not None and support_path.read_bytes() != support_bytes:
+            raise ProjectError("Stale repair support")
+        for ancestor, expected in ancestor_hashes.items():
+            read_revision(project, ancestor, state["developed_id"])
+            if (
+                digest(saved_asset(project, f"revisions/{ancestor}/manifest.json").read_bytes())
+                != expected
+            ):
+                raise ProjectError("Stale repair ancestral operands")
+        for name, data in snapshots.items():
+            if saved_asset(project, name).read_bytes() != data:
+                raise ProjectError(f"Stale input changed during matte: {name}")
+        if edge and guidance_draft_digest(project) != edge_bindings["authoring_digest"]:
+            raise ProjectError("Stale edge refinement authoring")
+        if request_file is not None and request_file.read_bytes() != request_bytes:
+            raise ProjectError("Stale matte request file")
+        if (
+            approval_bytes is not None
+            and approval_path.read_bytes() != approval_bytes
+            or edge
+            and manifest.get("kind") == "prepare"
+            and approval_bytes is None
+            and approval_path.exists()
+        ) or saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes() != parent_bytes:
+            raise ProjectError("Stale prepared assets/approval")
+        read_revision(project, parent, state["developed_id"])
+        load_developed(project, state["developed_id"])
+        for rev, expected in lock_hashes.items():
+            read_revision(project, rev, state["developed_id"])
+            if (
+                digest(saved_asset(project, f"revisions/{rev}/manifest.json").read_bytes())
+                != expected
+            ):
+                raise ProjectError("Stale saved lock values")
+
+    crop = np.s_[y0:y1, x0:x1]
+    if reviewed_edge is not None:
+        if not reviewed_edge.changed_pixels:
+            raise ProjectError("Edge preview contains no alpha changes")
+        alpha, model_record = reviewed_edge.candidate, reviewed_edge.model
+    else:
+        if recovery:
+            _atomic_json(recovery[0] / "progress.json", {"status": "running", "phase": "tiles"})
+        session = VitMatteSession(cache) if np.any(local_trimap == 128) and cache else None
+
+        def predict(rgb, guide, device):
+            if session is None:
+                raise ProjectError("ViTMatte session missing")
+            return session.predict(rgb, guide, device)
+
+        alpha, model_record = native_matte(
+            np.rint(pixels[crop].astype(np.float64) / 257).astype(np.uint8),
+            local_trimap,
+            predict,
+            recipe.device,
+            cache_dir=None if edge else saved_asset(project, "cache/matte"),
+            cache_identity={
+                "developed_id": state["developed_id"],
+                **session.identity,
+                **({"context_xyxy": context} if repairing else {}),
+            }
+            if session
+            else None,
+        )
+    if preview_identity is not None:
+        from .effects import stale_effect_names
+
+        assert parent_alpha is not None
+        before = parent_alpha[crop].copy()
+        merged = merge_alpha(
+            before,
+            alpha,
+            support[crop],
+            raster.protection[crop],
+            raster.lock_values16[crop],
+            policy,
+        )
+        recheck()
+        operands = (
+            pixels[crop].copy(),
+            foreground[crop].copy(),
+            before,
+            alpha,
+            merged,
+            support[crop].copy(),
+            raster.protection[crop].copy(),
+        )
+        for operand in operands:
+            operand.setflags(write=False)
+        potentially_stale = (
+            stale_effect_names(
+                {
+                    name: dict(record, stale=True)
+                    for name, record in manifest.items()
+                    if isinstance(record, dict) and record.get("enabled")
+                }
+            )
+            if not np.array_equal(before, merged)
+            else ()
+        )
+        return {
+            "edge_preview": EdgePreview(
+                _json_bytes(operation), edge_bindings, model_record, *operands, potentially_stale
+            )
+        }
     if repairing:
         if parent_alpha is None:
             raise ProjectError("Missing repair parent alpha")
         candidate = parent_alpha.copy()
-        candidate[y0:y1, x0:x1] = alpha
+        candidate[crop] = alpha
     else:
         alpha[raster.protection] = raster.lock_values16[raster.protection]
         if np.any(alpha[trimap == 0] != 0) or np.any(alpha[trimap == 255] != 65535):
@@ -1453,9 +1676,12 @@ def _matte(
         (stage / "repair").mkdir()
         assets["repair/parent_alpha16.png"] = dict(manifest["assets"]["base_alpha16.png"])
         Image.fromarray(candidate).save(stage / "repair/candidate_alpha16.png")
-        if support_bytes is None:
+        if edge:
+            Image.fromarray(support).save(stage / "repair/support16.png")
+        elif support_bytes is None:
             raise ProjectError("Missing repair support snapshot")
-        assets["repair/support16.png"] = dict(manifest["assets"]["supports/support16.png"])
+        else:
+            assets["repair/support16.png"] = dict(manifest["assets"]["supports/support16.png"])
         (stage / "repair/merge.json").write_bytes(
             _json_bytes(
                 {
@@ -1473,12 +1699,18 @@ def _matte(
                     "operation_order": ORDER,
                     "merge_policy": policy,
                     "rationale": operation["reason"],
+                    **({"edge_area": operation["edge_area"]} if edge else {}),
                 }
             )
         )
         alpha = replay_directory(project, stage, {"assets": assets})
+        if reviewed_edge is not None and not np.array_equal(alpha[crop], reviewed_edge.merged):
+            raise ProjectError("Saved edge repair differs from the reviewed preview")
     Image.fromarray(alpha).save(stage / "base_alpha16.png")
-    write_developed(stage / "foreground_rgb16.tif", foreground)
+    if edge:
+        inherit_revision_files(project, parent, stage, assets, ("foreground_rgb16.tif",))
+    else:
+        write_developed(stage / "foreground_rgb16.tif", foreground)
     with Image.open(stage_asset(project, stage, assets, "base_alpha16.png")) as image:
         if image.mode not in {"I;16", "I;16L", "I;16B"} or not np.array_equal(
             np.array(image), alpha
@@ -1540,7 +1772,7 @@ def _matte(
         stage,
         state["developed_id"],
         (height, width),
-        recipe.background,
+        background_settings,
         assets=assets,
     )
     background_light = inherit_background_light(
@@ -1549,7 +1781,7 @@ def _matte(
         stage,
         state["developed_id"],
         (height, width),
-        recipe.background_light,
+        light_settings,
         assets=assets,
     )
     # Preparation snapshots requested drafts. A completed matte applies those
@@ -1893,49 +2125,16 @@ def _matte(
     for path in sorted((p for p in stage.rglob("*") if p.is_dir()), reverse=True):
         _sync_directory(path)
     _sync_directory(stage)
-    _atomic_json(
-        recovery[0] / "completion.json",
-        {
-            "revision": revision,
-            "stage": stage.name,
-            "manifest_sha256": digest((stage / "manifest.json").read_bytes()),
-        },
-    )
-
-    def recheck():
-        if "assisted_review" in operation:
-            from .review import validate_assisted
-
-            validate_assisted(project, operation, resuming=True)
-        if support_path is not None and support_path.read_bytes() != support_bytes:
-            raise ProjectError("Stale repair support")
-        for ancestor, expected in ancestor_hashes.items():
-            read_revision(project, ancestor, state["developed_id"])
-            if (
-                digest(saved_asset(project, f"revisions/{ancestor}/manifest.json").read_bytes())
-                != expected
-            ):
-                raise ProjectError("Stale repair ancestral operands")
-        for name, data in snapshots.items():
-            if saved_asset(project, name).read_bytes() != data:
-                raise ProjectError(f"Stale input changed during matte: {name}")
-        if request_file is not None and request_file.read_bytes() != request_bytes:
-            raise ProjectError("Stale matte request file")
-        if (
-            approval_bytes is not None and approval_path.read_bytes() != approval_bytes
-        ) or saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes() != parent_bytes:
-            raise ProjectError("Stale prepared assets/approval")
-        read_revision(project, parent, state["developed_id"])
-        load_developed(project, state["developed_id"])
-        for rev, expected in lock_hashes.items():
-            read_revision(project, rev, state["developed_id"])
-            if (
-                digest(saved_asset(project, f"revisions/{rev}/manifest.json").read_bytes())
-                != expected
-            ):
-                raise ProjectError("Stale saved lock values")
-
-    _verify_matte_request(project, recovery[0])
+    if recovery:
+        _atomic_json(
+            recovery[0] / "completion.json",
+            {
+                "revision": revision,
+                "stage": stage.name,
+                "manifest_sha256": digest((stage / "manifest.json").read_bytes()),
+            },
+        )
+        _verify_matte_request(project, recovery[0])
     recheck()
     destination = revisions / revision
     if destination.exists():

@@ -150,6 +150,11 @@ acceptance and regular-use evaluation remain human obligations.
 
 ## Scoped repair and exact replay
 
+For a small patch of hair, fur or similar detail, the local viewer's
+[Refine edge](workflow.md#refine-a-fur-or-hair-edge) control previews a scoped
+replacement before Apply. Its saved revision uses the same model-free replay
+command below. The prepared-support CLI workflow follows.
+
 First identify a source-visible defect and explicitly choose its native context
 and allowed write scope. Context can exceed the support; the tool cannot decide
 photographic improvement for you. Create typed support/core/lock guide edits with

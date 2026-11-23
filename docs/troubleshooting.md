@@ -163,7 +163,7 @@ A publication collision means another tool/editor created a project asset while 
 
 ## Repair and restore recovery
 
-- Repair support must be the current prepared revision's returned support asset.
+- For ordinary repair, use the current prepared revision's returned support asset.
   Use its exact returned absolute path or project-relative equivalent. Prepare
   edited guidance first, then submit repair without repeated
   guide edits. An unrelated or symlinked support file is rejected.
@@ -174,6 +174,10 @@ A publication collision means another tool/editor created a project asset while 
 - Stale draft/reference/parent errors preserve newer text and final acceptance.
   Inspect actual state before a new operation. Failed temporary revisions and
   cache work are retained; there is no automatic cleanup. Use the supported resume command for unchanged inputs.
+- **Refine edge** previews expire when their inputs change or the review window
+  closes. Redraw or preview again against the current source before Apply. If an
+  interrupted Apply left a complete repair in the revision list, inspect it and
+  use **Restore working inputs** to select it. See the [saved repair contract](file-contract.md#saved-scoped-repairs-and-restore).
 - `replay --revision` verifies saved repair operands without models or cache.
   Missing or modified immutable operands/dependencies are errors; restore from
   your independent backup, never regenerate accepted operands with a model.

@@ -247,7 +247,7 @@
         <canvas
           id="canvas"
           tabindex="0"
-          aria-label="Source and result; native-coordinate guides, Background light, Local sharpening, Local exposure, Tone curve area, Shadow fade, Fade shapes or Fade reduction authoring. Numeric alternatives in each section."
+          aria-label="Source and result. Native-coordinate guides, edge refinement and appearance areas. Numeric alternatives in each section."
         ></canvas>
       </div>
     </section>
@@ -376,6 +376,21 @@
         ><button id="repair">Run scoped repair</button>
       </fieldset>
       <fieldset>
+        <legend>Refine edge</legend>
+        <button id="edgeStart">Draw edge area on Source</button>
+        <p class="small">Brush across visible tips and gaps. Leave areas you want to keep outside the stroke.</p>
+        <label>Brush radius (native pixels) <input id="edgeRadius" type="number" min="1" max="64" step="1" value="4" /></label>
+        <label>Native rectangle x0,y0,x1,y1 <input id="edgeRectangle" class="wide" /></label>
+        <button id="edgeAddRectangle">Add edge rectangle</button>
+        <button id="edgeUndo">Undo last mark</button>
+        <button id="edgePreview">Preview edge</button>
+        <label>Edge comparison <select id="edgeSide"><option value="candidate">Preview</option><option value="before">Before</option></select></label>
+        <label><input id="edgeCoverage" type="checkbox" /> Show write area (blue) and locks (pink)</label>
+        <p id="edgeStatus" class="small" role="status"></p>
+        <button id="edgeApply">Apply reviewed edge</button>
+        <button id="edgeDiscard">Cancel edge refinement</button>
+      </fieldset>
+      <fieldset>
         <legend>Appearance recipes</legend>
         <p class="small">Reuse chosen settings from a complete saved revision. Loading changes controls only; apply each effect separately. Source development, masks, areas, protection, reduction, framing and acceptance stay with this photo.</p>
         <label>Saved source revision <select id="appearanceSource"></select></label>
@@ -443,7 +458,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="edge">Refine edge</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -2046,7 +2061,7 @@
       if (
         reload ||
         !identity ||
-        (completed && !a.error && a.result?.reused !== true && !["export","comparison","framing-save","series-save","series-export","preview-repair"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
+        (completed && !a.error && a.result?.reused !== true && !["export","comparison","framing-save","series-save","series-export","preview-repair","edge-preview","edge-discard"].includes(a.name) && !a.result?.framing && (!dirty || authoringPublished))
       ) {
         loadAuthoring(preserveSubjectDrafts);
         if (completed) imageKey = "";
@@ -2118,6 +2133,7 @@
         $("cleanupScope").value = crop.join(",");
         $("shadingScope").value = crop.join(",");
       }
+      syncEdge(current, a, completed, reload);
       updateBusyControls();
       await loadImage();
     }
@@ -2176,6 +2192,7 @@
       $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
       updateToneCurveControls();
       updateTextureControls();
+      updateEdgeControls();
       $("previewRepair").disabled = authoringBusy() || !state?.preview || ["not_applicable","no_result"].includes(state.preview.status) || state.preview.reason === "configuration_required";
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
         $(id).disabled = authoringBusy();
@@ -2187,7 +2204,6 @@
       $("seriesSave").disabled = authoringBusy() || seriesNeedsReload || seriesSource !== state?.developed_id || !!state?.series_error;
       const selected = state?.revisions.find(record=>record.revision === $("viewRevision").value);
       $("seriesExportAccepted").disabled = authoringBusy() || !selected?.final_acceptable || selected.revision !== state?.accepted_revision;
-      $("seriesExportDraft").disabled = authoringBusy() || !selected?.final_acceptable;
     }
     async function bitmap(path) {
       const blob = await (await api(path)).blob();
@@ -2233,18 +2249,23 @@
       syncSeries();
       const panel = $("panel").value,
         revision = $("viewRevision").value;
+      const edge = activeEdgePreview(), edgeSide = $("edgeSide").value;
+      const edgePath = edge ? `/edge-preview/${edge.preview_id}/${edgeSide}` : null;
+      const edgePanel = panel === "result" ? "black" : panel;
       const spatialMap=$("spatialMap").value || "none", viewed=state.revisions.find(r=>r.revision===revision);
       const reductionView = $("reductionView").value || "none";
       const selectedSaved=selectedSpatialId==="oval" || viewed?.spatial_fade?.settings?.arcs.some(arc=>arc.id===selectedSpatialId);
       const requestedCrop = [...crop],
         workingRevision = state.working_revision,
-        label = previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "") + (reductionView === "none" ? "" : " · Saved " + reductionLabel() + " reduction " + reductionView + " · draft excluded");
+        label = edge ? `Edge ${edgePanel === "source" ? "source" : edgeSide === "before" ? "before" : "preview"} · ${edgePanel} · BASE · RGB8/alpha8 view`
+          : previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "") + (reductionView === "none" ? "" : " · Saved " + reductionLabel() + " reduction " + reductionView + " · draft excluded");
       const mask =
         $("candidate").value ||
         (!["guides", "none"].includes($("overlay").value)
           ? $("overlay").value
           : "");
       const key = [
+        edgePath, $("edgeCoverage").checked,
         $("exposureCompare").checked,
         $("sharpeningCompare").checked,
         $("toneCurveCompare").checked,
@@ -2271,6 +2292,7 @@
       imageKey = key;
       imageLoading = true;
       gesture = null;
+      updateEdgeControls();
       $("coordinate").textContent = "Loading native view…";
       $("shadingStatus").textContent = "Loading selected native view…";
       draw();
@@ -2282,12 +2304,18 @@
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
             : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("textureCompare").checked ? "/texture-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
-        next = reductionView === "off" && !["source", "alpha"].includes(panel)
+        next = edgePath ? await bitmap(`${edgePath}/${edgePanel}`)
+          : reductionView === "off" && !["source", "alpha"].includes(panel)
           ? await spatialBitmap("off", revision, requestedCrop, panel, true)
           : $("spatialCompare").checked && !["source","alpha"].includes(panel)
           ? await spatialBitmap("off",revision,requestedCrop,panel) : await bitmap(path);
         if (imageKey !== key) return;
-        if (reductionView === "coverage" && revision) {
+        if (edgePath) {
+          if ($("edgeCoverage").checked) {
+            nextOverlay = await bitmap(`${edgePath}/area`);
+            nextSpatialOverlay = true;
+          }
+        } else if (reductionView === "coverage" && revision) {
           nextOverlay = await spatialBitmap("coverage", revision, requestedCrop, "result", true); nextSpatialOverlay = true;
         } else if(spatialMap!=="none" && revision && (spatialMap!=="selected" || selectedSaved)) {
           nextOverlay=await spatialBitmap(spatialMap,revision,requestedCrop);nextSpatialOverlay=true;
@@ -2303,6 +2331,7 @@
         next = null;
         nextOverlay = null;
         imageLoading = false;
+        if (edge && edgeSide === "candidate" && edgePanel !== "source") edgeSeen = edge.preview_id;
         $("shadingStatus").textContent = label;
         $("coordinate").textContent = "";
         draw();
@@ -2321,6 +2350,7 @@
       } finally {
         next?.close();
         nextOverlay?.close();
+        updateEdgeControls();
       }
     }
     function draw() {
@@ -2339,7 +2369,7 @@
       ctx.scale(scale, scale);
       ctx.drawImage(image, 0, 0);
       if (overlayImage) {
-        ctx.globalAlpha = spatialOverlayLoaded ? (String($("spatialOpacity").value).trim()==="" ? .45 : Number($("spatialOpacity").value)) : 0.45;
+        ctx.globalAlpha = activeEdgePreview() ? 1 : spatialOverlayLoaded ? (String($("spatialOpacity").value).trim()==="" ? .45 : Number($("spatialOpacity").value)) : 0.45;
         if(spatialOverlayLoaded) ctx.drawImage(overlayImage,0,0);
         else ctx.drawImage(
           overlayImage,
@@ -2355,8 +2385,8 @@
         ctx.globalAlpha = 1;
       }
       const mode = $("authorMode").value, area = nativeAreaModes.includes(mode) ? effectArea(mode) : null;
-      if ($("overlay").value === "guides" || area || mode === "reduction") {
-        const drawnRegions = mode === "reduction"
+      if (mode === "edge" || $("overlay").value === "guides" || area || mode === "reduction") {
+        const drawnRegions = mode === "edge" ? edgeOutlines() : mode === "reduction"
           ? (reductionDraft()?.area.regions || []).map(region => region.shape)
           : area
           ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions;
@@ -2387,6 +2417,7 @@
             ctx.strokeRect(x0 - crop[0], y0 - crop[1], x1 - x0, y1 - y0);
           } else {
             ctx.lineWidth = region.radius_px * 2;
+            if (mode === "edge") ctx.lineCap = "round";
             ctx.globalAlpha = 0.5;
             region.points.forEach((p, i) =>
               i
@@ -2408,9 +2439,11 @@
           }
         }
       }
-      drawSpatialShapes(scale);
-      drawBackgroundLight(scale);
-      if (appearanceLayoutProposal) drawSpatialShapes(scale, appearanceLayoutProposal.settings, true);
+      if (!activeEdgePreview()) {
+        drawSpatialShapes(scale);
+        drawBackgroundLight(scale);
+        if (appearanceLayoutProposal) drawSpatialShapes(scale, appearanceLayoutProposal.settings, true);
+      }
       ctx.restore();
     }
     function nativePosition(event, edge = false) {
@@ -3231,7 +3264,147 @@
     $("exposureEV").oninput = () => { $("exposureRange").value = $("exposureEV").value; markExposureControlsDirty(); };
     $("exposureCandidate").onchange = markExposureControlsDirty;
     $("exposureCompare").onchange = guarded(() => compareChanged("exposureCompare"));
-    $("authorMode").onchange = () => { gesture = null; draw(); };
+    let edgeDraft = null, edgeReview = null, edgeSubmitted = null, edgeSeen = "";
+    function edgeParent() {
+      return state?.revisions.find(row => row.revision === state.working_revision);
+    }
+    function edgeBinding(parent = edgeParent()) {
+      return parent && JSON.stringify([state.developed_id, parent.revision, parent.revision_manifest_sha256,
+        state.inputs_digest, state.authoring_digest]);
+    }
+    function activeEdgePreview() {
+      return edgeReview && !dirty && edgeDraft?.binding === edgeBinding()
+        && $("authorMode").value === "edge" && $("viewRevision").value === state.working_revision
+        && String(crop) === String(edgeReview.crop_xyxy) ? edgeReview : null;
+    }
+    function edgeSourceReady() {
+      return !authoringBusy() && !dirty && !imageLoading && image && transform && !edgeReview
+        && $("authorMode").value === "edge" && $("panel").value === "source"
+        && $("viewRevision").value === state?.working_revision;
+    }
+    function edgeOutlines() {
+      if (!edgeSourceReady()) return [];
+      const regions = edgeDraft?.binding === edgeBinding() && String(crop) === String(edgeDraft?.crop) ? edgeDraft.regions : [];
+      return [...regions, ...(gesture?.edgeRadius ? [{shape: "stroke", points: gesture.points, radius_px: gesture.edgeRadius}] : [])]
+        .map(region => ({...region, role: "support"}));
+    }
+    function updateEdgeControls() {
+      const busy = authoringBusy(), active = activeEdgePreview(), parent = edgeParent();
+      const currentDraft = edgeDraft?.binding === edgeBinding() ? edgeDraft : null;
+      $("edgeStart").disabled = busy || !(parent?.has_alpha || parent?.final_acceptable) || !!edgeReview;
+      $("edgeRadius").disabled = $("edgeRectangle").disabled = $("edgeAddRectangle").disabled = !edgeSourceReady();
+      $("edgeUndo").disabled = busy || !edgeDraft?.regions.length;
+      $("edgePreview").disabled = !edgeSourceReady() || !currentDraft?.regions.length || String(crop) !== String(currentDraft.crop);
+      $("edgeSide").disabled = $("edgeCoverage").disabled = !active;
+      $("edgeApply").disabled = busy || !active?.changed_pixels || edgeSeen !== active.preview_id || imageLoading || !image;
+      $("edgeDiscard").disabled = busy || (!edgeDraft && $("authorMode").value !== "edge");
+      $("cropApply").disabled = $("full").disabled = !!active || !!edgeSubmitted;
+      for (const id of ["accept", "photoReviewed", "exportDraft", "framingExportDraft", "comparisonSave"])
+        $(id).disabled = busy || !!active;
+      const selected = state?.revisions.find(row => row.revision === $("viewRevision").value);
+      $("seriesExportDraft").disabled = busy || !selected?.final_acceptable || !!active;
+      $("edgeStatus").textContent = active
+        ? `${active.changed_pixels} alpha samples changed · write bounds ${active.scope_xyxy.join(", ")} · context ${active.crop_xyxy.join(", ")}`
+          + (active.stale_effects.length ? ` · Review or rebuild after Apply: ${active.stale_effects.join(", ")}.` : "")
+          + " · Apply or cancel before accepting, exporting a draft or saving a comparison."
+        : edgeDraft && !currentDraft ? "Edge marks are stale. Cancel and draw on the current source."
+          : edgeDraft?.regions.length && String(crop) !== String(edgeDraft.crop) ? "Return to the marked crop or cancel the edge selection."
+            : edgeDraft?.regions.length ? `${edgeDraft.regions.length} marks · preview to inspect the exact write area` : "";
+    }
+    function syncEdge(parent, actionState, completed, reload) {
+      if (reload || (edgeDraft && edgeDraft.binding !== edgeBinding(parent))) {
+        if (edgeReview) {
+          crop = [...edgeDraft.crop]; $("crop").value = crop.join(",");
+        }
+        edgeReview = null; edgeSeen = "";
+      }
+      if (!completed) return;
+      if (actionState.name === "edge-apply" && !actionState.error && actionState.result?.revision === state.working_revision) {
+        edgeDraft = null; edgeReview = null; edgeSeen = "";
+        $("authorMode").value = "guides";
+        $("viewRevision").value = state.working_revision;
+        $("panel").value = "black";
+      }
+      if (edgeSubmitted) {
+        const submission = edgeSubmitted;
+        edgeSubmitted = null;
+        const result = actionState.result;
+        if (actionState.name === "edge-preview" && !actionState.error && result?.preview_id
+          && result.request_id === submission.id && submission.binding === edgeBinding(parent)
+          && edgeDraft?.binding === submission.binding && $("authorMode").value === "edge"
+          && $("viewRevision").value === state.working_revision) {
+          edgeReview = result;
+          crop = [...edgeReview.crop_xyxy]; $("crop").value = crop.join(",");
+          zoom = 1 / Math.min(canvas.width / (crop[2] - crop[0]), canvas.height / (crop[3] - crop[1]));
+          $("zoom").value = zoom;
+          pan = [0, 0];
+          $("panel").value = "black"; $("edgeSide").value = "candidate"; $("edgeCoverage").checked = false;
+          $("photoReviewed").checked = false;
+        }
+      }
+    }
+    function addEdgeMark(shape) {
+      if (!edgeSourceReady()) throw Error("Draw the edge area on the loaded working Source crop");
+      if (!edgeDraft) edgeDraft = {binding: edgeBinding(), crop: [...crop], regions: []};
+      if (edgeDraft.binding !== edgeBinding() || String(edgeDraft.crop) !== String(crop))
+        throw Error("Use the original marked crop or cancel and draw a new edge area");
+      if (edgeDraft.regions.length >= 16) throw Error("Preview up to 16 marks at a time");
+      edgeDraft.regions.push(shape);
+      updateEdgeControls(); draw();
+    }
+    async function discardEdge(keepMarks) {
+      if (authoringBusy()) return;
+      const reviewed = edgeReview;
+      if (reviewed) {
+        crop = [...edgeDraft.crop]; $("crop").value = crop.join(",");
+        zoom = 1; pan = [0, 0]; $("zoom").value = zoom;
+      }
+      edgeReview = null; edgeSeen = "";
+      if (keepMarks) edgeDraft?.regions.pop();
+      else { edgeDraft = null; $("authorMode").value = "guides"; }
+      $("panel").value = "source";
+      updateEdgeControls(); draw();
+      if (reviewed) await action("edge-discard", {preview_id: reviewed.preview_id});
+      await loadImage();
+    }
+    $("edgeStart").onclick = guarded(async () => {
+      requireSaved();
+      if (authoringBusy() || edgeReview || !(edgeParent()?.has_alpha || edgeParent()?.final_acceptable)) return;
+      $("authorMode").value = "edge";
+      $("viewRevision").value = state.working_revision;
+      $("panel").value = "source"; $("overlay").value = "none"; $("candidate").value = "";
+      gesture = null;
+      await loadImage();
+      updateEdgeControls(); draw();
+    });
+    $("edgeAddRectangle").onclick = guarded(() => {
+      if ($("edgeRectangle").value.split(",").some(v => !v.trim())) throw Error("Enter four native coordinates");
+      const xyxy = bounds("edgeRectangle");
+      if (xyxy[0] < crop[0] || xyxy[1] < crop[1] || xyxy[2] > crop[2] || xyxy[3] > crop[3])
+        throw Error("The rectangle must fit the displayed native crop");
+      addEdgeMark({shape: "rectangle", xyxy});
+    });
+    $("edgePreview").onclick = guarded(async () => {
+      if ($("edgePreview").disabled) return;
+      edgeSubmitted = {binding: edgeDraft.binding, id: crypto.randomUUID().replaceAll("-", "")};
+      try {
+        await action("edge-preview", {
+          request_id: edgeSubmitted.id,
+          revision_manifest_sha256: edgeParent().revision_manifest_sha256,
+          edge_area: {crop_xyxy: edgeDraft.crop, regions: edgeDraft.regions},
+        });
+      } catch (error) {
+        edgeSubmitted = null; updateEdgeControls(); throw error;
+      }
+    });
+    $("edgeApply").onclick = guarded(() => {
+      if ($("edgeApply").disabled) return;
+      return action("edge-apply", {preview_id: activeEdgePreview().preview_id});
+    });
+    $("edgeUndo").onclick = guarded(() => discardEdge(true));
+    $("edgeDiscard").onclick = guarded(() => discardEdge(false));
+    $("edgeSide").onchange = $("edgeCoverage").onchange = guarded(loadImage);
+    $("authorMode").onchange = guarded(async () => { gesture = null; await loadImage(); updateEdgeControls(); draw(); });
     function guarded(fn) {
       return async () => {
         try {
@@ -3245,6 +3418,9 @@
       if (!identity) throw Error("Project inputs unavailable");
       if (authoringBusy())
         throw Error("Wait for the active writer before submitting");
+      if (activeEdgePreview() && (name === "accept" || name === "comparison"
+        || ((name === "export" || name === "series-export") && extra.draft)))
+        throw Error("Apply or cancel the edge preview before accepting, exporting a draft or saving a comparison");
       invalidateAppearanceLayout();
       const section = name === "effects" && Object.keys(appearanceLabels).find(key => key !== "spatial_fade" && key in extra);
       const scalarDraft = section && appearanceScalarState(section);
@@ -3798,8 +3974,9 @@
       const spatialMode=$("authorMode").value==="spatial";
       const lightMode = $("authorMode").value === "background-light";
       const mode = $("authorMode").value;
+      const edgeMode = mode === "edge";
       const effectMode = nativeAreaModes.includes(mode) || mode === "reduction" ? mode : null;
-      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && $("shape").value === "pan");
+      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && !edgeMode && $("shape").value === "pan");
       const point = nativePosition(event,spatialMode || lightMode);
       if (!panMode && (authoringBusy() || imageLoading)) {
         message(
@@ -3808,6 +3985,15 @@
         return;
       }
       if (!panMode && !point) return;
+      if (edgeMode && !panMode) {
+        if (!edgeSourceReady()) return;
+        const radius = Number($("edgeRadius").value);
+        if (!Number.isInteger(radius) || radius < 1 || radius > 64) {
+          message("Set the brush radius between 1 and 64 native pixels"); return;
+        }
+        gesture = {panMode: false, shape: "stroke", edgeRadius: radius, points: [point.map(Math.floor)]};
+        canvas.setPointerCapture(event.pointerId); draw(); return;
+      }
       if (lightMode && !panMode) {
         if ($("backgroundLightHide").checked || $("viewRevision").value !== state.working_revision) return;
         try {
@@ -3849,6 +4035,15 @@
           gesture.pan[1] + event.clientY - gesture.start[1],
         ];
         draw();
+      } else if (gesture.edgeRadius) {
+        if (!point) {
+          gesture = null; draw(); message("Stroke left the source crop. Draw it again inside the crop.");
+        } else {
+          const native = point.map(Math.floor), last = gesture.points.at(-1);
+          if (native[0] !== last[0] || native[1] !== last[1]) gesture.points.push(native);
+          if (gesture.points.length >= 1024) { gesture = null; message("Use a shorter edge stroke"); }
+          draw();
+        }
       } else if (point && gesture.lightHandle) dragBackgroundLight(gesture, point);
       else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
       else if (point && gesture.shape === "stroke")
@@ -3866,12 +4061,18 @@
         );
         return;
       }
-      const end = nativePosition(event, true);
+      const end = nativePosition(event, !g.edgeRadius);
       if (!end) {
         message("Guide ended outside displayed native crop; nothing saved");
         return;
       }
       try {
+        if (g.edgeRadius) {
+          const pixel = end.map(Math.floor), last = g.points.at(-1);
+          if (pixel[0] !== last[0] || pixel[1] !== last[1]) g.points.push(pixel);
+          addEdgeMark({shape: "stroke", points: g.points, radius_px: g.edgeRadius});
+          return;
+        }
         const shape = g.shape,
           start = g.points[0];
         const add = geometry => g.effectMode === "reduction" ? addFadeReductionRegion(geometry, shape) : g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
@@ -3886,7 +4087,7 @@
         message(error.message);
       }
     };
-    canvas.onpointercancel = () => (gesture = null);
+    canvas.onpointercancel = () => { const edge = gesture?.edgeRadius; gesture = null; if (edge) draw(); };
     canvas.onkeydown = (event) => {
       if (event.key === "Escape" && $("authorMode").value === "background-light" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight(); return;}
       if (event.key === "Escape" && $("authorMode").value === "reduction") {event.preventDefault(); gesture = null; reloadFadeReduction(); return;}

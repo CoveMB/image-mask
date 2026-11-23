@@ -134,6 +134,38 @@ must remain exact; contradictory cores or incompatible directional policies fail
 Missing/corrupt model, stale input, low disk or an interrupted operation preserves
 accepted state and diagnostic artifacts. Fix the displayed cause before retrying.
 
+### Refine a fur or hair edge
+
+1. Open the working matte and choose **Draw edge area on Source**. At **Native
+   1:1**, brush a small band over the visible tips and gaps that need work. The
+   brush radius starts at 4 native pixels and accepts 1–64. For keyboard authoring, enter a native
+   half-open rectangle within the displayed crop and choose **Add edge rectangle**.
+   Leave a good soft transition outside the marked area or use a saved alpha/RGB
+   lock. **Undo last mark** removes the last stroke or rectangle. A preview can
+   include up to 16 marks.
+2. Choose **Preview edge**. The installed ViTMatte model uses the current trimap
+   and the saved RAW development at native resolution, with RGB8 model input.
+   The read context extends up to 64 pixels beyond the write bounds and must fit
+   one 1024 × 1024 tile. If the model needs more guidance, use the existing guide
+   controls to mark solid foreground and confirmed empty background, leave mixed
+   strands unknown, and prepare before previewing again. A changed confirmed core
+   must fit inside the write area. The stroke itself never creates a confirmed core.
+3. The preview opens on black at **Native 1:1**. Switch **Edge comparison** between
+   **Before** and **Preview**, then use **View** to check Source, Alpha, Black,
+   Gray and White in the same crop. Enable **Show write area (blue) and locks
+   (pink)** to inspect exact coverage, then hide the overlay to judge the edge.
+   These are BASE RGB8/alpha8 views. For very faint strands, check the saved RGB16
+   master. Look for continuous tapered tips, empty gaps, and smooth falloff where
+   the source is defocused. For colour spill at fixed alpha, use the separate
+   [Color cleanup comparison](#compare-accept-and-export).
+4. **Apply reviewed edge** saves the previewed alpha as an editable repair revision.
+   **Cancel edge refinement** discards the unapplied selection and preview. Apply
+   or cancel before accepting, exporting a draft or saving a comparison. To
+   undo a saved repair, use **Restore working inputs** on the prior complete
+   revision. If Apply makes enabled effects stale, explicitly rebuild within the
+   required support or disable the affected effects before appearance acceptance
+   or draft export. The prior accepted result stays available.
+
 ## Compare, accept and export
 
 After a successful matte or repair, choose **View → Result · saved background**

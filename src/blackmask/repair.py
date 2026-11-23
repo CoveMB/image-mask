@@ -8,7 +8,8 @@ import numpy as np
 from PIL import Image
 
 from .assets import revision_asset, revision_hashes, saved_asset
-from .guidance import coordinates
+from .guidance import coordinates, rasterize_regions, validate_guides
+from .matte import TILE_SIZE
 from .project import ProjectError, digest, read_project, read_revision
 
 ORDER = "directional P/C; float64 P*(1-w)+D*w; rint ties-to-even; copy locks"
@@ -100,6 +101,78 @@ def validate_support(
         raise ProjectError("Repair support exceeds explicit scope/context or is empty")
 
 
+def edge_support(
+    area: Any, developed_id: str, protection: np.ndarray
+) -> tuple[list[int], list[int], np.ndarray]:
+    """Derive one bounded write footprint and its read context from reviewed geometry."""
+    height, width = protection.shape
+    if not isinstance(area, dict) or set(area) != {"crop_xyxy", "regions"}:
+        raise ProjectError("Invalid edge refinement area")
+    left, top, right, bottom = coordinates(area["crop_xyxy"], width, height, box=True)
+    if not isinstance(area["regions"], list) or not 1 <= len(area["regions"]) <= 16:
+        raise ProjectError("Edge refinement requires 1–16 strokes or rectangles")
+    regions = []
+    for index, region in enumerate(area["regions"]):
+        if not isinstance(region, dict):
+            raise ProjectError("Invalid edge refinement shape")
+        shape = region.get("shape")
+        if shape == "stroke" and set(region) == {"shape", "points", "radius_px"}:
+            if not isinstance(region["points"], list) or not 1 <= len(region["points"]) <= 1024:
+                raise ProjectError("Use a shorter native edge stroke")
+            if type(region["radius_px"]) is not int or not 1 <= region["radius_px"] <= 64:
+                raise ProjectError("Edge brush radius must be 1–64 native pixels")
+        elif shape != "rectangle" or set(region) != {"shape", "xyxy"}:
+            raise ProjectError("Invalid edge refinement shape fields")
+        regions.append(dict(region, id=f"edge-{index}", role="support", feather_px=0))
+    guides = validate_guides(
+        {
+            "schema_version": 2,
+            "developed_id": developed_id,
+            "width": width,
+            "height": height,
+            "regions": regions,
+        },
+        developed_id,
+        width,
+        height,
+    )
+    bounds = []
+    for region in regions:
+        if region["shape"] == "rectangle":
+            x0, y0, x1, y1 = region["xyxy"]
+            if not (left <= x0 < x1 <= right and top <= y0 < y1 <= bottom):
+                raise ProjectError("Edge rectangle must fit the displayed native crop")
+            bounds.append([x0, y0, x1, y1])
+        else:
+            xs, ys = zip(*region["points"], strict=True)
+            if not (left <= min(xs) <= max(xs) < right and top <= min(ys) <= max(ys) < bottom):
+                raise ProjectError(
+                    "Edge stroke must start and end within the displayed native crop"
+                )
+            radius = region["radius_px"]
+            bounds.append(
+                [min(xs) - radius, min(ys) - radius, max(xs) + radius + 1, max(ys) + radius + 1]
+            )
+    x0 = max(left, min(box[0] for box in bounds))
+    y0 = max(top, min(box[1] for box in bounds))
+    x1 = min(right, max(box[2] for box in bounds))
+    y1 = min(bottom, max(box[3] for box in bounds))
+    scope = [x0, y0, x1, y1]
+    padding = 64
+    context = [
+        max(0, x0 - padding),
+        max(0, y0 - padding),
+        min(width, x1 + padding),
+        min(height, y1 + padding),
+    ]
+    if context[2] - context[0] > TILE_SIZE or context[3] - context[1] > TILE_SIZE:
+        raise ProjectError("Use a smaller edge area so its native context fits one matting tile")
+    support = rasterize_regions(guides, scope_xyxy=scope).support16
+    support[protection] = 0
+    validate_support(support, protection.shape, context, scope)
+    return context, scope, support
+
+
 def replay_directory(project: Path, directory: Path, manifest: dict[str, Any]) -> np.ndarray:
     """Merge only reloaded canonical files; caller validates immutable manifest hashes."""
     record = json.loads((directory / "repair/merge.json").read_bytes())
@@ -127,6 +200,12 @@ def replay_directory(project: Path, directory: Path, manifest: dict[str, Any]) -
     }:
         raise ProjectError("Invalid repair crop mapping/order")
     validate_support(support, parent.shape, context, scope)
+    if "edge_area" in record:
+        edge_context, edge_scope, edge = edge_support(
+            record["edge_area"], record["developed_id"], protection
+        )
+        if edge_context != context or edge_scope != scope or not np.array_equal(support, edge):
+            raise ProjectError("Saved edge repair support differs from its authored footprint")
     validate_merge(parent, support, protection, locked, trimap, record["merge_policy"])
     merged = merge_alpha(parent, candidate, support, protection, locked, record["merge_policy"])
     if np.any(merged[trimap == 0] != 0) or np.any(merged[trimap == 255] != 65535):
@@ -180,17 +259,29 @@ def replay_repair(project: Path, revision: str) -> np.ndarray:
     record = json.loads((directory / "repair/merge.json").read_bytes())
     parent = manifest["parent"]
     parent_manifest = read_revision(project, parent, state["developed_id"])
+    parent_hashes = revision_hashes(parent_manifest)
+    hashes = revision_hashes(manifest)
     if (
         record.get("parent") != parent
         or record.get("developed_id") != state["developed_id"]
         or record.get("parent_manifest_sha256") != manifest.get("parent_manifest_sha256")
         or record.get("parent_manifest_sha256")
         != digest(saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes())
-        or revision_hashes(manifest)["repair/parent_alpha16.png"]
-        != revision_hashes(parent_manifest).get("base_alpha16.png")
-        or revision_hashes(manifest)["repair/support16.png"]
-        != revision_hashes(parent_manifest).get("supports/support16.png")
+        or hashes["repair/parent_alpha16.png"] != parent_hashes.get("base_alpha16.png")
     ):
+        raise ProjectError("Stale repair parent/master/operand bindings")
+    if "edge_area" in record:
+        if any(
+            hashes.get(name) != parent_hashes.get(name)
+            for name in (
+                "trimap.png",
+                "supports/protection.png",
+                "supports/lock_values16.png",
+                "foreground_rgb16.tif",
+            )
+        ):
+            raise ProjectError("Edge repair must inherit its parent trimap, locks and RGB16")
+    elif hashes["repair/support16.png"] != parent_hashes.get("supports/support16.png"):
         raise ProjectError("Stale repair parent/master/operand bindings")
     prepared_parent_layers(project, parent, state["developed_id"])
     merged = replay_directory(project, directory, manifest)

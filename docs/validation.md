@@ -1,5 +1,26 @@
 # Verification
 
+## Refine edge
+
+The matched synthetic comparison used one 160 × 112 RGB16 source, the installed
+ViTMatte Base CPU model, identical confirmed cores, a defective starting matte,
+and a saved lock on a defocused section. Manual prepared-support repair and
+**Refine edge** produced identical alpha16. Both left alpha outside the marked
+area and under the blur lock sample-exact. In 1,835 known-empty gap samples, mean
+alpha went from 0.126 in the starting matte to 0.010 after repair. All 45 marked
+tip samples reached alpha 0.10 or higher. The same native crop was inspected on
+Source, Alpha, black, gray, and white. This fixture establishes parity and bounded
+repair behaviour. It does not establish photographic acceptance or hands-on time
+savings on real photographs.
+
+The headless Chrome 158 check used the installed model and a synthetic project
+with non-loopback page requests blocked. It exercised native pointer endpoints
+in a cropped Source view, numeric rectangle entry, Undo, exact coverage overlay,
+Before/Preview at 1:1, and keyboard Apply. Automated viewer checks protect
+transient preview isolation, cross-tab result binding, acceptance and draft export
+guards, exact preview-to-Apply alpha and RGB locks, stale Color cleanup,
+interrupted publication, restore, and model-free replay.
+
 ## Local texture
 
 Synthetic tests cover spatial scale, weak band and highlight guards, step halos,
