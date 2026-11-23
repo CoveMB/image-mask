@@ -1123,11 +1123,12 @@ When exposure is present, native exports with `--variant editable` retain select
 `exposure_area.json` where present. Shading W16/opacity remain independent.
 The unexposed export includes selected sharpening after cleanup, before exposure,
 the curve and Shadow fade.
-Reconstruct by applying exposure once, then optional fade once, then the existing
-shading/alpha renderer. The selected foreground already
-contains exposure; applying it again would be incorrect. Reduced-precision
-views remain explicitly labelled. Restore selects immutable saved inputs without
-changing final acceptance; no model inference or download is involved.
+To replay from the unexposed layer, apply exposure once. Apply the saved Local
+tone curve if enabled, followed by Shadow fade if enabled. Then apply inward
+shading or spatial fade and alpha/background composition. Replay from the
+selected foreground starts at that final rendering step. Reduced-precision
+views remain explicitly labelled. Restore selects immutable saved inputs and
+preserves final acceptance. Replay and restore work from saved data offline.
 
 
 ## Optional Local tone curve

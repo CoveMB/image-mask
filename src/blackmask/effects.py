@@ -918,6 +918,8 @@ def selected_foreground(
     shadow_fade_off: bool = False,
     shadow_reduction_off: bool = False,
 ) -> np.ndarray:
+    """Render a published revision after validated_layer_inputs has checked its geometry."""
+    directory = saved_asset(project, f"revisions/{revision}")
     record = manifest.get("color_cleanup")
     corrected = read_cleanup(project, revision, foreground, alpha, manifest)
     unexposed = (
@@ -931,7 +933,7 @@ def selected_foreground(
     )
     unexposed = selected_local_sharpening(
         project,
-        saved_asset(project, f"revisions/{revision}"),
+        directory,
         unexposed,
         alpha,
         manifest,
@@ -939,7 +941,7 @@ def selected_foreground(
     )
     exposed = selected_exposure(
         project,
-        saved_asset(project, f"revisions/{revision}"),
+        directory,
         unexposed,
         alpha,
         manifest,
@@ -947,7 +949,7 @@ def selected_foreground(
     )[0]
     return select_post_exposure_foreground(
         project,
-        saved_asset(project, f"revisions/{revision}"),
+        directory,
         exposed,
         alpha,
         manifest,
@@ -955,6 +957,7 @@ def selected_foreground(
         tone_curve_off=tone_curve_off,
         shadow_fade_off=shadow_fade_off,
         shadow_reduction_off=shadow_reduction_off,
+        verify_tone_geometry=False,
     )
 
 
@@ -969,6 +972,7 @@ def select_post_exposure_foreground(
     tone_curve_off: bool = False,
     shadow_fade_off: bool = False,
     shadow_reduction_off: bool = False,
+    verify_tone_geometry: bool = True,
 ) -> np.ndarray:
     curved = selected_local_tone_curve(
         project,
@@ -977,6 +981,7 @@ def select_post_exposure_foreground(
         alpha,
         manifest,
         tone_curve_off=tone_curve_off or effects_off,
+        verify_geometry=verify_tone_geometry,
     )
     return selected_shadow_fade(
         project,

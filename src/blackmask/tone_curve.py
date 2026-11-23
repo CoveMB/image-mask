@@ -98,7 +98,12 @@ def apply_local_tone_curve(
 
 
 def read_local_tone_curve(
-    project: Path, directory: Path, manifest: dict[str, Any], alpha: np.ndarray
+    project: Path,
+    directory: Path,
+    manifest: dict[str, Any],
+    alpha: np.ndarray,
+    *,
+    verify_geometry: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]] | None:
     """Validate the saved curve and its registered operands, including when disabled."""
     if "local_tone_curve" not in manifest:
@@ -163,17 +168,18 @@ def read_local_tone_curve(
         authored = operand("area.json").read_bytes()
         if digest(authored) != record["area_sha256"]:
             raise ProjectError("Saved Local tone curve authored area hash mismatch")
-        try:
-            area = json.loads(authored)
-        except ValueError as error:
-            raise ProjectError("Invalid saved Local tone curve authored area") from error
-        authored_support, authored_protection = rasterize_effect_area(
-            area, manifest["developed_id"], width, height
-        )
-        if not np.array_equal(authored_support, support) or np.any(
-            authored_protection & ~protection
-        ):
-            raise ProjectError("Saved Local tone curve area differs from registered operands")
+        if verify_geometry:
+            try:
+                area = json.loads(authored)
+            except ValueError as error:
+                raise ProjectError("Invalid saved Local tone curve authored area") from error
+            authored_support, authored_protection = rasterize_effect_area(
+                area, manifest["developed_id"], width, height
+            )
+            if not np.array_equal(authored_support, support) or np.any(
+                authored_protection & ~protection
+            ):
+                raise ProjectError("Saved Local tone curve area differs from registered operands")
     elif (directory / TONE_CURVE_PREFIX / "area.json").exists():
         raise ProjectError("Unbound saved Local tone curve authored area")
     return support, protection, record
@@ -196,8 +202,11 @@ def selected_local_tone_curve(
     manifest: dict[str, Any],
     *,
     tone_curve_off: bool = False,
+    verify_geometry: bool = True,
 ) -> np.ndarray:
-    saved = read_local_tone_curve(project, directory, manifest, alpha)
+    saved = read_local_tone_curve(
+        project, directory, manifest, alpha, verify_geometry=verify_geometry
+    )
     if saved is None:
         return foreground
     support, protection, record = saved

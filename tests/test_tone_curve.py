@@ -219,6 +219,40 @@ def test_curve_effect_replaces_area_and_reuses_current_operands(tmp_path, monkey
     assert recipe_path.read_bytes() == before
 
 
+def test_curve_warm_crops_reuse_validated_geometry(tmp_path):
+    from blackmask import tone_curve
+
+    source = np.full((4, 6, 3), 36000, dtype=np.uint16)
+    project, _, _ = fixture_project(tmp_path, source)
+    result = operations.apply_operation(project, curve_request(project))
+    revision, master = result["revision"], result["developed_id"]
+    manifest = read_revision(project, revision, master)
+    with patch.object(
+        tone_curve, "rasterize_effect_area", wraps=tone_curve.rasterize_effect_area
+    ) as rasterize:
+        assert saved_layers(project, revision, master)[0][0, 1].tolist() == [38391] * 3
+        assert (
+            saved_layers(project, revision, master, tone_curve_off=True)[0][0, 1].tolist()
+            == [36000] * 3
+        )
+    assert rasterize.call_count == 0
+
+    directory = project / "revisions" / revision
+    area_name = "effects/tone-curve/area.json"
+    settings_name = "effects/tone-curve/settings.json"
+    area = json.loads((directory / area_name).read_bytes())
+    area["regions"][0]["xyxy"][0] += 1
+    area_bytes = _json_bytes(area)
+    (directory / area_name).write_bytes(area_bytes)
+    manifest["files"][area_name] = manifest["local_tone_curve"]["area_sha256"] = digest(area_bytes)
+    settings_bytes = _json_bytes(manifest["local_tone_curve"])
+    (directory / settings_name).write_bytes(settings_bytes)
+    manifest["files"][settings_name] = digest(settings_bytes)
+    (directory / "manifest.json").write_bytes(_json_bytes(manifest))
+    with pytest.raises(ProjectError, match="area differs"):
+        saved_layers(project, revision, master, tone_curve_off=True)
+
+
 def test_curve_rejects_stale_or_corrupt_inputs_without_pointer_changes(tmp_path):
     from blackmask import effects, review
     from blackmask.project import _validation_scope
