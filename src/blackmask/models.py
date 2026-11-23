@@ -1,4 +1,4 @@
-"""Pinned SAM image selection. Network access exists only in explicit setup_sam."""
+"""Pinned SAM selection and ViTMatte alpha matting with explicit setup."""
 
 import hashlib
 import json
@@ -55,7 +55,13 @@ def _setup_model(cache: Path, model: str) -> dict[str, str]:
     repository, revision, files, size, verify = (
         (SAM_REPOSITORY, SAM_REVISION, SAM_FILES, 184305280, verify_sam)
         if model == "sam"
-        else (VITMATTE_REPOSITORY, VITMATTE_REVISION, VITMATTE_FILES, 103294572, verify_vitmatte)
+        else (
+            VITMATTE_REPOSITORY,
+            VITMATTE_REVISION,
+            VITMATTE_FILES,
+            VITMATTE_WEIGHT_BYTES,
+            verify_vitmatte,
+        )
     )
     cache = cache.absolute()
     if cache.resolve() != cache:
@@ -278,11 +284,12 @@ class SamSession:
         return Candidates(masks, scores, metadata)
 
 
-VITMATTE_REPOSITORY = "hustvl/vitmatte-small-composition-1k"
-VITMATTE_REVISION = "6a58ad7646403c1df626fbd746900aec7361ea1d"
+VITMATTE_REPOSITORY = "hustvl/vitmatte-base-composition-1k"
+VITMATTE_REVISION = "0cc2c6d2634645172cbdf866bd9b224c7feee774"
+VITMATTE_WEIGHT_BYTES = 386782180
 VITMATTE_FILES = {
-    "model.safetensors": "bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb",
-    "config.json": "ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f",
+    "model.safetensors": "d63549276509574d2713f5c64e8bf3706770aa84857cc9400127291a3342d0bd",
+    "config.json": "67d70e8cbd850adfde5714af6e1b4078cd266b8867a362cdf6023f1f9e045634",
     "preprocessor_config.json": "0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0",
 }
 
@@ -293,11 +300,13 @@ def verify_vitmatte(cache: Path) -> dict[str, str]:
     for name, expected in VITMATTE_FILES.items():
         path = cache / name
         if path.is_symlink() or not path.is_file():
-            raise ValueError("Pinned ViTMatte assets missing; explicit setup required")
+            raise ValueError("Pinned ViTMatte Base assets missing; run explicit setup-model")
         if file_hash(path) != expected:
-            raise ValueError(f"Pinned ViTMatte hash mismatch: {name}")
-    if (cache / "model.safetensors").stat().st_size != 103294572:
-        raise ValueError("Pinned ViTMatte weight size mismatch")
+            raise ValueError(
+                f"Pinned ViTMatte Base hash mismatch: {name}; select a verified Base cache"
+            )
+    if (cache / "model.safetensors").stat().st_size != VITMATTE_WEIGHT_BYTES:
+        raise ValueError("Pinned ViTMatte Base weight size mismatch")
     return dict(VITMATTE_FILES)
 
 

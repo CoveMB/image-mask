@@ -153,9 +153,9 @@ or native matte correctness was established by the selection checks. Native
 matting requires its separately pinned revision/hash and its own CPU/MPS/geometry checks.
 
 
-## Native ViTMatte evidence — checked 2026-10-18
+## Native ViTMatte Small historical evidence — checked 2026-10-18
 
-Pinned [official checkpoint](https://huggingface.co/hustvl/vitmatte-small-composition-1k/tree/6a58ad7646403c1df626fbd746900aec7361ea1d)
+Previously pinned [Small checkpoint](https://huggingface.co/hustvl/vitmatte-small-composition-1k/tree/6a58ad7646403c1df626fbd746900aec7361ea1d)
 has Apache-2.0 label. Weight 103294572 bytes, SHA-256
 `bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb`;
 config 837 bytes, SHA-256 `ae1006f5a83227048b563b2e60709d4203e432b2276949ebef41a8cfeeeaf45f`;
@@ -188,6 +188,32 @@ Web rendering of the versioned docs was unavailable; official raw config/model c
 PyPI JSON and installed matching version source were inspected directly. No model
 weights, third-party research framework or photos ship in the distribution.
 
+
+## Native ViTMatte Base
+
+Native alpha matting uses [ViTMatte Base from the Composition-1K release](https://github.com/hustvl/ViTMatte#results).
+The authors report Composition-1K sum of absolute alpha differences of 20.33 for
+Base and 21.46 for Small. Benchmark results describe the published test set.
+
+Setup pins the [Hugging Face Safetensors conversion](https://huggingface.co/hustvl/vitmatte-base-composition-1k/tree/0cc2c6d2634645172cbdf866bd9b224c7feee774),
+labelled Apache-2.0, at revision `0cc2c6d2634645172cbdf866bd9b224c7feee774`.
+The [conversion record](https://huggingface.co/hustvl/vitmatte-base-composition-1k/discussions/3)
+identifies the bot-produced weights. Setup verifies each asset and local inference
+uses the hash-verified SafeTensors file, explicit classes, and CPU float32 by default.
+
+| Pinned Base asset | Bytes | SHA-256 |
+| --- | --- | --- |
+| model.safetensors | 386782180 | d63549276509574d2713f5c64e8bf3706770aa84857cc9400127291a3342d0bd |
+| config.json | 783 | 67d70e8cbd850adfde5714af6e1b4078cd266b8867a362cdf6023f1f9e045634 |
+| preprocessor_config.json | 284 | 0db558038b96a3f5c97e46d4ec8966fcc479e9aa58a391bca60b5094a5f7fee0 |
+
+On 2026-11-22, the existing CLI processed one 1024×1024 synthetic tile on an
+Apple M1 Max using Base with Torch 2.13.0 and Transformers 4.57.6. It produced a
+native uint16 draft with partial alpha, exact opaque and empty guide cores, and an
+unchanged input capture hash. Tile inference took 4.07 s and the process peaked at
+10.17 GB RSS. These are observations from one synthetic run. Photographic quality
+remains subject to native-detail review on actual photos. The separate explicit MPS
+probe reported `MPS unavailable` in this execution environment.
 
 ## Source-guided color cleanup — checked 2026-10-18
 
