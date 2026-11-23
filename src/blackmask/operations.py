@@ -325,7 +325,13 @@ def apply_operation(
 
                 return _result_preview(
                     project,
-                    run_effects(project, operation, request_file),
+                    run_effects(
+                        project,
+                        operation,
+                        request_file,
+                        expected_revision_manifest_sha256=expected_revision_manifest_sha256,
+                        expected_authoring_digest=expected_authoring_digest,
+                    ),
                     storage_config,
                     generated=True,
                 )
@@ -487,6 +493,7 @@ def _prepare(
         inherit_shadow_fade,
         inherit_spatial_fade,
     )
+    from .texture import inherit_local_texture
 
     cleanup = (
         inherit_cleanup(project, parent, stage, state["developed_id"], assets=assets)
@@ -516,6 +523,11 @@ def _prepare(
     tone_curve = (
         inherit_local_tone_curve(project, parent, stage, state["developed_id"], assets=assets)
         if parent
+        else None
+    )
+    texture = (
+        inherit_local_texture(project, parent, stage, parent_manifest, assets)
+        if parent and parent_manifest
         else None
     )
     spatial = (
@@ -667,6 +679,7 @@ def _prepare(
         **({"shadow_fade": fade} if fade is not None else {}),
         **({"local_sharpening": sharpening} if sharpening is not None else {}),
         **({"local_tone_curve": tone_curve} if tone_curve is not None else {}),
+        **({"local_texture": texture} if texture is not None else {}),
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
         **({"background_light": background_light} if background_light is not None else {}),
@@ -1289,6 +1302,7 @@ def _matte(
         "local_sharpening",
         "local_exposure",
         "local_tone_curve",
+        "local_texture",
         "shadow_fade",
     )
     if repairing and any(manifest.get(name, {}).get("enabled") for name in rgb_effects):
@@ -1486,6 +1500,7 @@ def _matte(
         saved_spatial_fade,
         select_post_exposure_foreground,
     )
+    from .texture import inherit_local_texture
 
     cleanup = inherit_cleanup(
         project,
@@ -1509,6 +1524,9 @@ def _matte(
     )
     tone_curve = inherit_local_tone_curve(
         project, parent, stage, state["developed_id"], alpha, rgb_protection, assets=assets
+    )
+    texture = inherit_local_texture(
+        project, parent, stage, manifest, assets, alpha=alpha, rgb_protection=rgb_protection
     )
     spatial = inherit_spatial_fade(
         project, parent, stage, state["developed_id"], alpha, rgb_protection, assets=assets
@@ -1544,6 +1562,7 @@ def _matte(
         ("local_sharpening", sharpening),
         ("local_exposure", exposure),
         ("local_tone_curve", tone_curve),
+        ("local_texture", texture),
         ("shadow_fade", fade),
         ("spatial_fade", spatial),
         ("background", background),
@@ -1574,6 +1593,7 @@ def _matte(
             "local_sharpening": sharpening or {},
             "local_exposure": exposure or {},
             "local_tone_curve": tone_curve or {},
+            "local_texture": texture or {},
             "shadow_fade": fade or {},
             "spatial_fade": spatial or {},
         }
@@ -1626,6 +1646,7 @@ def _matte(
             "developed_id": state["developed_id"],
             "assets": assets,
             **({"local_tone_curve": tone_curve} if tone_curve else {}),
+            **({"local_texture": texture} if texture else {}),
             **({"shadow_fade": fade} if fade else {}),
         },
         effects_off=stale_effects,
@@ -1700,7 +1721,7 @@ def _matte(
             before_foreground = read_rgb16(
                 saved_asset(project, f"revisions/{parent}/corrected_rgb16.tif")
             )
-        if (sharpening or exposure or tone_curve or fade) and not stale_effects:
+        if (sharpening or exposure or tone_curve or texture or fade) and not stale_effects:
             from .effects import saved_effect_lock_layers
 
             before_foreground, _, _ = saved_effect_lock_layers(
@@ -1782,17 +1803,20 @@ def _matte(
                 else f"; Local sharpening {'ON' if sharpening['enabled'] else 'OFF'}"
             )
             path.write_bytes(_json_bytes(record))
-    if tone_curve:
+    for key, appearance, label in (
+        ("local_tone_curve", tone_curve, "Local tone curve"),
+        ("local_texture", texture, "Local texture"),
+    ):
+        if appearance is None:
+            continue
         for review_name in ("review", "review-before") if repairing else ("review",):
             path = stage / review_name / "manifest.json"
             record = json.loads(path.read_bytes())
-            record["local_tone_curve"] = (
-                manifest["local_tone_curve"] if review_name == "review-before" else tone_curve
-            )
+            record[key] = manifest[key] if review_name == "review-before" else appearance
             record["label"] += (
-                "; Local tone curve OFF; BASE comparison, rebuild area or disable"
+                f"; {label} OFF; BASE comparison, rebuild area or disable"
                 if stale_effects
-                else f"; Local tone curve {'ON' if tone_curve['enabled'] else 'OFF'}"
+                else f"; {label} {'ON' if appearance['enabled'] else 'OFF'}"
             )
             path.write_bytes(_json_bytes(record))
     if spatial:
@@ -1836,6 +1860,7 @@ def _matte(
         **({"shadow_fade": fade} if fade is not None else {}),
         **({"local_sharpening": sharpening} if sharpening is not None else {}),
         **({"local_tone_curve": tone_curve} if tone_curve is not None else {}),
+        **({"local_texture": texture} if texture is not None else {}),
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
         **({"background_light": background_light} if background_light is not None else {}),

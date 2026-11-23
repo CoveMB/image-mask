@@ -273,6 +273,11 @@ Use the effect's maintained workflow for its own draft and recovery controls:
   Restore a complete saved revision through
   [Repair and restore recovery](#repair-and-restore-recovery). The earlier
   accepted result remains available while the working curve is stale.
+- [Local texture](workflow.md#local-texture) reports when the saved alpha differs.
+  Use **Apply / replace texture area** to rebind it, or **Disable texture** to
+  recover the current candidate without Texture. Settings-only Apply needs a
+  matching alpha even after Disable. Reload area and settings drafts separately
+  if their bound inputs changed.
 - [Fade into background and local fade reduction](workflow.md#fade-into-background):
   reload stale shape drafts before Apply. Rebuild or disable a stale effect;
   reduction cannot refresh its alpha dependency. Each reduction target retains

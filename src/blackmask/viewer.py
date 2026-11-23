@@ -48,6 +48,7 @@ from .series_framing import (
     read_series_settings,
     save_series_settings,
 )
+from .texture import TEXTURE_DEFAULTS, TEXTURE_PREFIX, parse_texture_json
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -160,6 +161,37 @@ class ReviewServer(ThreadingHTTPServer):
                     if tone_curve is not None and tone_curve["area_sha256"] is not None
                     else None
                 )
+                texture = manifest.get("local_texture")
+                texture_state = {}
+                if texture is not None:
+                    location = f"revisions/{path.name}/"
+                    texture_state = {
+                        "local_texture": texture,
+                        "texture_area": parse_texture_json(
+                            saved_asset(
+                                self.project, location + TEXTURE_PREFIX + "area.json"
+                            ).read_bytes()
+                        ),
+                    }
+                    if path.name == state["working_revision"]:
+                        if texture["enabled"]:
+                            alpha_current = not texture["stale"]
+                        elif (
+                            texture["alpha_sha256"] == revision_hashes(manifest)["base_alpha16.png"]
+                        ):
+                            alpha_current = True
+                        else:
+                            from .repair import scalar16
+
+                            alpha_current = np.array_equal(
+                                scalar16(saved_asset(self.project, location + "base_alpha16.png")),
+                                scalar16(
+                                    saved_asset(
+                                        self.project, location + TEXTURE_PREFIX + "alpha16.png"
+                                    )
+                                ),
+                            )
+                        texture_state["texture_alpha_current"] = alpha_current
                 reduction_areas = {}
                 for target, version in (("spatial_fade", 2), ("shadow_fade", 3)):
                     if target in manifest:
@@ -209,6 +241,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "sharpening_area": sharpening_area,
                         "local_tone_curve": tone_curve,
                         "tone_curve_area": tone_curve_area,
+                        **texture_state,
                         "spatial_fade": manifest.get("spatial_fade"),
                         "fade_reduction_areas": reduction_areas,
                         "background": manifest.get("background"),
@@ -220,6 +253,7 @@ class ReviewServer(ThreadingHTTPServer):
                     }
                 )
         state["revisions"] = revisions
+        state["texture_defaults"] = TEXTURE_DEFAULTS
         if any(
             saved_asset(self.project, name).read_bytes() != raw for name, raw in captured.items()
         ):
@@ -772,6 +806,9 @@ class ReviewServer(ThreadingHTTPServer):
                 "tone_curve_area",
                 "tone_curve_protection_file",
                 "tone_curve_settings_only",
+                "local_texture",
+                "texture_area",
+                "texture_settings_only",
                 "shadow_fade_area",
                 "sharpening_area",
                 "shadow_fade_protection_file",
@@ -792,6 +829,7 @@ class ReviewServer(ThreadingHTTPServer):
                     "fade_reduction",
                     "background_light",
                     "local_tone_curve",
+                    "local_texture",
                 )
             ):
                 fields["effects"].add("revision_manifest_sha256")
@@ -1000,6 +1038,9 @@ class ReviewServer(ThreadingHTTPServer):
                         "tone_curve_area",
                         "tone_curve_protection_file",
                         "tone_curve_settings_only",
+                        "local_texture",
+                        "texture_area",
+                        "texture_settings_only",
                         "shadow_fade_area",
                         "sharpening_area",
                         "shadow_fade_protection_file",
@@ -1024,7 +1065,13 @@ class ReviewServer(ThreadingHTTPServer):
             )
         bound_action = any(
             field in data
-            for field in ("spatial_fade", "fade_reduction", "background_light", "local_tone_curve")
+            for field in (
+                "spatial_fade",
+                "fade_reduction",
+                "background_light",
+                "local_tone_curve",
+                "local_texture",
+            )
         )
         expected_manifest = data.get("revision_manifest_sha256") if bound_action else None
         if bound_action and (
@@ -1039,7 +1086,7 @@ class ReviewServer(ThreadingHTTPServer):
                 model_cache=self.model_cache,
                 expected_revision_manifest_sha256=expected_manifest,
                 expected_authoring_digest=data["authoring_digest"]
-                if "local_tone_curve" in request
+                if "local_tone_curve" in request or "local_texture" in request
                 else None,
                 storage_config=self.storage_config,
             )
@@ -1053,7 +1100,7 @@ class ReviewServer(ThreadingHTTPServer):
         match = re.fullmatch(
             r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/"
             r"([0-9]+,[0-9]+,[0-9]+,[0-9]+)"
-            r"(/base|/background-light-off|/exposure-off|/tone-curve-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
+            r"(/base|/background-light-off|/exposure-off|/tone-curve-off|/texture-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -1085,6 +1132,7 @@ class ReviewServer(ThreadingHTTPServer):
                 sharpening_off=base == "/sharpening-off",
                 exposure_off=base == "/exposure-off",
                 tone_curve_off=base == "/tone-curve-off",
+                texture_off=base == "/texture-off",
                 shadow_fade_off=base == "/shadow-fade-off",
             )
             weight, opacity = saved_shading(
@@ -1333,7 +1381,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     json.dumps(self.server.validate_series_preset(data), allow_nan=False).encode(),
                 )
             else:
-                if isinstance(data, dict) and (
+                if isinstance(data, dict) and "local_texture" in data:
+                    data = parse_texture_json(body)
+                elif isinstance(data, dict) and (
                     data.get("action")
                     in {
                         "series-save",

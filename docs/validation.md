@@ -1,5 +1,17 @@
 # Verification
 
+## Local texture
+
+Synthetic tests cover spatial scale, weak band and highlight guards, step halos,
+clipping, exact protected RGB16 and A16, and repair with captured partial-alpha
+RGB locks. HTTP and keyboard tests exercise the typed request, native OFF crop
+and stale-alpha recovery controls. Native, Add margins and Match series editable
+deliveries replay from their saved operands and reject a changed Texture input
+on export reuse. These checks exercise engineering behavior. Native photographic
+acceptance requires the user's own crop comparison.
+[Filter](../tests/test_texture.py) · [Project](../tests/test_texture_project.py) ·
+[Viewer](../tests/test_texture_viewer.py) · [Delivery](../tests/test_texture_delivery.py)
+
 ## Local tone curve
 
 The synthetic kernel and saved-project tests cover the RGB16 reference values,

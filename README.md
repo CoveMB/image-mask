@@ -73,8 +73,13 @@ See [Local sharpening](docs/workflow.md#local-sharpening) for limits and recover
 
 **Local tone curve** adjusts linear luminance using up to six keyboard-editable
 points, a feathered Apply area and hard protection. It runs after Local exposure
-and before Shadow fade, preserves alpha and supports an OFF comparison and
+and before Local texture and Shadow fade, preserves alpha and supports an OFF comparison and
 portable RGB16 replay. [Local tone curve](docs/workflow.md#local-tone-curve)
+
+**Local texture** increases contrast at a chosen detail scale in an authored
+area. Strength, Detail scale, Grain guard and Protect highlights control the
+adjustment. It runs after Local tone curve and preserves the saved matte and
+protected RGB16. [Local texture](docs/workflow.md#local-texture)
 
 **Fade into background** blends subject colour toward the chosen background using
 an editable oval, independently directed arcs, or both. It preserves alpha and
@@ -243,6 +248,7 @@ The skill applies no photo edits.
 | Alpha-aware linear-luminance local sharpening and saved operands | `src/blackmask/sharpening.py` |
 | Independent native area and linear-sRGB local exposure | `src/blackmask/exposure.py` |
 | Saved local tone curve and feathered linear-luminance RGB16 adjustment | `src/blackmask/tone_curve.py` |
+| Alpha-aware band-pass contrast and saved Local texture operands | `src/blackmask/texture.py` |
 | Independent linear-sRGB Shadow fade and saved operands | `src/blackmask/shadow_fade.py` |
 | Native oval/arc fields and background-targeted colour blend | `src/blackmask/spatial_fade.py` |
 | Bounded, editable local fade reduction geometry | `src/blackmask/fade_reduction.py` |

@@ -68,6 +68,17 @@ from .spatial_fade import (
     spatial_fade_files,
     validate_spatial_fade,
 )
+from .texture import (
+    TEXTURE_ALGORITHM,
+    TEXTURE_PREFIX,
+    TEXTURE_RASTERS,
+    apply_local_texture,
+    check_texture_scope,
+    inherit_local_texture,
+    parse_texture_json,
+    read_local_texture,
+    validate_local_texture,
+)
 from .tone_curve import (
     TONE_CURVE_ALGORITHM,
     TONE_CURVE_PREFIX,
@@ -140,6 +151,7 @@ def _effects_request_identity(
         "local_sharpening",
         "local_exposure",
         "local_tone_curve",
+        "local_texture",
         "shadow_fade",
         "background",
         "background_light",
@@ -199,6 +211,7 @@ def _effects_request_identity(
         "shading",
         "local_sharpening",
         "local_exposure",
+        "local_texture",
         "shadow_fade",
         "background",
     ):
@@ -277,6 +290,36 @@ def _tone_curve_reuse_binding(
     }
 
 
+def _texture_reuse_binding(manifest: dict[str, Any], hashes: dict[str, str]) -> dict[str, Any]:
+    if "local_texture" not in manifest:
+        return {}
+    return {
+        "local_texture": {
+            "record": manifest["local_texture"],
+            "upstream": {
+                name: manifest[name]
+                for name in (
+                    "color_cleanup",
+                    "local_sharpening",
+                    "local_exposure",
+                    "local_tone_curve",
+                )
+                if name in manifest
+            },
+            "files": {
+                name: checksum
+                for name, checksum in hashes.items()
+                if name.startswith(
+                    (TEXTURE_PREFIX, TONE_CURVE_PREFIX, "effects/sharpening/", "effects/exposure/")
+                )
+                or name.startswith("effects/")
+                and name.count("/") == 1
+                or name in {"foreground_rgb16.tif", "corrected_rgb16.tif", "base_alpha16.png"}
+            },
+        }
+    }
+
+
 def _reused_effects_result(
     project: Path, state: dict[str, Any], manifest: dict[str, Any], identity: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -312,6 +355,7 @@ def _reused_effects_result(
                     "shadow_fade",
                     "background_light",
                     "local_tone_curve",
+                    "local_texture",
                 )
             )
             or _json_bytes(
@@ -334,6 +378,7 @@ def _reused_effects_result(
             "local_sharpening",
             "local_exposure",
             "local_tone_curve",
+            "local_texture",
             "shadow_fade",
             "background",
             "background_light",
@@ -546,6 +591,7 @@ def stale_effect_names(manifest: dict[str, Any]) -> tuple[str, ...]:
             ("local_sharpening", "Local sharpening"),
             ("local_exposure", "Local exposure"),
             ("local_tone_curve", "Local tone curve"),
+            ("local_texture", "Local texture"),
             ("shadow_fade", "Shadow fade"),
             ("spatial_fade", "Fade into background"),
         )
@@ -915,6 +961,7 @@ def selected_foreground(
     sharpening_off: bool = False,
     exposure_off: bool = False,
     tone_curve_off: bool = False,
+    texture_off: bool = False,
     shadow_fade_off: bool = False,
     shadow_reduction_off: bool = False,
 ) -> np.ndarray:
@@ -955,9 +1002,10 @@ def selected_foreground(
         manifest,
         effects_off=effects_off,
         tone_curve_off=tone_curve_off,
+        texture_off=texture_off,
         shadow_fade_off=shadow_fade_off,
         shadow_reduction_off=shadow_reduction_off,
-        verify_tone_geometry=False,
+        verify_area_geometry=False,
     )
 
 
@@ -970,9 +1018,10 @@ def select_post_exposure_foreground(
     *,
     effects_off: bool = False,
     tone_curve_off: bool = False,
+    texture_off: bool = False,
     shadow_fade_off: bool = False,
     shadow_reduction_off: bool = False,
-    verify_tone_geometry: bool = True,
+    verify_area_geometry: bool = True,
 ) -> np.ndarray:
     curved = selected_local_tone_curve(
         project,
@@ -981,8 +1030,20 @@ def select_post_exposure_foreground(
         alpha,
         manifest,
         tone_curve_off=tone_curve_off or effects_off,
-        verify_geometry=verify_tone_geometry,
+        verify_geometry=verify_area_geometry,
     )
+    texture = read_local_texture(
+        project, directory, manifest, alpha, verify_geometry=verify_area_geometry
+    )
+    if (
+        texture is not None
+        and texture.record["enabled"]
+        and not texture.record["stale"]
+        and not (effects_off or texture_off)
+    ):
+        curved = apply_local_texture(
+            curved, alpha, texture.support, texture.protection, texture.record["settings"]
+        )
     return selected_shadow_fade(
         project,
         directory,
@@ -1024,17 +1085,20 @@ def saved_effect_lock_layers(project: Path, revision: str, developed_id: str):
             if name.startswith("effects/sharpening/") or name == "base_alpha16.png"
         ):
             raise ProjectError("Prepared lock must retain inherited Local sharpening and alpha")
-        if "local_tone_curve" in manifest or "local_tone_curve" in parent:
+        for effect, prefix, label in (
+            ("local_tone_curve", TONE_CURVE_PREFIX, "Local tone curve"),
+            ("local_texture", TEXTURE_PREFIX, "Local texture"),
+        ):
+            if effect not in manifest and effect not in parent:
+                continue
             before, prepared = revision_hashes(parent), revision_hashes(manifest)
-            tone_dependencies = {
-                name
-                for name in before.keys() | prepared.keys()
-                if name.startswith(TONE_CURVE_PREFIX)
+            dependencies = {
+                name for name in before.keys() | prepared.keys() if name.startswith(prefix)
             } | {"base_alpha16.png"}
-            if manifest.get("local_tone_curve") != parent.get("local_tone_curve") or any(
-                before.get(name) != prepared.get(name) for name in tone_dependencies
+            if manifest.get(effect) != parent.get(effect) or any(
+                before.get(name) != prepared.get(name) for name in dependencies
             ):
-                raise ProjectError("Prepared lock must retain inherited Local tone curve and alpha")
+                raise ProjectError(f"Prepared lock must retain inherited {label} and alpha")
         if manifest.get("spatial_fade") != parent.get("spatial_fade") or any(
             manifest["files"].get(name) != parent["files"].get(name)
             for name in parent["files"]
@@ -1046,11 +1110,21 @@ def saved_effect_lock_layers(project: Path, revision: str, developed_id: str):
 
 
 def run_effects(
-    project: Path, operation: dict[str, Any], request_file: Path | None
+    project: Path,
+    operation: dict[str, Any],
+    request_file: Path | None,
+    *,
+    expected_revision_manifest_sha256: str | None = None,
+    expected_authoring_digest: str | None = None,
 ) -> dict[str, Any]:
     """Caller holds the canonical writer lock; preserve all prior complete revisions."""
     from .export import publish_artifacts, read_rgb16, saved_layers
-    from .operations import _input_file, _reject_pending_guidance, draft_digest
+    from .operations import (
+        _input_file,
+        _reject_pending_guidance,
+        draft_digest,
+        guidance_draft_digest,
+    )
     from .review import write_revision_overview
 
     required = {
@@ -1080,6 +1154,9 @@ def run_effects(
             "tone_curve_area",
             "tone_curve_protection_file",
             "tone_curve_settings_only",
+            "local_texture",
+            "texture_area",
+            "texture_settings_only",
             "exposure_area",
             "exposure_protection_file",
             "exposure_amount_only",
@@ -1126,6 +1203,22 @@ def run_effects(
             raise ProjectError("Tone curve settings-only/disable cannot replace area or protection")
     elif set(operation) & tone_fields:
         raise ProjectError("Tone curve fields require local_tone_curve settings")
+    texture_changed = "local_texture" in operation
+    texture_fields = {"texture_area", "texture_settings_only"}
+    if texture_changed:
+        validate_local_texture(operation["local_texture"])
+        if set(operation) - required - texture_fields - {"local_texture"}:
+            raise ProjectError("Local texture must be an exclusive effects operation")
+        settings_only = operation.get("texture_settings_only", False)
+        if type(settings_only) is not bool:
+            raise ProjectError("texture_settings_only must be boolean")
+        if operation["local_texture"]["enabled"]:
+            if ("texture_area" in operation) == settings_only:
+                raise ProjectError("Local texture requires an authored area or settings-only Apply")
+        elif set(operation) & texture_fields:
+            raise ProjectError("Disabling Local texture cannot replace area or apply settings")
+    elif set(operation) & texture_fields:
+        raise ProjectError("Texture area fields require local_texture settings")
     spatial_changed = "spatial_fade" in operation
     reduction_changed = "fade_reduction" in operation
     if reduction_changed:
@@ -1219,6 +1312,7 @@ def run_effects(
         or not fade_changed
         and not sharpening_changed
         and not tone_changed
+        and not texture_changed
         and not background_changed
         and not light_changed
         and not spatial_changed
@@ -1265,13 +1359,25 @@ def run_effects(
     if reduction_changed:
         reduction_request = operation["fade_reduction"]
     request_bytes = request_file.read_bytes() if request_file else _json_bytes(operation)
-    request_snapshot = json.loads(request_bytes)
+    request_snapshot = (
+        parse_texture_json(request_bytes) if texture_changed else json.loads(request_bytes)
+    )
     if request_snapshot != operation or (
-        tone_changed and _json_bytes(request_snapshot) != _json_bytes(operation)
+        (tone_changed or texture_changed)
+        and _json_bytes(request_snapshot) != _json_bytes(operation)
     ):
         raise ProjectError("Stale effects request file")
     project = _root(project)
     state = read_project(project)
+
+    def recheck_viewer_authoring() -> None:
+        if (
+            expected_authoring_digest is not None
+            and guidance_draft_digest(project) != expected_authoring_digest
+        ):
+            raise ProjectError("Stale viewer authoring identity; reload current project")
+
+    recheck_viewer_authoring()
     _reject_pending_guidance(project)
     if (
         operation["developed_id"] != state["developed_id"]
@@ -1285,6 +1391,7 @@ def run_effects(
         or exposure_changed
         or sharpening_changed
         or tone_changed
+        or texture_changed
         or fade_changed
         or background_changed
         or light_changed
@@ -1408,8 +1515,18 @@ def run_effects(
     ):
         raise ProjectError("Stale effects snapshot before processing")
     parent_bytes = saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()
-    if tone_changed and _json_bytes(json.loads(parent_bytes)) != _json_bytes(manifest):
-        raise ProjectError("Stale Local tone curve base manifest")
+    if (
+        expected_revision_manifest_sha256 is not None
+        and digest(parent_bytes) != expected_revision_manifest_sha256
+    ):
+        raise ProjectError("Stale raw revision manifest; reload the selected result")
+    if (
+        expected_revision_manifest_sha256 is not None
+        or tone_changed
+        or texture_changed
+        or "local_texture" in manifest
+    ) and _json_bytes(json.loads(parent_bytes)) != _json_bytes(manifest):
+        raise ProjectError("Stale local effect base manifest")
     parent_guides = saved_asset(project, f"revisions/{parent}/guides.json").read_bytes()
     parent_recipe = tomllib.loads(
         saved_asset(project, f"revisions/{parent}/recipe.toml").read_text()
@@ -1425,6 +1542,7 @@ def run_effects(
             "local_sharpening",
             "local_exposure",
             "local_tone_curve",
+            "local_texture",
             "shadow_fade",
             "spatial_fade",
             "background",
@@ -1514,6 +1632,48 @@ def run_effects(
             (tone_support != 0) & (alpha != 0) & ~tone_protection
         ):
             raise ProjectError("Enabled Local tone curve requires a nonempty eligible selection")
+    texture_area = None
+    if texture_changed:
+        texture_settings = operation["local_texture"]
+        saved_texture = read_local_texture(
+            project,
+            saved_asset(project, f"revisions/{parent}"),
+            manifest,
+            alpha,
+            verify_geometry=False,
+        )
+        if (
+            texture_settings["enabled"]
+            and parent != state["accepted_revision"]
+            and not operation["candidate_comparison"]
+        ):
+            raise ProjectError(
+                "Local texture requires accepted base or explicit candidate comparison"
+            )
+        if saved_texture is not None:
+            check_texture_scope(saved_texture.support, scope)
+        if "texture_area" in operation:
+            texture_support, texture_protection = rasterize_effect_area(
+                operation["texture_area"], state["developed_id"], width, height
+            )
+            texture_protection |= protection
+            check_texture_scope(texture_support, scope)
+            texture_area = texture_support, texture_protection
+        else:
+            if saved_texture is None:
+                raise ProjectError(
+                    "Local texture settings-only Apply or Disable requires a saved area"
+                )
+            texture_support, texture_protection = saved_texture.support, saved_texture.protection
+            if texture_settings["enabled"]:
+                if not np.array_equal(saved_texture.dependency, alpha):
+                    raise ProjectError("Stale Local texture alpha: rebuild area before enabling")
+            elif texture_settings != dict(saved_texture.record["settings"], enabled=False):
+                raise ProjectError("Disabling Local texture requires its saved settings")
+        if texture_settings["enabled"] and not np.any(
+            (texture_support != 0) & (alpha != 0) & ~texture_protection
+        ):
+            raise ProjectError("Enabled Local texture requires a nonempty eligible selection")
     shading_record = manifest.get("shading")
     shading_inputs = {}
     if "shading" in operation:
@@ -1750,7 +1910,7 @@ def run_effects(
             (sharpening_support != 0) & (alpha != 0) & ~sharpening_protection
         ):
             raise ProjectError("Enabled Local sharpening requires a nonempty eligible selection")
-    if not (spatial_changed or tone_changed) and current_recipe.get(
+    if not (spatial_changed or tone_changed or texture_changed) and current_recipe.get(
         "spatial_fade"
     ) != parent_recipe.get("spatial_fade"):
         raise ProjectError("Changed spatial fade recipe requires explicit spatial fade operation")
@@ -1784,6 +1944,7 @@ def run_effects(
         )
 
     def recheck():
+        recheck_viewer_authoring()
         for path, data in sharpening_inputs.items():
             if path.read_bytes() != data:
                 raise ProjectError("Stale Local sharpening input")
@@ -1851,7 +2012,7 @@ def run_effects(
                 captured = path.read_bytes()
             request_inputs[name] = captured
     input_hashes = {name: digest(data) for name, data in request_inputs.items()}
-    identity = {
+    identity: dict[str, Any] = {
         "schema_version": 1,
         "execution": _effects_execution_identity(),
         "request": _effects_request_identity(operation, settings, input_hashes, shading_record),
@@ -1868,6 +2029,7 @@ def run_effects(
                     "local_sharpening",
                     "local_exposure",
                     "local_tone_curve",
+                    "local_texture",
                     "shadow_fade",
                     "background",
                     "background_light",
@@ -1890,6 +2052,8 @@ def run_effects(
             "request_files": input_hashes,
         },
     }
+    if identity["execution"] is not None and (texture_changed or "local_texture" in manifest):
+        identity["execution"]["algorithms"]["local_texture"] = TEXTURE_ALGORITHM
     reused_result = _reused_effects_result(
         project,
         state,
@@ -1898,6 +2062,7 @@ def run_effects(
             identity,
             local_sharpening=_sharpening_reuse_binding(manifest, revision_hashes(manifest)),
             local_tone_curve=_tone_curve_reuse_binding(manifest, revision_hashes(manifest)),
+            **_texture_reuse_binding(manifest, revision_hashes(manifest)),
             background_light=_background_light_reuse_binding(
                 manifest.get("background_light"), revision_hashes(manifest)
             ),
@@ -1922,6 +2087,7 @@ def run_effects(
         )
         + (alpha.nbytes * 3 if sharpening_changed else 0)
         + (alpha.nbytes * 3 if tone_replacement else 0)
+        + (alpha.nbytes * 3 if texture_area is not None else 0)
         + retained_reduction_bytes
         + (0 if reduction16 is None else reduction16.nbytes)
         + 1024**2,
@@ -2363,6 +2529,44 @@ def run_effects(
         )
         (directory / "settings.json").write_bytes(_json_bytes(tone_record))
 
+    texture_record = (
+        inherit_local_texture(project, parent, stage, manifest, assets)
+        if texture_area is None
+        else None
+    )
+    if texture_changed:
+        directory = stage / TEXTURE_PREFIX
+        if texture_area is not None:
+            directory.mkdir(parents=True, exist_ok=True)
+            texture_support, texture_protection = texture_area
+            for name, values in (
+                ("support16.png", texture_support),
+                ("protection16.png", texture_protection.astype(np.uint16) * 65535),
+                ("alpha16.png", alpha),
+            ):
+                Image.fromarray(values).save(directory / name)
+            area_bytes = _json_bytes(operation["texture_area"])
+            (directory / "area.json").write_bytes(area_bytes)
+            texture_record = {
+                "schema_version": 2,
+                "developed_id": state["developed_id"],
+                "algorithm": TEXTURE_ALGORITHM,
+                "area_sha256": digest(area_bytes),
+                **{
+                    key: digest((directory / name).read_bytes())
+                    for name, key in TEXTURE_RASTERS.items()
+                },
+            }
+        assert texture_record is not None
+        texture_record.update(
+            enabled=operation["local_texture"]["enabled"],
+            settings=operation["local_texture"],
+            stale=False,
+            scope_xyxy=scope,
+            candidate_comparison=operation["candidate_comparison"],
+        )
+        (directory / "settings.json").write_bytes(_json_bytes(texture_record))
+
     effect_records = {}
     if light_record is not None:
         effect_records["background_light"] = light_record
@@ -2378,6 +2582,8 @@ def run_effects(
         effect_records["local_exposure"] = exposure_record
     if tone_record is not None:
         effect_records["local_tone_curve"] = tone_record
+    if texture_record is not None:
+        effect_records["local_texture"] = texture_record
     if fade_record is not None:
         effect_records["shadow_fade"] = fade_record
     if spatial_record is not None:
@@ -2402,6 +2608,7 @@ def run_effects(
         ("local_sharpening", sharpening_changed),
         ("local_exposure", exposure_changed),
         ("local_tone_curve", tone_changed),
+        ("local_texture", texture_changed),
         ("shadow_fade", fade_changed),
         (
             "spatial_fade",
@@ -2533,6 +2740,10 @@ def run_effects(
             if tone_record["enabled"] and not stale
             else "; Local tone curve OFF"
         )
+    if texture_record is not None:
+        review["label"] += "; Local texture " + (
+            "ON" if texture_record["enabled"] and not stale else "OFF"
+        )
     if spatial_record is not None:
         review["label"] += (
             "; Fade into background ON; diagnostic backdrops retain its selected target"
@@ -2550,7 +2761,7 @@ def run_effects(
     (stage / "review/manifest.json").write_bytes(_json_bytes(review))
     # Input snapshots remain consumed-input evidence. Bind the new output only
     # after its actual record and all four operands exist, so first repeats hit.
-    if sharpening_record is not None or tone_record is not None:
+    if sharpening_record is not None or tone_record is not None or texture_record is not None:
         upstream_hashes = {
             **{name: reference["sha256"] for name, reference in assets.items()},
             **{
@@ -2568,6 +2779,7 @@ def run_effects(
         upstream_hashes = {}
     identity["local_sharpening"] = _sharpening_reuse_binding(effect_records, upstream_hashes)
     identity["local_tone_curve"] = _tone_curve_reuse_binding(effect_records, upstream_hashes)
+    identity.update(_texture_reuse_binding(effect_records, upstream_hashes))
     for target, saved_record, inventory in (
         ("spatial_fade", spatial_record, spatial_fade_files),
         ("shadow_fade", fade_record, shadow_fade_files),
@@ -2625,12 +2837,15 @@ def run_effects(
     )
     (stage / "manifest.json").write_bytes(_json_bytes(new_manifest))
 
-    recheck()
     destination = revisions / revision
-    if spatial_record is not None or light_record is not None or tone_record is not None:
+    validated_appearance = any(
+        record is not None for record in (spatial_record, light_record, tone_record, texture_record)
+    )
+    if validated_appearance:
         _validate_revision_directory(
             project, revision, state["developed_id"], str(stage.relative_to(project))
         )
+    recheck()
     try:
         publish_artifacts(stage, destination)
         read_revision(project, revision, state["developed_id"])
@@ -2644,9 +2859,7 @@ def run_effects(
         record_generated_result(state, revision, new_manifest)
         _atomic_json(saved_asset(project, "state.json"), state, validate_before_replace=recheck)
     except OSError as error:
-        if (
-            spatial_record is not None or light_record is not None or tone_record is not None
-        ) and destination.exists():
+        if validated_appearance and destination.exists():
             effect_name = (
                 "Background light"
                 if light_changed
@@ -2654,6 +2867,8 @@ def run_effects(
                 if spatial_changed
                 else "Local tone curve"
                 if tone_changed
+                else "Local texture"
+                if texture_changed
                 else "Effects"
             )
             raise ProjectError(

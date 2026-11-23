@@ -36,6 +36,7 @@ class Recipe:
     local_tone_curve: dict[str, Any] = field(
         default_factory=lambda: {"enabled": False, "points": []}
     )
+    local_texture: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,6 +63,7 @@ class Recipe:
                 if self.local_tone_curve != {"enabled": False, "points": []}
                 else {}
             ),
+            **({"local_texture": self.local_texture} if self.local_texture is not None else {}),
         }
 
     @classmethod
@@ -84,6 +86,7 @@ class Recipe:
                 "local_sharpening",
                 "background_light",
                 "local_tone_curve",
+                "local_texture",
             }
             != set(expected)
             - {
@@ -105,11 +108,14 @@ class Recipe:
         from .exposure import validate_exposure
         from .shadow_fade import validate_shadow_fade
         from .sharpening import validate_local_sharpening
+        from .texture import validate_local_texture
         from .tone_curve import validate_local_tone_curve
 
         validate_local_sharpening(value.get("local_sharpening", cls(developed_id).local_sharpening))
         tone_curve = value.get("local_tone_curve", cls(developed_id).local_tone_curve)
         validate_local_tone_curve(tone_curve)
+        if "local_texture" in value:
+            validate_local_texture(value["local_texture"])
         validate_shadow_fade(value.get("shadow_fade", cls(developed_id).shadow_fade))
         if "background" in value:
             from .background import validate_background
@@ -199,4 +205,5 @@ class Recipe:
             dict(value.get("local_sharpening", cls(developed_id).local_sharpening)),
             dict(value["background_light"]) if "background_light" in value else None,
             dict(tone_curve),
+            dict(value["local_texture"]) if "local_texture" in value else None,
         )
