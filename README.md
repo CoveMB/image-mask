@@ -52,7 +52,8 @@ Scoped repairs save quantized operands for replay without models. Restore select
 saved working inputs without changing final acceptance. `status` and `resume`
 recover verified tiles or completed stages from interrupted matte/repair operations.
 The offline loopback review window provides typed guide authoring, native
-comparisons and the same processing and recovery controls. Optional assisted
+comparisons and the same processing and recovery controls. [Refine edge](docs/workflow.md#refine-a-fur-or-hair-edge)
+scopes repair with a brush or rectangle and previews the native result before Apply. Optional assisted
 review records bounded, source-based judgements through those same operations.
 Explicit [focused comparison sheets](docs/file-contract.md#focused-comparisons) save
 selected crops and optional presentation previews, with native evidence retained

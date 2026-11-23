@@ -63,6 +63,57 @@ const lightFetch=fetch;globalThis.fetch=async(path,options)=>{
 """
 
 
+def test_edge_native_rectangle_compares_before_applying_the_reviewed_candidate():
+    run_page(
+        r"""
+ const edgeFetch=fetch, edgeImages=[];
+ globalThis.fetch=async(path,options)=>{
+   if(path.startsWith('/edge-preview/'))edgeImages.push(path);
+   if(path==='/api/action'){
+     const request=JSON.parse(options.body);
+     servedState.action={running:true,name:request.action,error:null,result:null};
+   }
+   return edgeFetch(path,options);
+ };
+ await ready();
+ await $('edgeStart').onclick();
+ assert.equal($('panel').value,'source');
+ $('edgeRectangle').value='25,30,33,38';
+ await $('edgeAddRectangle').onclick();
+ await $('edgePreview').onclick();
+ assert.deepEqual(posts.at(-1).edge_area,{crop_xyxy:[0,0,100,100],regions:[{shape:'rectangle',xyxy:[25,30,33,38]}]});
+ assert.equal(posts.at(-1).action,'edge-preview');
+ assert.equal($('edgeApply').disabled,true);
+ const other='b'.repeat(32);
+ servedState.action={running:false,name:'edge-preview',error:null,result:{request_id:'c'.repeat(32),preview_id:other,crop_xyxy:[0,0,100,100],scope_xyxy:[70,70,80,80],changed_pixels:12,stale_effects:[]}};
+ await refresh();
+ assert.equal(edgeImages.some(path=>path.includes(other)),false,'Another tab’s preview was shown');
+ assert.equal($('edgeApply').disabled,true);
+ await $('edgePreview').onclick();
+ const id='a'.repeat(32);
+ servedState.action={running:false,name:'edge-preview',error:null,result:{request_id:posts.at(-1).request_id,preview_id:id,crop_xyxy:[0,0,100,100],scope_xyxy:[25,30,33,38],changed_pixels:7,stale_effects:['cleanup']}};
+ await refresh();
+ assert.ok(edgeImages.includes(`/edge-preview/${id}/candidate/black`));
+ assert.match($('edgeStatus').textContent,/cleanup/);
+ assert.equal(transform.scale,1);
+ assert.equal($('accept').disabled,true);
+ assert.equal($('exportDraft').disabled,true);
+ assert.equal($('comparisonSave').disabled,true);
+ $('photoReviewed').checked=true;
+ const beforeBlocked = posts.length;
+ await $('accept').onclick();await $('exportDraft').onclick();
+ assert.equal(posts.length,beforeBlocked);
+ $('panel').value='white';$('edgeSide').value='before';await $('edgeSide').onchange();
+ assert.ok(edgeImages.includes(`/edge-preview/${id}/before/white`));
+ assert.equal(transform.scale,1);
+ await $('edgeApply').onclick();
+ assert.equal(posts.at(-1).action,'edge-apply');
+ assert.equal(posts.at(-1).preview_id,id);
+ assert.equal('edge_area' in posts.at(-1),false);
+ """
+    )
+
+
 def test_background_light_form_fractions_shape_sessions_and_base_independence():
     run_page(
         LIGHT_SETUP

@@ -76,6 +76,7 @@ class ReviewServer(ThreadingHTTPServer):
         self.action_lock = threading.Lock()
         self.framing_preview_lock = threading.Lock()
         self.action: dict[str, Any] = {"running": False, "error": None, "result": None}
+        self.edge_preview: tuple[str, operations.EdgePreview] | None = None
         super().__init__(("127.0.0.1", 0), ReviewHandler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
         self.host = f"127.0.0.1:{self.server_port}"
@@ -218,6 +219,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "revision": path.name,
                         "kind": manifest["kind"],
                         "final_acceptable": manifest["final_acceptable"],
+                        "has_alpha": "base_alpha16.png" in revision_hashes(manifest),
                         "candidates": [
                             {k: c[k] for k in ("id", "index", "score", "selected", "group_id")}
                             for c in manifest.get("candidates", [])
@@ -759,6 +761,9 @@ class ReviewServer(ThreadingHTTPServer):
             "matte": set(),
             "effects": {"scope_xyxy", "candidate_comparison"},
             "repair": {"context_xyxy", "scope_xyxy", "reason", "merge_policy"},
+            "edge-preview": {"edge_area", "request_id", "revision_manifest_sha256"},
+            "edge-apply": {"preview_id"},
+            "edge-discard": {"preview_id"},
             "restore": {"revision", "replace_drafts"},
             "resume": {"operation_id"},
             "preview-repair": set(),
@@ -891,6 +896,41 @@ class ReviewServer(ThreadingHTTPServer):
         )
         if pending and pending["current"] and pending["actions"]:
             raise ProjectError("Saved pending guidance requires preparation first")
+        if action == "edge-preview":
+            request_id = data["request_id"]
+            if not isinstance(request_id, str) or re.fullmatch(r"[a-f0-9]{32}", request_id) is None:
+                raise ProjectError("Invalid edge preview request identity")
+            self.edge_preview = None
+            preview = operations.preview_edge_repair(
+                self.project,
+                data,
+                data["edge_area"],
+                model_cache=self.model_cache,
+                storage_config=self.storage_config,
+            )
+            preview_id = secrets.token_hex(16)
+            self.edge_preview = (preview_id, preview)
+            operation = json.loads(preview.operation)
+            return {
+                "request_id": request_id,
+                "preview_id": preview_id,
+                "crop_xyxy": operation["context_xyxy"],
+                "scope_xyxy": operation["scope_xyxy"],
+                "changed_pixels": preview.changed_pixels,
+                "stale_effects": preview.stale_effects,
+            }
+        if action in {"edge-apply", "edge-discard"}:
+            record = self.edge_preview
+            if record is None or data["preview_id"] != record[0]:
+                raise ProjectError("Edge preview is unavailable; preview again")
+            if action == "edge-discard":
+                self.edge_preview = None
+                return {"discarded": True}
+            result = operations.apply_edge_repair(
+                self.project, data, record[1], storage_config=self.storage_config
+            )
+            self.edge_preview = None
+            return result
         if action == "development":
             return accept_development(self.project, data["developed_id"])
         if action == "comparison":
@@ -1094,6 +1134,43 @@ class ReviewServer(ThreadingHTTPServer):
             self.project, request, model_cache=self.model_cache, storage_config=self.storage_config
         )
 
+    def edge_image(self, path: str) -> bytes:
+        match = re.fullmatch(
+            r"/edge-preview/([a-f0-9]{32})/(before|candidate)/(source|alpha|black|gray|white|area)",
+            path,
+        )
+        record = self.edge_preview
+        if match is None or record is None or match[1] != record[0]:
+            raise FileNotFoundError("Unknown edge preview identity")
+        _, side, panel = match.groups()
+        preview = record[1]
+        operation = json.loads(preview.operation)
+        prefix = f"revisions/{operation['base_revision']}"
+        if (
+            any(
+                digest(saved_asset(self.project, name).read_bytes()) != checksum
+                for name, checksum in preview.bindings["snapshots"].items()
+            )
+            or digest(saved_asset(self.project, f"{prefix}/manifest.json").read_bytes())
+            != preview.bindings["parent_manifest_sha256"]
+            or operations.guidance_draft_digest(self.project)
+            != preview.bindings["authoring_digest"]
+        ):
+            raise ProjectError("Stale edge preview; review the current project again")
+        if panel == "area":
+            pixels = np.zeros((*preview.support.shape, 4), dtype=np.uint8)
+            pixels[preview.support != 0] = [64, 170, 255, 104]
+            pixels[preview.protection] = [255, 96, 225, 144]
+        else:
+            pixels = review_panels(
+                preview.source,
+                preview.foreground,
+                preview.before if side == "before" else preview.merged,
+            )[panel]
+        buffer = io.BytesIO()
+        Image.fromarray(pixels).save(buffer, format="PNG")
+        return buffer.getvalue()
+
     @_validation_scope()
     def image(self, path: str) -> bytes:
         state = read_project(self.project, validate_drafts=False)
@@ -1288,6 +1365,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 self.reply(200, json.dumps(self.server.snapshot(), allow_nan=False).encode())
             elif self.path.startswith("/image/"):
                 self.reply(200, self.server.image(self.path), "image/png")
+            elif self.path.startswith("/edge-preview/"):
+                self.reply(200, self.server.edge_image(self.path), "image/png")
             elif self.path.startswith("/mask/"):
                 self.reply(200, self.server.mask(self.path), "image/png")
             else:
@@ -1386,6 +1465,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 elif isinstance(data, dict) and (
                     data.get("action")
                     in {
+                        "edge-preview",
+                        "edge-apply",
+                        "edge-discard",
                         "series-save",
                         "series-export",
                     }

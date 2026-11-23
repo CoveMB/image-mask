@@ -559,7 +559,7 @@ do not make compare-and-unlink atomic against arbitrary hostile writers.
 
 Schema-2 repair revisions extend complete matte revisions; earlier saved matte
 and prepared revisions remain readable. Preparation carries parental
-`base_alpha16.png` and `foreground_rgb16.tif` unchanged. Repair requires a current
+`base_alpha16.png` and `foreground_rgb16.tif` unchanged. Ordinary repair requires a current
 prepared revision with a complete same-master parental matte,
 verified immutable ancestry and exact current draft digest. No repeated guide
 edits are accepted on a repair request.
@@ -577,6 +577,28 @@ the revision manifest. Replay checks parent bindings and validates its result
 against `base_alpha16.png`; accepted/review/export routes use the same check.
 Context is part of cropped inference cache identity even if repeated image/guide
 bytes would otherwise match a different native crop.
+
+**Refine edge** in the local viewer saves an additive schema-2 repair variant. It
+can start from a complete working revision or a prepared working revision that
+carries compatible parent alpha and RGB locks. The `edge_area` field in
+`repair/merge.json` records the authored crop, native brush strokes and rectangles.
+The operation-specific `repair/support16.png` is the rasterized union clipped to
+the authored crop and zeroed under saved locks. Its recorded write bounds and
+64-pixel clipped read context are verified on replay. The ordinary
+`supports/support16.png` guide asset remains available to the other controls.
+Edge replay checks the new support against its geometry and binds inherited
+trimap, locks, foreground RGB16 and parent alpha. Ordinary repair requests and
+earlier schema-2 revisions retain their existing bindings. Use an updated app to
+review or replay an edge repair.
+
+One unapplied native candidate lives in memory per viewer launch. Preview uses
+no project inference-cache writes and creates no revision, recovery request or
+acceptance record. Apply rechecks the bound project, drafts and immutable layers
+under the writer lock. It publishes the reviewed alpha using the existing repair
+publisher, and does not rerun inference. An interrupted Apply can leave a
+complete orphan revision for explicit restore. If a complete revision was not
+published, reopen or preview again. The ordinary Resume action does not publish
+an edge preview or rerun edge inference.
 
 Repair uses the existing foreground/alpha renderer and final human acceptance
 control. Preparing/repairing/restoring does not advance final acceptance. Restore
