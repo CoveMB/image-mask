@@ -438,6 +438,44 @@ never include them in distributions.
 Ignored references need their own backup; Git does not back them up.
 
 
+## Local tone curve assistance
+
+Use the curve only for an explicitly requested local luminance adjustment.
+Keep photographed highlights and partial-alpha detail in the same native crop
+for manual comparison. Scoped positive-alpha support determines where the curve
+acts, and hard protection preserves incoming RGB. Use the working revision's
+current developed ID and digest in the request. Use `candidate_comparison: true`
+only when explicitly refining an unaccepted result.
+
+```json
+{
+  "schema_version": 2,
+  "kind": "effects",
+  "developed_id": "DEVELOPED_ID",
+  "base_revision": "rev-002",
+  "inputs_digest": "INPUTS_DIGEST",
+  "scope_xyxy": [0, 0, 600, 400],
+  "candidate_comparison": false,
+  "local_tone_curve": {"enabled": true, "points": [[800, 550], [3200, 3800], [7000, 7000]]},
+  "tone_curve_area": {
+    "regions": [
+      {"id": "subject", "role": "support", "shape": "rectangle", "xyxy": [120, 80, 420, 300], "feather_px": 12}
+    ],
+    "protection": [
+      {"id": "reflection", "role": "support", "shape": "rectangle", "xyxy": [240, 110, 261, 131], "feather_px": 0}
+    ]
+  }
+}
+```
+
+Substitute the current project identities and native geometry, save the request
+as JSON and run `blackmask run PROJECT --request FILE`. An alternate replacement
+uses a project-relative grayscale16 `support_file` plus a categorical
+`tone_curve_protection_file`. Settings-only Apply uses saved current-alpha
+operands. Compare the same native crop with **Compare Local tone curve OFF**
+and inspect the Apply boundary and Protect regions. Only the user accepts the
+photograph. [Saved curve and export contract](file-contract.md#optional-local-tone-curve)
+
 ## Local sharpening assistance
 
 Use only the supported Local sharpening controls or the

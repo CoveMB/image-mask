@@ -92,6 +92,30 @@
       flex-wrap: wrap;
       align-items: center;
     }
+    #toneCurvePlot {
+      display: block;
+      max-width: 100%;
+      background: #171b20;
+      border: 1px solid #56616a;
+    }
+    .tone-point {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px 8px;
+      margin-block: 8px;
+      border-bottom: 1px solid #56616a;
+    }
+    .tone-point input {
+      display: block;
+      width: 100%;
+    }
+    .tone-point button {
+      justify-self: start;
+      grid-column: 1 / -1;
+    }
+    #toneCurveControls button[aria-disabled="true"] {
+      opacity: 0.5;
+    }
     .view {
       display: flex;
       flex-direction: column;
@@ -223,7 +247,7 @@
         <canvas
           id="canvas"
           tabindex="0"
-          aria-label="Source and result; native-coordinate guides, Background light, Local sharpening, Local exposure, Shadow fade, Fade shapes or Fade reduction authoring. Numeric alternatives in each section."
+          aria-label="Source and result; native-coordinate guides, Background light, Local sharpening, Local exposure, Tone curve area, Shadow fade, Fade shapes or Fade reduction authoring. Numeric alternatives in each section."
         ></canvas>
       </div>
     </section>
@@ -419,7 +443,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -514,6 +538,31 @@
         <p id="sharpeningStatus" role="status" class="small"></p>
         <p id="sharpeningDraftStatus" role="status" class="small"></p>
         <p class="small">Choose Local sharpening area in Canvas authoring mode above. Amount/reset use the saved area and keep pending area edits unsaved. Replacement includes removal of the old area. Reload discards unsaved area edits and loads saved geometry. Exposure remains independently editable. No model or internet needed.</p>
+      </fieldset>
+      <fieldset id="toneCurveControls">
+        <legend>Local tone curve</legend>
+        <canvas id="toneCurvePlot" width="216" height="142" role="img" aria-label="Draft tone curve with a diagonal reference. The editable points below give its coordinates."></canvas>
+        <p class="small">Linear luminance. Black and white endpoints are fixed. Add up to six interior points.</p>
+        <div id="toneCurvePoints"></div>
+        <button id="toneCurveAddPoint">Add point</button>
+        <button id="toneCurveReload">Reload saved curve</button>
+        <label>Tone curve drawing <select id="toneCurveRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
+        <label>Tone curve shape <select id="toneCurveShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+        <label>Brush radius (native pixels) <input id="toneCurveRadius" type="number" min="1" step="1" value="10" /></label>
+        <label>Inward feather (native pixels, Apply only) <input id="toneCurveFeather" type="number" min="0" step="1" value="0" /></label>
+        <label>Tone curve rectangle x0,y0,x1,y1 <input id="toneCurveRectangle" class="wide" /></label>
+        <button id="toneCurveAddRectangle">Add tone curve rectangle</button>
+        <label>Tone curve shapes <select id="toneCurveRegions" class="wide" size="4"></select></label>
+        <button id="toneCurveRemove">Remove tone curve shape</button>
+        <button id="toneCurveClear">Clear draft tone curve area</button>
+        <button id="toneCurveReloadArea">Reload saved area</button>
+        <label><input id="toneCurveCandidate" type="checkbox" /> Explicitly compare tone curve on an unaccepted candidate</label>
+        <button id="toneCurveApply">Apply / replace tone curve area</button>
+        <button id="toneCurveSavedApply">Apply curve to saved area</button>
+        <button id="toneCurveDisable">Disable tone curve</button>
+        <label><input id="toneCurveCompare" type="checkbox" /> Compare Local tone curve OFF</label>
+        <p id="toneCurveStatus" role="status" class="small"></p>
+        <p id="toneCurveDraftStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>Shadow fade</legend>
@@ -726,6 +775,12 @@
     const backgroundLightControlIds = ["backgroundLightEnabled", "backgroundLightRange", "backgroundLightBrightness", "backgroundLightColor", "backgroundLightHex", "backgroundLightShape", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition", "backgroundLightReverse", "backgroundLightCandidate", "backgroundLightApply", "backgroundLightOff", "backgroundLightReload"];
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let sharpeningArea = {regions: [], protection: []}, sharpeningDirty = false, sharpeningAreaPublished = false;
+    const nativeAreaModes = ["exposure", "fade", "sharpening", "toneCurve"];
+    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "spatialCompare", "backgroundLightCompare"];
+    let toneCurveArea = {regions: [], protection: []}, toneCurvePointRows = [];
+    let toneCurvePointsIdentity = null, toneCurveAreaIdentity = null;
+    let toneCurvePointsVersion = 0, toneCurveAreaVersion = 0;
+    let toneCurveSavedPoints = null, toneCurveSubmitted = null;
     let exposureControlsIdentity = null, exposureControlsSubmitted = null;
     let fadeControlsIdentity = null, fadeControlsSubmitted = null;
     let exposureControlsVersion = 0, fadeControlsVersion = 0;
@@ -1455,7 +1510,7 @@
     $("reductionTarget").onchange = guarded(() => {selectedReductionId = ""; syncFadeReduction(); draw(); return loadImage();});
     $("reductionView").onchange = guarded(() => {
       if ($("reductionView").value !== "none") {
-        for (const id of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare", "backgroundLightCompare"]) $(id).checked = false;
+        for (const id of comparisonIds) $(id).checked = false;
         $("spatialMap").value = "none"; $("shadingPreview").value = "";
       }
       return loadImage();
@@ -1814,6 +1869,7 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
+      syncToneCurve(current, a, completed);
       const reductionSubmission = fadeReductionSubmitted;
       const reductionCompleted = completed && !a.error && reductionSubmission && a.name === "effects"
         && (a.result?.reused ? a.result.revision === reductionSubmission.base_revision : a.result?.parent === reductionSubmission.base_revision)
@@ -2084,6 +2140,7 @@
       ])
         $(id).disabled = authoringBusy();
       $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
+      updateToneCurveControls();
       $("previewRepair").disabled = authoringBusy() || !state?.preview || ["not_applicable","no_result"].includes(state.preview.status) || state.preview.reason === "configuration_required";
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
         $(id).disabled = authoringBusy();
@@ -2120,14 +2177,15 @@
       if (panel === "alpha") return "Alpha8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       const viewed = state.revisions.find(r => r.revision === revision),
         working = state.revisions.find(r => r.revision === state.working_revision);
-      const stale = record => ["color_cleanup", "shading", "local_sharpening", "local_exposure", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
+      const stale = record => ["color_cleanup", "shading", "local_sharpening", "local_exposure", "local_tone_curve", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
       const isStale = stale(viewed) || stale(working);
-      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · Local sharpening OFF · local exposure OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
+      if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · Local sharpening OFF · local exposure OFF · Local tone curve OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
       const sharpening = $("sharpeningCompare").checked ? "OFF comparison" : viewed?.local_sharpening?.enabled ? "ON" : "OFF";
+      const toneCurve = $("toneCurveCompare").checked ? "OFF comparison" : viewed?.local_tone_curve?.enabled ? "ON" : "OFF";
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
       const lightLabel = " · Background light " + (["black", "gray", "white"].includes(panel) ? "excluded from diagnostic" : $("backgroundLightCompare").checked ? "OFF comparison" : viewed?.background_light?.settings?.enabled ? "ON" : "OFF");
-      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · fade recalculated from exposure-OFF RGB" : "");
+      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Local tone curve " + toneCurve + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · curve and fade recalculated from exposure-OFF RGB" : "");
       if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel;
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
@@ -2153,6 +2211,7 @@
       const key = [
         $("exposureCompare").checked,
         $("sharpeningCompare").checked,
+        $("toneCurveCompare").checked,
         $("fadeCompare").checked,
         $("spatialCompare").checked,
         $("backgroundLightCompare").checked,
@@ -2185,7 +2244,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = reductionView === "off" && !["source", "alpha"].includes(panel)
           ? await spatialBitmap("off", revision, requestedCrop, panel, true)
           : $("spatialCompare").checked && !["source","alpha"].includes(panel)
@@ -2258,11 +2317,11 @@
         );
         ctx.globalAlpha = 1;
       }
-      if ($("overlay").value === "guides" || ["exposure", "fade", "sharpening", "reduction"].includes($("authorMode").value)) {
-        const area = $("authorMode").value === "sharpening" ? sharpeningArea : $("authorMode").value === "fade" ? fadeArea : exposureArea;
-        const drawnRegions = $("authorMode").value === "reduction"
+      const mode = $("authorMode").value, area = nativeAreaModes.includes(mode) ? effectArea(mode) : null;
+      if ($("overlay").value === "guides" || area || mode === "reduction") {
+        const drawnRegions = mode === "reduction"
           ? (reductionDraft()?.area.regions || []).map(region => region.shape)
-          : ["exposure", "fade", "sharpening"].includes($("authorMode").value)
+          : area
           ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions;
         for (const region of drawnRegions) {
           ctx.strokeStyle = {
@@ -2411,8 +2470,11 @@
       sharpeningControlsIdentity ??= {...identity};
       renderSharpeningArea();
     }
-    function renderEffectArea(prefix, area, unsaved, title) {
+    function renderEffectAreaRegions(prefix, area) {
       select(prefix + "Regions", ["regions", "protection"].flatMap(kind => area[kind].map(r => [kind + ":" + r.id, (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
+    }
+    function renderEffectArea(prefix, area, unsaved, title) {
+      renderEffectAreaRegions(prefix, area);
       $(prefix + "DraftStatus").textContent = (unsaved ? "Unsaved " : "Saved ") + title + " area" + " · apply shapes " + area.regions.length + ", protection shapes " + area.protection.length + ". Matting guides and other effects are independent.";
     }
     function renderExposureArea() {
@@ -2432,8 +2494,13 @@
       if (sharpeningControlsIdentity) $("sharpeningDraftStatus").textContent += sharpeningControlsStale()
         ? " Stale Local sharpening settings; reload before applying." : " Unsaved Local sharpening settings.";
     }
+    function effectArea(prefix) {
+      return {exposure: exposureArea, fade: fadeArea, sharpening: sharpeningArea, toneCurve: toneCurveArea}[prefix];
+    }
     function addEffectRegion(prefix, geometry, shape) {
       if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before area authoring");
+      if (prefix === "toneCurve" && $("viewRevision").value !== state.working_revision)
+        throw Error("Choose the working revision before authoring a tone curve area");
       const kind = $(prefix + "Role").value, [w, h] = state.dimensions_wh;
       const feather = kind === "protection" ? 0 : Number($(prefix + "Feather").value);
       const radius = Number($(prefix + "Radius").value);
@@ -2442,9 +2509,10 @@
       const region = {id: prefix + "-" + crypto.randomUUID().slice(0,8), role: "support", shape, feather_px: feather};
       if (shape === "rectangle") region.xyxy = geometry;
       else { region.points = geometry; region.radius_px = radius; }
-      const area = prefix === "sharpening" ? sharpeningArea : prefix === "fade" ? fadeArea : exposureArea;
+      const area = effectArea(prefix);
       area[kind].push(region);
       if (prefix === "sharpening") { sharpeningDirty = true; renderSharpeningArea(); }
+      else if (prefix === "toneCurve") markToneCurveAreaDirty();
       else markEffectAreaDirty(prefix);
       draw();
     }
@@ -2501,6 +2569,229 @@
       try { return await action("effects", fields); }
       catch(error) { sharpeningAreaPublished = false; sharpeningControlsSubmitted = null; throw error; }
     }
+    function toneCurveRevision() {
+      return state?.revisions.find(record => record.revision === state.working_revision);
+    }
+    function toneCurvePoints() {
+      const coordinate = field => {
+        const value = String(field.value).trim();
+        if (!/^(?:[0-9]+(?:\.[0-9]{1,2})?|\.[0-9]{1,2})$/.test(value))
+          throw Error("Enter every tone curve coordinate with up to two decimal places");
+        const [whole, fraction = ""] = value.split(".");
+        const units = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+        if (units < 1 || units > 9999) throw Error("Interior points must be within 0.01–99.99%");
+        return units;
+      };
+      const points = toneCurvePointRows.map(row => row.map(coordinate)).sort((a, b) => a[0] - b[0]);
+      if (points.some(([x,y], index) => index && (x <= points[index-1][0] || y <= points[index-1][1])))
+        throw Error("Tone curve inputs and outputs must both strictly increase");
+      return points;
+    }
+    function drawToneCurve() {
+      const plot = $("toneCurvePlot"), drawing = plot.getContext("2d");
+      const left = 16, right = plot.width - 16, top = 12, bottom = plot.height - 22;
+      const position = ([x,y]) => [left + (right-left)*x/10000, bottom - (bottom-top)*y/10000];
+      drawing.clearRect(0, 0, plot.width, plot.height);
+      drawing.strokeStyle = "#8796a2";
+      drawing.lineWidth = 1;
+      drawing.beginPath(); drawing.moveTo(left, top); drawing.lineTo(left, bottom); drawing.lineTo(right, bottom); drawing.stroke();
+      drawing.setLineDash([4,4]);
+      drawing.beginPath(); drawing.moveTo(left, bottom); drawing.lineTo(right, top); drawing.stroke();
+      drawing.setLineDash([]);
+      drawing.fillStyle = "#c0ccd6";
+      drawing.font = "11px system-ui";
+      drawing.fillText("0%", left, bottom + 15);
+      drawing.fillText("100%", right - 28, bottom + 15);
+      let points;
+      try { points = toneCurvePoints(); } catch { return; }
+      if (!points.length) return;
+      drawing.strokeStyle = drawing.fillStyle = "#73c5ff";
+      drawing.lineWidth = 2;
+      drawing.beginPath(); drawing.moveTo(left, bottom);
+      for (const point of points) drawing.lineTo(...position(point));
+      drawing.lineTo(right, top); drawing.stroke();
+      for (const point of points) {
+        drawing.beginPath(); drawing.arc(...position(point), 3, 0, 2*Math.PI); drawing.fill();
+      }
+    }
+    function toneCurvePointValues() {
+      return toneCurvePointRows.map(row => row.map(input => input.value));
+    }
+    function showToneCurvePoints(values) {
+      $("toneCurvePoints").replaceChildren();
+      toneCurvePointRows = values.map((pair, index) => {
+        const row = document.createElement("div");
+        row.className = "tone-point";
+        const inputs = pair.map((value, axis) => {
+          const label = document.createElement("label"), input = document.createElement("input");
+          label.append(document.createTextNode((axis === 0 ? "Input luminance (%)" : "Output luminance (%)") + " · point " + (index+1)), input);
+          input.type = "number"; input.min = "0.01"; input.max = "99.99"; input.step = "0.01";
+          input.value = value;
+          input.oninput = markToneCurvePointsDirty;
+          row.append(label);
+          return input;
+        });
+        const remove = document.createElement("button");
+        remove.textContent = "Remove point " + (index+1);
+        remove.onclick = guarded(() => {
+          const remaining = toneCurvePointValues();
+          remaining.splice(index, 1);
+          showToneCurvePoints(remaining);
+          markToneCurvePointsDirty();
+          (toneCurvePointRows[Math.min(index, remaining.length-1)]?.[0] || $("toneCurveAddPoint")).focus?.();
+        });
+        row.append(remove);
+        $("toneCurvePoints").append(row);
+        return inputs;
+      });
+      drawToneCurve();
+      updateToneCurveControls();
+    }
+    function renderToneCurveStatus() {
+      const record = toneCurveRevision()?.local_tone_curve, target = appearanceTargetKey();
+      const saved = record?.stale ? "Saved Local tone curve STALE · BASE comparison. Replace the area or disable the curve."
+        : record ? "Saved Local tone curve " + (record.enabled ? "ON" : "OFF")
+          + (record.area_sha256 === null ? " · Registered masks" : "")
+        : "Local tone curve OFF · No saved area";
+      const pointsStatus = toneCurvePointsIdentity === null ? "Saved points"
+        : toneCurvePointsIdentity === target ? "Unsaved points or candidate choice" : "Stale points or candidate choice. Reload saved curve.";
+      const areaStatus = toneCurveAreaIdentity === null ? "Saved area"
+        : toneCurveAreaIdentity === target ? "Unsaved area" : "Stale area. Reload saved area before replacing it.";
+      const draft = pointsStatus + " · " + areaStatus;
+      if ($("toneCurveStatus").textContent !== saved) $("toneCurveStatus").textContent = saved;
+      if ($("toneCurveDraftStatus").textContent !== draft) $("toneCurveDraftStatus").textContent = draft;
+    }
+    function markToneCurvePointsDirty() {
+      toneCurvePointsIdentity ??= appearanceTargetKey();
+      toneCurvePointsVersion++;
+      toneCurveSavedPoints = null;
+      drawToneCurve();
+      renderToneCurveStatus();
+    }
+    function markToneCurveAreaDirty() {
+      toneCurveAreaIdentity ??= appearanceTargetKey();
+      toneCurveAreaVersion++;
+      renderEffectAreaRegions("toneCurve", toneCurveArea);
+      renderToneCurveStatus();
+    }
+    function updateToneCurveControls() {
+      const busy = authoringBusy(), current = toneCurveRevision(), saved = current?.local_tone_curve;
+      for (const id of ["toneCurveRole", "toneCurveShape", "toneCurveRadius", "toneCurveFeather", "toneCurveRectangle", "toneCurveAddRectangle", "toneCurveRemove", "toneCurveClear", "toneCurveReload", "toneCurveReloadArea"])
+        $(id).disabled = busy;
+      $("toneCurveAddPoint").disabled = toneCurvePointRows.length >= 6;
+      $("toneCurveApply").disabled = !current?.final_acceptable;
+      $("toneCurveSavedApply").disabled = !current?.final_acceptable || !saved || saved.stale;
+      $("toneCurveDisable").disabled = !current?.final_acceptable || !saved;
+      for (const id of ["toneCurveApply", "toneCurveSavedApply", "toneCurveDisable"])
+        $(id).ariaDisabled = String(busy || $(id).disabled);
+    }
+    function syncToneCurve(current, actionState, completed) {
+      const submission = toneCurveSubmitted, result = actionState.result;
+      const saved = current?.local_tone_curve, request = result?.effects_reuse?.request;
+      const acknowledged = completed && !actionState.error && actionState.name === "effects"
+        && submission && submission.developed_id === state.developed_id && current?.revision === result?.revision
+        && (result?.reused ? result.revision === submission.base_revision : result?.parent === submission.base_revision)
+        && fadeReductionAreaIdentity(request?.local_tone_curve) === submission.settings
+        && request?.candidate_comparison === submission.candidate
+        && Boolean(request?.tone_curve_settings_only) === submission.settingsOnly
+        && fadeReductionAreaIdentity(request?.tone_curve_area) === submission.area
+        && fadeReductionAreaIdentity(saved?.settings) === submission.settings;
+      if (acknowledged) {
+        if (saved.enabled && submission.pointsVersion === toneCurvePointsVersion) {
+          toneCurvePointsIdentity = null;
+          toneCurveSavedPoints = JSON.stringify(saved.settings.points);
+          $("toneCurveCandidate").checked = false;
+        }
+        if (submission.area !== undefined && submission.areaVersion === toneCurveAreaVersion
+          && fadeReductionAreaIdentity(current?.tone_curve_area) === submission.area) {
+          toneCurveAreaIdentity = null;
+        }
+      }
+      if (completed) toneCurveSubmitted = null;
+      const points = saved?.settings?.points || [], pointsKey = JSON.stringify(points);
+      if (toneCurvePointsIdentity === null && toneCurveSavedPoints !== pointsKey) {
+        toneCurveSavedPoints = pointsKey;
+        $("toneCurveCandidate").checked = false;
+        showToneCurvePoints(points.map(pair => pair.map(value => String(value / 100))));
+      }
+      const area = current?.tone_curve_area || {regions: [], protection: []};
+      if (toneCurveAreaIdentity === null && fadeReductionAreaIdentity(toneCurveArea) !== fadeReductionAreaIdentity(area)) {
+        toneCurveArea = structuredClone(area);
+        renderEffectAreaRegions("toneCurve", toneCurveArea);
+      }
+      renderToneCurveStatus();
+    }
+    async function localToneCurve(mode) {
+      requireSaved();
+      const current = toneCurveRevision(), saved = current?.local_tone_curve;
+      if (!current?.final_acceptable || imageLoading || !image || !transform ||
+        $("viewRevision").value !== current.revision || !current.revision_manifest_sha256)
+        throw Error("Load the current complete native view before changing Local tone curve");
+      if (authoringBusy()) throw Error("Wait for the active writer before submitting");
+      const enabled = mode !== "disable", replaceArea = mode === "replace", target = appearanceTargetKey();
+      if (replaceArea && toneCurveAreaIdentity !== null && toneCurveAreaIdentity !== target)
+        throw Error("Stale tone curve area. Reload saved area before replacing it.");
+      if (enabled && toneCurvePointsIdentity !== null && toneCurvePointsIdentity !== target)
+        throw Error("Stale tone curve points or candidate choice. Reload saved curve before applying.");
+      if (!replaceArea && !saved) throw Error("Apply a tone curve area first");
+      if (mode === "saved" && saved.stale) throw Error("Stale saved alpha. Replace the tone curve area or disable it.");
+      if (replaceArea && !toneCurveArea.regions.length) throw Error("Draw an Apply area for the tone curve");
+      const candidate = enabled && $("toneCurveCandidate").checked;
+      if (enabled && state.working_revision !== state.accepted_revision && !candidate)
+        throw Error("Use an accepted base or explicitly compare tone curve on an unaccepted candidate");
+      const settings = {enabled, points: enabled ? toneCurvePoints() : saved.settings.points};
+      const fields = {...effectCurrentIdentity(), revision_manifest_sha256:current.revision_manifest_sha256,
+        scope_xyxy:[0,0,...state.dimensions_wh], candidate_comparison:candidate, local_tone_curve:settings};
+      if (replaceArea) fields.tone_curve_area = structuredClone(toneCurveArea);
+      if (mode === "saved") fields.tone_curve_settings_only = true;
+      toneCurveSubmitted = {
+        developed_id:fields.developed_id, base_revision:fields.base_revision,
+        settings:fadeReductionAreaIdentity(settings), candidate, settingsOnly:mode === "saved",
+        area:fadeReductionAreaIdentity(fields.tone_curve_area),
+        pointsVersion:toneCurvePointsVersion, areaVersion:toneCurveAreaVersion,
+      };
+      try { await action("effects", fields); }
+      catch (error) { toneCurveSubmitted = null; throw error; }
+    }
+    $("toneCurveCandidate").onchange = markToneCurvePointsDirty;
+    $("toneCurveAddPoint").onclick = guarded(() => {
+      const values = toneCurvePointValues();
+      if (values.length >= 6) throw Error("Use at most six interior tone curve points");
+      showToneCurvePoints([...values, ["",""]]);
+      markToneCurvePointsDirty();
+      toneCurvePointRows.at(-1)[0].focus?.();
+    });
+    $("toneCurveReload").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      if (toneCurvePointsIdentity !== null && !confirm("Replace draft points with the saved curve?")) return;
+      toneCurvePointsIdentity = toneCurveSavedPoints = null;
+      toneCurvePointsVersion++;
+      syncToneCurve(toneCurveRevision(), {}, false);
+    });
+    $("toneCurveAddRectangle").onclick = guarded(() => addEffectRegion("toneCurve", bounds("toneCurveRectangle"), "rectangle"));
+    $("toneCurveRemove").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const [kind, id] = $("toneCurveRegions").value.split(":");
+      if (!id) return;
+      toneCurveArea[kind] = toneCurveArea[kind].filter(region => region.id !== id);
+      markToneCurveAreaDirty(); draw();
+    });
+    $("toneCurveClear").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      toneCurveArea = {regions: [], protection: []};
+      markToneCurveAreaDirty(); draw();
+    });
+    $("toneCurveReloadArea").onclick = guarded(() => {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      if (toneCurveAreaIdentity !== null && !confirm("Replace the draft area and protection with the saved area?")) return;
+      toneCurveAreaIdentity = null;
+      toneCurveAreaVersion++;
+      syncToneCurve(toneCurveRevision(), {}, false); draw();
+    });
+    $("toneCurveApply").onclick = guarded(() => localToneCurve("replace"));
+    $("toneCurveSavedApply").onclick = guarded(() => localToneCurve("saved"));
+    $("toneCurveDisable").onclick = guarded(() => localToneCurve("disable"));
+    $("toneCurveCompare").onchange = guarded(() => compareChanged("toneCurveCompare"));
     function backgroundLightIdentity() {
       const revision = state?.revisions.find(row => row.revision === state.working_revision);
       return JSON.stringify({...effectCurrentIdentity(), manifest: revision?.revision_manifest_sha256});
@@ -2745,7 +3036,7 @@
     $("sharpeningCandidate").onchange = markSharpeningControlsDirty;
     function compareChanged(id) {
       $("reductionView").value = "none";
-      for (const other of ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "spatialCompare", "backgroundLightCompare"]) if (other !== id) $(other).checked = false;
+      for (const other of comparisonIds) if (other !== id) $(other).checked = false;
       if (id !== "shadingPreview") $("shadingPreview").value = "";
       imageKey = ""; return loadImage();
     }
@@ -3338,7 +3629,8 @@
     canvas.onpointerdown = (event) => {
       const spatialMode=$("authorMode").value==="spatial";
       const lightMode = $("authorMode").value === "background-light";
-      const effectMode = ["exposure", "fade", "sharpening", "reduction"].includes($("authorMode").value) ? $("authorMode").value : null;
+      const mode = $("authorMode").value;
+      const effectMode = nativeAreaModes.includes(mode) || mode === "reduction" ? mode : null;
       const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && $("shape").value === "pan");
       const point = nativePosition(event,spatialMode || lightMode);
       if (!panMode && (authoringBusy() || imageLoading)) {

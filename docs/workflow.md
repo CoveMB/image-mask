@@ -274,17 +274,18 @@ correction is warranted, record that limitation rather than changing good detail
    within support** under **Merge**, and choose **Run scoped repair**. Wait for
    completion. On any error, preserve saved work and address the displayed cause;
    success in computation alone does not mean the photograph improved.
-7. If cleanup, shading, Local sharpening, Local exposure, Shadow fade or Fade into
+7. If cleanup, shading, Local sharpening, Local exposure, Local tone curve, Shadow fade or Fade into
    background was enabled, changed alpha can make it
    **STALE** and switch comparisons to labelled BASE views. Before accepting or
    exporting the current appearance, rebuild each stale effect from its reviewed
    support/protection or explicitly disable it: **Explicitly disable cleanup**,
    **Explicitly disable shading**, **Reset Local sharpening**, **Reset exposure**,
-   **Reset Shadow fade**, or **Disable fade**. Follow the existing
+   **Disable tone curve**, **Reset Shadow fade**, or **Disable fade**. Follow the existing
    [cleanup recovery](#compare-accept-and-export),
    [shading recovery](#protected-inward-shading),
    [sharpening recovery](#local-sharpening), [exposure recovery](#local-exposure),
-   [Shadow fade recovery](#shadow-fade) and [spatial fade recovery](#fade-into-background)
+   [tone curve recovery](#local-tone-curve), [Shadow fade recovery](#shadow-fade)
+   and [spatial fade recovery](#fade-into-background)
    instructions; an amount/opacity change alone
    does not rebuild an alpha dependency. Earlier accepted results/exports stay saved.
 8. Compare source, prior saved result and current result on the same native crop,
@@ -386,7 +387,7 @@ or restore captured sharpness. Final photographic acceptance remains your decisi
    remain separate. Repeated application starts from unexposed RGB, so it never
    stacks exposure on previous exposure.
 5. **Compare exposure OFF** previews the same alpha with saved cleanup/shading
-   retained, with Shadow fade recalculated from the exposure-OFF input. Source/alpha views are unaffected; the BASE checkbox turns all
+   retained, with Local tone curve and Shadow fade recalculated from the exposure-OFF input. Source/alpha views are unaffected; the BASE checkbox turns all
    optional effects off. Comparison is read-only. [Hide authoring marks](#compare-accept-and-export)
    before judging native black/gray/white
    views, feather edges, noise and highlights. The clipping count is affected
@@ -406,6 +407,46 @@ See [the local exposure file contract](file-contract.md#optional-local-exposure)
 for authored/scalar inputs, strict field rules, scope coverage and reconstruction.
 The exposure-only comparison is distinct from all-effects-off BASE comparison.
 
+
+## Local tone curve
+
+Use **Local tone curve** to adjust the brightness of existing detail across a
+selected part of the subject. The curve runs after Local exposure and before
+Shadow fade. It uses the same gain for all three linear RGB channels, with less
+lift where a channel is close to clipping. Alpha is preserved.
+
+1. Load the complete working revision. In **Canvas authoring mode**, choose
+   **Tone curve area**. Select **Apply area** and draw a **Brush** or
+   **Rectangle**. Enter brush radius and inward feather in native pixels.
+   For keyboard authoring, enter a half-open `x0,y0,x1,y1` rectangle, then
+   choose **Add tone curve rectangle**. Draw hard **Protect area** shapes over
+   highlights or fine edges to keep their incoming RGB. Apply shapes use the
+   blue overlay and Protect shapes use magenta.
+2. Use **Add point** and enter **Input luminance (%)** and **Output luminance
+   (%)** in 0.01% steps from 0.01% to 99.99%. The plot shows the draft against a
+   diagonal reference. Both axes must strictly increase when ordered by input.
+   Use **Remove point** to delete a point. The fixed endpoints are 0% and 100%.
+   An empty list is diagonal. A highlight interval on the diagonal preserves
+   the incoming RGB in that range.
+3. Choose **Apply / replace tone curve area** to save both the points and
+   the area. Use **Apply curve to saved area** to change points while keeping
+   saved support and protection, including registered masks with no authored
+   shapes. Each enabled Apply on an unaccepted working revision needs **Explicitly
+   compare tone curve on an unaccepted candidate**. Pending area and point
+   edits have separate status. Reload a stale draft with **Reload saved curve**
+   or **Reload saved area**, then re-enter any changes you still need.
+4. Choose **Compare Local tone curve OFF** and inspect the same native crop on
+   a diagnostic backdrop with authoring marks hidden. Alpha stays the same,
+   and downstream Shadow fade and spatial highlights are recomputed. Compare
+   leaves the selected revision unchanged. If alpha changes, the enabled curve
+   becomes stale. Replace its area against the new alpha or **Disable tone
+   curve**. Disable keeps the saved points and operands for recovery.
+5. Reopen the project offline and confirm the saved points and area. Export
+   with **Include complete editable layers at original size** to retain the
+   RGB16 curve input, masks and settings. Presentations can include a native
+   editable companion. Inspect the result before accepting the photograph.
+
+See [Local tone curve settings and replay](file-contract.md#optional-local-tone-curve).
 
 ## Fade into background
 
@@ -560,8 +601,8 @@ adjustment; fade has its own area, settings, protection, comparison and reset.
    successful application/reset or explicit reload clears the settings draft.
    These controls are frozen during writers; area/protection drafts remain separate.
    Settings apply afresh without compounding.
-4. **Compare Shadow fade OFF** retains cleanup, sharpening, exposure and shading. **Compare
-   exposure OFF** retains fade, recalculated from exposure-OFF RGB. BASE disables
+4. **Compare Shadow fade OFF** retains cleanup, sharpening, exposure, the curve
+   and shading. **Compare exposure OFF** recalculates the curve and fade from exposure-OFF RGB. BASE disables
    every optional effect; selecting a comparison clears the others. [Hide authoring
    marks](#compare-accept-and-export), then inspect the
    same native crop on black/gray/white and alpha. Source and alpha stay unchanged.
@@ -945,7 +986,7 @@ captured contamination. Start gently and inspect at native scale.
    sharpening amount to saved area** uses the saved geometry and current settings.
    Pending area edits and unrelated effect drafts remain separate. On an unaccepted
    draft, explicitly enable candidate comparison.
-4. **Compare Local sharpening OFF** retains cleanup, exposure, Shadow fade,
+4. **Compare Local sharpening OFF** retains cleanup, exposure, Local tone curve, Shadow fade,
    shading/spatial fade and background, recalculating downstream RGB from the
    unsharpened input. Source and alpha stay unchanged. Compare creates no revision.
    Inspect black, gray and white diagnostics for halos or noise amplification.
@@ -961,7 +1002,7 @@ it. Overshoot guards limit new luminance extrema, but do not guarantee invisible
 
 For portable editing, explicitly request editable export. It includes the unsharpened
 cleanup-selected RGB and independent support, protection, alpha, settings and authored
-area. Replay sharpening, exposure, Shadow fade, then shading/spatial fade and
+area. Replay sharpening, exposure, Local tone curve, Shadow fade, then shading/spatial fade and
 alpha/background composition. Selected foreground already includes sharpening;
 do not apply it twice. Framed and match-series exports bind a complete native companion:
 keep both folders together. See the [saved contract](file-contract.md#optional-local-sharpening).
