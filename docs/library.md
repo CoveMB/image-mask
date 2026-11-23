@@ -114,10 +114,12 @@ an old library. See the normative [file contract](file-contract.md#configured-li
 Optional `[models] sam_cache` and `vitmatte_cache` select existing pinned native
 directories shared by all photos. Explicit CLI flags take precedence; config
 precedes `BLACKMASK_SAM_CACHE` and `BLACKMASK_VITMATTE_CACHE`. `open` uses separate
-SAM and ViTMatte paths, `run` selects SAM for preparation and ViTMatte for matte or
-repair, and `resume` uses ViTMatte. Missing or invalid pinned assets remain errors;
-initialization and import never copy or download models. Preserve model versions
-needed for offline work. Saved-layer replay still needs no models or original path.
+SAM and ViTMatte Base paths. `run` selects SAM for preparation and Base for matte
+or repair. `resume` uses Base. Switch an existing Small cache path after
+[setting up and verifying Base](matting.md#explicit-model-setup), then reopen any
+running review session to load the updated path. Missing or invalid pinned assets
+remain errors. Initialization and import never copy or download models. Saved-layer
+replay still needs no models or original path.
 
 Keep the library and local config ignored or outside the repository. The root
 `library/`, root `local/` and `config/storage.local.toml` are ignored by this

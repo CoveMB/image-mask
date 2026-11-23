@@ -18,6 +18,7 @@ Transformers (Apache-2.0), safetensors (Apache-2.0), SciPy (BSD-3-Clause plus
 bundled numerical-library/GCC runtime notices), and their hash-pinned transitive
 packages. Preserve complete installed wheel licence/notice files when distributing
 native dependencies; this summary does not replace them. The separately downloaded
-SAM2.1 checkpoint is labelled Apache-2.0 at its pinned upstream revision. No
-standalone SAM2 research implementation is installed/vendored. See exact
-[model/package provenance](docs/model-provenance.md) and its security limitations.
+SAM2.1 and ViTMatte Base checkpoints are labelled Apache-2.0 at their pinned
+upstream revisions. No standalone model research implementation is installed or
+vendored. See exact [model/package provenance](docs/model-provenance.md) and its
+security limitations.

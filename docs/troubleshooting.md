@@ -90,9 +90,10 @@ A publication collision means another tool/editor created a project asset while 
   repair. A supplied stale/corrupt record is rejected rather than silently used.
   Preserve it, finish typed edits and prepare a new revision; confirmation of the
   new trimap is optional. A morphology proposal never counts as known guide values.
-- **ViTMatte missing/corrupt:** use explicit pinned setup only after authorization;
-  local inference never downloads or substitutes another checkpoint. Preserve invalid
-  existing assets and select a new cache rather than overwriting them.
+- **ViTMatte missing/corrupt or still using Small:** preserve the old cache, run
+  [explicit Base setup and preflight](matting.md#explicit-model-setup) in a new
+  directory after authorization, then select that directory. Local inference verifies
+  the exact Base checkpoint and configs.
 - **MPS/non-finite failure:** explicit MPS fails visibly; retry a newly prepared and
   reviewed CPU request with identical geometry. Auto stays CPU. No resolution reduction.
 - **Interrupted matte:** reopen state; accepted layers remain separate and usable.

@@ -7,4 +7,4 @@ destination = "/path/to/photo-library"
 # Explicit command-line model paths override these; these override model environment variables.
 # [models]
 # sam_cache = "/path/to/installed-models/sam"
-# vitmatte_cache = "/path/to/installed-models/vitmatte"
+# vitmatte_cache = "/path/to/installed-models/vitmatte-base"

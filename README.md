@@ -18,10 +18,11 @@ appearance changes require an explicit user request or manual control action.
 Typed native-coordinate guides produce named SAM
 candidates, selected membership groups and categorical trimap/support/protection
 assets. Optional morphology proposals use native-pixel margins and require separate
-review against the source. ViTMatte runs at native resolution, with optional trimap
-confirmation and separate final-photo acceptance, matching native-crop review assets,
-accepted full-size Result RGB16 TIFF exports and same-size PNG8 viewing copies. Run matting
-directly after preparation to review the actual masked photograph.
+review against the source. Pinned ViTMatte Base runs at native resolution, with
+optional trimap confirmation and separate final-photo acceptance, matching
+native-crop review assets, accepted full-size Result RGB16 TIFF exports and
+same-size PNG8 viewing copies. Run matting directly after preparation to review
+the actual masked photograph.
 
 New projects use storage schema 2 and developed-image identities. Immutable masks,
 RGB16 layers and effect operands are shared within the project; revisions retain

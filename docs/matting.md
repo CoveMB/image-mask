@@ -27,12 +27,16 @@ values into the authoritative trimap.
 
 ## Explicit model setup
 
-One environment and model root suffice. Setup is the only network path. Use the
-pinned model and configs; do not download research frameworks or substitute files.
+The pinned model for native alpha matting is ViTMatte Base. Setup is the only
+network path. Use a fresh cache directory for Base and preserve an existing Small
+cache. After setup and preflight, update the selected `--model-cache`,
+`[models].vitmatte_cache` or `BLACKMASK_VITMATTE_CACHE` path. Saved revisions and
+exports use persisted layers. An interrupted inference stage resumed with Base
+recomputes tiles keyed to Small.
 
 ```sh
-.venv/bin/blackmask setup-model --model vitmatte --model-cache local/models/vitmatte
-.venv/bin/blackmask doctor --model vitmatte --model-cache local/models/vitmatte
+.venv/bin/blackmask setup-model --model vitmatte --model-cache local/models/vitmatte-base
+.venv/bin/blackmask doctor --model vitmatte --model-cache local/models/vitmatte-base
 ```
 
 After setup, loading is local-only, explicit classes, safetensors and session hash
@@ -56,7 +60,7 @@ Create a JSON request with the actual returned current values:
 ```
 
 ```sh
-.venv/bin/blackmask run /path/to/project --request /path/to/project/matte-request.json --model-cache local/models/vitmatte
+.venv/bin/blackmask run /path/to/project --request /path/to/project/matte-request.json --model-cache local/models/vitmatte-base
 ```
 
 No guide edits repeat in the matte request. Prepare changed guides first; human
@@ -137,11 +141,11 @@ not authoritative. Verified tiles may be reused on a fresh request; there is no
 resume support for preparation. See [recovery](troubleshooting.md) for
 matte/repair resume and saved revision restore. Cache is never the sole accepted copy.
 
-Reserve 10 GiB plus conservative pending writes. Actual two-tile native synthetic
-CPU inference peaked near 7.86 GB RSS on the tested host; this is an observation,
-not a memory bound for every photo. Retain independent backups. Source-required
-spider/dragonfly native photographic comparisons, private RAW development review,
-final acceptance and regular-use evaluation remain human obligations.
+Reserve 10 GiB plus conservative pending writes. See
+[model provenance](model-provenance.md#native-vitmatte-base) for the checkpoint and
+native CPU observations. Retain independent backups. Source-required spider and
+dragonfly native photographic comparisons, private RAW development review, final
+acceptance and regular-use evaluation remain human obligations.
 
 
 ## Scoped repair and exact replay
