@@ -138,27 +138,47 @@ accepted state and diagnostic artifacts. Fix the displayed cause before retrying
 
 1. Open the working matte and choose **Draw edge area on Source**. At **Native
    1:1**, brush a small band over the visible tips and gaps that need work. The
-   brush radius starts at 4 native pixels and accepts 1–64. For keyboard authoring, enter a native
-   half-open rectangle within the displayed crop and choose **Add edge rectangle**.
-   Leave a good soft transition outside the marked area or use a saved alpha/RGB
-   lock. **Undo last mark** removes the last stroke or rectangle. A preview can
-   include up to 16 marks.
-2. Choose **Preview edge**. The installed ViTMatte model uses the current trimap
-   and the saved RAW development at native resolution, with RGB8 model input.
+   brush radius starts at 4 native pixels and accepts 1–64. Use a wider brush
+   where the source has a broad defocused transition. For keyboard authoring,
+   enter a native half-open rectangle within the displayed crop and choose **Add
+   edge rectangle**. Keep protected detail outside the marks or use a saved
+   alpha/RGB lock. **Undo last mark** removes the last stroke or rectangle. A
+   preview can include up to 16 marks.
+2. Choose **Preview edge** with **Standard** selected. The installed ViTMatte
+   model uses the current trimap and the saved source development at native
+   resolution, with RGB8 model input.
    The read context extends up to 64 pixels beyond the write bounds and must fit
-   one 1024 × 1024 tile. If the model needs more guidance, use the existing guide
-   controls to mark solid foreground and confirmed empty background, leave mixed
-   strands unknown, and prepare before previewing again. A changed confirmed core
-   must fit inside the write area. The stroke itself never creates a confirmed core.
-3. The preview opens on black at **Native 1:1**. Switch **Edge comparison** between
+   one 1024 × 1024 tile. The preview combines the marks, clips them to the crop,
+   and excludes saved locks. A three-native-pixel inward feather blends the
+   perimeter into the saved matte. Very narrow marks may blend at reduced
+   strength throughout. Changed confirmed cores within the writable area receive
+   full strength, and any changed core outside it prevents the preview.
+3. Select **Stronger** under **Preview mode** to use native RGB16 detail. To
+   compare both modes on the same marks, choose **Edit edge selection** from
+   the first preview and preview again in the other mode. Stronger uses source
+   detail to separate in-focus strands from nearby gaps. Where the colour or
+   fine detail provides weak evidence, it keeps the Standard candidate.
+   - In **Mark**, choose **Background gap** for a confirmed empty space. Draw
+     inside the repair area. The gap guides the local colour estimate and sets
+     the candidate to zero at the mark. The write feather still applies.
+   - Choose **Protect tip** to keep the working matte's exact alpha at a tip,
+     including partial opacity. The repair feathers inward from the protected
+     boundary. Keep gap and tip marks separate and clear of saved locks.
+   - Use radius 0 to click a single native pixel for either guide. You can also
+     enter a rectangle for the selected **Mark**, including a 1 × 1 rectangle
+     from the keyboard. Use up to 16 local guides per preview. These guides
+     belong to the repair revision. To change the project's matting guides,
+     use the separate guide controls and prepare again.
+4. The preview opens on black at **Native 1:1**. Switch **Edge comparison** between
    **Before** and **Preview**, then use **View** to check Source, Alpha, Black,
-   Gray and White in the same crop. Enable **Show write area (blue) and locks
+   Gray and White in the same crop. Enable **Show write area (blue) and protection
    (pink)** to inspect exact coverage, then hide the overlay to judge the edge.
    These are BASE RGB8/alpha8 views. For very faint strands, check the saved RGB16
    master. Look for continuous tapered tips, empty gaps, and smooth falloff where
    the source is defocused. For colour spill at fixed alpha, use the separate
    [Color cleanup comparison](#compare-accept-and-export).
-4. **Apply reviewed edge** saves the previewed alpha as an editable repair revision.
+5. **Apply reviewed edge** saves the exact reviewed alpha, mode and marks as an
+   editable repair revision. Apply and cancel return **Preview mode** to **Standard**.
    **Cancel edge refinement** discards the unapplied selection and preview. Apply
    or cancel before accepting, exporting a draft or saving a comparison. To
    undo a saved repair, use **Restore working inputs** on the prior complete

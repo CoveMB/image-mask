@@ -63,9 +63,11 @@ const lightFetch=fetch;globalThis.fetch=async(path,options)=>{
 """
 
 
-def test_edge_native_rectangle_compares_before_applying_the_reviewed_candidate():
+@pytest.mark.parametrize("mode", ["standard", "stronger"])
+def test_edge_native_rectangle_compares_before_applying_the_reviewed_candidate(mode):
     run_page(
-        r"""
+        f"const mode = {json.dumps(mode)};\n"
+        + r"""
  const edgeFetch=fetch, edgeImages=[];
  globalThis.fetch=async(path,options)=>{
    if(path.startsWith('/edge-preview/'))edgeImages.push(path);
@@ -76,22 +78,38 @@ def test_edge_native_rectangle_compares_before_applying_the_reviewed_candidate()
    return edgeFetch(path,options);
  };
  await ready();
+ $('edgeMode').value='standard';$('edgeMark').value='support';
  await $('edgeStart').onclick();
  assert.equal($('panel').value,'source');
  $('edgeRectangle').value='25,30,33,38';
  await $('edgeAddRectangle').onclick();
+ const guides=[];
+ if(mode==='stronger'){
+   $('edgeMode').value=mode;$('edgeMode').onchange();
+   $('edgeMark').value='background';$('edgeMark').onchange();
+   $('edgeRadius').value='0';
+   const [clientX,clientY]=nativeToScreen([28.5,33.5],canvas.getBoundingClientRect(),[canvas.width,canvas.height],transform,crop);
+   const pointer={clientX,clientY,pointerId:1};
+   canvas.onpointerdown(pointer);canvas.onpointerup(pointer);
+   guides.push({role:'background',shape:'point',xy:[28,33]});
+   $('edgeMark').value='protect';$('edgeMark').onchange();
+   $('edgeRectangle').value='30,33,31,34';
+   await $('edgeAddRectangle').onclick();
+   guides.push({role:'protect',shape:'rectangle',xyxy:[30,33,31,34]});
+ }
  await $('edgePreview').onclick();
  assert.deepEqual(posts.at(-1).edge_area,{crop_xyxy:[0,0,100,100],regions:[{shape:'rectangle',xyxy:[25,30,33,38]}]});
+ assert.deepEqual(posts.at(-1).edge_refinement,{mode,guides});
  assert.equal(posts.at(-1).action,'edge-preview');
  assert.equal($('edgeApply').disabled,true);
  const other='b'.repeat(32);
- servedState.action={running:false,name:'edge-preview',error:null,result:{request_id:'c'.repeat(32),preview_id:other,crop_xyxy:[0,0,100,100],scope_xyxy:[70,70,80,80],changed_pixels:12,stale_effects:[]}};
+ servedState.action={running:false,name:'edge-preview',error:null,result:{request_id:'c'.repeat(32),preview_id:other,edge_mode:mode,crop_xyxy:[0,0,100,100],scope_xyxy:[70,70,80,80],changed_pixels:12,stale_effects:[]}};
  await refresh();
  assert.equal(edgeImages.some(path=>path.includes(other)),false,'Another tab’s preview was shown');
  assert.equal($('edgeApply').disabled,true);
  await $('edgePreview').onclick();
  const id='a'.repeat(32);
- servedState.action={running:false,name:'edge-preview',error:null,result:{request_id:posts.at(-1).request_id,preview_id:id,crop_xyxy:[0,0,100,100],scope_xyxy:[25,30,33,38],changed_pixels:7,stale_effects:['cleanup']}};
+ servedState.action={running:false,name:'edge-preview',error:null,result:{request_id:posts.at(-1).request_id,preview_id:id,edge_mode:mode,crop_xyxy:[0,0,100,100],scope_xyxy:[25,30,33,38],changed_pixels:7,stale_effects:['cleanup']}};
  await refresh();
  assert.ok(edgeImages.includes(`/edge-preview/${id}/candidate/black`));
  assert.match($('edgeStatus').textContent,/cleanup/);
@@ -110,6 +128,7 @@ def test_edge_native_rectangle_compares_before_applying_the_reviewed_candidate()
  assert.equal(posts.at(-1).action,'edge-apply');
  assert.equal(posts.at(-1).preview_id,id);
  assert.equal('edge_area' in posts.at(-1),false);
+ assert.equal('edge_refinement' in posts.at(-1),false);
  """
     )
 

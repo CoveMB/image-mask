@@ -794,6 +794,8 @@ class ReviewServer(ThreadingHTTPServer):
             }
         if action == "series-export":
             fields["series-export"] |= set(data) & {"variants"}
+        if action == "edge-preview" and "edge_refinement" in data:
+            fields["edge-preview"].add("edge_refinement")
         if action == "effects":
             optional = {
                 "support_file",
@@ -901,11 +903,14 @@ class ReviewServer(ThreadingHTTPServer):
             if not isinstance(request_id, str) or re.fullmatch(r"[a-f0-9]{32}", request_id) is None:
                 raise ProjectError("Invalid edge preview request identity")
             self.edge_preview = None
+            if "edge_refinement" in data and not isinstance(data["edge_refinement"], dict):
+                raise ProjectError("Invalid edge refinement options")
             preview = operations.preview_edge_repair(
                 self.project,
                 data,
                 data["edge_area"],
                 model_cache=self.model_cache,
+                refinement=data.get("edge_refinement"),
                 storage_config=self.storage_config,
             )
             preview_id = secrets.token_hex(16)
@@ -914,6 +919,7 @@ class ReviewServer(ThreadingHTTPServer):
             return {
                 "request_id": request_id,
                 "preview_id": preview_id,
+                "edge_mode": operation["edge_refinement"]["mode"],
                 "crop_xyxy": operation["context_xyxy"],
                 "scope_xyxy": operation["scope_xyxy"],
                 "changed_pixels": preview.changed_pixels,

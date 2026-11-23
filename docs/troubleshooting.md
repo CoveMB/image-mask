@@ -167,10 +167,11 @@ A publication collision means another tool/editor created a project asset while 
   Use its exact returned absolute path or project-relative equivalent. Prepare
   edited guidance first, then submit repair without repeated
   guide edits. An unrelated or symlinked support file is rejected.
-- Feathered support cannot change a confirmed core. Revise support explicitly
-  inside the authorized scope, or correct a genuinely erroneous core through
-  typed guide edits and preparation. Trimap confirmation is optional. Never expand scope or remove locks
-  merely to make a request pass.
+- Changed confirmed cores need full-strength support. For a prepared repair,
+  revise support inside the authorized scope. **Refine edge** assigns full
+  strength to changed cores within the unlocked marks. Use typed guide edits and
+  preparation to correct a genuinely erroneous core. Trimap confirmation is optional.
+  Never expand scope or remove locks merely to make a request pass.
 - Stale draft/reference/parent errors preserve newer text and final acceptance.
   Inspect actual state before a new operation. Failed temporary revisions and
   cache work are retained; there is no automatic cleanup. Use the supported resume command for unchanged inputs.
@@ -178,6 +179,12 @@ A publication collision means another tool/editor created a project asset while 
   closes. Redraw or preview again against the current source before Apply. If an
   interrupted Apply left a complete repair in the revision list, inspect it and
   use **Restore working inputs** to select it. See the [saved repair contract](file-contract.md#saved-scoped-repairs-and-restore).
+- If **Stronger** leaves a visible gap filled, check it on Source at **Native
+  1:1** and mark it with **Background gap** if you can see that it is empty.
+  Use a radius of 0 for one pixel. Keep both guide types inside the writable
+  area and clear of saved locks. A gap mark that crosses confirmed foreground
+  or a **Protect tip** mark is rejected. If a brush ends midway through a soft
+  falloff, edit the selection and span the full transition with the repair area.
 - `replay --revision` verifies saved repair operands without models or cache.
   Missing or modified immutable operands/dependencies are errors; restore from
   your independent backup, never regenerate accepted operands with a model.

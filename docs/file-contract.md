@@ -582,14 +582,36 @@ bytes would otherwise match a different native crop.
 can start from a complete working revision or a prepared working revision that
 carries compatible parent alpha and RGB locks. The `edge_area` field in
 `repair/merge.json` records the authored crop, native brush strokes and rectangles.
-The operation-specific `repair/support16.png` is the rasterized union clipped to
-the authored crop and zeroed under saved locks. Its recorded write bounds and
-64-pixel clipped read context are verified on replay. The ordinary
-`supports/support16.png` guide asset remains available to the other controls.
-Edge replay checks the new support against its geometry and binds inherited
-trimap, locks, foreground RGB16 and parent alpha. Ordinary repair requests and
-earlier schema-2 revisions retain their existing bindings. Use an updated app to
-review or replay an edge repair.
+New edge repairs bind `edge_refinement` in both `request.json` and `repair/merge.json`.
+It records `mode` (`standard` or `stronger`) and `guides`. Standard has an empty
+guide list. Stronger accepts up to 16 local `background` and `protect` guides
+using native points, strokes or half-open rectangles. These marks must lie in
+the unlocked footprint and the two roles cannot overlap. Background gap marks
+cannot overlap confirmed foreground. They contribute background colour samples
+and set the quantized candidate to 0 at the guide. The `edge_candidate_algorithm`
+field records `source-detail-v1` for Stronger. The
+prepared trimap and project guide files remain independent of the local marks.
+
+The operation-specific `repair/support16.png` derives from the rasterized union
+clipped to the authored crop and zeroed under saved locks and local tip
+protection. New edge repairs record
+`edge_support_algorithm` as `inward-smoothstep-3px-v1`. For a writable sample,
+`d` is the native Euclidean distance to the nearest excluded sample center,
+including across the crop boundary and inside protected areas. With
+`t = clip((d - 0.5) / 3, 0, 1)`, the weight is
+`rint(65535 * t² * (3 - 2*t))`. Changed confirmed cores within the footprint
+receive 65535. Local background gap guides use the regular feathered weight.
+Outside the footprint the weight is zero. Edge records without the support
+algorithm field replay the legacy binary weights. Feathered records without
+`edge_refinement` replay as the original Standard variant.
+
+Edge replay verifies the saved weights, write bounds and 64-pixel clipped read
+context against the authored area and recorded rule. It verifies the recorded
+mode and marks against the saved request and reads the quantized candidate
+without re-estimating it. It binds the inherited trimap, locks, foreground RGB16
+and parent alpha. The
+`supports/support16.png` guide asset supplies support for prepared repairs.
+Open Stronger revisions with an app version that supports `source-detail-v1`.
 
 One unapplied native candidate lives in memory per viewer launch. Preview uses
 no project inference-cache writes and creates no revision, recovery request or
