@@ -53,7 +53,8 @@ saved working inputs without changing final acceptance. `status` and `resume`
 recover verified tiles or completed stages from interrupted matte/repair operations.
 The offline loopback review window provides typed guide authoring, native
 comparisons and the same processing and recovery controls. [Refine edge](docs/workflow.md#refine-a-fur-or-hair-edge)
-scopes repair with a brush or rectangle and previews the native result before Apply. Optional assisted
+previews a native alpha repair with an inward feather on the marked area. Opt into **Stronger**
+for source-supported hair detail, with optional background gap and tip protection marks. Optional assisted
 review records bounded, source-based judgements through those same operations.
 Explicit [focused comparison sheets](docs/file-contract.md#focused-comparisons) save
 selected crops and optional presentation previews, with native evidence retained
@@ -240,7 +241,8 @@ The skill applies no photo edits.
 | Preparation snapshots and selected candidate publication | `src/blackmask/operations.py` |
 | Typed native guides and categorical rasterization | `src/blackmask/guidance.py` |
 | Pinned explicit setup and local-only SAM/ViTMatte sessions | `src/blackmask/models.py` |
-| Quantized scoped merge and saved operand replay | `src/blackmask/repair.py` |
+| Scoped edge geometry, quantized merge and saved operand replay | `src/blackmask/repair.py` |
+| Source-guided alpha candidate for Stronger | `src/blackmask/edge_detail.py` |
 | Native tile geometry, blending and verified cache | `src/blackmask/matte.py` |
 | Read-only cache inventory and exact confirmed clearing | `src/blackmask/operations.py`; [cache contract](docs/file-contract.md#inspecting-and-clearing-processing-cache) |
 | Native review evidence and explicit focused comparison sheets | `src/blackmask/review.py` |

@@ -1165,6 +1165,7 @@ def preview_edge_repair(
     area: Any,
     *,
     model_cache: Path | None,
+    refinement: Any = None,
     storage_config: StorageConfig | None = None,
 ) -> EdgePreview:
     project = _root(project)
@@ -1176,6 +1177,9 @@ def preview_edge_repair(
             "kind": "repair",
             **{key: identity[key] for key in ("developed_id", "base_revision", "inputs_digest")},
             "edge_area": area,
+            "edge_refinement": refinement
+            if refinement is not None
+            else {"mode": "standard", "guides": []},
             "reason": "Refine alpha within the reviewed native edge area",
         }
         preview: EdgePreview = _matte(
@@ -1216,6 +1220,8 @@ def _matte(
     from .ingest import write_developed
     from .matte import native_matte
     from .repair import (
+        EDGE_DETAIL_ALGORITHM,
+        EDGE_SUPPORT_ALGORITHM,
         ORDER,
         edge_support,
         merge_alpha,
@@ -1233,7 +1239,7 @@ def _matte(
     optional = {"reason"}
     if repairing:
         if edge:
-            required.add("edge_area")
+            required |= {"edge_area", "edge_refinement"}
             optional |= {"context_xyxy", "scope_xyxy"}
         else:
             required |= {"context_xyxy", "scope_xyxy", "support_file"}
@@ -1342,14 +1348,22 @@ def _matte(
     support_path = None
     support_bytes = None
     parent_alpha = None
+    edge_plan = None
     ancestor_hashes: dict[str, str] = {}
     if repairing:
         if not isinstance(operation.get("reason"), str) or not operation["reason"].strip():
             raise ProjectError("Repair requires source-supported requested change/rationale")
+        parent_alpha = _alpha(project, parent, state["developed_id"], (height, width))
         if edge:
-            context, scope, support = edge_support(
-                operation["edge_area"], state["developed_id"], raster.protection
+            edge_plan = edge_support(
+                operation["edge_area"],
+                state["developed_id"],
+                raster.protection,
+                parent_alpha,
+                trimap,
+                refinement=operation["edge_refinement"],
             )
+            context, scope, support = edge_plan.context, edge_plan.scope, edge_plan.support
             operation.update(context_xyxy=context, scope_xyxy=scope)
             with Image.open(
                 saved_asset(project, f"revisions/{parent}/supports/protection.png")
@@ -1376,7 +1390,6 @@ def _matte(
             validate_support(support, (height, width), context, scope)
             if not np.array_equal(support, raster.support16):
                 raise ProjectError("Saved support differs from prepared guides")
-        parent_alpha = _alpha(project, parent, state["developed_id"], (height, width))
         validate_merge(
             parent_alpha, support, raster.protection, raster.lock_values16, trimap, policy
         )
@@ -1569,6 +1582,8 @@ def _matte(
 
     crop = np.s_[y0:y1, x0:x1]
     if reviewed_edge is not None:
+        if not np.array_equal(support[crop], reviewed_edge.support):
+            raise ProjectError("Edge repair weights differ from the reviewed preview")
         if not reviewed_edge.changed_pixels:
             raise ProjectError("Edge preview contains no alpha changes")
         alpha, model_record = reviewed_edge.candidate, reviewed_edge.model
@@ -1596,10 +1611,14 @@ def _matte(
             if session
             else None,
         )
+        if edge_plan is not None and edge_plan.mode == "stronger":
+            from .edge_detail import refine_edge_detail
+
+            alpha = refine_edge_detail(pixels[crop], local_trimap, alpha, edge_plan.background_gaps)
     if preview_identity is not None:
         from .effects import stale_effect_names
 
-        assert parent_alpha is not None
+        assert parent_alpha is not None and edge_plan is not None
         before = parent_alpha[crop].copy()
         merged = merge_alpha(
             before,
@@ -1610,6 +1629,9 @@ def _matte(
             policy,
         )
         recheck()
+        protected = raster.protection[crop].copy()
+        if edge_plan.protected_tips is not None:
+            protected |= edge_plan.protected_tips
         operands = (
             pixels[crop].copy(),
             foreground[crop].copy(),
@@ -1617,7 +1639,7 @@ def _matte(
             alpha,
             merged,
             support[crop].copy(),
-            raster.protection[crop].copy(),
+            protected,
         )
         for operand in operands:
             operand.setflags(write=False)
@@ -1699,7 +1721,20 @@ def _matte(
                     "operation_order": ORDER,
                     "merge_policy": policy,
                     "rationale": operation["reason"],
-                    **({"edge_area": operation["edge_area"]} if edge else {}),
+                    **(
+                        {
+                            "edge_area": operation["edge_area"],
+                            "edge_support_algorithm": EDGE_SUPPORT_ALGORITHM,
+                            "edge_refinement": operation["edge_refinement"],
+                            **(
+                                {"edge_candidate_algorithm": EDGE_DETAIL_ALGORITHM}
+                                if edge_plan.mode == "stronger"
+                                else {}
+                            ),
+                        }
+                        if edge_plan is not None
+                        else {}
+                    ),
                 }
             )
         )

@@ -2,7 +2,56 @@
 
 ## Refine edge
 
-The matched synthetic comparison used one 160 × 112 RGB16 source, the installed
+### Stronger preview
+
+On the 468 × 263 procedural bee, Standard and Stronger used the same three
+brush areas and the installed ViTMatte Base CPU model. Paired 1:1 inspections on
+black, gray, white and alpha showed clearer facial bristle gaps and more defined
+crown wisps. The difference was strongest on white and alpha, visible on black,
+and faint on gray. Mean displayed alpha in known empty gaps fell from 0.031 to
+0.012 on the face (320 samples) and from 0.035 to 0.015 on the crown (389 samples).
+Of 926 sampled partial-tip pixels, 24 crossed above alpha 0.10 and none crossed
+below it. The central defocused upper back matched at 1,710 of 1,711 sampled
+alpha8 values. The remaining value differed by one level. Inspection found no
+new brush seam. The square from an intentionally placed saved lock was visible
+in both modes. Full-frame inspection at native size and at 50% found a subtle
+change around the face and crown. On gray it was barely visible at 50%.
+
+A separate Stronger preview on the same fixture cleared a marked gap and kept
+the exact partial working alpha at a protected tip. Apply reproduced the
+reviewed alpha and support. Model-free replay matched every saved alpha16 sample,
+including 113,056 zero-support samples and all 36 samples under the saved lock.
+The foreground RGB16 TIFF was byte-identical to the parent. An existing
+feathered draft without mode metadata also replayed exactly. The in-app browser
+exercised keyboard rectangle guides, Undo, editing the same selection between
+modes, all four preview views and keyboard Apply. The photographs themselves
+still need individual review. [Edge regression tests](../tests/test_edge_refinement.py)
+
+### Inward feather
+
+A 468 × 263 procedural bee used an overfilled starting matte and the installed
+ViTMatte Base CPU model. Hard and feathered weights were applied to the same
+quantized candidates and compared on matched native Alpha, Black, Gray and
+White crops. The three-pixel feather reduced the peak repair-induced alpha
+step at the perimeter by about 93% in the face, abdomen, crown and upper-back
+crops. The crown retained visible wisps and open gaps. The defocused upper back
+showed a soft band when the brush ended mid-transition. A wider brush spanning
+the falloff gave a gradual edge with no visible brush arc in this fixture.
+Increasing the feather alone to 10 pixels on the tight mark removed all
+full-strength samples from the upper-back crop.
+
+The wider-mark run verified identical preview and saved support16, identical
+preview, saved and replayed alpha16, 114,335 exact outside-footprint alpha
+samples, 6,625 exact full-strength candidate samples, and the same foreground
+RGB16 TIFF bytes. Regression tests also cover round ends, brush sides, overlaps,
+clipped and narrow marks, partial-alpha locks, changed confirmed cores, and
+hard-edge replay. [Edge regression tests](../tests/test_edge_refinement.py)
+
+Photographic acceptance requires inspection of the actual photograph.
+
+### Original hard-edge validation
+
+The earlier matched synthetic comparison used one 160 × 112 RGB16 source, the installed
 ViTMatte Base CPU model, identical confirmed cores, a defective starting matte,
 and a saved lock on a defocused section. Manual prepared-support repair and
 **Refine edge** produced identical alpha16. Both left alpha outside the marked

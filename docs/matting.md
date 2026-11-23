@@ -152,8 +152,15 @@ acceptance and regular-use evaluation remain human obligations.
 
 For a small patch of hair, fur or similar detail, the local viewer's
 [Refine edge](workflow.md#refine-a-fur-or-hair-edge) control previews a scoped
-replacement before Apply. Its saved revision uses the same model-free replay
-command below. The prepared-support CLI workflow follows.
+replacement before Apply. The combined writable area feathers inward over
+three native pixels, with full weight for changed confirmed cores within the
+area. **Stronger** is an opt-in preview mode. It starts from the same native
+matte and uses local foreground and background colour estimates in linear RGB
+from the RGB16 development. It adjusts partial coverage near the matte edge
+where the source has fine-scale structure and the local colour mixture fits.
+Gap guides confirm empty background in the candidate. Tip protection keeps the
+working alpha and feathers the repair around it. The saved revision uses the
+same model-free replay command below. [Local foreground/background compositing model](https://people.csail.mit.edu/alevin/papers/Matting-Levin-Lischinski-Weiss-PAMI.pdf)
 
 First identify a source-visible defect and explicitly choose its native context
 and allowed write scope. Context can exceed the support; the tool cannot decide

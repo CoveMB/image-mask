@@ -378,6 +378,8 @@
       <fieldset>
         <legend>Refine edge</legend>
         <button id="edgeStart">Draw edge area on Source</button>
+        <label>Preview mode <select id="edgeMode"><option value="standard">Standard</option><option value="stronger">Stronger</option></select></label>
+        <label>Mark <select id="edgeMark"><option value="support">Repair area</option><option value="background">Background gap</option><option value="protect">Protect tip</option></select></label>
         <p class="small">Brush across visible tips and gaps. Leave areas you want to keep outside the stroke.</p>
         <label>Brush radius (native pixels) <input id="edgeRadius" type="number" min="1" max="64" step="1" value="4" /></label>
         <label>Native rectangle x0,y0,x1,y1 <input id="edgeRectangle" class="wide" /></label>
@@ -385,9 +387,10 @@
         <button id="edgeUndo">Undo last mark</button>
         <button id="edgePreview">Preview edge</button>
         <label>Edge comparison <select id="edgeSide"><option value="candidate">Preview</option><option value="before">Before</option></select></label>
-        <label><input id="edgeCoverage" type="checkbox" /> Show write area (blue) and locks (pink)</label>
+        <label><input id="edgeCoverage" type="checkbox" /> Show write area (blue) and protection (pink)</label>
         <p id="edgeStatus" class="small" role="status"></p>
         <button id="edgeApply">Apply reviewed edge</button>
+        <button id="edgeEdit">Edit edge selection</button>
         <button id="edgeDiscard">Cancel edge refinement</button>
       </fieldset>
       <fieldset>
@@ -3282,21 +3285,46 @@
         && $("authorMode").value === "edge" && $("panel").value === "source"
         && $("viewRevision").value === state?.working_revision;
     }
+    function visibleEdgeMark(region) {
+      return region.role === "support" || $("edgeMode").value === "stronger";
+    }
+    function edgeGestureMark(gesture) {
+      return gesture.edgeRadius === 0
+        ? {role: gesture.edgeRole, shape: "point", xy: gesture.points[0]}
+        : {role: gesture.edgeRole, shape: "stroke", points: gesture.points, radius_px: gesture.edgeRadius};
+    }
     function edgeOutlines() {
       if (!edgeSourceReady()) return [];
       const regions = edgeDraft?.binding === edgeBinding() && String(crop) === String(edgeDraft?.crop) ? edgeDraft.regions : [];
-      return [...regions, ...(gesture?.edgeRadius ? [{shape: "stroke", points: gesture.points, radius_px: gesture.edgeRadius}] : [])]
-        .map(region => ({...region, role: "support"}));
+      return [...regions.filter(visibleEdgeMark), ...(gesture?.edgeRole ? [edgeGestureMark(gesture)] : [])]
+        .map(region => region.role === "protect" ? {...region, role: "lock"} : region);
+    }
+    function updateEdgeMarkRole() {
+      if ($("edgeMode").value === "standard") $("edgeMark").value = "support";
+      const radius = $("edgeRadius");
+      radius.min = $("edgeMark").value === "support" ? "1" : "0";
+      if (radius.min === "1" && radius.value === "0") radius.value = "1";
+      gesture = null;
+    }
+    function resetEdgeMode() {
+      $("edgeMode").value = "standard";
+      updateEdgeMarkRole();
     }
     function updateEdgeControls() {
       const busy = authoringBusy(), active = activeEdgePreview(), parent = edgeParent();
       const currentDraft = edgeDraft?.binding === edgeBinding() ? edgeDraft : null;
+      const marks = currentDraft?.regions.filter(visibleEdgeMark) ?? [];
+      const areaCount = marks.filter(region => region.role === "support").length;
+      const guideCount = marks.length - areaCount;
       $("edgeStart").disabled = busy || !(parent?.has_alpha || parent?.final_acceptable) || !!edgeReview;
+      $("edgeMode").disabled = busy || !!edgeReview || $("authorMode").value !== "edge";
+      $("edgeMark").disabled = !edgeSourceReady() || $("edgeMode").value !== "stronger";
       $("edgeRadius").disabled = $("edgeRectangle").disabled = $("edgeAddRectangle").disabled = !edgeSourceReady();
-      $("edgeUndo").disabled = busy || !edgeDraft?.regions.length;
-      $("edgePreview").disabled = !edgeSourceReady() || !currentDraft?.regions.length || String(crop) !== String(currentDraft.crop);
+      $("edgeUndo").disabled = busy || !marks.length;
+      $("edgePreview").disabled = !edgeSourceReady() || !areaCount || String(crop) !== String(currentDraft.crop);
       $("edgeSide").disabled = $("edgeCoverage").disabled = !active;
       $("edgeApply").disabled = busy || !active?.changed_pixels || edgeSeen !== active.preview_id || imageLoading || !image;
+      $("edgeEdit").disabled = busy || !active;
       $("edgeDiscard").disabled = busy || (!edgeDraft && $("authorMode").value !== "edge");
       $("cropApply").disabled = $("full").disabled = !!active || !!edgeSubmitted;
       for (const id of ["accept", "photoReviewed", "exportDraft", "framingExportDraft", "comparisonSave"])
@@ -3304,12 +3332,13 @@
       const selected = state?.revisions.find(row => row.revision === $("viewRevision").value);
       $("seriesExportDraft").disabled = busy || !selected?.final_acceptable || !!active;
       $("edgeStatus").textContent = active
-        ? `${active.changed_pixels} alpha samples changed · write bounds ${active.scope_xyxy.join(", ")} · context ${active.crop_xyxy.join(", ")}`
+        ? `${active.edge_mode === "stronger" ? "Stronger" : "Standard"} preview · ${active.changed_pixels} alpha samples changed · write bounds ${active.scope_xyxy.join(", ")} · context ${active.crop_xyxy.join(", ")}`
           + (active.stale_effects.length ? ` · Review or rebuild after Apply: ${active.stale_effects.join(", ")}.` : "")
           + " · Apply or cancel before accepting, exporting a draft or saving a comparison."
         : edgeDraft && !currentDraft ? "Edge marks are stale. Cancel and draw on the current source."
           : edgeDraft?.regions.length && String(crop) !== String(edgeDraft.crop) ? "Return to the marked crop or cancel the edge selection."
-            : edgeDraft?.regions.length ? `${edgeDraft.regions.length} marks · preview to inspect the exact write area` : "";
+            : marks.length ? `${areaCount} area marks · ${guideCount} local guides`
+              : $("authorMode").value === "edge" && $("edgeMark").value !== "support" ? "Radius 0 marks one native pixel." : "";
     }
     function syncEdge(parent, actionState, completed, reload) {
       if (reload || (edgeDraft && edgeDraft.binding !== edgeBinding(parent))) {
@@ -3321,6 +3350,7 @@
       if (!completed) return;
       if (actionState.name === "edge-apply" && !actionState.error && actionState.result?.revision === state.working_revision) {
         edgeDraft = null; edgeReview = null; edgeSeen = "";
+        resetEdgeMode();
         $("authorMode").value = "guides";
         $("viewRevision").value = state.working_revision;
         $("panel").value = "black";
@@ -3330,7 +3360,7 @@
         edgeSubmitted = null;
         const result = actionState.result;
         if (actionState.name === "edge-preview" && !actionState.error && result?.preview_id
-          && result.request_id === submission.id && submission.binding === edgeBinding(parent)
+          && result.request_id === submission.id && result.edge_mode === submission.mode && submission.binding === edgeBinding(parent)
           && edgeDraft?.binding === submission.binding && $("authorMode").value === "edge"
           && $("viewRevision").value === state.working_revision) {
           edgeReview = result;
@@ -3348,11 +3378,13 @@
       if (!edgeDraft) edgeDraft = {binding: edgeBinding(), crop: [...crop], regions: []};
       if (edgeDraft.binding !== edgeBinding() || String(edgeDraft.crop) !== String(crop))
         throw Error("Use the original marked crop or cancel and draw a new edge area");
-      if (edgeDraft.regions.length >= 16) throw Error("Preview up to 16 marks at a time");
+      const area = shape.role === "support";
+      if (edgeDraft.regions.filter(region => (region.role === "support") === area).length >= 16)
+        throw Error(area ? "Preview up to 16 area marks at a time" : "Preview up to 16 local guides at a time");
       edgeDraft.regions.push(shape);
       updateEdgeControls(); draw();
     }
-    async function discardEdge(keepMarks) {
+    async function discardEdge(change) {
       if (authoringBusy()) return;
       const reviewed = edgeReview;
       if (reviewed) {
@@ -3360,8 +3392,13 @@
         zoom = 1; pan = [0, 0]; $("zoom").value = zoom;
       }
       edgeReview = null; edgeSeen = "";
-      if (keepMarks) edgeDraft?.regions.pop();
-      else { edgeDraft = null; $("authorMode").value = "guides"; }
+      if (change === "undo" && edgeDraft) {
+        const index = edgeDraft.regions.findLastIndex(visibleEdgeMark);
+        if (index >= 0) edgeDraft.regions.splice(index, 1);
+      } else if (change === "cancel") {
+        edgeDraft = null; $("authorMode").value = "guides";
+        resetEdgeMode();
+      }
       $("panel").value = "source";
       updateEdgeControls(); draw();
       if (reviewed) await action("edge-discard", {preview_id: reviewed.preview_id});
@@ -3382,16 +3419,20 @@
       const xyxy = bounds("edgeRectangle");
       if (xyxy[0] < crop[0] || xyxy[1] < crop[1] || xyxy[2] > crop[2] || xyxy[3] > crop[3])
         throw Error("The rectangle must fit the displayed native crop");
-      addEdgeMark({shape: "rectangle", xyxy});
+      addEdgeMark({role: $("edgeMark").value, shape: "rectangle", xyxy});
     });
     $("edgePreview").onclick = guarded(async () => {
       if ($("edgePreview").disabled) return;
-      edgeSubmitted = {binding: edgeDraft.binding, id: crypto.randomUUID().replaceAll("-", "")};
+      const mode = $("edgeMode").value;
+      const regions = edgeDraft.regions.filter(region => region.role === "support").map(({role, ...shape}) => shape);
+      const guides = mode === "stronger" ? edgeDraft.regions.filter(region => region.role !== "support") : [];
+      edgeSubmitted = {binding: edgeDraft.binding, mode, id: crypto.randomUUID().replaceAll("-", "")};
       try {
         await action("edge-preview", {
           request_id: edgeSubmitted.id,
           revision_manifest_sha256: edgeParent().revision_manifest_sha256,
-          edge_area: {crop_xyxy: edgeDraft.crop, regions: edgeDraft.regions},
+          edge_area: {crop_xyxy: edgeDraft.crop, regions},
+          edge_refinement: {mode, guides},
         });
       } catch (error) {
         edgeSubmitted = null; updateEdgeControls(); throw error;
@@ -3401,8 +3442,10 @@
       if ($("edgeApply").disabled) return;
       return action("edge-apply", {preview_id: activeEdgePreview().preview_id});
     });
-    $("edgeUndo").onclick = guarded(() => discardEdge(true));
-    $("edgeDiscard").onclick = guarded(() => discardEdge(false));
+    $("edgeUndo").onclick = guarded(() => discardEdge("undo"));
+    $("edgeEdit").onclick = guarded(() => discardEdge("edit"));
+    $("edgeDiscard").onclick = guarded(() => discardEdge("cancel"));
+    $("edgeMode").onchange = $("edgeMark").onchange = () => { updateEdgeMarkRole(); updateEdgeControls(); draw(); };
     $("edgeSide").onchange = $("edgeCoverage").onchange = guarded(loadImage);
     $("authorMode").onchange = guarded(async () => { gesture = null; await loadImage(); updateEdgeControls(); draw(); });
     function guarded(fn) {
@@ -3987,11 +4030,11 @@
       if (!panMode && !point) return;
       if (edgeMode && !panMode) {
         if (!edgeSourceReady()) return;
-        const radius = Number($("edgeRadius").value);
-        if (!Number.isInteger(radius) || radius < 1 || radius > 64) {
-          message("Set the brush radius between 1 and 64 native pixels"); return;
+        const control = $("edgeRadius"), radius = Number(control.value);
+        if (!control.value || !Number.isInteger(radius) || radius < Number(control.min) || radius > 64) {
+          message(`Set the brush radius between ${control.min} and 64 native pixels`); return;
         }
-        gesture = {panMode: false, shape: "stroke", edgeRadius: radius, points: [point.map(Math.floor)]};
+        gesture = {panMode: false, edgeRole: $("edgeMark").value, edgeRadius: radius, points: [point.map(Math.floor)]};
         canvas.setPointerCapture(event.pointerId); draw(); return;
       }
       if (lightMode && !panMode) {
@@ -4035,7 +4078,7 @@
           gesture.pan[1] + event.clientY - gesture.start[1],
         ];
         draw();
-      } else if (gesture.edgeRadius) {
+      } else if (gesture.edgeRole && gesture.edgeRadius > 0) {
         if (!point) {
           gesture = null; draw(); message("Stroke left the source crop. Draw it again inside the crop.");
         } else {
@@ -4061,16 +4104,16 @@
         );
         return;
       }
-      const end = nativePosition(event, !g.edgeRadius);
+      const end = nativePosition(event, !g.edgeRole);
       if (!end) {
         message("Guide ended outside displayed native crop; nothing saved");
         return;
       }
       try {
-        if (g.edgeRadius) {
+        if (g.edgeRole) {
           const pixel = end.map(Math.floor), last = g.points.at(-1);
-          if (pixel[0] !== last[0] || pixel[1] !== last[1]) g.points.push(pixel);
-          addEdgeMark({shape: "stroke", points: g.points, radius_px: g.edgeRadius});
+          if (g.edgeRadius > 0 && (pixel[0] !== last[0] || pixel[1] !== last[1])) g.points.push(pixel);
+          addEdgeMark(edgeGestureMark(g));
           return;
         }
         const shape = g.shape,
@@ -4087,7 +4130,7 @@
         message(error.message);
       }
     };
-    canvas.onpointercancel = () => { const edge = gesture?.edgeRadius; gesture = null; if (edge) draw(); };
+    canvas.onpointercancel = () => { const edge = gesture?.edgeRole; gesture = null; if (edge) draw(); };
     canvas.onkeydown = (event) => {
       if (event.key === "Escape" && $("authorMode").value === "background-light" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight(); return;}
       if (event.key === "Escape" && $("authorMode").value === "reduction") {event.preventDefault(); gesture = null; reloadFadeReduction(); return;}

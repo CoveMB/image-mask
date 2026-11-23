@@ -1,18 +1,24 @@
 """Saved quantized repair arithmetic, independent of model execution/cache."""
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
 import numpy as np
 from PIL import Image
+from scipy.ndimage import distance_transform_edt
 
 from .assets import revision_asset, revision_hashes, saved_asset
-from .guidance import coordinates, rasterize_regions, validate_guides
+from .guidance import coordinates, rasterize_regions
 from .matte import TILE_SIZE
 from .project import ProjectError, digest, read_project, read_revision
 
 ORDER = "directional P/C; float64 P*(1-w)+D*w; rint ties-to-even; copy locks"
+EDGE_SUPPORT_ALGORITHM = "inward-smoothstep-3px-v1"
+EDGE_DETAIL_ALGORITHM = "source-detail-v1"
+_EDGE_FEATHER_PX = 3
+_EDGE_CONTEXT_PX = 64
 
 
 def scalar16(path: Path | BinaryIO) -> np.ndarray:
@@ -20,6 +26,10 @@ def scalar16(path: Path | BinaryIO) -> np.ndarray:
         if image.format != "PNG" or image.mode not in {"I;16", "I;16B", "I;16L"}:
             raise ProjectError("Repair operand must be grayscale16 PNG")
         return np.array(image, dtype=np.uint16)
+
+
+def _change_required_cores(parent: np.ndarray, trimap: np.ndarray) -> np.ndarray:
+    return ((trimap == 255) & (parent != 65535)) | ((trimap == 0) & (parent != 0))
 
 
 def validate_merge(
@@ -41,8 +51,7 @@ def validate_merge(
         raise ProjectError("Invalid repair protection")
     if trimap.shape != parent.shape or not np.isin(trimap, [0, 128, 255]).all():
         raise ProjectError("Invalid repair trimap")
-    needs_change = ((trimap == 255) & (parent != 65535)) | ((trimap == 0) & (parent != 0))
-    if np.any(needs_change & (support != 65535)):
+    if np.any(_change_required_cores(parent, trimap) & (support != 65535)):
         raise ProjectError("Change-required core needs full support")
     if (policy == "increase-only" and np.any((trimap == 0) & (parent != 0))) or (
         policy == "decrease-only" and np.any((trimap == 255) & (parent != 65535))
@@ -101,76 +110,166 @@ def validate_support(
         raise ProjectError("Repair support exceeds explicit scope/context or is empty")
 
 
-def edge_support(
-    area: Any, developed_id: str, protection: np.ndarray
-) -> tuple[list[int], list[int], np.ndarray]:
-    """Derive one bounded write footprint and its read context from reviewed geometry."""
-    height, width = protection.shape
-    if not isinstance(area, dict) or set(area) != {"crop_xyxy", "regions"}:
-        raise ProjectError("Invalid edge refinement area")
-    left, top, right, bottom = coordinates(area["crop_xyxy"], width, height, box=True)
-    if not isinstance(area["regions"], list) or not 1 <= len(area["regions"]) <= 16:
-        raise ProjectError("Edge refinement requires 1–16 strokes or rectangles")
+@dataclass(frozen=True)
+class EdgeRepairPlan:
+    context: list[int]
+    scope: list[int]
+    support: np.ndarray
+    mode: str
+    background_gaps: np.ndarray | None = None
+    protected_tips: np.ndarray | None = None
+
+
+def _edge_mark_bounds(region: Any, crop: list[int], *, allow_point: bool = False) -> list[int]:
+    if not isinstance(region, dict):
+        raise ProjectError("Invalid edge refinement shape")
+    left, top, right, bottom = crop
+    shape = region.get("shape")
+    if shape == "rectangle" and set(region) == {"shape", "xyxy"}:
+        x0, y0, x1, y1 = coordinates(region["xyxy"], right, bottom, box=True)
+        if left <= x0 and top <= y0:
+            return [x0, y0, x1, y1]
+    elif allow_point and shape == "point" and set(region) == {"shape", "xy"}:
+        x, y = coordinates(region["xy"], right, bottom)
+        if left <= x and top <= y:
+            return [x, y, x + 1, y + 1]
+    elif shape == "stroke" and set(region) == {"shape", "points", "radius_px"}:
+        points = region["points"]
+        radius = region["radius_px"]
+        if not isinstance(points, list) or not 1 <= len(points) <= 1024:
+            raise ProjectError("Use a shorter native edge stroke")
+        if type(radius) is not int or not 1 <= radius <= 64:
+            raise ProjectError("Edge brush radius must be 1–64 native pixels")
+        xs, ys = zip(*(coordinates(point, right, bottom) for point in points), strict=True)
+        if left <= min(xs) and top <= min(ys):
+            return [min(xs) - radius, min(ys) - radius, max(xs) + radius + 1, max(ys) + radius + 1]
+    else:
+        raise ProjectError("Invalid edge refinement shape fields")
+    raise ProjectError("Edge marks must fit the displayed native crop")
+
+
+def _local_edge_guides(
+    marks: list, crop: list[int], context: list[int], developed_id: str, width: int, height: int
+) -> tuple[np.ndarray, np.ndarray]:
+    x0, y0, x1, y1 = context
     regions = []
-    for index, region in enumerate(area["regions"]):
-        if not isinstance(region, dict):
-            raise ProjectError("Invalid edge refinement shape")
-        shape = region.get("shape")
-        if shape == "stroke" and set(region) == {"shape", "points", "radius_px"}:
-            if not isinstance(region["points"], list) or not 1 <= len(region["points"]) <= 1024:
-                raise ProjectError("Use a shorter native edge stroke")
-            if type(region["radius_px"]) is not int or not 1 <= region["radius_px"] <= 64:
-                raise ProjectError("Edge brush radius must be 1–64 native pixels")
-        elif shape != "rectangle" or set(region) != {"shape", "xyxy"}:
-            raise ProjectError("Invalid edge refinement shape fields")
-        regions.append(dict(region, id=f"edge-{index}", role="support", feather_px=0))
-    guides = validate_guides(
+    for index, mark in enumerate(marks):
+        if not isinstance(mark, dict) or mark.get("role") not in ("background", "protect"):
+            raise ProjectError("Invalid local edge guide role")
+        region = {key: value for key, value in mark.items() if key != "role"}
+        left, top, right, bottom = _edge_mark_bounds(region, crop, allow_point=True)
+        if not (
+            x0 <= max(0, left)
+            and y0 <= max(0, top)
+            and min(width, right) <= x1
+            and min(height, bottom) <= y1
+        ):
+            raise ProjectError("Local guides must fit inside the writable edge area")
+        if region["shape"] == "rectangle":
+            region["xyxy"] = [left - x0, top - y0, right - x0, bottom - y0]
+        elif region["shape"] == "point":
+            region["xy"] = [left - x0, top - y0]
+        else:
+            region["points"] = [[x - x0, y - y0] for x, y in region["points"]]
+        region.update(id=f"local-edge-{index}", role="background")
+        if mark["role"] == "protect":
+            region.update(role="support", feather_px=0)
+        regions.append(region)
+    local = rasterize_regions(
         {
             "schema_version": 2,
             "developed_id": developed_id,
-            "width": width,
-            "height": height,
+            "width": x1 - x0,
+            "height": y1 - y0,
             "regions": regions,
-        },
-        developed_id,
-        width,
-        height,
+        }
     )
-    bounds = []
-    for region in regions:
-        if region["shape"] == "rectangle":
-            x0, y0, x1, y1 = region["xyxy"]
-            if not (left <= x0 < x1 <= right and top <= y0 < y1 <= bottom):
-                raise ProjectError("Edge rectangle must fit the displayed native crop")
-            bounds.append([x0, y0, x1, y1])
-        else:
-            xs, ys = zip(*region["points"], strict=True)
-            if not (left <= min(xs) <= max(xs) < right and top <= min(ys) <= max(ys) < bottom):
-                raise ProjectError(
-                    "Edge stroke must start and end within the displayed native crop"
-                )
-            radius = region["radius_px"]
-            bounds.append(
-                [min(xs) - radius, min(ys) - radius, max(xs) + radius + 1, max(ys) + radius + 1]
-            )
+    return local.trimap == 0, local.support16 != 0
+
+
+def edge_support(
+    area: Any,
+    developed_id: str,
+    protection: np.ndarray,
+    parent: np.ndarray,
+    trimap: np.ndarray,
+    *,
+    feathered: bool = True,
+    refinement: Any = None,
+) -> EdgeRepairPlan:
+    """Derive native read bounds and quantized write weights from the reviewed geometry."""
+    height, width = protection.shape
+    mode, marks = "standard", []
+    if refinement is not None:
+        if not isinstance(refinement, dict) or set(refinement) != {"mode", "guides"}:
+            raise ProjectError("Invalid edge refinement options")
+        mode, marks = refinement["mode"], refinement["guides"]
+        if mode not in ("standard", "stronger"):
+            raise ProjectError("Invalid edge refinement mode")
+        if not isinstance(marks, list) or len(marks) > 16:
+            raise ProjectError("Use up to 16 local edge guides")
+        if marks and mode != "stronger":
+            raise ProjectError("Local edge guides require Stronger")
+    if not isinstance(area, dict) or set(area) != {"crop_xyxy", "regions"}:
+        raise ProjectError("Invalid edge refinement area")
+    crop = coordinates(area["crop_xyxy"], width, height, box=True)
+    left, top, right, bottom = crop
+    if not isinstance(area["regions"], list) or not 1 <= len(area["regions"]) <= 16:
+        raise ProjectError("Edge refinement requires 1–16 strokes or rectangles")
+    bounds = [_edge_mark_bounds(region, crop) for region in area["regions"]]
+    guides = {
+        "schema_version": 2,
+        "developed_id": developed_id,
+        "width": width,
+        "height": height,
+        "regions": [
+            dict(region, id=f"edge-{index}", role="support", feather_px=0)
+            for index, region in enumerate(area["regions"])
+        ],
+    }
     x0 = max(left, min(box[0] for box in bounds))
     y0 = max(top, min(box[1] for box in bounds))
     x1 = min(right, max(box[2] for box in bounds))
     y1 = min(bottom, max(box[3] for box in bounds))
     scope = [x0, y0, x1, y1]
-    padding = 64
     context = [
-        max(0, x0 - padding),
-        max(0, y0 - padding),
-        min(width, x1 + padding),
-        min(height, y1 + padding),
+        max(0, x0 - _EDGE_CONTEXT_PX),
+        max(0, y0 - _EDGE_CONTEXT_PX),
+        min(width, x1 + _EDGE_CONTEXT_PX),
+        min(height, y1 + _EDGE_CONTEXT_PX),
     ]
     if context[2] - context[0] > TILE_SIZE or context[3] - context[1] > TILE_SIZE:
         raise ProjectError("Use a smaller edge area so its native context fits one matting tile")
     support = rasterize_regions(guides, scope_xyxy=scope).support16
     support[protection] = 0
+    background_gaps = protected_tips = None
+    if marks:
+        cx0, cy0, cx1, cy1 = context
+        local_window = np.s_[cy0:cy1, cx0:cx1]
+        background_gaps, protected_tips = _local_edge_guides(
+            marks, crop, context, developed_id, width, height
+        )
+        local_support = support[local_window]
+        if np.any((background_gaps | protected_tips) & (local_support == 0)):
+            raise ProjectError(
+                "Local guides must fit inside the writable edge area and avoid saved locks"
+            )
+        if np.any(background_gaps & protected_tips):
+            raise ProjectError("Background gap overlaps tip protection")
+        if np.any(background_gaps & (trimap[local_window] == 255)):
+            raise ProjectError("Background gap overlaps confirmed foreground")
+        local_support[protected_tips] = 0
+    if feathered:
+        window = np.s_[y0:y1, x0:x1]
+        writable = support[window] != 0
+        distance = distance_transform_edt(np.pad(writable, 1))[1:-1, 1:-1]
+        # Start the ramp half a pixel from the nearest exterior sample center.
+        fraction = np.clip((distance - 0.5) / _EDGE_FEATHER_PX, 0, 1)
+        weight = fraction**2 * (3 - 2 * fraction)
+        weight[writable & _change_required_cores(parent[window], trimap[window])] = 1
+        support[window] = np.rint(weight * 65535).astype(np.uint16)
     validate_support(support, protection.shape, context, scope)
-    return context, scope, support
+    return EdgeRepairPlan(context, scope, support, mode, background_gaps, protected_tips)
 
 
 def replay_directory(project: Path, directory: Path, manifest: dict[str, Any]) -> np.ndarray:
@@ -200,13 +299,45 @@ def replay_directory(project: Path, directory: Path, manifest: dict[str, Any]) -
     }:
         raise ProjectError("Invalid repair crop mapping/order")
     validate_support(support, parent.shape, context, scope)
-    if "edge_area" in record:
-        edge_context, edge_scope, edge = edge_support(
-            record["edge_area"], record["developed_id"], protection
-        )
-        if edge_context != context or edge_scope != scope or not np.array_equal(support, edge):
-            raise ProjectError("Saved edge repair support differs from its authored footprint")
     validate_merge(parent, support, protection, locked, trimap, record["merge_policy"])
+    if "edge_area" in record:
+        feathered = "edge_support_algorithm" in record
+        if feathered and record["edge_support_algorithm"] != EDGE_SUPPORT_ALGORITHM:
+            raise ProjectError("Unknown saved edge support algorithm")
+        refinement = record.get("edge_refinement")
+        if "edge_refinement" in record:
+            request = json.loads((directory / "request.json").read_bytes())
+            if (
+                not isinstance(refinement, dict)
+                or not feathered
+                or not isinstance(request, dict)
+                or request.get("edge_refinement") != refinement
+                or request.get("edge_area") != record["edge_area"]
+            ):
+                raise ProjectError("Saved edge refinement differs from its request")
+        plan = edge_support(
+            record["edge_area"],
+            record["developed_id"],
+            protection,
+            parent,
+            trimap,
+            feathered=feathered,
+            refinement=refinement,
+        )
+        if (
+            plan.context != context
+            or plan.scope != scope
+            or not np.array_equal(support, plan.support)
+        ):
+            raise ProjectError("Saved edge repair support differs from its authored footprint")
+        if record.get("edge_candidate_algorithm") != (
+            EDGE_DETAIL_ALGORITHM if plan.mode == "stronger" else None
+        ):
+            raise ProjectError("Unknown saved edge candidate algorithm for its mode")
+        if plan.background_gaps is not None and np.any(
+            candidate[y0:y1, x0:x1][plan.background_gaps]
+        ):
+            raise ProjectError("Saved edge candidate contradicts its background gap guides")
     merged = merge_alpha(parent, candidate, support, protection, locked, record["merge_policy"])
     if np.any(merged[trimap == 0] != 0) or np.any(merged[trimap == 255] != 65535):
         raise ProjectError("Repair known cores failed after merge")
