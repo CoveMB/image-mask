@@ -428,7 +428,11 @@ def main() -> int:
             request = json.loads(raw_request)
             if not isinstance(request, dict):
                 raise ProjectError("Operation request must be a JSON object")
-            if "local_texture" in request:
+            if "mist" in request:
+                from .mist import parse_mist_json
+
+                request = parse_mist_json(raw_request, request=True)
+            elif "local_texture" in request:
                 from .texture import parse_texture_json
 
                 request = parse_texture_json(raw_request)

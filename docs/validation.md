@@ -1832,3 +1832,50 @@ attestations remain unread. Their commands and exits are retained, but their
 loaded modules are not inferred. Node commands and exits are separate JavaScript
 evidence. These checks do not establish real-model, photographic, print,
 accessibility or human usability acceptance.
+
+## Mist
+
+The synthetic checks compare the deterministic field with an independent scalar
+oracle and verify exact bypasses and locked partial alpha. Saved revision tests
+exercise edited recipe drafts, protection changes, reuse, recovery and acceptance
+preservation. Detached replay uses the four native editable Mist members and
+compares reconstructed native, Add margins and Match series pixels against their
+delivered TIFFs. The no-Mist v5 native, margin and series deliveries generated
+from the pre-Mist checkout reused their original directories and file bytes.
+
+The packaged viewer opened a 360 × 240 synthetic project in the in-app browser.
+Keyboard operation changed density and authored a feathered numeric rectangle.
+Apply, Compare Mist OFF and a browser reload showed the saved settings and shape.
+The browser saved a 386 × 258 Add margins draft and a native editable companion.
+File readback verified the exact native rectangle and four Mist operand hashes.
+The prior revision remained accepted. The separate installed Playwright lane
+was unavailable. The browser and fixture used the local viewer only.
+
+Measured application timings used a 3072 × 4080 synthetic native project with
+three feathered rectangles and one feathered stroke. Peak RSS includes the
+Python process and surrounding I/O and validation. Disk admission and rejection
+are tested separately from these physical measurements.
+
+| Operation | Elapsed | Peak RSS |
+| --- | ---: | ---: |
+| Apply Mist | 13.24 s | 3.47 GiB |
+| Add a hard lock and rebuild clearance during Prepare | 8.55 s | 1.86 GiB |
+| 1536 × 2048 Match series with editable companion | 18.97 s | 1.82 GiB |
+
+Photographic evaluation of charcoal mist and feathered detail on a real image
+remains for a separately authorized local copy and human review.
+
+## Lit backdrop fade target
+
+Synthetic fixtures check exact RGB16 convergence to a nonuniform lit backdrop
+for full fade at partial and opaque alpha. The same fixtures cover protected
+and partially faded samples. Independent scalar Match series checks exercise
+identity, resized and reduced-preview sampling for both saved targets.
+Native viewer checks cover saved target recovery, a late Apply response,
+the independent OFF comparisons and the Base target in diagnostics.
+
+Detached replay compares native, Add margins and Match series TIFFs against
+their editable operands, with and without Mist. Rehashed substitute settings
+or backdrop/light operands must fail delivery reuse. The V1 checkout produced
+six Base backdrop v5/v6 deliveries across the three modes. The follow-up
+checkout reused those folders and editable companions byte for byte.

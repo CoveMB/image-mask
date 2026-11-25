@@ -28,9 +28,18 @@ from .framing import (
 )
 from .guidance import coordinates
 from .library import StorageConfig, validate_library_project
+from .mist import (
+    MAX_REQUEST_BYTES,
+    PROTECTION_ROLE,
+    parse_mist_json,
+    read_mist_area,
+    saved_mist,
+    validate_mist_request,
+)
 from .project import (
     ProjectError,
     _json_bytes,
+    _read_json,
     _root,
     _validate_assets,
     _validation_scope,
@@ -248,6 +257,11 @@ class ReviewServer(ThreadingHTTPServer):
                         "fade_reduction_areas": reduction_areas,
                         "background": manifest.get("background"),
                         "background_light": manifest.get("background_light"),
+                        "mist": manifest.get("mist"),
+                        "mist_area": read_mist_area(self.project, path, manifest)
+                        if "mist" in manifest
+                        else None,
+                        "hard_protection_sha256": revision_hashes(manifest)[PROTECTION_ROLE],
                         "tile_summary": {
                             k: manifest.get("model", {}).get(k)
                             for k in ("inferred_tiles", "reused_tiles")
@@ -633,6 +647,11 @@ class ReviewServer(ThreadingHTTPServer):
                     if base_background is not None
                     else np.zeros_like(foreground[y0:y1, x0:x1])
                 )
+                mist = (
+                    saved_mist(self.project, directory, manifest, effects_off=stale)
+                    if data.get("panel", "result") == "result"
+                    else None
+                )
                 pixels = review_panels(
                     foreground[y0:y1, x0:x1],
                     foreground[y0:y1, x0:x1],
@@ -642,6 +661,7 @@ class ReviewServer(ThreadingHTTPServer):
                     background16=None if background is None else background[y0:y1, x0:x1],
                     spatial_fade=comparison_spatial,
                     fade_background16=target if comparison_spatial is not None else None,
+                    mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
                 )[data.get("panel", "result")]
                 label = (
                     "Fade OFF; BASE comparison: all optional foreground effects and background OFF"
@@ -828,7 +848,7 @@ class ReviewServer(ThreadingHTTPServer):
                 "background",
                 "background_light",
             }
-            fields["effects"] |= set(data) & optional
+            fields["effects"] |= set(data) & ({"mist"} if "mist" in data else optional)
             if any(
                 field in data
                 for field in (
@@ -837,6 +857,7 @@ class ReviewServer(ThreadingHTTPServer):
                     "background_light",
                     "local_tone_curve",
                     "local_texture",
+                    "mist",
                 )
             ):
                 fields["effects"].add("revision_manifest_sha256")
@@ -867,6 +888,13 @@ class ReviewServer(ThreadingHTTPServer):
 
     def execute(self, data: dict[str, Any]) -> dict[str, Any]:
         action = data["action"]
+        if action == "effects" and "mist" in data:
+            # Reject invalid or oversized Clear mist input before reading the master.
+            source = _read_json(self.project, "source.json")
+            metadata = source["metadata"]
+            validate_mist_request(
+                data["mist"], source["developed_id"], metadata["width"], metadata["height"]
+            )
         if (
             action in {"export", "series-export"}
             and "variants" in data
@@ -1098,6 +1126,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "fade_reduction",
                         "background",
                         "background_light",
+                        "mist",
                     )
                     if k in data
                 }
@@ -1117,6 +1146,7 @@ class ReviewServer(ThreadingHTTPServer):
                 "background_light",
                 "local_tone_curve",
                 "local_texture",
+                "mist",
             )
         )
         expected_manifest = data.get("revision_manifest_sha256") if bound_action else None
@@ -1132,7 +1162,7 @@ class ReviewServer(ThreadingHTTPServer):
                 model_cache=self.model_cache,
                 expected_revision_manifest_sha256=expected_manifest,
                 expected_authoring_digest=data["authoring_digest"]
-                if "local_tone_curve" in request or "local_texture" in request
+                if {"local_tone_curve", "local_texture", "mist"} & request.keys()
                 else None,
                 storage_config=self.storage_config,
             )
@@ -1183,7 +1213,7 @@ class ReviewServer(ThreadingHTTPServer):
         match = re.fullmatch(
             r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/"
             r"([0-9]+,[0-9]+,[0-9]+,[0-9]+)"
-            r"(/base|/background-light-off|/exposure-off|/tone-curve-off|/texture-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
+            r"(/base|/background-light-off|/mist-off|/exposure-off|/tone-curve-off|/texture-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -1230,16 +1260,27 @@ class ReviewServer(ThreadingHTTPServer):
                 opacity = float(base[2:])
             from .background_light import saved_backgrounds
 
+            directory = saved_asset(self.project, f"revisions/{identity}")
+            effects_off = base == "/base" or stale or effects_stale(manifest)
             base_background, background = (
                 saved_backgrounds(
                     self.project,
-                    saved_asset(self.project, f"revisions/{identity}"),
+                    directory,
                     manifest,
                     light_off=base == "/background-light-off",
                 )
-                if (panel == "result" or spatial is not None)
-                and not (base == "/base" or stale or effects_stale(manifest))
+                if (panel == "result" or spatial is not None) and not effects_off
                 else (None, None)
+            )
+            mist = (
+                saved_mist(
+                    self.project,
+                    directory,
+                    manifest,
+                    effects_off=effects_off or base == "/mist-off",
+                )
+                if panel == "result"
+                else None
             )
             target = (
                 base_background
@@ -1266,6 +1307,7 @@ class ReviewServer(ThreadingHTTPServer):
                     None if spatial.reduction16 is None else spatial.reduction16[y0:y1, x0:x1],
                 ),
                 fade_background16=None if target is None else target[y0:y1, x0:x1],
+                mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
             )[panel]
         buffer = io.BytesIO()
         Image.fromarray(pixels).save(buffer, format="PNG")
@@ -1409,7 +1451,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
             if not lengths or len(lengths) != 1 or not lengths[0].isdigit():
                 raise ValueError("Missing/invalid body length")
             size = int(lengths[0])
-            if not 0 < size <= 2_000_000:
+            if not 0 < size <= MAX_REQUEST_BYTES:
                 self.error(413, "Body too large or empty")
                 return
             body = self.rfile.read(size)
@@ -1466,7 +1508,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     json.dumps(self.server.validate_series_preset(data), allow_nan=False).encode(),
                 )
             else:
-                if isinstance(data, dict) and "local_texture" in data:
+                if isinstance(data, dict) and "mist" in data:
+                    data = parse_mist_json(body, request=True)
+                elif isinstance(data, dict) and "local_texture" in data:
                     data = parse_texture_json(body)
                 elif isinstance(data, dict) and (
                     data.get("action")

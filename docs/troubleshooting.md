@@ -293,6 +293,9 @@ Use the effect's maintained workflow for its own draft and recovery controls:
   reload stale shape drafts before Apply. Rebuild or disable a stale effect;
   reduction cannot refresh its alpha dependency. Each reduction target retains
   its own draft and **Cancel / reload saved reduction** action.
+  If an edge still stands out against Background light, compare the saved light
+  OFF. For a fade into the displayed glow, select **Lit backdrop**, apply and
+  check effective fade strength, protection and local reduction at that edge.
 - [Appearance recipes](workflow.md#reuse-appearance-settings): loading settings
   does not apply effects. Reload remaining settings after each effect Apply;
   area drafts have separate bindings. The layout's **Undo import** is available
@@ -348,6 +351,28 @@ non-authoritative. Explicit restore with draft replacement preserves current dra
 in recovery storage and selects that revision's background; acceptance is unchanged.
 Export collisions preserve the existing delivery. Do not delete original projects,
 accepted dependencies, failed stages or recovery material automatically.
+
+## Mist recovery
+
+- **Apply or Turn Mist OFF is unavailable.** Load the current complete working
+  revision and wait for the matching native view. For Apply on an unaccepted
+  base, select **Explicitly compare Mist on an unaccepted candidate**.
+- **Stale Unapplied changes.** Inspect the working edit base and viewed revision.
+  **Rebind pending Mist** is available when the source, dimensions, saved Mist and
+  hard protection still match the former base. An absent record differs from a
+  saved OFF record. Otherwise use **Reload saved Mist** and re-enter your intended
+  edits. Reload replaces this form. Turn Mist OFF uses the saved working settings
+  and retains pending edits, including already-stale ones.
+- **Publication interrupted or durability unconfirmed.** Keep the pending form
+  and reload project status. The error includes the original diagnosis and names
+  the complete visible revision to inspect or explicitly restore. A pending
+  gallery derivative after a successful native Apply has separate status and can
+  be retried through the gallery controls. Acceptance remains attached to the
+  prior accepted revision.
+- **Mist files invalid or a delivery is incomplete.** Preserve the revision and
+  delivery folders. Recover intact bound operands from backup. For an editable
+  framed pair, restore the matching native companion before retrying an identical
+  export. [Mist file bindings](file-contract.md#saved-mist)
 
 ## Series framing recovery
 

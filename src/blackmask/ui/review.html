@@ -461,7 +461,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="edge">Refine edge</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="edge">Refine edge</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option><option value="mist-placement">Mist coverage</option><option value="mist">Clear mist</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -529,6 +529,48 @@
         <label><input id="backgroundLightCompare" type="checkbox" /> Compare Background light OFF</label>
         <p id="backgroundLightStatus" role="status" class="small"></p>
         <p id="backgroundLightDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset id="mistControls">
+        <legend>Mist</legend>
+        <label><input id="mistEnabled" type="checkbox" /> Mist ON</label>
+        <label>Density (%) <input id="mistDensityRange" type="range" min="0" max="100" step="0.1" value="22" /></label>
+        <label>Density (numeric %) <input id="mistDensity" type="number" min="0" max="100" step="any" value="22" /></label>
+        <label>Mist tint <input id="mistColor" type="color" value="#8c9192" /></label>
+        <label>Mist tint #RRGGBB <input id="mistHex" type="text" maxlength="7" value="#8C9192" /></label>
+        <label>Wisp size (% of shorter side) <input id="mistSize" type="number" min="4" max="60" step="any" value="22" /></label>
+        <details>
+          <summary>Placement and pattern</summary>
+          <label>Centre X (native pixels) <input id="mistCenterX" type="number" min="0" step="any" /></label>
+          <label>Centre Y (native pixels) <input id="mistCenterY" type="number" min="0" step="any" /></label>
+          <button id="mistPlaceCentre">Place centre on canvas</button>
+          <label>Radius along direction (native pixels) <input id="mistRadiusX" type="number" min="0.5" step="any" /></label>
+          <label>Radius across direction (native pixels) <input id="mistRadiusY" type="number" min="0.5" step="any" /></label>
+          <label>Coverage softness (%) <input id="mistSoftness" type="number" min="5" max="100" step="any" value="72" /></label>
+          <label>Wisp stretch (×) <input id="mistStretch" type="number" min="1" max="5" step="any" value="2" /></label>
+          <label>Direction (clockwise degrees, 0 to below 360) <input id="mistRotation" type="number" min="0" step="any" value="25" /></label>
+          <label>Pattern seed <input id="mistSeed" type="number" min="0" max="4294967295" step="1" value="1" /></label>
+          <button id="mistNextPattern">Next pattern</button>
+        </details>
+        <details>
+          <summary>Clear mist</summary>
+          <button id="mistDrawClear">Draw Clear mist on canvas</button>
+          <label>Clear mist shape <select id="mistShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+          <label>Brush radius (native pixels) <input id="mistRadius" type="number" min="1" step="1" value="10" /></label>
+          <label>Inward feather (native pixels) <input id="mistFeather" type="number" min="0" step="1" value="0" /></label>
+          <label>Clear mist rectangle x0,y0,x1,y1 <input id="mistRectangle" class="wide" /></label>
+          <button id="mistAddRectangle">Add Clear mist rectangle</button>
+          <label>Clear mist shapes <select id="mistRegions" class="wide" size="4"></select></label>
+          <button id="mistRemove">Remove Clear mist shape</button>
+        </details>
+        <label><input id="mistHide" type="checkbox" /> Hide Mist outlines</label>
+        <label><input id="mistCandidate" type="checkbox" /> Explicitly compare Mist on an unaccepted candidate</label>
+        <button id="mistApply">Apply Mist</button>
+        <button id="mistDisable">Turn Mist OFF</button>
+        <button id="mistReload">Reload saved Mist</button>
+        <button id="mistRebind">Rebind pending Mist</button>
+        <label><input id="mistCompare" type="checkbox" /> Compare Mist OFF</label>
+        <p id="mistSavedStatus" role="status" class="small"></p>
+        <p id="mistDraftStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset>
         <legend>Local sharpening</legend>
@@ -636,6 +678,7 @@
       <fieldset id="spatialControls">
         <legend>Fade into background</legend>
         <label><input id="spatialMaster" type="checkbox" /> Fade ON</label>
+        <label>Fade target <select id="spatialTarget"><option value="base">Base backdrop</option><option value="lit">Lit backdrop</option></select></label>
         <label><input id="spatialUseOval" type="checkbox" checked /> Use oval</label>
         <label><input id="spatialUseArcs" type="checkbox" /> Use arcs</label>
         <p class="small">Use the oval, separate arcs, or both. Enabling this mode disables inward shading; turning it OFF keeps inward shading OFF. Shadow fade stays independent.</p>
@@ -667,7 +710,7 @@
         <label><input id="spatialCompare" type="checkbox" /> Compare Fade OFF (keep other effects and selected background)</label>
         <label>Saved strength map <select id="spatialMap"><option value="none">None</option><option value="selected">Selected shape</option><option value="combined">Combined geometry</option><option value="effective">Effective after protection / highlights</option></select></label>
         <label>Map display opacity <input id="spatialOpacity" type="range" min="0" max="1" step="0.05" value="0.45" /></label>
-        <p class="small">Outlines can show unapplied edits; images and strength maps show the bound saved revision until Apply. The selected background remains the fade target on black/gray/white diagnostic views. Blending can tint or brighten RGB; transparent views retain that tint and unchanged alpha. Keep both exported folders for portable editing.</p>
+        <p class="small">Images and strength maps show the saved revision until Apply. Lit backdrop includes Background light in the Result fade target. Black, Gray, White and transparent views use Base backdrop. Blending can tint or brighten RGB. Alpha stays unchanged. Keep both exported folders for portable editing.</p>
         <p id="spatialDraftStatus" role="status" class="small"></p><p id="spatialStatus" role="status" class="small"></p>
       </fieldset>
       <fieldset id="reductionControls">
@@ -818,8 +861,10 @@
     const backgroundLightControlIds = ["backgroundLightEnabled", "backgroundLightRange", "backgroundLightBrightness", "backgroundLightColor", "backgroundLightHex", "backgroundLightShape", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition", "backgroundLightReverse", "backgroundLightCandidate", "backgroundLightApply", "backgroundLightOff", "backgroundLightReload"];
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let sharpeningArea = {regions: [], protection: []}, sharpeningDirty = false, sharpeningAreaPublished = false;
-    const nativeAreaModes = ["exposure", "fade", "sharpening", "toneCurve", "texture"];
-    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "textureCompare", "spatialCompare", "backgroundLightCompare"];
+    const nativeAreaModes = ["exposure", "fade", "sharpening", "toneCurve", "texture", "mist"];
+    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "textureCompare", "spatialCompare", "backgroundLightCompare", "mistCompare"];
+    const mistSettingsIds = ["mistEnabled", "mistDensityRange", "mistDensity", "mistColor", "mistHex", "mistSize", "mistCenterX", "mistCenterY", "mistRadiusX", "mistRadiusY", "mistSoftness", "mistStretch", "mistRotation", "mistSeed"];
+    let mistDraft = null, mistSubmission = null, mistVersion = 0, loadedNativeView = null;
     let toneCurveArea = {regions: [], protection: []}, toneCurvePointRows = [];
     let toneCurvePointsIdentity = null, toneCurveAreaIdentity = null;
     let toneCurvePointsVersion = 0, toneCurveAreaVersion = 0;
@@ -1575,10 +1620,14 @@
     function selectedSpatialShape() {
       return selectedSpatialId === "oval" ? spatialDraft?.oval : spatialDraft?.arcs.find(arc=>arc.id===selectedSpatialId);
     }
+    function spatialTargetLabel(settings) {
+      return settings?.target === "lit" ? "Lit backdrop" : "Base backdrop";
+    }
     function validateSpatialSettings(settings = spatialDraft) {
       const [width,height] = state.dimensions_wh, limit = 2*Math.max(width,height);
       const range = (value,min,max) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
       if (!settings || typeof settings.enabled !== "boolean" || typeof settings.arcs_enabled !== "boolean" || !range(settings.preserve_highlights,0,1) || settings.arcs.length>32) throw Error("Use at most 32 arcs and finite highlight preservation in [0,100]%");
+      if ("target" in settings && settings.target !== "lit") throw Error("Choose a valid Fade target");
       const ids = new Set();
       for (const [index,shape] of [settings.oval,...settings.arcs].entries()) {
         if (typeof shape.enabled !== "boolean" || !range(shape.center_xy[0],0,width) || !range(shape.center_xy[1],0,height) || !range(shape.rotation_degrees,0,360) || shape.rotation_degrees===360 || !range(shape.transition_width,.5,limit) || !range(shape.amount,0,1)) throw Error("Use finite in-image centres, rotation, transition width and Fade strength within their bounds");
@@ -1597,7 +1646,7 @@
       let invalid = ""; try { validateSpatialSettings(); } catch(error) { invalid = " · "+error.message; }
       $("spatialDraftStatus").textContent = (stale ? "Stale unapplied fade shapes · Cancel / reload saved fade shapes before Apply" : spatialDirty ? "Unapplied fade shapes · outlines only; images/maps still show saved settings" : "Saved fade shapes · images/maps use the selected saved revision") + invalid + (spatialAdding ? " · Click the image to place a new arc; Escape cancels" : "");
       const current = state.revisions.find(r=>r.revision===state.working_revision)?.spatial_fade;
-      $("spatialStatus").textContent = current?.stale ? "Saved Fade into background STALE · rebuild with Apply or Disable fade before acceptance/export" : "Saved Fade into background "+(current?.enabled ? "ON" : "OFF");
+      $("spatialStatus").textContent = current?.stale ? "Saved Fade into background STALE · rebuild with Apply or Disable fade before acceptance/export" : "Saved Fade into background "+(current?.enabled ? "ON" : "OFF")+" · "+spatialTargetLabel(current?.settings);
     }
     function renderSpatialControls() {
       if (!spatialDraft) return;
@@ -1605,6 +1654,7 @@
       select("spatialSelect", [["oval","Oval · "+(spatialDraft.oval.enabled ? "ON" : "OFF")],...spatialDraft.arcs.map((arc,index)=>[arc.id,"Arc "+(index+1)+" · "+(arc.enabled ? "ON" : "OFF")+" · "+arc.id.slice(0,8)])],selectedSpatialId);
       const shape = selectedSpatialShape(), oval = selectedSpatialId === "oval";
       $("spatialMaster").checked=spatialDraft.enabled;$("spatialUseOval").checked=spatialDraft.oval.enabled;$("spatialUseArcs").checked=spatialDraft.arcs_enabled;
+      $("spatialTarget").value = spatialDraft.target ?? "base";
       $("spatialOvalControls").hidden=!oval;$("spatialArcControls").hidden=oval;
       const fields={spatialCenterX:shape.center_xy[0],spatialCenterY:shape.center_xy[1],spatialRotation:shape.rotation_degrees,spatialTransition:shape.transition_width,spatialStrength:shape.amount*100,spatialPreserve:spatialDraft.preserve_highlights*100};
       if(oval) Object.assign(fields,{spatialWidth:shape.inner_radii_xy[0]*2,spatialHeight:shape.inner_radii_xy[1]*2});
@@ -1703,6 +1753,12 @@
       markSpatialDirty();renderSpatialControls();
     }
     for(const id of ["spatialCenterX","spatialCenterY","spatialRotation","spatialTransition","spatialStrength","spatialPreserve","spatialWidth","spatialHeight","spatialSpan","spatialBend","spatialEndSoftness"]) $(id).oninput=()=>updateSpatialNumber(id);
+    $("spatialTarget").onchange = () => {
+      if (!spatialDraft) return;
+      if ($("spatialTarget").value === "lit") spatialDraft.target = "lit";
+      else delete spatialDraft.target;
+      markSpatialDirty();
+    };
     for(const [id,update] of [["spatialMaster",()=>spatialDraft.enabled=$("spatialMaster").checked],["spatialUseOval",()=>spatialDraft.oval.enabled=$("spatialUseOval").checked],["spatialUseArcs",()=>spatialDraft.arcs_enabled=$("spatialUseArcs").checked],["spatialArcEnabled",()=>selectedSpatialShape().enabled=$("spatialArcEnabled").checked],["spatialSide",()=>selectedSpatialShape().fade_side=$("spatialSide").value]]) $(id).oninput=()=>{update();markSpatialDirty();renderSpatialControls();};
     $("spatialSelect").onchange=()=>{invalidateAppearanceLayout();selectedSpatialId=$("spatialSelect").value;appearanceInteractionVersion++;$("appearanceTargetShape").value=selectedSpatialId;renderSpatialControls();draw();if($("spatialMap").value==="selected")loadImage().catch(error=>message(error.message));};
     $("spatialAdd").onclick=event=>guarded(()=>{invalidateAppearanceLayout();if(spatialDraft.arcs.length>=32)throw Error("At most 32 arcs");if(event?.detail){spatialAdding=true;$("authorMode").value="spatial";spatialDraftStatus();draw();}else addSpatialArc();})();
@@ -1835,6 +1891,7 @@
       return refreshInFlight;
     }
     async function refreshState(reload) {
+      const viewedBeforeRefresh = $("viewRevision").value;
       state = await (await api("/api/state")).json();
       const a = state.action,
         current = state.revisions.find(
@@ -1920,8 +1977,11 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
+      const retainedMistView = completed && mistSubmission && viewedBeforeRefresh !== mistSubmission.base.base_revision
+        && state.revisions.some(row => row.revision === viewedBeforeRefresh) ? viewedBeforeRefresh : undefined;
       syncToneCurve(current, a, completed);
       syncTexture(current, a, completed);
+      syncMist(current, a, completed);
       const reductionSubmission = fadeReductionSubmitted;
       const reductionCompleted = completed && !a.error && reductionSubmission && a.name === "effects"
         && (a.result?.reused ? a.result.revision === reductionSubmission.base_revision : a.result?.parent === reductionSubmission.base_revision)
@@ -2084,9 +2144,9 @@
       select(
         "viewRevision",
         revisions,
-        state.working_revision && !$("viewRevision").value
+        retainedMistView || (state.working_revision && !$("viewRevision").value
           ? state.working_revision
-          : undefined,
+          : undefined),
       );
       select("restoreRevision", revisions);
       if (completed && a.name === "framing-save" && framingSubmitted) {
@@ -2195,6 +2255,7 @@
       $("framingSave").disabled = authoringBusy() || framingNeedsReload || !!state?.framing_error;
       updateToneCurveControls();
       updateTextureControls();
+      updateMistControls();
       updateEdgeControls();
       $("previewRepair").disabled = authoringBusy() || !state?.preview || ["not_applicable","no_result"].includes(state.preview.status) || state.preview.reason === "configuration_required";
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
@@ -2240,11 +2301,13 @@
       const texture = $("textureCompare").checked ? "OFF comparison" : viewed?.local_texture?.enabled ? "ON" : "OFF";
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
       const lightLabel = " · Background light " + (["black", "gray", "white"].includes(panel) ? "excluded from diagnostic" : $("backgroundLightCompare").checked ? "OFF comparison" : viewed?.background_light?.settings?.enabled ? "ON" : "OFF");
-      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Local tone curve " + toneCurve + " · Local texture " + texture + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON; diagnostics retain selected target" : "OFF") + ($("exposureCompare").checked ? " · curve, texture and fade recalculated from exposure-OFF RGB" : "");
-      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel;
+      const mistLabel = panel === "result" && viewed?.mist ? " · Mist " + ($("mistCompare").checked ? "OFF comparison" : viewed.mist.settings.enabled ? "ON" : "OFF") : "";
+      const spatialTarget = spatialTargetLabel(panel === "result" && !$("backgroundLightCompare").checked ? viewed?.spatial_fade?.settings : null);
+      const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Local tone curve " + toneCurve + " · Local texture " + texture + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON · " + spatialTarget : "OFF") + ($("exposureCompare").checked ? " · curve, texture and fade recalculated from exposure-OFF RGB" : "");
+      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel + mistLabel;
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
-      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup + lightLabel;
+      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup + lightLabel + mistLabel;
     }
     async function loadImage() {
       if (!state || !crop) return;
@@ -2256,9 +2319,11 @@
       const edgePath = edge ? `/edge-preview/${edge.preview_id}/${edgeSide}` : null;
       const edgePanel = panel === "result" ? "black" : panel;
       const spatialMap=$("spatialMap").value || "none", viewed=state.revisions.find(r=>r.revision===revision);
+      if (!viewed?.mist?.settings.enabled) $("mistCompare").checked = false;
       const reductionView = $("reductionView").value || "none";
       const selectedSaved=selectedSpatialId==="oval" || viewed?.spatial_fade?.settings?.arcs.some(arc=>arc.id===selectedSpatialId);
       const requestedCrop = [...crop],
+        selectedMaster = state.developed_id,
         workingRevision = state.working_revision,
         label = edge ? `Edge ${edgePanel === "source" ? "source" : edgeSide === "before" ? "before" : "preview"} · ${edgePanel} · BASE · RGB8/alpha8 view`
           : previewLabel(panel, revision, $("cleanupBase").checked, $("shadingPreview").value) + (spatialMap!=="none" ? " · Saved "+spatialMap+" strength map" + (spatialMap==="selected" && !selectedSaved ? " unavailable for unapplied shape; Apply first" : "") : "") + (reductionView === "none" ? "" : " · Saved " + reductionLabel() + " reduction " + reductionView + " · draft excluded");
@@ -2276,6 +2341,7 @@
         $("fadeCompare").checked,
         $("spatialCompare").checked,
         $("backgroundLightCompare").checked,
+        $("mistCompare").checked,
         spatialMap,
         reductionView,
         reductionTarget(),
@@ -2294,8 +2360,10 @@
       if (key === imageKey) return;
       imageKey = key;
       imageLoading = true;
+      loadedNativeView = null;
       gesture = null;
       updateEdgeControls();
+      updateMistControls();
       $("coordinate").textContent = "Loading native view…";
       $("shadingStatus").textContent = "Loading selected native view…";
       draw();
@@ -2306,7 +2374,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("textureCompare").checked ? "/texture-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("mistCompare").checked && panel === "result" ? "/mist-off" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("textureCompare").checked ? "/texture-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = edgePath ? await bitmap(`${edgePath}/${edgePanel}`)
           : reductionView === "off" && !["source", "alpha"].includes(panel)
           ? await spatialBitmap("off", revision, requestedCrop, panel, true)
@@ -2334,6 +2402,7 @@
         next = null;
         nextOverlay = null;
         imageLoading = false;
+        if (!edge) loadedNativeView = {developed_id: selectedMaster, revision, sha256: viewed?.revision_manifest_sha256};
         if (edge && edgeSide === "candidate" && edgePanel !== "source") edgeSeen = edge.preview_id;
         $("shadingStatus").textContent = label;
         $("coordinate").textContent = "";
@@ -2354,6 +2423,7 @@
         next?.close();
         nextOverlay?.close();
         updateEdgeControls();
+        updateMistControls();
       }
     }
     function draw() {
@@ -2387,7 +2457,9 @@
         );
         ctx.globalAlpha = 1;
       }
-      const mode = $("authorMode").value, area = nativeAreaModes.includes(mode) ? effectArea(mode) : null;
+      const mode = $("authorMode").value;
+      const showMist = mode !== "mist" || !$("mistHide").checked && mistViewReady(workingMistRevision());
+      const area = nativeAreaModes.includes(mode) && showMist ? effectArea(mode) : null;
       if (mode === "edge" || $("overlay").value === "guides" || area || mode === "reduction") {
         const drawnRegions = mode === "edge" ? edgeOutlines() : mode === "reduction"
           ? (reductionDraft()?.area.regions || []).map(region => region.shape)
@@ -2403,6 +2475,7 @@
             support: "#6af",
             lock: "#f6f",
           }[region.role];
+          if (mode === "mist" && $("mistRegions").value === "regions:" + region.id) ctx.strokeStyle = "#ffcb72";
           ctx.fillStyle = ctx.strokeStyle;
           ctx.lineWidth = 2 / scale;
           ctx.beginPath();
@@ -2445,6 +2518,7 @@
       if (!activeEdgePreview()) {
         drawSpatialShapes(scale);
         drawBackgroundLight(scale);
+        drawMistCoverage(scale);
         if (appearanceLayoutProposal) drawSpatialShapes(scale, appearanceLayoutProposal.settings, true);
       }
       ctx.restore();
@@ -2544,7 +2618,9 @@
       renderSharpeningArea();
     }
     function renderEffectAreaRegions(prefix, area) {
-      select(prefix + "Regions", ["regions", "protection"].flatMap(kind => area[kind].map(r => [kind + ":" + r.id, (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
+      select(prefix + "Regions", ["regions", "protection"].flatMap(kind => area[kind].map(r => [kind + ":" + r.id,
+        prefix === "mist" ? (r.xyxy ? "Rectangle " + r.xyxy.join(", ") : `Brush (${r.points.length} points)`) + ` · ${r.feather_px} px feather`
+          : (kind === "regions" ? "Apply" : "Protect") + " · " + JSON.stringify(r.xyxy || r.points || r.xy)])));
     }
     function renderEffectArea(prefix, area, unsaved, title) {
       renderEffectAreaRegions(prefix, area);
@@ -2568,7 +2644,7 @@
         ? " Stale Local sharpening settings; reload before applying." : " Unsaved Local sharpening settings.";
     }
     function effectArea(prefix) {
-      return {exposure: exposureArea, fade: fadeArea, sharpening: sharpeningArea, toneCurve: toneCurveArea, texture: textureArea}[prefix];
+      return {exposure: exposureArea, fade: fadeArea, sharpening: sharpeningArea, toneCurve: toneCurveArea, texture: textureArea, mist: mistDraft?.area}[prefix];
     }
     function addEffectRegion(prefix, geometry, shape) {
       if (authoringBusy() || imageLoading || !image || !transform) throw Error("Wait for the matching native view before area authoring");
@@ -2576,7 +2652,14 @@
         throw Error("Choose the working revision before authoring a tone curve area");
       if (prefix === "texture" && $("viewRevision").value !== state.working_revision)
         throw Error("Choose the working revision before authoring a texture area");
-      const kind = $(prefix + "Role").value, [w, h] = state.dimensions_wh;
+      if (prefix === "mist") {
+        requireMistView();
+        if (!mistSameSource(mistDraft.base, mistBinding(workingMistRevision())))
+          throw Error("Reload saved Mist before drawing on this source");
+        if (!["rectangle", "stroke"].includes(shape) || String($("mistFeather").value).trim() === "")
+          throw Error("Use a brush or rectangle with a native inward feather");
+      }
+      const kind = prefix === "mist" ? "regions" : $(prefix + "Role").value, [w, h] = state.dimensions_wh;
       const feather = kind === "protection" ? 0 : Number($(prefix + "Feather").value);
       const radius = Number($(prefix + "Radius").value);
       if (!Number.isInteger(feather) || feather < 0 || feather > Math.max(w,h)) throw Error("Use a valid native inward feather");
@@ -2585,10 +2668,14 @@
       if (shape === "rectangle") region.xyxy = geometry;
       else { region.points = geometry; region.radius_px = radius; }
       const area = effectArea(prefix);
+      if (prefix === "mist" && (area.regions.length >= 64 ||
+        area.regions.reduce((total, item) => total + (item.points?.length || 0), region.points?.length || 0) > 8192))
+        throw Error("Clear mist allows up to 64 shapes and 8192 stroke points");
       area[kind].push(region);
       if (prefix === "sharpening") { sharpeningDirty = true; renderSharpeningArea(); }
       else if (prefix === "toneCurve") markToneCurveAreaDirty();
       else if (prefix === "texture") markTextureAreaDirty();
+      else if (prefix === "mist") { renderEffectAreaRegions("mist", area); markMistDirty(); }
       else markEffectAreaDirty(prefix);
       draw();
     }
@@ -2996,6 +3083,226 @@
     $("textureSavedApply").onclick = guarded(() => localTexture("saved"));
     $("textureDisable").onclick = guarded(() => localTexture("disable"));
     $("textureCompare").onchange = guarded(() => compareChanged("textureCompare"));
+
+    function workingMistRevision() {
+      return state?.revisions.find(row => row.revision === state.working_revision);
+    }
+    function mistBinding(current) {
+      return {...effectCurrentIdentity(), dimensions_wh: [...state.dimensions_wh],
+        revision_manifest_sha256: current?.revision_manifest_sha256 ?? null,
+        protection: current?.hard_protection_sha256 ?? null,
+        settings: current?.mist ? fadeReductionAreaIdentity(current.mist.settings) : null,
+        area_sha256: current?.mist?.area_sha256 ?? null};
+    }
+    function mistSameSource(first, second) {
+      return first.developed_id === second.developed_id && first.dimensions_wh.every((axis, index) => axis === second.dimensions_wh[index]);
+    }
+    function mistCanRebind(first, second) {
+      return mistSameSource(first, second) && !!first.protection && first.protection === second.protection
+        && first.settings === second.settings && first.area_sha256 === second.area_sha256;
+    }
+    function mistDraftStale(target) {
+      return mistDraft?.dirty && fadeReductionAreaIdentity(mistDraft.base) !== fadeReductionAreaIdentity(target);
+    }
+    function mistViewReady(current) {
+      return !!(current?.final_acceptable && image && transform && !imageLoading
+        && $("viewRevision").value === current.revision && loadedNativeView?.revision === current.revision
+        && loadedNativeView.developed_id === state.developed_id && current.revision_manifest_sha256
+        && loadedNativeView.sha256 === current.revision_manifest_sha256 && !activeEdgePreview());
+    }
+    function requireMistView() {
+      const current = workingMistRevision();
+      if (authoringBusy() || !mistViewReady(current)) throw Error("Load the matching complete working view before changing Mist");
+      return current;
+    }
+    function mistNumber(id, label, minimum, maximum, {whole = false, percent = false, exclusiveMax = false} = {}) {
+      const text = String($(id).value).trim(), value = Number(text);
+      if (!text || !Number.isFinite(value) || value < minimum || value > maximum
+        || exclusiveMax && value === maximum || whole && !Number.isInteger(value))
+        throw Error(`${label} needs ${whole ? "a whole number" : "a value"} from ${minimum} ${exclusiveMax ? "to below" : "to"} ${maximum}`);
+      if (!percent) return value;
+      const [coefficient, exponent = "0"] = text.toLowerCase().split("e");
+      return Number(coefficient + "e" + (Number(exponent) - 2));
+    }
+    function mistFormSettings() {
+      const [width, height] = state.dimensions_wh, limit = 2 * Math.max(width, height);
+      const tint = $("mistHex").value.trim().toUpperCase();
+      if (!/^#[0-9A-F]{6}$/.test(tint)) throw Error("Use a Mist tint in #RRGGBB format");
+      return {enabled: $("mistEnabled").checked, tint_srgb: tint,
+        density: mistNumber("mistDensity", "Density (%)", 0, 100, {percent: true}),
+        wisp_size: mistNumber("mistSize", "Wisp size (%)", 4, 60, {percent: true}),
+        stretch: mistNumber("mistStretch", "Wisp stretch", 1, 5),
+        rotation_degrees: mistNumber("mistRotation", "Direction", 0, 360, {exclusiveMax: true}),
+        seed: mistNumber("mistSeed", "Pattern seed", 0, 4294967295, {whole: true}),
+        coverage: {
+          center_xy: [mistNumber("mistCenterX", "Centre X", 0, width), mistNumber("mistCenterY", "Centre Y", 0, height)],
+          radii_xy: [mistNumber("mistRadiusX", "Radius along direction", .5, limit), mistNumber("mistRadiusY", "Radius across direction", .5, limit)],
+          softness: mistNumber("mistSoftness", "Coverage softness (%)", 5, 100, {percent: true}),
+        }};
+    }
+    function loadSavedMist(current) {
+      const [width, height] = state.dimensions_wh, axis = Math.max(width, height);
+      const settings = current?.mist?.settings || {enabled: false, density: .22, tint_srgb: "#8C9192",
+        wisp_size: .22, stretch: 2, rotation_degrees: 25, seed: 1,
+        coverage: {center_xy: [width / 2, height / 2], radii_xy: [width * .6, height * .6], softness: .72}};
+      mistDraft = {base: mistBinding(current), area: structuredClone(current?.mist_area || {regions: [], protection: []}), dirty: false};
+      mistVersion++;
+      $("mistEnabled").checked = settings.enabled;
+      $("mistCandidate").checked = false;
+      $("mistColor").value = settings.tint_srgb.toLowerCase();
+      const {center_xy: [centerX, centerY], radii_xy: [radiusX, radiusY], softness} = settings.coverage;
+      const density = backgroundPercentage(settings.density);
+      for (const [id, value] of Object.entries({mistDensity: density, mistDensityRange: density, mistHex: settings.tint_srgb,
+        mistSize: backgroundPercentage(settings.wisp_size), mistCenterX: centerX, mistCenterY: centerY,
+        mistRadiusX: radiusX, mistRadiusY: radiusY, mistSoftness: backgroundPercentage(softness),
+        mistStretch: settings.stretch, mistRotation: settings.rotation_degrees, mistSeed: settings.seed})) $(id).value = String(value);
+      for (const [id, value] of Object.entries({mistCenterX: width, mistCenterY: height, mistRadiusX: 2 * axis, mistRadiusY: 2 * axis,
+        mistRadius: axis, mistFeather: axis})) $(id).max = String(value);
+      if (Number($("mistRadius").value) > axis) $("mistRadius").value = String(axis);
+      renderEffectAreaRegions("mist", mistDraft.area);
+    }
+    function updateMistControls() {
+      if (!state || !mistDraft) return;
+      const current = workingMistRevision(), viewed = state.revisions.find(row => row.revision === $("viewRevision").value);
+      const matching = !!mistViewReady(current), writable = matching && !authoringBusy();
+      const target = mistBinding(current), stale = mistDraftStale(target);
+      const rebind = stale && mistCanRebind(mistDraft.base, target), sameSource = mistSameSource(mistDraft.base, target);
+      for (const id of [...mistSettingsIds, "mistNextPattern", "mistShape", "mistRadius", "mistFeather", "mistRectangle",
+        "mistAddRectangle", "mistRemove", "mistPlaceCentre", "mistDrawClear"]) $(id).disabled = !writable || !sameSource;
+      $("mistCandidate").disabled = !writable || current?.revision === state.accepted_revision;
+      $("mistApply").disabled = !writable || stale || current?.revision !== state.accepted_revision && !$("mistCandidate").checked;
+      $("mistDisable").disabled = !writable || !current?.mist?.settings.enabled;
+      $("mistReload").disabled = !writable || !mistDraft.dirty;
+      $("mistRebind").disabled = !writable || !rebind;
+      $("mistCompare").disabled = !viewed?.mist?.settings.enabled || !!activeEdgePreview();
+      const saved = `Viewed ${viewed?.revision || "none"} · Working edit base ${current?.revision || "none"} · `
+        + (current?.mist ? `Saved Mist ${current.mist.settings.enabled ? "ON" : "OFF"}` : "No saved Mist");
+      const draft = stale ? `Stale · Unapplied changes · ${rebind ? "Rebind pending Mist on the working view." : "Reload saved Mist before applying."}`
+        : mistDraft.dirty ? "Unapplied changes · Result shows the selected saved revision" : "";
+      if ($("mistSavedStatus").textContent !== saved) $("mistSavedStatus").textContent = saved;
+      if ($("mistDraftStatus").textContent !== draft) $("mistDraftStatus").textContent = draft;
+    }
+    function markMistDirty() {
+      if (!mistDraft) return;
+      mistDraft.dirty = true;
+      mistVersion++;
+      updateMistControls();
+      draw();
+    }
+    function syncMist(current, actionState, completed) {
+      const submission = mistSubmission, result = actionState.result;
+      const target = mistBinding(current), base = submission?.base;
+      const verified = completed && submission && !actionState.error && actionState.name === "effects"
+        && base.developed_id === state.developed_id && result?.developed_id === state.developed_id
+        && result.revision === current?.revision && result.revision_manifest_sha256 === target.revision_manifest_sha256
+        && result.base_manifest_sha256 === base.revision_manifest_sha256
+        && (result.reused === true ? result.revision : result.parent) === base.base_revision
+        && current.mist && fadeReductionAreaIdentity(result.mist) === fadeReductionAreaIdentity(current.mist)
+        && target.settings === submission.settings && target.protection === base.protection
+        && fadeReductionAreaIdentity(current.mist_area) === submission.area;
+      const stillBound = verified && fadeReductionAreaIdentity(mistDraft.base) === fadeReductionAreaIdentity(base);
+      const applied = stillBound && submission.action === "apply" && mistVersion === submission.version;
+      if (stillBound && mistDraft.dirty && submission.action === "disable"
+        && ["area_sha256", "density_sha256", "clear_sha256"].every(key => current.mist[key] === submission.saved[key]))
+        mistDraft.base = target;
+      if (completed) mistSubmission = null;
+      if (applied || !mistDraft || !mistDraft.dirty && !mistSubmission
+        && fadeReductionAreaIdentity(mistDraft.base) !== fadeReductionAreaIdentity(target)) loadSavedMist(current);
+      updateMistControls();
+    }
+    async function submitMist(actionName) {
+      const current = requireMistView();
+      requireSaved();
+      const base = mistBinding(current), saved = current.mist;
+      const apply = actionName === "apply";
+      if (apply && mistDraftStale(base)) throw Error("Rebind pending Mist or reload the saved form before applying");
+      if (!apply && !saved?.settings.enabled) return;
+      const candidate = apply && $("mistCandidate").checked;
+      if (apply && current.revision !== state.accepted_revision && !candidate)
+        throw Error("Choose an accepted base or explicitly compare Mist on this candidate");
+      const settings = apply ? mistFormSettings() : {...saved.settings, enabled: false};
+      const area = apply ? structuredClone(mistDraft.area) : current.mist_area;
+      const mist = apply ? {action: "apply", settings, clear_area: area} : {action: "disable"};
+      if (apply && !mistDraft.dirty) markMistDirty();
+      mistSubmission = {action: actionName, base, saved, version: mistVersion,
+        settings: fadeReductionAreaIdentity(settings), area: fadeReductionAreaIdentity(area)};
+      try {
+        await action("effects", {...effectCurrentIdentity(), revision_manifest_sha256: base.revision_manifest_sha256,
+          scope_xyxy: [0, 0, ...state.dimensions_wh], candidate_comparison: candidate, mist});
+      } catch (error) {
+        mistSubmission = null;
+        throw error;
+      }
+    }
+    function drawMistCoverage(scale) {
+      if ($("authorMode").value !== "mist-placement" || $("mistHide").checked || !mistViewReady(workingMistRevision())) return;
+      let settings;
+      try { settings = mistFormSettings(); } catch { return; }
+      const {center_xy: [x, y], radii_xy: [rx, ry], softness} = settings.coverage;
+      const angle = settings.rotation_degrees * Math.PI / 180;
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, image.width, image.height); ctx.clip();
+      ctx.strokeStyle = "#ffcb72"; ctx.lineWidth = 2 / scale;
+      for (const size of [1, 1 - softness]) if (size > 0) {
+        ctx.beginPath(); ctx.ellipse(x - crop[0], y - crop[1], rx * size, ry * size, angle, 0, 2 * Math.PI); ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(x - crop[0], y - crop[1], 3 / scale, 0, 2 * Math.PI); ctx.stroke();
+      ctx.restore();
+    }
+    for (const id of mistSettingsIds) $(id).oninput = markMistDirty;
+    for (const [from, to] of [["mistDensity", "mistDensityRange"], ["mistDensityRange", "mistDensity"]]) {
+      $(from).oninput = () => { $(to).value = $(from).value; markMistDirty(); };
+    }
+    $("mistColor").oninput = () => { $("mistHex").value = $("mistColor").value.toUpperCase(); markMistDirty(); };
+    $("mistHex").oninput = () => {
+      const value = $("mistHex").value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(value)) $("mistColor").value = value.toLowerCase();
+      markMistDirty();
+    };
+    $("mistNextPattern").onclick = guarded(() => {
+      requireMistView();
+      const seed = mistNumber("mistSeed", "Pattern seed", 0, 4294967295, {whole: true});
+      $("mistSeed").value = String((seed + 1) % 4294967296);
+      markMistDirty();
+    });
+    for (const [id, mode] of [["mistPlaceCentre", "mist-placement"], ["mistDrawClear", "mist"]]) $(id).onclick = guarded(() => {
+      requireMistView();
+      $("authorMode").value = mode;
+      gesture = null; draw();
+    });
+    $("mistAddRectangle").onclick = guarded(() => {
+      addEffectRegion("mist", bounds("mistRectangle"), "rectangle");
+      $("authorMode").value = "mist"; draw();
+    });
+    $("mistRegions").onchange = draw;
+    $("mistRemove").onclick = guarded(() => {
+      requireMistView();
+      const id = $("mistRegions").value.split(":")[1];
+      if (!id) return;
+      mistDraft.area.regions = mistDraft.area.regions.filter(region => region.id !== id);
+      renderEffectAreaRegions("mist", mistDraft.area);
+      markMistDirty();
+    });
+    $("mistHide").onchange = draw;
+    $("mistCandidate").onchange = updateMistControls;
+    $("mistApply").onclick = guarded(() => submitMist("apply"));
+    $("mistDisable").onclick = guarded(() => submitMist("disable"));
+    $("mistReload").onclick = guarded(() => {
+      const current = requireMistView();
+      if (mistDraft.dirty && !confirm("Replace pending Mist settings and shapes with the saved form?")) return;
+      loadSavedMist(current); updateMistControls(); draw();
+    });
+    $("mistRebind").onclick = guarded(() => {
+      const current = requireMistView(), target = mistBinding(current);
+      if (!mistDraftStale(target) || !mistCanRebind(mistDraft.base, target))
+        throw Error("Saved Mist, protection or source changed. Reload saved Mist before editing this revision.");
+      mistDraft.base = target;
+      mistVersion++;
+      updateMistControls(); draw();
+    });
+    $("mistCompare").onchange = guarded(() => {
+      if ($("mistCompare").checked) $("panel").value = "result";
+      return compareChanged("mistCompare");
+    });
     function backgroundLightIdentity() {
       const revision = state?.revisions.find(row => row.revision === state.working_revision);
       return JSON.stringify({...effectCurrentIdentity(), manifest: revision?.revision_manifest_sha256});
@@ -4018,9 +4325,10 @@
       const lightMode = $("authorMode").value === "background-light";
       const mode = $("authorMode").value;
       const edgeMode = mode === "edge";
+      const mistPlacement = mode === "mist-placement";
       const effectMode = nativeAreaModes.includes(mode) || mode === "reduction" ? mode : null;
-      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && !edgeMode && $("shape").value === "pan");
-      const point = nativePosition(event,spatialMode || lightMode);
+      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && !edgeMode && !mistPlacement && $("shape").value === "pan");
+      const point = nativePosition(event, spatialMode || lightMode || mistPlacement);
       if (!panMode && (authoringBusy() || imageLoading)) {
         message(
           "Guide not started while a writer is active or the native view is loading",
@@ -4028,6 +4336,18 @@
         return;
       }
       if (!panMode && !point) return;
+      if ((mistPlacement || mode === "mist") && !panMode) {
+        try {
+          const current = requireMistView();
+          if (!mistSameSource(mistDraft.base, mistBinding(current))) throw Error("Reload saved Mist before drawing on this source");
+          if (mistPlacement) {
+            $("mistCenterX").value = String(point[0]);
+            $("mistCenterY").value = String(point[1]);
+            markMistDirty();
+            return;
+          }
+        } catch (error) { message(error.message); return; }
+      }
       if (edgeMode && !panMode) {
         if (!edgeSourceReady()) return;
         const control = $("edgeRadius"), radius = Number(control.value);
@@ -4089,8 +4409,14 @@
         }
       } else if (point && gesture.lightHandle) dragBackgroundLight(gesture, point);
       else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
-      else if (point && gesture.shape === "stroke")
+      else if (point && gesture.shape === "stroke") {
+        if (gesture.effectMode === "mist") {
+          const last = gesture.points.at(-1);
+          if (point.every((value, axis) => Math.floor(value) === Math.floor(last[axis]))) return;
+          if (gesture.points.length >= 8192) { gesture = null; message("Clear mist allows up to 8192 stroke points"); return; }
+        }
         gesture.points.push(point);
+      }
     };
     canvas.onpointerup = (event) => {
       if (!gesture) return;
@@ -4104,7 +4430,7 @@
         );
         return;
       }
-      const end = nativePosition(event, !g.edgeRole);
+      const end = nativePosition(event, !g.edgeRole && !(g.effectMode === "mist" && g.shape === "stroke"));
       if (!end) {
         message("Guide ended outside displayed native crop; nothing saved");
         return;
@@ -4125,13 +4451,18 @@
             throw Error("Empty box; drag a region");
           add(rectangle);
         } else if (shape === "point") add(start.map(Math.floor));
-        else add(g.points.map((p) => p.map(Math.floor)));
+        else {
+          if (g.effectMode === "mist" && end.some((value, axis) => Math.floor(value) !== Math.floor(g.points.at(-1)[axis])))
+            g.points.push(end);
+          add(g.points.map((p) => p.map(Math.floor)));
+        }
       } catch (error) {
         message(error.message);
       }
     };
     canvas.onpointercancel = () => { const edge = gesture?.edgeRole; gesture = null; if (edge) draw(); };
     canvas.onkeydown = (event) => {
+      if (event.key === "Escape" && ["mist", "mist-placement"].includes($("authorMode").value)) { event.preventDefault(); gesture = null; draw(); return; }
       if (event.key === "Escape" && $("authorMode").value === "background-light" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight(); return;}
       if (event.key === "Escape" && $("authorMode").value === "reduction") {event.preventDefault(); gesture = null; reloadFadeReduction(); return;}
       if(event.key==="Escape" && $("authorMode").value==="spatial") {event.preventDefault();gesture=null;if(spatialAdding){spatialAdding=false;spatialDraftStatus();draw();}else resetSpatialFromSaved();return;}

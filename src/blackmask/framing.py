@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .assets import saved_asset
+from .mist import ROWS_PER_CHUNK, MistOperands, blend_mist_into_result, sample_mist_density
 from .project import (
     ProjectError,
     _atomic_json,
@@ -87,7 +88,11 @@ def framed_geometry(
 
 
 def frame_result(
-    native_rgb16: np.ndarray, background_rgb16: np.ndarray | None, margins: Margins
+    native_rgb16: np.ndarray,
+    background_rgb16: np.ndarray | None,
+    margins: Margins,
+    *,
+    mist: MistOperands | None = None,
 ) -> np.ndarray:
     """Copy the completed native render; extend only the saved backdrop outwards."""
     if (
@@ -120,7 +125,43 @@ def frame_result(
         result[y1:, :x0] = background_rgb16[-1, 0]
         result[y1:, x1:] = background_rgb16[-1, -1]
     result[y0:y1, x0:x1] = native_rgb16
+    if mist is not None and mist.settings["enabled"] and mist.settings["density"]:
+        if (
+            mist.density16.shape != native_rgb16.shape[:2]
+            or mist.clear16.shape != native_rgb16.shape[:2]
+        ):
+            raise ProjectError("Mist maps must align with the native Result")
+        for left, top, right, bottom in (
+            (0, 0, width, y0),
+            (0, y1, width, height),
+            (0, y0, x0, y1),
+            (x1, y0, width, y1),
+        ):
+            if left == right:
+                continue
+            native_x = np.arange(left - x0, right - x0)
+            for start in range(top, bottom, ROWS_PER_CHUNK):
+                stop = min(start + ROWS_PER_CHUNK, bottom)
+                native_y = np.arange(start - y0, stop - y0)
+                _blend_margin_mist(result[start:stop, left:right], mist, native_x, native_y)
     return result
+
+
+def _blend_margin_mist(
+    rgb16: np.ndarray,
+    mist: MistOperands,
+    native_x: np.ndarray,
+    native_y: np.ndarray,
+) -> None:
+    height, width = mist.clear16.shape
+    density = sample_mist_density(
+        mist.settings,
+        (width, height),
+        native_x[None, :] + 0.5,
+        native_y[:, None] + 0.5,
+    )
+    clear = mist.clear16[np.ix_(np.clip(native_y, 0, height - 1), np.clip(native_x, 0, width - 1))]
+    blend_mist_into_result(rgb16, density, clear, mist.settings)
 
 
 def frame_transparent(native_rgba8: np.ndarray, margins: Margins) -> np.ndarray:
@@ -146,6 +187,7 @@ def framing_preview(
     margins: Margins,
     *,
     max_edge: int = 1600,
+    mist: MistOperands | None = None,
 ) -> tuple[np.ndarray, dict[str, object]]:
     """Sample the virtual presentation canvas using only bounded display-row scratch."""
     if type(max_edge) is not int or not 1 <= max_edge <= 1600:
@@ -173,6 +215,11 @@ def framing_preview(
     inside_x = (source_x >= 0) & (source_x < source_width)
     clipped_x = np.clip(source_x, 0, source_width - 1)
     pixels = np.empty((display_height, display_width, 3), dtype=np.uint8)
+    if mist is not None and (
+        mist.density16.shape != native_rgb16.shape[:2]
+        or mist.clear16.shape != native_rgb16.shape[:2]
+    ):
+        raise ProjectError("Mist maps must align with the native Result")
     for row_index in range(display_height):
         source_y = (2 * row_index + 1) * height // (2 * display_height) - y0
         row = (
@@ -180,8 +227,15 @@ def framing_preview(
             if background_rgb16 is None
             else background_rgb16[min(max(source_y, 0), source_height - 1), clipped_x].copy()
         )
-        if 0 <= source_y < source_height:
+        inside_y = 0 <= source_y < source_height
+        if inside_y:
             row[inside_x] = native_rgb16[source_y, source_x[inside_x]]
+        if mist is not None and mist.settings["enabled"] and mist.settings["density"]:
+            exterior = ~(inside_x & inside_y)
+            if exterior.any():
+                margin_row = row[exterior][None, ...]
+                _blend_margin_mist(margin_row, mist, source_x[exterior], np.array([source_y]))
+                row[exterior] = margin_row[0]
         pixels[row_index] = np.rint(row.astype(np.float64) / 257).astype(np.uint8)
     return pixels, {
         "source_dimensions_wh": [source_width, source_height],

@@ -43,6 +43,7 @@ from .project import (
     _directory,
     _json_bytes,
     _publish_new_directory,
+    _read_json,
     _root,
     _sync_directory,
     _validate_assets,
@@ -325,7 +326,12 @@ def apply_operation(
                     or re.fullmatch(r"[a-f0-9]{64}", expected_revision_manifest_sha256) is None
                 ):
                     raise ProjectError("Invalid expected raw revision manifest identity")
-                state = read_project(project)
+                # Mist first checks its bounded request before opening native rasters.
+                state = (
+                    _read_json(project, "state.json")
+                    if "mist" in operation
+                    else read_project(project)
+                )
                 parent = state["working_revision"]
                 if (
                     not parent
@@ -369,6 +375,8 @@ def apply_operation(
 def _prepare(
     project: Path, operation: dict[str, Any], model_cache: Path | None, request_file: Path | None
 ) -> dict[str, Any]:
+    from .mist import mist_resource_bytes, read_mist_area, stage_mist
+
     required = {"schema_version", "kind", "base_revision", "developed_id", "inputs_digest"}
     optional = {"guide_edits_file", "scope_xyxy", "reason", "assisted_review"}
     if (
@@ -435,6 +443,11 @@ def _prepare(
         guides = edit_guides(guides, json.loads(external[name]))
     parent = state["working_revision"]
     parent_manifest = read_revision(project, parent, state["developed_id"]) if parent else None
+    parent_hash = (
+        digest(saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes())
+        if parent
+        else None
+    )
     if parent_manifest:
         parent_guides = json.loads(
             saved_asset(project, f"revisions/{parent}/guides.json").read_bytes()
@@ -468,6 +481,17 @@ def _prepare(
     raster = rasterize_regions(
         guides, scope_xyxy=scope, saved_alpha=saved_alpha, parent_alpha=parent_alpha
     )
+    mist_bytes = 0
+    if parent and parent_manifest and "mist" in parent_manifest:
+        parent_directory = saved_asset(project, f"revisions/{parent}")
+        area = read_mist_area(project, parent_directory, parent_manifest)
+        rebuild = False
+        if area["regions"]:
+            with Image.open(
+                saved_asset(project, f"revisions/{parent}/supports/protection.png")
+            ) as prior:
+                rebuild = not np.array_equal(np.asarray(prior) != 0, raster.protection)
+        mist_bytes = mist_resource_bytes(width, height, rebuild_clear=rebuild)
     check_space(
         project,
         pixels.nbytes
@@ -475,6 +499,7 @@ def _prepare(
             (9 if recipe.background is not None else 8)
             + (2 if recipe.background_light is not None else 0)
         )
+        + mist_bytes
         + 1024**2,
     )
     revisions = saved_asset(project, "revisions")
@@ -640,6 +665,7 @@ def _prepare(
         with Image.open(stage / name) as image:
             if not np.array_equal(np.array(image), expected):
                 raise ProjectError("Prepared asset round trip failed")
+    mist_record = stage_mist(project, parent, stage, assets, parent_manifest or {})
     (stage / "result.json").write_bytes(
         _json_bytes(
             {
@@ -687,11 +713,7 @@ def _prepare(
             name: {"sha256": digest(data), "snapshot": f"inputs/external-{i}.json"}
             for i, (name, data) in enumerate(external.items())
         },
-        "parent_manifest_sha256": digest(
-            saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()
-        )
-        if parent
-        else None,
+        "parent_manifest_sha256": parent_hash,
         "source_precision_bits": metadata["source_precision_bits"],
         "proxy_precision_bits": 8,
         "trimap_review": "optional human review; selection membership does not prove opacity",
@@ -705,6 +727,7 @@ def _prepare(
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
         **({"background_light": background_light} if background_light is not None else {}),
+        **({"mist": mist_record} if mist_record is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
     for path in stage.rglob("*"):
@@ -1403,6 +1426,8 @@ def _matte(
             if ancestor_manifest.get("kind") != "prepare":
                 break
             ancestor = ancestor_manifest["parent"]
+    from .mist import mist_resource_bytes, saved_mist, stage_mist
+
     if preview_identity is None:
         check_space(
             project,
@@ -1412,6 +1437,7 @@ def _matte(
                 + (4 if light_settings is not None else 0)
             )
             + (min(height, 64) * width * 128 if light_settings is not None else 0)
+            + (mist_resource_bytes(width, height) if "mist" in manifest else 0)
             + 1024**2,
         )
     foreground = pixels.copy()
@@ -1819,6 +1845,7 @@ def _matte(
         light_settings,
         assets=assets,
     )
+    mist_record = stage_mist(project, parent, stage, assets, manifest)
     # Preparation snapshots requested drafts. A completed matte applies those
     # guides/matting settings but only inherits the previously generated effects.
     effective_recipe = tomllib.loads(snapshots["recipe.toml"].decode())
@@ -1834,6 +1861,7 @@ def _matte(
         ("spatial_fade", spatial),
         ("background", background),
         ("background_light", background_light),
+        ("mist", mist_record),
     ):
         if inherited is not None:
             effective_recipe[name] = (
@@ -1973,6 +2001,11 @@ def _matte(
         crops=[context] if repairing else None,
         weight16=review_weight,
         opacity=review_opacity,
+        mist=saved_mist(
+            project, stage, {"assets": assets, "mist": mist_record}, effects_off=stale_effects
+        )
+        if mist_record is not None
+        else None,
     )
     if repairing:
         if parent_alpha is None:
@@ -2009,6 +2042,13 @@ def _matte(
             crops=[context],
             weight16=review_weight,
             opacity=review_opacity,
+            mist=saved_mist(
+                project,
+                saved_asset(project, f"revisions/{parent}"),
+                manifest,
+                effects_off=stale_effects,
+            ),
+            align_result=mist_record is not None,
         )
     if cleanup:
         for review_name in ("review", "review-before") if repairing else ("review",):
@@ -2131,6 +2171,7 @@ def _matte(
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
         **({"background_light": background_light} if background_light is not None else {}),
+        **({"mist": mist_record} if mist_record is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     collect_stage_assets(project, stage, assets)

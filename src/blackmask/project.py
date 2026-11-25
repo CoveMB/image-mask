@@ -881,6 +881,15 @@ def _validate_spatial_fade_semantics(project: Path, directory: Path, manifest_by
             raise ProjectError("Saved fade reduction geometry differs from its raster")
 
 
+@lru_cache(maxsize=128)
+def _validate_mist_semantics(
+    project: Path, directory: Path, manifest_bytes: bytes, size: tuple[int, int]
+) -> None:
+    from .mist import validate_mist_revision
+
+    validate_mist_revision(project, directory, json.loads(manifest_bytes), size)
+
+
 def _validate_revision_directory(
     project: Path, revision: str, developed_id: str, directory: str
 ) -> dict[str, Any]:
@@ -920,6 +929,7 @@ def _validate_revision_directory(
         raise ProjectError("Unbound saved Local sharpening authored area")
     from .background import validate_background_bindings
     from .background_light import validate_background_light_bindings
+    from .mist import parse_mist_json, validate_mist_bindings, validate_mist_revision
     from .shadow_fade import validate_shadow_fade_bindings
     from .spatial_fade import validate_spatial_bindings
     from .texture import TEXTURE_PREFIX, TEXTURE_RASTERS, TEXTURE_TEXT
@@ -969,6 +979,11 @@ def _validate_revision_directory(
 
     validate_background_bindings(project, _asset(project, directory), manifest)
     validate_background_light_bindings(project, _asset(project, directory), manifest)
+    validate_mist_bindings(_asset(project, directory), manifest)
+    if "mist" in manifest and _json_bytes(
+        parse_mist_json(_asset(project, f"{directory}/manifest.json").read_bytes())
+    ) != _json_bytes(manifest):
+        raise ProjectError("Saved Mist manifest changed during validation")
     validate_shadow_fade_bindings(project, _asset(project, directory), manifest)
     validate_spatial_bindings(project, _asset(project, directory), manifest)
     if "background" in manifest:
@@ -1040,6 +1055,16 @@ def _validate_revision_directory(
         raise ProjectError("Incomplete repair operands")
     _validate_background_semantics(project, _asset(project, directory), _json_bytes(manifest))
     _validate_background_light_semantics(project, _asset(project, directory), _json_bytes(manifest))
+    if "mist" in manifest:
+        metadata = _read_json(project, "source.json")["metadata"]
+        _validate_mist_semantics(
+            project,
+            _asset(project, directory),
+            _json_bytes(manifest),
+            (metadata["width"], metadata["height"]),
+        )
+    else:
+        validate_mist_revision(project, _asset(project, directory), manifest)
     if "local_exposure" in manifest:
         record = manifest["local_exposure"]
         from .exposure import EXPOSURE_FILES

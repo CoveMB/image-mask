@@ -15,6 +15,7 @@ from PIL import Image
 
 from .assets import saved_asset
 from .framing import validate_presentation_size
+from .mist import ROWS_PER_CHUNK, MistOperands, blend_mist_into_result, sample_mist_density
 from .project import (
     ProjectError,
     _atomic_json,
@@ -31,6 +32,7 @@ from .spatial_fade import (
     _blend_background_channel,
     blend_background_float,
     spatial_fade_amount,
+    uses_lit_fade_target,
 )
 
 METADATA_LIMIT = 16384
@@ -346,6 +348,7 @@ def estimate_series_resources(
     native_export_peak_bytes: int = 0,
     black_background: bool = False,
     background_light: bool = False,
+    mist_native_shape: tuple[int, int] | None = None,
 ) -> dict[str, int]:
     if (
         type(retained_native_bytes) is not int
@@ -394,6 +397,14 @@ def estimate_series_resources(
         values.update(
             background_light_base_rgb16_bytes=6 * width * height,
             background_light_strip_bytes=min(64, height) * width * 198,
+        )
+    if mist_native_shape is not None:
+        native_height, native_width = mist_native_shape
+        values.update(
+            native_mist_map_bytes=4 * native_height * native_width,
+            mist_projection_bytes=min(ROWS_PER_CHUNK, height) * width * 288
+            + (min(ROWS_PER_CHUNK, native_height) + 40) * native_width
+            + 32 * (width + height),
         )
     series_peak = sum(value for key, value in values.items() if key != "output_rgba8_bytes")
     if native_export_peak_bytes:
@@ -482,6 +493,114 @@ def _plane_tiles(
         del intermediate
 
 
+def _mist_support_bounds(
+    axis: SamplingAxis, origin: int, extent: int
+) -> tuple[np.ndarray, np.ndarray]:
+    first, last = (float(np.float32(value)) for value in axis.box)
+    spacing = float(np.float32(last - first)) / axis.output_length
+    centers = first + (np.arange(axis.output_length) + 0.5) * spacing + axis.padding_origin + origin
+    radius = 3 * max(1, spacing)
+    # Include all pixel centres on either filter boundary as well as inside it.
+    low = np.ceil(centers - radius - 0.5).astype(np.intp)
+    high = np.floor(centers + radius + 0.5).astype(np.intp)
+    return np.clip(low, 0, extent), np.clip(high, 0, extent)
+
+
+def _bilinear_mist_clear(
+    clear16: np.ndarray, native_x: np.ndarray, native_y: np.ndarray
+) -> np.ndarray:
+    height, width = clear16.shape
+    x = np.clip(native_x - 0.5, 0, width - 1)
+    y = np.clip(native_y - 0.5, 0, height - 1)
+    left = x.astype(np.intp)[None, :]
+    top = y.astype(np.intp)[:, None]
+    right, bottom = np.minimum(left + 1, width - 1), np.minimum(top + 1, height - 1)
+    wx, wy = x[None, :] - left, y[:, None] - top
+    upper = clear16[top, left] * (1 - wx) + clear16[top, right] * wx
+    lower = clear16[bottom, left] * (1 - wx) + clear16[bottom, right] * wx
+    clear = np.rint(upper * (1 - wy) + lower * wy).astype(np.uint16)
+    nearest = clear16[top + (wy >= 0.5), left + (wx >= 0.5)]
+    clear[nearest == 65535] = 65535
+    return clear
+
+
+def _apply_series_mist(
+    result: np.ndarray, sampling: SeriesSamplingPlan, mist: MistOperands | None
+) -> np.ndarray:
+    if mist is None:
+        return result
+    height, width = result.shape[:2]
+    native_height, native_width = mist.clear16.shape
+    full_width, full_height = sampling.layout.output_dimensions_wh
+    scale = sampling.layout.scale
+    tx, ty = sampling.layout.translation_xy
+    unit_translation = scale == 1 and tx.is_integer() and ty.is_integer()
+    full_x = (2 * np.arange(width) + 1) * full_width // (2 * width)
+    full_y = (2 * np.arange(height) + 1) * full_height // (2 * height)
+    native_x = (full_x.astype(np.float64) + 0.5 - tx) / scale
+    footprint = max(1.0, full_width / (width * scale), full_height / (height * scale))
+    if unit_translation:
+        xi = full_x - int(tx)
+        in_x = (xi >= 0) & (xi < native_width)
+        clip_x = np.clip(xi, 0, native_width - 1)
+    if not sampling.identity:
+        core_x, core_y, _, _ = sampling.layout.subject_bounds_xyxy
+        x_lo, x_hi = _mist_support_bounds(sampling.x, core_x, native_width)
+        y_lo, y_hi = _mist_support_bounds(sampling.y, core_y, native_height)
+        output_columns = slice(
+            sampling.x.output_start, sampling.x.output_start + sampling.x.output_length
+        )
+        prev_bounds = None
+        prefix = np.zeros(native_width + 1, dtype=np.intp)
+    for start in range(0, height, ROWS_PER_CHUNK):
+        stop = min(start + ROWS_PER_CHUNK, height)
+        native_y = (full_y[start:stop].astype(np.float64) + 0.5 - ty) / scale
+        if unit_translation:
+            yi = full_y[start:stop] - int(ty)
+            in_y = (yi >= 0) & (yi < native_height)
+            clip_y = np.clip(yi, 0, native_height - 1)
+            density = mist.density16[np.ix_(clip_y, clip_x)]
+            clear = mist.clear16[np.ix_(clip_y, clip_x)]
+            exterior = ~(in_y[:, None] & in_x[None, :])
+            if exterior.any():
+                x, y = np.broadcast_arrays(native_x[None, :], native_y[:, None])
+                density[exterior] = sample_mist_density(
+                    mist.settings,
+                    (native_width, native_height),
+                    x[exterior],
+                    y[exterior],
+                    footprint,
+                )
+        else:
+            density = sample_mist_density(
+                mist.settings,
+                (native_width, native_height),
+                native_x[None, :],
+                native_y[:, None],
+                footprint,
+            )
+            clear = _bilinear_mist_clear(mist.clear16, native_x, native_y)
+        if not sampling.identity:
+            support_start = sampling.y.output_start
+            support_stop = support_start + sampling.y.output_length
+            for row in range(max(start, support_start), min(stop, support_stop)):
+                low, high = int(y_lo[row - support_start]), int(y_hi[row - support_start])
+                if (low, high) != prev_bounds:
+                    # A column prefix answers all horizontal rectangle queries for
+                    # this row. Scan source rows in strips even for deep minification.
+                    covered = np.zeros(native_width, dtype=np.bool_)
+                    for bottom in range(low, high, ROWS_PER_CHUNK):
+                        covered |= (
+                            mist.clear16[bottom : min(high, bottom + ROWS_PER_CHUNK)] == 65535
+                        ).any(axis=0)
+                    np.cumsum(covered, dtype=np.intp, out=prefix[1:])
+                    prev_bounds = (low, high)
+                interval = clear[row - start, output_columns]
+                interval[prefix[x_hi] > prefix[x_lo]] = 65535
+        blend_mist_into_result(result[start:stop], density, clear, mist.settings)
+    return result
+
+
 def render_series(
     foreground: np.ndarray,
     alpha16: np.ndarray,
@@ -494,6 +613,7 @@ def render_series(
     transparent: bool = False,
     spatial_fade: SpatialFadeOperands | None = None,
     black_background: bool = False,
+    mist: MistOperands | None = None,
 ) -> np.ndarray:
     from .background import LEGACY_BACKGROUND, make_background, sample_background
     from .background_light import (
@@ -516,6 +636,16 @@ def render_series(
         raise ValueError("Series rendering requires aligned saved RGB16 and alpha16")
     if weight16 is not None and (weight16.dtype != np.uint16 or weight16.shape != alpha16.shape):
         raise ValueError("Series shading requires aligned W16")
+    if mist is not None:
+        if (
+            transparent
+            or black_background
+            or not mist.settings["enabled"]
+            or not mist.settings["density"]
+        ):
+            mist = None
+        elif mist.density16.shape != alpha16.shape or mist.clear16.shape != alpha16.shape:
+            raise ValueError("Series Mist requires aligned native scalar16 maps")
     if background_light_settings is not None:
         validate_background_light(
             background_light_settings, foreground.shape[1], foreground.shape[0]
@@ -565,7 +695,8 @@ def render_series(
         transparent=transparent,
         black_background=black_background,
         background_light=light_enabled,
-        **({"spatial_fade_pixels": alpha16.size} if active_spatial else {}),
+        spatial_fade_pixels=alpha16.size if active_spatial else 0,
+        mist_native_shape=(alpha16.shape[0], alpha16.shape[1]) if mist is not None else None,
     )
     native_amount = (
         spatial_fade_amount(foreground, alpha16, spatial_fade)
@@ -595,7 +726,7 @@ def render_series(
             output_width, output_height = sampling.layout.output_dimensions_wh
             target = sample_background((output_height, output_width), settings, (width, height))
     if light_enabled and background_light_settings is not None:
-        # Keep target bound to unlit B0 before constructing a distinct displayed B1.
+        # Keep the base operand available until the displayed backdrop is built.
         base = result
         result = np.empty_like(base)
         output_width, output_height = sampling.layout.output_dimensions_wh
@@ -614,6 +745,12 @@ def render_series(
                 base[start : start + 64], light, enabled=True
             )
         del base
+        if (
+            target is not None
+            and spatial_fade is not None
+            and uses_lit_fade_target(spatial_fade.record)
+        ):
+            target = result
     x, y = sampling.x, sampling.y
     x0, y0, x1, y1 = sampling.layout.subject_bounds_xyxy
     if sampling.identity:
@@ -649,7 +786,7 @@ def render_series(
                 result[rows, columns] = np.rint(
                     contribution + result[rows, columns].astype(np.float64) * (1 - alpha[..., None])
                 ).astype(np.uint16)
-        return result
+        return _apply_series_mist(result, sampling, mist)
     alpha = np.empty((y.output_length, x.output_length), np.float32)
     for rows, columns, tile in _plane_tiles(foreground, alpha16, sampling, -1, weight16, opacity):
         if not np.isfinite(tile).all():
@@ -721,7 +858,7 @@ def render_series(
         for start in range(0, height, 64):
             rgba_rows = result[start : start + 64]
             rgba_rows[rgba_rows[..., 3] == 0, :3] = 0
-    return result
+    return _apply_series_mist(result, sampling, mist)
 
 
 def read_series_settings(
