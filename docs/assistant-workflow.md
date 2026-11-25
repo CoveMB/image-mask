@@ -2,13 +2,17 @@
 
 Assistance is optional. After setup, the [manual workflow](workflow.md) uses the
 same local engine and saved project without an assistant, account, credits or
-network. Assisted review records source-based judgement; it cannot provide
-photographic acceptance. The assisted-editing procedure uses no SDK, API-key service,
-background agent or upload. Optional [AI concept illustrations](#ai-concept-illustrations)
-have a separate explicitly requested image-transfer boundary. Private pixels may
-be shared with an assistant only under the
-user's applicable direct authorization. Without that permission or the required
-source evidence, live assistance stops and the manual controls remain available.
+network. Assisted review records source-based judgement. Photographic acceptance
+requires the user. Assisted editing runs locally through the project controls.
+
+Follow the [project's viewing authorization](../AGENTS.md#security-and-privacy)
+for hosted inspection of private pixels, including those read from local paths.
+Reuse applicable standing permission for ordinary requests and skill invocations.
+To withdraw the workspace's standing permission, set `enabled = false` in
+`local/hosted-viewing-authorization.toml`.
+If permission or the required source evidence is missing, explain what is needed
+for visual assistance. Optional [AI concept illustrations](#ai-concept-illustrations)
+require their own explicit authorization for the designated inputs.
 
 Run CLI examples from the repository root after [environment setup](../README.md#setup-and-quick-start),
 using `.venv/bin/blackmask`; shell activation is unnecessary. Replace `PROJECT`
@@ -51,10 +55,10 @@ Codex instructions and policy are preserved, but this portability revision also
 needs renewed native verification. See [host mechanics](../.agents/skills/photo-directions/references/hosts.md)
 for source-backed host differences and capability checks.
 
-Advice requires actual image inspection with an image-capable model. Hosted
-inspection of private selected images needs applicable direct permission even
-when their files are local. A text placeholder, unsupported attachment or filename
-is not a view. Host-resized images are reduced evidence, not native-detail proof.
+Advice requires actual image inspection with an image-capable model. Follow the
+[project's viewing authorization](../AGENTS.md#security-and-privacy) for hosted
+inspection. A text placeholder, unsupported attachment or filename is not a
+view. Host-resized images are reduced evidence, not native-detail proof.
 For an unsupported RAW/TIFF or missing view, supply an existing suitable raster or
 separately request preparation; this skill does not create one.
 
@@ -425,14 +429,15 @@ installable packages. An external catalog remains supported; there is no automat
 catalog lookup or application configuration key.
 
 When a user names a look or framing reference, resolve its name or alias through
-that catalog, then read the selected folder's README and settings and actually view
-its reference image. If the catalog is absent, a name is ambiguous or a required
-file is missing, report that instead of guessing. This private, Git-ignored catalog
-is not installed with the package or copied into new worktrees; use the explicit
-catalog identified by the task. Missing references limit only the requested named
-look or framing guidance; ordinary manual editing remains available. When moving
-an existing catalog under separately authorized scope, preserve names, aliases,
-self-contained card contents and reference bytes, and verify its internal links.
+that catalog, then read the selected folder's README and settings and inspect its
+reference image locally. If the catalog is absent, a name is ambiguous or a
+required file or local view is unavailable, report the limitation. Installed
+packages and new worktrees omit the private, Git-ignored catalog. Use the
+explicit catalog identified by the task. Missing references limit only the
+requested named look or framing guidance. Ordinary manual editing remains
+available. When moving an existing catalog under separately authorized scope,
+preserve names, aliases, self-contained card contents and reference bytes, and
+verify its internal links.
 
 Each reference folder must be usable alone: include complete manual steps, settings
 or a supported preset, example images and provenance. Keep required files and links
@@ -522,7 +527,9 @@ engineering checks and assistant judgment.
 
 ## Local texture assistance
 
-Use a local project copy and only the real-photo crops the user has authorized.
+Use a local project copy and keep real-photo crops within the authorized trial scope.
+For hosted inspection, follow the
+[project's viewing authorization](../AGENTS.md#security-and-privacy).
 Compare existing sharpening at a suitable Detail size and a restrained tone
 curve first. Apply Texture where a clear, source-supported band still needs
 separation. Keep other saved appearance settings and the matte in the comparison.

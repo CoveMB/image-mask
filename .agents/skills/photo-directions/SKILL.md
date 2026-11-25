@@ -28,8 +28,9 @@ and any explicitly selected previous-photo references. Reuse a clear selection;
 ask only for missing or ambiguous information that blocks useful advice. Do not
 scan the library or choose unrelated photographs.
 
-Before viewing private images through a hosted model, establish applicable direct
-permission for those selected images; local paths do not imply local inference.
+For hosted inspection of private pixels, follow the project's
+[viewing authorization](../../../AGENTS.md#security-and-privacy) and reuse
+applicable standing permission for the selected previews.
 Require image input and actual visible pixels through the host's supported viewer
 or attachments. A filename, listing, text placeholder or unsupported-input response
 is not visual evidence. Without image inspection, explain the limitation rather
