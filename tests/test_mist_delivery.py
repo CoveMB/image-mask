@@ -259,6 +259,33 @@ def test_minified_series_projects_clearance_beyond_nearest_and_uses_full_pixel_c
     assert witness and np.any(protected != unprotected) and np.any(protected != baseline)
 
 
+def test_minified_series_background_uses_nearest_clearance_outside_foreground_support():
+    alpha = np.zeros((140, 140), np.uint16)
+    alpha[50:90, 50:90] = 17500
+    foreground = np.full((*alpha.shape, 3), 24000, np.uint16)
+    plan = series_sampling_plan(
+        compute_series_layout(alpha, SeriesSettings("Background clearance", 30, 30, 400, 0))
+    )
+    config = settings(140, 140, tint_srgb="#ffffff", density=1)
+    density = make_mist_density(config, (140, 140))
+    clear = np.zeros_like(alpha)
+    row, column = 15, 5
+    scale, (tx, ty) = plan.layout.scale, plan.layout.translation_xy
+    clear[int((row + 0.5 - ty) / scale), int((column + 0.5 - tx) / scale)] = 65535
+    assert column + 1 < plan.x.output_start
+
+    baseline = render_series(foreground, alpha, plan)
+    unprotected = render_series(
+        foreground, alpha, plan, mist=MistOperands(density, np.zeros_like(clear), config)
+    )
+    protected = render_series(foreground, alpha, plan, mist=MistOperands(density, clear, config))
+    assert np.any(
+        unprotected[row, column : column + 2] != baseline[row, column : column + 2], axis=1
+    ).all()
+    np.testing.assert_array_equal(protected[row, column], baseline[row, column])
+    np.testing.assert_array_equal(protected[row, column + 1], unprotected[row, column + 1])
+
+
 def test_mist_oversized_delivery_is_rejected_before_creating_stage(tmp_path):
     project, _, _ = fixture_project(tmp_path)
     result = operations.apply_operation(project, mist_request(project))

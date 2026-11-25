@@ -3048,8 +3048,15 @@ def run_effects(
                 if texture_changed
                 else "Effects"
             )
+            publication_status = (
+                "publication interrupted"
+                if isinstance(error, ProjectError)
+                else "publication durability unconfirmed"
+            )
+            original_diagnosis = f" ({error})" if mist_changed else ""
             raise ProjectError(
-                f"{effect_name} publication durability unconfirmed: visible revision {destination}. "
+                f"{effect_name} {publication_status}: visible revision {destination}"
+                f"{original_diagnosis}. "
                 "Reload project status and inspect or explicitly restore this revision before retrying; "
                 "its files and earlier accepted work were retained."
             ) from error

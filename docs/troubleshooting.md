@@ -363,11 +363,12 @@ accepted dependencies, failed stages or recovery material automatically.
   saved OFF record. Otherwise use **Reload saved Mist** and re-enter your intended
   edits. Reload replaces this form. Turn Mist OFF uses the saved working settings
   and retains pending edits, including already-stale ones.
-- **Publication durability unconfirmed.** Keep the pending form and reload
-  project status. Inspect the complete visible revision named in the error and
-  explicitly restore it if appropriate. A pending gallery derivative after a
-  successful native Apply has separate status and can be retried through the
-  gallery controls. Acceptance remains attached to the prior accepted revision.
+- **Publication interrupted or durability unconfirmed.** Keep the pending form
+  and reload project status. The error includes the original diagnosis and names
+  the complete visible revision to inspect or explicitly restore. A pending
+  gallery derivative after a successful native Apply has separate status and can
+  be retried through the gallery controls. Acceptance remains attached to the
+  prior accepted revision.
 - **Mist files invalid or a delivery is incomplete.** Preserve the revision and
   delivery folders. Recover intact bound operands from backup. For an editable
   framed pair, restore the matching native companion before retrying an identical

@@ -1686,8 +1686,10 @@ and backdrop composition. Inverse-transform full output centres through
 index on each axis as `floor((2*i+1)*full_extent/(2*display_extent))`. At unit
 scale and integer translation, in-capture samples use saved maps. Other samples
 use the analytic field and bilinear clear16 with clamped edges. A fully clear
-nearest cell or any fully clear cell in the conservative Lanczos support forces
-full clearance. Support uses the rounded Pillow source box and filter radius.
+nearest cell forces full clearance anywhere in the frame. Within foreground
+resampling support, a fully clear cell in the conservative Lanczos rectangle also
+forces full clearance. That rectangle uses the rounded Pillow source box and
+filter radius.
 Analytic series samples taper each octave toward 0.5 with smoothstep of
 `clamp((wavelength/footprint - 2)/2, 0, 1)` and native-pixel footprint
 `max(1, full_width/(display_width*scale), full_height/(display_height*scale))`.

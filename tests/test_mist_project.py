@@ -197,7 +197,9 @@ def test_mist_visible_publication_on_state_failure_is_explicitly_restorable(tmp_
     state_before = (project / "state.json").read_bytes()
     with (
         patch("blackmask.effects._atomic_json", side_effect=OSError("synthetic state failure")),
-        pytest.raises(ProjectError, match="Mist publication durability unconfirmed"),
+        pytest.raises(
+            ProjectError, match="Mist publication durability unconfirmed.*synthetic state failure"
+        ),
     ):
         operations.apply_operation(project, mist_request(project))
     assert (project / "state.json").read_bytes() == state_before
@@ -209,6 +211,56 @@ def test_mist_visible_publication_on_state_failure_is_explicitly_restorable(tmp_
     operations.restore_revision(project, visible, replace_drafts=True)
     state = read_project(project)
     assert state["working_revision"] == visible and state["accepted_revision"] == parent["revision"]
+
+
+@pytest.mark.parametrize("failure", ["stale-request", "state-directory-sync"])
+def test_mist_visible_publication_reports_the_original_diagnosis(tmp_path, monkeypatch, failure):
+    from blackmask import effects
+    from blackmask import project as project_module
+
+    project, _, parent = fixture_project(tmp_path)
+    state_path = project / "state.json"
+    state_before = state_path.read_bytes()
+    operation = mist_request(project)
+    request_path = tmp_path / "request.json"
+    request_bytes = _json_bytes(operation)
+    request_path.write_bytes(request_bytes)
+
+    if failure == "stale-request":
+
+        def invalidate_request_before_state_write(path, value, **options):
+            assert path == state_path
+            request_path.write_bytes(request_bytes + b"\n")
+            project_module._atomic_json(path, value, **options)
+
+        monkeypatch.setattr(effects, "_atomic_json", invalidate_request_before_state_write)
+        diagnosis = "Stale effects support/request/parent"
+    else:
+        sync_directory = project_module._sync_directory
+
+        def fail_after_state_replace(directory):
+            if directory == project and state_path.read_bytes() != state_before:
+                raise OSError("synthetic state directory sync failure")
+            sync_directory(directory)
+
+        monkeypatch.setattr(project_module, "_sync_directory", fail_after_state_replace)
+        diagnosis = "State replacement occurred; directory durability is uncertain; observed"
+
+    with pytest.raises(ProjectError, match=diagnosis) as captured:
+        operations.apply_operation(project, operation, request_file=request_path)
+    visible = max((project / "revisions").glob("rev-*")).name
+    assert visible != parent["revision"]
+    assert read_revision(project, visible, parent["developed_id"])["mist"]
+    assert f"visible revision {project / 'revisions' / visible}" in str(captured.value)
+    assert "Reload project status" in str(captured.value)
+    state = read_project(project)
+    assert state["accepted_revision"] == parent["revision"]
+    if failure == "stale-request":
+        assert state_path.read_bytes() == state_before
+        assert "durability unconfirmed" not in str(captured.value)
+    else:
+        assert state["working_revision"] == visible
+        assert f'"working_revision": "{visible}"' in str(captured.value)
 
 
 def test_alpha_only_repair_and_completed_resume_keep_mist_operand_identities(tmp_path):
