@@ -732,7 +732,7 @@ execution identity can create a meaningful small revision even if pixels agree.
 There is no historical request search, registry or new cache engine. The explicit
 effects execution version must change when equivalence, validation or arithmetic
 semantics change. Existing native model/tile cache invalidation stays independent.
-Current `validated-effects-v7` also binds Background light's normalized settings,
+`validated-effects-v7` added bindings for Background light's normalized settings,
 algorithm and both saved fields, including OFF and inherited state. It covers all
 eight appearance sections and both local fade reduction targets, including Fade into background's
 validated nested settings, algorithm, actual explicit protection bytes and all four
@@ -906,9 +906,14 @@ alpha, label that strength and use 100% layer opacity.
 
 ## Optional Fade into background
 
-Optional recipe `spatial_fade` has exactly `enabled` (boolean),
+Optional recipe `spatial_fade` requires `enabled` (boolean),
 `preserve_highlights` ([0,1]), `oval`, `arcs_enabled` (boolean), `arcs` (0–32).
-Absence preserves legacy rendering, saved bytes and export members without migration.
+Omit `target` for **Base backdrop** (B0). The only supported explicit value
+is `"target": "lit"` for **Lit backdrop** (B1 in Result). This optional key also
+applies to the request's complete settings and the saved revision's spatial
+settings. Existing records that omit it retain their rendering and identities
+without migration. Portable fade layouts and scalar defaults keep the
+destination's target choice.
 Unknown fields, nonfinite numbers, numeric booleans and invalid inactive shapes fail.
 Oval fields are exactly `enabled`, `center_xy`, `inner_radii_xy`,
 `rotation_degrees`, `transition_width`, `amount`. Arc fields are exactly `id`,
@@ -963,10 +968,12 @@ Selected foreground F includes applicable cleanup, sharpening, exposure, Local t
 fade. For alpha-positive, unprotected pixels, `q=W16/65535*(1-p*h(F))`: p is this
 feature's highlight setting, h is cubic linear-sRGB luminance weighting using
 .2126/.7152/.0722 and thresholds .10/.75. Alpha gates eligibility only. Master OFF,
-stale or protection gives q=0. Decode F and selected background B, blend
+stale or protection gives q=0. Decode F and fade target B, blend
 `(1-q)*F+q*B` in linear sRGB, encode, then compose encoded-sRGB alpha ONCE.
-Exact q=0/q=1 preserves F/B. Alpha never changes; the effect may tint or brighten.
-Black/gray/white diagnostics still use selected B as fade target. Transparent
+Exact q=0/q=1 preserves F/B. Result uses B0 by default and B1 for Lit backdrop.
+Composite Result over displayed B1 in either mode, then apply Mist once when
+enabled. Alpha stays saved. Black/Gray/White and transparent use B0 as the fade
+target and retain their diagnostic backdrops. Transparent
 straight RGB retains that tint; RGBA8 is reduced precision. Match-series RGBA8
 zeros hidden RGB where quantized alpha is zero. Native RGBA8 retains its existing
 straight RGB at zero alpha; Add margins preserves that native rectangle and adds
@@ -975,7 +982,8 @@ zero RGBA outside it.
 With spatial fade enabled (inward shading OFF), Match series samples
 `P=R(A*F)`, `A'=R(A)`, `Q=R(A*q)` with the same transform
 and kernel. Clamp Q into `[0,A']`; where A'>0 use `q'=Q/A'`, `F'=P/A'`, blend
-toward the background generated on the OUTPUT grid, then compose once. There is
+toward the selected backdrop evaluated on the output grid, then compose once.
+For Lit backdrop in Result, this is B1 evaluated on that grid. There is
 no per-arc resampling/blending or scaled native backdrop. Zero fields preserve the
 original series contribution exactly. When spatial fade is OFF, q is zero; active
 inward shading instead uses the existing `P=R(A*F*H)` path with its saved H factor.
@@ -988,7 +996,9 @@ adds the reduction raster/document described below, including while OFF.
 Alpha, source, background RGB16/settings and other effect operands remain separate.
 To reconstruct without the project/models: validate the delivered records and
 select the active rendering mode. With spatial fade enabled, calculate q from
-foreground/W/protection/settings and optional reduction, blend toward delivered B and compose alpha once.
+foreground/W/protection/settings and optional reduction, blend toward the saved
+target B0 or B1 and compose alpha once over the displayed backdrop B1. Apply
+Mist after that composition when present.
 With spatial fade OFF, q is zero; if inward shading is enabled, use delivered
 `shadow_weight16.png` and its opacity to calculate `H=1-opacity*W16/65535` and
 `round(F*A*H+B*(1-A))`. Otherwise H is 1. The native manifest/README formula
@@ -1441,8 +1451,8 @@ shading is enabled, otherwise zero (including absent shading). H applies only to
 alpha applies once, with no earlier rounding. Black compatibility keeps the
 existing arithmetic order. Protected underlying RGB/alpha remain exact while
 partial-alpha flattened colour changes with B. Clipping diagnostics are independent.
-With light, this saved base is B0; the [light contract](#saved-background-light)
-defines displayed B1 and the independent B0 fade target.
+With light, this saved base is B0. The [light contract](#saved-background-light)
+defines displayed B1 and the two available fade targets.
 
 Schema-2 `kind:effects` accepts exclusive `background` settings with all existing
 master/base/draft/candidate identities and full native `scope_xyxy`. It cannot
@@ -1511,15 +1521,17 @@ authoritative: native reading, comparison and delivery never regenerate L16.
 
 Keep saved base **B0** and light **L16** separate. Missing B0 means zero.
 When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)).
-Zero-light pixels copy B0 exactly; OFF uses B0 exactly. B1 is only the displayed
-backdrop. With foreground contribution P computed by the existing effects using
-**B0** as Fade into background's target, native Result is
-round(P+B1*(1-A)) once in encoded sRGB. Light never changes P or A. Opaque pixels
-remain exact; partially transparent flattened pixels change naturally, including
-protected ones. No alpha threshold, edge recolouring or second fade is introduced.
-BASE/stale comparisons remain all-effects-off black. Foreground-OFF and local
-reduction comparisons retain light. Black/gray/white and transparent diagnostics
-retain B0 as the fade target and exclude light from display.
+Zero-light pixels and absent or OFF light use B0 exactly. Native Result is
+`round(P+B1*(1-A))` once in encoded sRGB, before Mist. P uses the existing
+foreground effects and `A` is saved alpha. **Base backdrop** fades toward B0.
+**Lit backdrop** uses B1 to derive P and reaches that same B1 at full effective
+fade for any alpha. At zero effective fade, P is unchanged. Protected
+partial-alpha composites can still show the illuminated backdrop through A.
+**Compare Background light OFF** sets B1 to B0 for both the fade and the
+displayed backdrop. **Compare Mist OFF** keeps both operands and bypasses Mist.
+BASE/stale comparisons use all-effects-off black. Foreground-OFF and local
+reduction comparisons retain light. Black, Gray, White and transparent
+diagnostics use B0 as the fade target and omit visible light.
 
 An exclusive schema 2 effects operation carries `background_light`, full native
 scope and existing master/base/input/authoring/candidate identities. Viewer POST
@@ -1546,17 +1558,150 @@ corresponding Y first. Geometry is not refitted or normalized to the preview.
 This is approximate preview sampling, not exact downsampling of a full render.
 Series metadata binds `background_light_transform` (scale, translation, native/output
 dimensions and sampling convention), the light record and native editable companion.
-Keep the pair; replay the series field from those delivered settings while using
-the existing premultiplied series kernel and B0 fade target. Subject bounds,
+Keep the pair. Replay the series field from those delivered settings and use
+the existing premultiplied series kernel with the saved fade target. Subject bounds,
 sampling, source, alpha and retained foreground operands are unchanged.
+
+## Saved Mist
+
+An optional schema-2 recipe `[mist]` holds exactly `enabled`, `density`,
+`tint_srgb`, `wisp_size`, `stretch`, `rotation_degrees`, `seed` and `coverage`.
+`coverage` holds `center_xy`, `radii_xy` and `softness`. Switches are booleans.
+Density is in [0,1], wisp size in [0.04,0.60], stretch in [1,5], clockwise
+rotation in [0,360) and softness in [0.05,1]. The seed is an unsigned 32-bit
+integer. XY centres are continuous pixel-edge coordinates within native width
+and height. Each radius is in [0.5, twice the longer native axis]. Numeric
+settings are finite and exclude booleans. Tint normalizes to uppercase `#RRGGBB`.
+Projects without a Mist section can be read and exported without migration.
+
+Use the existing exclusive `blackmask run PROJECT --request REQUEST.json` effects request.
+Here is an Apply example for a 3072 × 4080 complete saved revision. Replace the
+developed ID, draft digest and base with current values.
+
+```json
+{
+  "schema_version": 2,
+  "kind": "effects",
+  "developed_id": "CURRENT_DEVELOPED_ID",
+  "base_revision": "rev-002",
+  "inputs_digest": "CURRENT_DRAFT_DIGEST",
+  "scope_xyxy": [0, 0, 3072, 4080],
+  "candidate_comparison": false,
+  "mist": {
+    "action": "apply",
+    "settings": {
+      "enabled": true,
+      "density": 0.22,
+      "tint_srgb": "#8C9192",
+      "wisp_size": 0.22,
+      "stretch": 2.0,
+      "rotation_degrees": 25.0,
+      "seed": 1,
+      "coverage": {
+        "center_xy": [1536, 2040],
+        "radii_xy": [1843.2, 2448],
+        "softness": 0.72
+      }
+    },
+    "clear_area": {
+      "regions": [
+        {"id": "detail", "role": "support", "shape": "rectangle", "xyxy": [1100, 1450, 2000, 2300], "feather_px": 60}
+      ],
+      "protection": []
+    }
+  }
+}
+```
+
+For Disable, use `"mist": {"action": "disable"}` with the same outer fields
+and current identities. It preserves saved settings except `enabled`, and both
+maps and area retain their hashes. An absent or already disabled record is a
+no-op. Apply on an unaccepted base needs `candidate_comparison: true`. Mist
+requests require unique JSON keys and allow up to 2,000,000 bytes, 64 Clear mist
+shapes and 8192 total stroke points. Clear mist accepts native support strokes
+and half-open rectangles, with the `protection` list empty. Full native scope
+is required. Viewer requests additionally bind the raw revision-manifest
+SHA-256 and authoring digest under the writer lock.
+
+The revision manifest's `mist` record is closed. It contains `schema_version`
+(1), `algorithm` (`linear-srgb-mist-v1`), `developed_id`, `width`, `height`,
+`settings`, `settings_sha256`, `area_sha256`, `density_sha256`, `clear_sha256`
+and `protection_sha256`. Raster roles `mist/density16.png` and `mist/clear16.png`
+are shared immutable scalar16 PNGs. `mist/settings.json` and `mist/area.json`
+are canonical revision-local JSON. `protection_sha256` binds
+`supports/protection.png`. Full clearance (65535) is mandatory at every hard
+protected pixel. The inventory and bindings are validated even with Mist OFF.
+Completed revisions bind effective recipe settings to the saved Mist record.
+Prepare preserves the raw recipe draft and inherits only previously saved Mist.
+A protection change regenerates clear16 from saved Clear mist support and the
+destination protection raster. Alpha and RGB changes alone reuse both maps.
+Restore validates the same bindings and retains acceptance.
+
+Mist-bearing effects use `validated-effects-v9-mist`. An Apply keys on the
+normalized replacement, current protection and the other rendering inputs.
+Disable keys on inherited settings with the enabled flag removed, plus the area
+and map bindings. Unrelated effects bind inherited Mist. Output identities bind
+the resulting settings, area and both maps. The consumed revision and raw
+request remain in provenance. Reuse rechecks current base and request permissions.
+
+**Field.** Sample native `(x+0.5,y+0.5)` pixel centres. Rotate coordinates about
+the saved centre into `(U,V)` and use `U/stretch` for the elongated noise axis.
+Coverage is cubic smoothstep of `clamp((1 - elliptical_radius)/softness, 0, 1)`.
+Base wavelength is `max(16, wisp_size * shorter_native_axis)`. The three octaves
+use wavelengths `base`, `base/2`, `base/4`, interpolation
+`t³ * (t*(6*t - 15) + 10)` and normalized weights 4:2:1. Compute the lattice
+mix below in unsigned 32-bit arithmetic for signed lattice indices `i,j`
+reduced modulo 2³² and zero-based octave `o`.
+
+```text
+h = (i * 0x9E3779B1) XOR (j * 0x85EBCA77) XOR seed XOR ((o + 1) * 0xC2B2AE3D)
+h = (h XOR (h >> 16)) * 0x7FEB352D
+h = (h XOR (h >> 15)) * 0x846CA68B
+value = (h XOR (h >> 16)) / 4294967295
+```
+
+Wisp opacity is cubic smoothstep of `clamp((noise - 0.30)/0.55, 0, 1)`.
+Quantize density × coverage × wisp opacity to uint16 once, using ties-to-even.
+Clear16 is the maximum authored feathered support, with 65535 at saved hard
+protection. Blend the opaque pre-Mist Result toward the decoded tint in linear
+sRGB at `density16/65535 * (1 - clear16/65535)`, then encode and round to
+RGB16. No Mist, OFF, zero density and zero effective opacity use exact bypasses.
+
+**Replay.** Mist-bearing deliveries use `requested-result-v6` for the top-level
+and encoding versions unless they also save Lit backdrop, which uses v7.
+Native editable adds `mist_density16.png`,
+`mist_clear16.png`, `mist_settings.json` and `mist_area.json`, including for
+OFF. Rebuild the existing pre-Mist Result from the native editable operands,
+then apply the saved maps and tint. Use the Result TIFF to check reconstruction.
+The native replay can run from the delivery alone without generating density.
+Projects that omit Mist and Lit backdrop retain the existing delivery identity.
+
+The framed record freezes the Mist algorithm, normalized settings and all four
+operand hashes. Editable framed replay requires its bound native companion.
+For Add margins, copy the native Result and evaluate the field at translated
+native centres only on the padded area. Extend clear16 by clamping to the
+nearest boundary sample. For Match series, apply Mist after the full foreground
+and backdrop composition. Inverse-transform full output centres through
+`(centre - translation) / scale`. A reduced preview first selects a full output
+index on each axis as `floor((2*i+1)*full_extent/(2*display_extent))`. At unit
+scale and integer translation, in-capture samples use saved maps. Other samples
+use the analytic field and bilinear clear16 with clamped edges. A fully clear
+nearest cell or any fully clear cell in the conservative Lanczos support forces
+full clearance. Support uses the rounded Pillow source box and filter radius.
+Analytic series samples taper each octave toward 0.5 with smoothstep of
+`clamp((wavelength/footprint - 2)/2, 0, 1)` and native-pixel footprint
+`max(1, full_width/(display_width*scale), full_height/(display_height*scale))`.
+Full-size unit-scale sampling and margins use the native field. The Black and
+transparent variants bypass Mist.
 
 ## Requested Result deliveries
 
 Default export is exactly five regular files: `result_rgb16.tif`,
 `result_RGB8_VIEW.png`, `recipe.toml`, `manifest.json`, `README.txt`. Native output
 keeps the full original pixel dimensions, without upscaling or print sizing.
-Result follows the selected saved backdrop and optional Background light;
-absence of both means black. See [B0/B1 reconstruction](#saved-background-light).
+The Result backdrop follows the saved base and optional Background light.
+Absence of both means black before Mist is composited.
+[B0/B1 reconstruction](#saved-background-light), [Mist reconstruction](#saved-mist)
 The TIFF is uncompressed processed sRGB uint16. The same-size PNG is RGB8; all
 delivered RGB/RGBA rasters embed the canonical sRGB ICC. Scalar16 editing masks
 remain exact and carry no ICC/gamma. A larger file container adds no captured detail.
@@ -1585,12 +1730,15 @@ with all four saved spatial operands retained even OFF; use the
 and optional L16 reproduce native Result without the project, original, models or
 cache using the saved float64 ties-to-even renderer and
 [B0/B1 light composition](#saved-background-light). A missing base backdrop means
-zero B0; absent or disabled light uses B1=B0. Flattened Result is never editable F.
+zero B0; absent or disabled light uses B1=B0. Apply the saved Mist maps after
+this composition when present. Flattened Result is never editable F.
 Recovery uses the saved opacity only when the delivered shading record is enabled;
 disabled or absent shading means effective opacity zero, regardless of retained
 nonzero W/opacity. A missing W means zero. Keep retained editing settings unchanged.
 
-Schema-2 manifests identify `export_version=requested-result-v5`, selected revision,
+Schema-2 manifests identify `export_version=requested-result-v5`,
+`requested-result-v6` for Mist, or `requested-result-v7` for a saved Lit backdrop
+target. They also identify the selected revision,
 raw source/revision-manifest hashes, effective recipe hash, explicit draft status,
 mode/settings/geometry/algorithm, requested variants, native asset/effect identities,
 actual Python/NumPy/Pillow/tifffile encoding versions and profile digest. The
@@ -1602,6 +1750,12 @@ or capture paths. Inference provenance stays bound through the raw revision hash
 Version 5 retains v4's effective-opacity recovery rule, spatial identity/operands,
 Local sharpening operands and explicit optional sibling delivery, and adds
 Background light identity/operands and presentation transform metadata.
+Version 7 retains the existing member inventory, uses the same version in the
+encoding record and carries the saved spatial fade target. Native editable
+validation and framed companion bindings check the fade settings and its rasters,
+the base backdrop pixels and settings, and the saved light pixels and settings
+against the selected revision when those operands exist. Revisions with the
+Base backdrop setting omitted keep the v5 or v6 identity and notes.
 Unversioned and v1–v4 files remain preserved at their existing paths; no legacy
 lookup, recreation, migration or rewrite is performed.
 
@@ -1667,7 +1821,9 @@ coordinates, saved layers, acceptance and project schema do not change.
 The canonical saved renderer completes the native Result once, including selected
 cleanup/sharpening/exposure/fade, shading and alpha. Framing copies those RGB16 samples without
 resampling at `(left, top)`. Outside that rectangle, only the saved native backdrop's
-nearest edge/corner pixels extend outwards; legacy backdrop absence means black.
+nearest edge/corner pixels extend outwards. Legacy backdrop absence means black
+before Mist. Enabled Mist is evaluated over these pixels with clamped native
+clearance.
 No foreground edge is stretched and no larger analytic backdrop is regenerated.
 The optional straight RGBA8 view retains the canonical native viewing samples and
 has zero RGB and alpha outside. All delivered rasters carry the canonical sRGB ICC

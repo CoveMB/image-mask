@@ -48,9 +48,10 @@ def validate_spatial_fade(settings: Any, width: int, height: int) -> None:
     """Validate inactive shapes too; never clamp or discard authored settings."""
     if any(type(value) is not int or value <= 0 for value in (width, height)):
         raise ProjectError("Spatial fade requires positive native image dimensions")
+    required = {"enabled", "preserve_highlights", "oval", "arcs_enabled", "arcs"}
     if (
         not isinstance(settings, dict)
-        or set(settings) != {"enabled", "preserve_highlights", "oval", "arcs_enabled", "arcs"}
+        or not required <= settings.keys() <= required | {"target"}
         or type(settings["enabled"]) is not bool
         or type(settings["arcs_enabled"]) is not bool
         or not _number(settings["preserve_highlights"], 0, 1)
@@ -58,6 +59,8 @@ def validate_spatial_fade(settings: Any, width: int, height: int) -> None:
         or len(settings["arcs"]) > 32
     ):
         raise ProjectError("Invalid spatial fade settings, switches or arc count (maximum 32)")
+    if "target" in settings and settings["target"] != "lit":
+        raise ProjectError("Spatial fade target must be 'lit' when set")
     common = {"enabled", "center_xy", "rotation_degrees", "transition_width", "amount"}
     oval = settings["oval"]
     if not isinstance(oval, dict) or set(oval) != common | {"inner_radii_xy"}:
@@ -214,6 +217,11 @@ class SpatialFadeOperands:
     protection: np.ndarray
     record: dict[str, Any]
     reduction16: np.ndarray | None = None
+
+
+def uses_lit_fade_target(record: dict[str, Any] | None) -> bool:
+    """Identify the saved Result opt-in. An omitted target selects the base backdrop."""
+    return record is not None and record.get("settings", {}).get("target") == "lit"
 
 
 def spatial_fade_amount(

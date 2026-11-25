@@ -39,6 +39,7 @@ from .spatial_fade import (
     blend_background_float,
     spatial_fade_amount,
     spatial_fade_files,
+    uses_lit_fade_target,
 )
 from .texture import TEXTURE_PREFIX, TEXTURE_RASTERS, TEXTURE_TEXT
 from .tone_curve import TONE_CURVE_PREFIX, TONE_CURVE_RASTERS
@@ -156,6 +157,9 @@ def render_background(
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
 ) -> np.ndarray:
+    """Render Result with the chosen fade target and the displayed backdrop."""
+    if spatial_fade is not None and uses_lit_fade_target(spatial_fade.record):
+        fade_background16 = background16
     contribution = _foreground_contribution(
         foreground,
         alpha16,
@@ -314,19 +318,25 @@ def saved_layers(
 def render_saved_result(project: Path, revision: str, developed_id: str) -> np.ndarray:
     """Compose one explicitly selected saved Result without publishing a preview."""
     from .background_light import saved_backgrounds
-    from .effects import saved_shading, saved_spatial_fade
+    from .effects import effects_stale, saved_shading, saved_spatial_fade
+    from .mist import blend_mist_into_result, mist_resource_bytes, saved_mist
 
     foreground, alpha, manifest = saved_layers(project, revision, developed_id)
     weight, opacity = saved_shading(project, revision, alpha, manifest)
     spatial = saved_spatial_fade(project, revision, alpha, manifest)
-    base, background = saved_backgrounds(
-        project, saved_asset(project, f"revisions/{revision}"), manifest
+    directory = saved_asset(project, f"revisions/{revision}")
+    base, background = saved_backgrounds(project, directory, manifest)
+    height, width = alpha.shape
+    check_space(
+        project,
+        foreground.nbytes * 8
+        + 16 * 1024**2
+        + (mist_resource_bytes(width, height) if "mist" in manifest else 0),
     )
-    check_space(project, foreground.nbytes * 8 + 16 * 1024**2)
     target = (
         base if base is not None else np.zeros_like(foreground) if spatial is not None else None
     )
-    return (
+    result = (
         render_black(
             foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
         )
@@ -340,6 +350,12 @@ def render_saved_result(project: Path, revision: str, developed_id: str) -> np.n
             spatial_fade=spatial,
             fade_background16=target,
         )
+    )
+    mist = saved_mist(project, directory, manifest, effects_off=effects_stale(manifest))
+    return (
+        result
+        if mist is None
+        else blend_mist_into_result(result, mist.density16, mist.clear16, mist.settings)
     )
 
 
@@ -425,6 +441,8 @@ def _check_flat_delivery(directory: Path, names: set[str]) -> None:
 
 
 EXPORT_VERSION = "requested-result-v5"
+MIST_EXPORT_VERSION = "requested-result-v6"
+LIT_FADE_EXPORT_VERSION = "requested-result-v7"
 
 
 def _delivery_effect_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -474,6 +492,7 @@ def _export_execution_identity() -> dict[str, Any]:
 
 def _delivery_notes(record: dict[str, Any]) -> bytes:
     mode = record["mode"]
+    lit_fade_target = uses_lit_fade_target(record.get("spatial_fade"))
     has_curve = "local_tone_curve" in record["effects"]
     has_texture = "local_texture" in record["effects"]
     foreground_effects = (
@@ -489,12 +508,20 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
     text += f"Selected foreground already includes {foreground_effects}; apply none again. "
     text += "Result/black use encoded-sRGB alpha and shading once. The optional straight RGBA8 view contains baked shading at effective opacity (saved opacity only when enabled); use opacity 0 when shading is disabled or absent. Its RGB is not alpha-multiplied.\n"
     if "background_light" in record:
-        text += "Background light is separate from the unlit base B0. Native editable deliveries retain background_rgb16.tif as B0 (missing means zero), background_light_rgb16.tif as L16, and background_light_settings.json, including OFF. When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)); encode to RGB16 with float64 ties-to-even and copy zero-light pixels exactly. OFF uses B1=B0. Native replay reads saved L16 without generating it. Light never changes the foreground contribution or alpha; it can clip a bright backdrop, so lower brightness to retain variation. Black/transparent diagnostics never display light.\n"
+        light_effect = (
+            "With Lit backdrop, enabled Fade uses B1 for the Result. Alpha stays saved. Background light"
+            if lit_fade_target
+            else "Light never changes the foreground contribution or alpha; it"
+        )
+        text += f"Background light is separate from the unlit base B0. Native editable deliveries retain background_rgb16.tif as B0 (missing means zero), background_light_rgb16.tif as L16, and background_light_settings.json, including OFF. When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)); encode to RGB16 with float64 ties-to-even and copy zero-light pixels exactly. OFF uses B1=B0. Native replay reads saved L16 without generating it. {light_effect} can clip a bright backdrop, so lower brightness to retain variation. Black/transparent diagnostics never display light.\n"
+    elif lit_fade_target:
+        text += "Fade target is Lit backdrop. B1 equals B0 when Background light is absent.\n"
     if mode == "add-margins":
         text += "The native image is copied without resampling; margins extend saved backdrop edge pixels. Optional straight RGBA has zero RGBA margins.\n"
     elif mode == "match-series":
         if "background_light" in record:
-            text += "This is a resized presentation using existing photographed detail. Regenerate B0 at full output dimensions; evaluate the delivered light settings at native coordinates (X+0.5-tx)/scale-0.5 and (Y+0.5-ty)/scale-0.5, including outside the transformed native rectangle. Combine once into B1; spatial fade still targets B0. The manifest freezes scale/translation and native companion identity. Enlargement adds no captured detail; reduction can hide fine features.\n"
+            series_target = "targets B1 for Result" if lit_fade_target else "still targets B0"
+            text += f"This is a resized presentation using existing photographed detail. Regenerate B0 at full output dimensions; evaluate the delivered light settings at native coordinates (X+0.5-tx)/scale-0.5 and (Y+0.5-ty)/scale-0.5, including outside the transformed native rectangle. Combine once into B1; spatial fade {series_target}. The manifest freezes scale/translation and native companion identity. Enlargement adds no captured detail; reduction can hide fine features.\n"
         else:
             text += "This is a resized presentation using existing photographed detail. The saved backdrop recipe is regenerated at final output dimensions. Enlargement adds no captured detail; reduction can hide fine features.\n"
     if mode != "native":
@@ -512,7 +539,9 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         if record.get("shadow_fade", {}).get("schema_version") == 3:
             text += "Retain shadow_fade_reduction16.png and shadow_fade_reduction.json, including when Shadow fade is OFF. To edit/replay Shadow fade, start from unfaded_foreground_rgb16.tif: multiply its support/highlight exponent weight by (1-reduction16/65535) exactly once before gain=2**(-6*amount*weight). Alpha gates eligibility; explicit protection copies unfaded RGB exactly. Disabled Shadow fade copies unfaded RGB. Selected foreground_rgb16.tif already includes this result: never fade it again. Then recompute downstream spatial highlights from that selected RGB, retaining spatial reduction independently.\n"
         if "spatial_fade" in record:
-            if "background_light" in record:
+            if lit_fade_target:
+                text += "With enabled Fade into background, F is pre-spatial and q comes from saved geometry, alpha eligibility, protection, highlights and any local reduction. For Result, blend F toward B1 in linear sRGB. Encode without intermediate rounding and composite once over B1 with unchanged A. Disabled Fade uses q=0. Black and transparent retain B0 as the fade target. For Match series, sample premultiplied P=R(A*F), a=R(A), Q=R(A*q). Clamp Q to [0,a], blend P/a toward output-coordinate B1 using Q/a where a is positive, then composite once over B1. Use B0 for transparent and zero its RGB wherever alpha8 rounds to zero.\n"
+            elif "background_light" in record:
                 text += "With enabled spatial Fade into background, F is pre-spatial: derive q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B0) in linear light, encode without intermediate rounding, then composite once against B1 with unchanged A. Disabled spatial settings mean q=0; retain all operands. Black/transparent diagnostics keep B0 as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B0 using Q/a, then composite once against B1; zero transparent RGB where output alpha8 rounds to zero. Opaque pixels and protected underlying RGB remain unchanged by light; partial-alpha flattened colour changes naturally.\n"
             else:
                 text += "With enabled spatial Fade into background, F is pre-spatial: derive combined q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B) in linear light, encode once, then composite once with unchanged A. Disabled spatial settings mean q=0; retain all four operands for editing. Black/transparent diagnostics keep selected B as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B using Q/a, then composite once; zero transparent RGB where output alpha8 rounds to zero.\n"
@@ -561,6 +590,19 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         )
     if "result_compositing" in record:
         text += "Saved compositing: " + record["result_compositing"] + "\n"
+    if "mist" in record:
+        text += "Mist applies once to Result after foreground and backdrop composition. Black and transparent views bypass Mist.\n"
+        if mode == "native" and "editable" in record["requested_variants"]:
+            text += (
+                "Keep mist_density16.png, mist_clear16.png, mist_settings.json and mist_area.json, including with Mist OFF. "
+                "Rebuild the pre-Mist Result from the native operands. Blend its decoded linear sRGB toward the decoded tint with "
+                "opacity (density16/65535)*(1-clear16/65535), then encode and round to RGB16. "
+                "OFF and zero opacity keep the pre-Mist pixels exact. The native replay uses the saved maps.\n"
+            )
+        elif mode == "add-margins":
+            text += "Copy the native Result exactly. Sample the versioned Mist field on margin pixels at translated native sample centres over the extended backdrop, with clearance clamped to the native boundary.\n"
+        elif mode == "match-series":
+            text += "Use the frozen series layout and companion Mist maps and settings. Project native clearance through the saved sampling geometry, including fully clear samples within the Lanczos support. Sample and taper the versioned Mist field at output pixel centres.\n"
     return text.encode()
 
 
@@ -599,6 +641,10 @@ def _delivery_members(
             names.update({"background_rgb16.tif", "background_settings.json"})
         if "background_light" in manifest:
             names.update({"background_light_rgb16.tif", "background_light_settings.json"})
+        if "mist" in manifest:
+            from .mist import MIST_MEMBERS
+
+            names.update(f"mist_{name}" for name in MIST_MEMBERS)
         for section, directory, prefix in (
             ("local_sharpening", "sharpening", "sharpening"),
             ("local_exposure", "exposure", "exposure"),
@@ -664,6 +710,31 @@ def _member_signature(path: Path) -> tuple[int, ...]:
     return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
 
 
+def _lit_fade_operand_hashes(record: dict[str, Any]) -> dict[str, str]:
+    spatial = record.get("spatial_fade")
+    if not uses_lit_fade_target(spatial):
+        return {}
+    assert spatial is not None
+    hashes = {
+        "spatial_fade_settings.json": digest(_json_bytes(spatial)),
+        "spatial_fade_weight16.png": spatial["weight_sha256"],
+        "spatial_fade_protection16.png": spatial["protection_sha256"],
+        "spatial_fade_alpha16.png": spatial["alpha_sha256"],
+    }
+    if spatial["schema_version"] == 2:
+        hashes["spatial_fade_reduction16.png"] = spatial["reduction_sha256"]
+        hashes["spatial_fade_reduction.json"] = spatial["reduction_area_sha256"]
+    if "background" in record:
+        base = record["background"]
+        hashes["background_rgb16.tif"] = base["background_sha256"]
+        hashes["background_settings.json"] = base["settings_sha256"]
+    if "background_light" in record:
+        light = record["background_light"]
+        hashes["background_light_rgb16.tif"] = light["light_sha256"]
+        hashes["background_light_settings.json"] = light["settings_sha256"]
+    return hashes
+
+
 def _validate_delivery(
     directory: Path,
     request_record: dict[str, Any],
@@ -671,6 +742,8 @@ def _validate_delivery(
     *,
     companion_binding: dict[str, Any] | None = None,
 ) -> None:
+    from .mist import MIST_MEMBERS
+
     _check_flat_delivery(directory, {*members, "manifest.json"})
     signatures = {name: _member_signature(directory / name) for name in (*members, "manifest.json")}
     # Bound the file table before reading. Only Texture's derived input needs pixel verification here.
@@ -703,6 +776,23 @@ def _validate_delivery(
             or set(files) != set(members)
         ):
             raise ValueError("Delivery request/member mismatch")
+        mist_record = request_record.get("mist")
+        mist_hashes = (
+            {f"mist_{name}": mist_record[role] for name, role in MIST_MEMBERS.items()}
+            if mist_record is not None
+            else {}
+        )
+        if companion_binding is not None and any(
+            companion_binding["files_sha256"].get(name) != checksum
+            for name, checksum in mist_hashes.items()
+        ):
+            raise ValueError("Mist operand binding differs from native editable companion")
+        lit_fade_hashes = _lit_fade_operand_hashes(request_record)
+        if companion_binding is not None and any(
+            companion_binding["files_sha256"].get(name) != checksum
+            for name, checksum in lit_fade_hashes.items()
+        ):
+            raise ValueError("Lit backdrop operand binding differs from native editable companion")
         curve_record = request_record.get("local_tone_curve")
         curve_hashes = (
             {
@@ -744,6 +834,14 @@ def _validate_delivery(
                 raise ValueError("Local tone curve operand binding mismatch")
             if name in texture_hashes and metadata["sha256"] != texture_hashes[name]:
                 raise ValueError("Local texture operand binding mismatch")
+            if name in mist_hashes and metadata["sha256"] != mist_hashes[name]:
+                raise ValueError("Mist operand binding mismatch")
+            if name in lit_fade_hashes and metadata["sha256"] != lit_fade_hashes[name]:
+                raise ValueError("Lit backdrop operand binding mismatch")
+            if name == "mist_settings.json" and (
+                mist_record is None or path.read_bytes() != _json_bytes(mist_record["settings"])
+            ):
+                raise ValueError("Mist settings binding mismatch")
             if name == "texture_settings.json" and (
                 texture_record is None or path.read_bytes() != _json_bytes(texture_record)
             ):
@@ -1012,7 +1110,8 @@ def _delivery_request_record(
             if name in manifest
         },
     }
-    if "spatial_fade" in manifest:
+    lit_fade_target = uses_lit_fade_target(manifest.get("spatial_fade"))
+    if "spatial_fade" in manifest and (mode == "native" or lit_fade_target):
         record["spatial_fade"] = manifest["spatial_fade"]
     if "background_light" in manifest:
         record["background_light"] = manifest["background_light"]
@@ -1052,13 +1151,17 @@ def _delivery_request_record(
             "local_sharpening",
             "local_exposure",
             "shadow_fade",
-            "spatial_fade",
         ):
             record.pop(name, None)
         if "background" in manifest:
             record["background"] = {
                 "record_sha256": digest(_json_bytes(manifest["background"])),
                 "background_sha256": manifest["background"]["background_sha256"],
+                **(
+                    {"settings_sha256": manifest["background"]["settings_sha256"]}
+                    if lit_fade_target
+                    else {}
+                ),
                 **(
                     {
                         "algorithm": manifest["background"]["algorithm"],
@@ -1076,13 +1179,18 @@ def _delivery_request_record(
             else "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-p*W16/65535, A=alpha16/65535; p is saved opacity only when shading is enabled, otherwise zero; B is saved background RGB16 or zero"
         ) + "; F already includes Local sharpening, local exposure and Shadow fade"
         if "background_light" in manifest:
+            target = "B1" if lit_fade_target else "B0"
             record["result_compositing"] = (
                 (
-                    "round(blend_linear_srgb(F,B0,q)*A+B1*(1-A)); spatial q retains all saved protection/highlight/reduction operands"
+                    f"round(blend_linear_srgb(F,{target},q)*A+B1*(1-A)); spatial q retains all saved protection/highlight/reduction operands"
                     if manifest.get("spatial_fade", {}).get("enabled")
                     else "encoded-sRGB float64 round ties-to-even(F*A*H+B1*(1-A)); H=1-p*W16/65535; p is saved opacity only when shading is enabled, otherwise zero"
                 )
                 + "; B0 is saved unlit background or zero; enabled B1=RGB16(encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1))), OFF B1=B0; A=alpha16/65535; F already includes Local sharpening, local exposure and Shadow fade"
+            )
+        elif lit_fade_target:
+            record["result_compositing"] += (
+                ". Lit backdrop equals the base backdrop when Background light is absent."
             )
         if manifest.get("spatial_fade", {}).get("schema_version") == 2:
             record["result_compositing"] += (
@@ -1121,6 +1229,22 @@ def _delivery_request_record(
                 record[field] = record[field].replace(
                     " and Shadow fade", ", Local texture and Shadow fade"
                 )
+    if "mist" in manifest:
+        mist = manifest["mist"]
+        record["export_version"] = MIST_EXPORT_VERSION
+        record["encoding"]["version"] = MIST_EXPORT_VERSION
+        record["mist"] = mist
+        record["effects"]["mist"] = {
+            "enabled": mist["settings"]["enabled"],
+            "record_sha256": digest(_json_bytes(mist)),
+        }
+        if mode == "native":
+            record["result_compositing"] += (
+                ". Apply the saved linear-sRGB Mist layer to this pre-Mist Result."
+            )
+    if lit_fade_target:
+        record["export_version"] = LIT_FADE_EXPORT_VERSION
+        record["encoding"]["version"] = LIT_FADE_EXPORT_VERSION
     record["identity_sha256"] = digest(_json_bytes(record))
     return record
 
@@ -1145,6 +1269,7 @@ def _export_delivery(
 ) -> dict[str, Any]:
     from .effects import selected_foreground, stale_effect_names
     from .framing import framed_geometry, validate_margins
+    from .mist import ROWS_PER_CHUNK, mist_resource_bytes
 
     captured = {
         name: saved_asset(project, name).read_bytes() for name in ("state.json", "source.json")
@@ -1312,6 +1437,12 @@ def _export_delivery(
     pending += reduction_bytes
     if "background_light" in manifest:
         pending += base.nbytes * 4 + min(64, base.shape[0]) * base.shape[1] * 198
+    if "mist" in manifest:
+        pending += mist_resource_bytes(*size)
+        if mode != "native":
+            pending += min(ROWS_PER_CHUNK, height) * width * 288 + 32 * (width + height)
+        if "editable" in variants and (mode == "native" or binding is None):
+            pending += 2 * alpha.nbytes + 2 * 1024**2
     pending += (16 + (10 if "black" in variants else 0)) * width * height + 2 * 1024**2
     if native_record is not None and binding is None:
         pending += base.nbytes * 22 + 2 * 1024**2
@@ -1342,6 +1473,7 @@ def _export_delivery(
             background_light=bool(
                 manifest.get("background_light", {}).get("settings", {}).get("enabled")
             ),
+            **({"mist_native_shape": alpha.shape} if "mist" in manifest else {}),
         )
     foreground = selected_foreground(project, revision, base, alpha, manifest)
     del base
@@ -1456,6 +1588,7 @@ def _write_delivery(
     from .background_light import saved_backgrounds
     from .effects import saved_shading, saved_spatial_fade
     from .framing import frame_result, frame_transparent
+    from .mist import blend_mist_into_result, saved_mist
 
     revision = record["revision"]
     variants = record["requested_variants"]
@@ -1478,10 +1611,10 @@ def _write_delivery(
     recheck()
     weight, opacity = saved_shading(project, revision, alpha, manifest)
     spatial = saved_spatial_fade(project, revision, alpha, manifest)
+    directory = saved_asset(project, f"revisions/{revision}")
+    mist = saved_mist(project, directory, manifest)
     base, background = (
-        (None, None)
-        if sampling is not None
-        else saved_backgrounds(project, saved_asset(project, f"revisions/{revision}"), manifest)
+        (None, None) if sampling is not None else saved_backgrounds(project, directory, manifest)
     )
     target = (
         base
@@ -1507,6 +1640,7 @@ def _write_delivery(
                 background_light_settings=manifest.get("background_light", {}).get("settings"),
                 spatial_fade=spatial,
                 black_background=stem == "black",
+                mist=mist if stem == "result" else None,
             )
         else:
             native = (
@@ -1529,8 +1663,18 @@ def _write_delivery(
                     fade_background16=target,
                 )
             )
+            result_mist = mist if stem == "result" else None
+            if result_mist is not None:
+                blend_mist_into_result(
+                    native, result_mist.density16, result_mist.clear16, result_mist.settings
+                )
             pixels = (
-                frame_result(native, background if stem == "result" else None, margins_settings)
+                frame_result(
+                    native,
+                    background if stem == "result" else None,
+                    margins_settings,
+                    mist=result_mist,
+                )
                 if margins_settings is not None
                 else native
             )
@@ -1659,6 +1803,8 @@ def _write_editable(
     manifest: dict[str, Any],
 ) -> None:
     """Native independent layers retain the existing precision and replay contracts."""
+    from .mist import MIST_MEMBERS
+
     Image.fromarray(alpha).save(stage / "alpha16.png")
     if "background" in manifest:
         for saved, delivered in (
@@ -1675,6 +1821,11 @@ def _write_editable(
         ):
             (stage / delivered).write_bytes(
                 saved_asset(project, f"revisions/{revision}/{saved}").read_bytes()
+            )
+    if "mist" in manifest:
+        for name in MIST_MEMBERS:
+            shutil.copyfile(
+                saved_asset(project, f"revisions/{revision}/mist/{name}"), stage / f"mist_{name}"
             )
     write_developed(stage / "foreground_rgb16.tif", foreground)
     master = state["developed_id"]

@@ -33,11 +33,23 @@ from .exposure import (
 )
 from .guidance import coordinates, rasterize_regions
 from .ingest import write_developed
+from .mist import (
+    ALGORITHM as MIST_ALGORITHM,
+)
+from .mist import (
+    mist_resource_bytes,
+    parse_mist_json,
+    read_mist_request_bytes,
+    saved_mist,
+    stage_mist,
+    validate_mist_request,
+)
 from .project import (
     ProjectError,
     _atomic_bytes,
     _atomic_json,
     _json_bytes,
+    _read_json,
     _root,
     _validate_revision_directory,
     check_space,
@@ -136,6 +148,8 @@ def _effects_request_identity(
     settings: dict[str, Any],
     input_hashes: dict[str, str],
     saved_shading: dict[str, Any] | None,
+    *,
+    mist_request: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from .background import normalized_background
 
@@ -157,8 +171,13 @@ def _effects_request_identity(
         "background_light",
         "spatial_fade",
         "fade_reduction",
+        "mist",
     }:
         normalized["color_cleanup"] = settings
+    if mist_request is not None:
+        # The candidate choice is enforced per submission and does not change pixels.
+        normalized.pop("candidate_comparison")
+        normalized["mist"] = mist_request
     if "background" in normalized:
         normalized["background"] = normalized_background(normalized["background"])
     if "fade_reduction" in normalized:
@@ -339,7 +358,16 @@ def _reused_effects_result(
         if _json_bytes(manifest["effects_reuse"]) != _json_bytes(identity):
             return None
         result = json.loads((directory / "result.json").read_bytes())
-        request = json.loads((directory / "request.json").read_bytes())
+        request_path = directory / "request.json"
+        mist_request = None
+        if "mist" in identity["request"]:
+            request = parse_mist_json(read_mist_request_bytes(request_path), request=True)
+            mist = manifest["mist"]
+            mist_request = validate_mist_request(
+                request["mist"], manifest["developed_id"], mist["width"], mist["height"]
+            )
+        else:
+            request = json.loads(request_path.read_bytes())
         if (
             _json_bytes(result.get("effects_reuse")) != _json_bytes(identity)
             or result.get("kind") != "effects"
@@ -356,6 +384,7 @@ def _reused_effects_result(
                     "background_light",
                     "local_tone_curve",
                     "local_texture",
+                    "mist",
                 )
             )
             or _json_bytes(
@@ -364,6 +393,7 @@ def _reused_effects_result(
                     identity["request"].get("color_cleanup", {}),
                     identity["inputs"]["request_files"],
                     manifest.get("shading"),
+                    mist_request=mist_request,
                 )
             )
             != _json_bytes(identity["request"])
@@ -1143,6 +1173,7 @@ def run_effects(
         - {
             "background",
             "background_light",
+            "mist",
             "support_file",
             "color_cleanup",
             "shading",
@@ -1177,6 +1208,10 @@ def run_effects(
         or type(operation["candidate_comparison"]) is not bool
     ):
         raise ProjectError("Invalid schema-2 effects request")
+    mist_changed = "mist" in operation
+    mist_request = None
+    if mist_changed and set(operation) != required | {"mist"}:
+        raise ProjectError("Mist must be an exclusive effects operation")
     tone_fields = {"tone_curve_area", "tone_curve_protection_file", "tone_curve_settings_only"}
     tone_changed = "local_tone_curve" in operation
     tone_replacement = False
@@ -1317,6 +1352,7 @@ def run_effects(
         and not light_changed
         and not spatial_changed
         and not reduction_changed
+        and not mist_changed
         and "support_file" not in operation
     ):
         raise ProjectError("Invalid effects support/exposure fields")
@@ -1358,16 +1394,37 @@ def run_effects(
         tone_settings = operation["local_tone_curve"]
     if reduction_changed:
         reduction_request = operation["fade_reduction"]
-    request_bytes = request_file.read_bytes() if request_file else _json_bytes(operation)
-    request_snapshot = (
-        parse_texture_json(request_bytes) if texture_changed else json.loads(request_bytes)
+    request_bytes = (
+        (read_mist_request_bytes(request_file) if mist_changed else request_file.read_bytes())
+        if request_file
+        else _json_bytes(operation)
     )
+    if mist_changed:
+        request_snapshot = parse_mist_json(request_bytes, request=True)
+    else:
+        request_snapshot = (
+            parse_texture_json(request_bytes) if texture_changed else json.loads(request_bytes)
+        )
     if request_snapshot != operation or (
-        (tone_changed or texture_changed)
+        (tone_changed or texture_changed or mist_changed)
         and _json_bytes(request_snapshot) != _json_bytes(operation)
     ):
         raise ProjectError("Stale effects request file")
     project = _root(project)
+    if mist_changed:
+        source_record = _read_json(project, "source.json")
+        metadata = source_record["metadata"]
+        native_width, native_height = metadata["width"], metadata["height"]
+        mist_request = validate_mist_request(
+            request_snapshot["mist"], source_record["developed_id"], native_width, native_height
+        )
+        if coordinates(operation["scope_xyxy"], native_width, native_height, box=True) != [
+            0,
+            0,
+            native_width,
+            native_height,
+        ]:
+            raise ProjectError("Mist scope must cover the full native image")
     state = read_project(project)
 
     def recheck_viewer_authoring() -> None:
@@ -1397,6 +1454,7 @@ def run_effects(
         or light_changed
         or spatial_changed
         or reduction_changed
+        or mist_changed
     )
     settings = operation.get(
         "color_cleanup",
@@ -1417,6 +1475,13 @@ def run_effects(
     source, _ = load_developed(project, state["developed_id"])
     height, width = alpha.shape
     scope = coordinates(operation["scope_xyxy"], width, height, box=True)
+    mist_apply = mist_request is not None and mist_request["action"] == "apply"
+    if (
+        mist_apply
+        and parent != state["accepted_revision"]
+        and not operation["candidate_comparison"]
+    ):
+        raise ProjectError("Mist requires accepted base or explicit candidate comparison")
     if light_changed:
         from .background_light import validate_background_light
 
@@ -1525,6 +1590,8 @@ def run_effects(
         or tone_changed
         or texture_changed
         or "local_texture" in manifest
+        or mist_changed
+        or "mist" in manifest
     ) and _json_bytes(json.loads(parent_bytes)) != _json_bytes(manifest):
         raise ProjectError("Stale local effect base manifest")
     parent_guides = saved_asset(project, f"revisions/{parent}/guides.json").read_bytes()
@@ -1547,6 +1614,7 @@ def run_effects(
             "spatial_fade",
             "background",
             "background_light",
+            "mist",
             "notes",
         }
     ):
@@ -1972,7 +2040,10 @@ def run_effects(
             or saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()
             != parent_bytes
             or request_file
-            and request_file.read_bytes() != request_bytes
+            and (
+                read_mist_request_bytes(request_file) if mist_changed else request_file.read_bytes()
+            )
+            != request_bytes
         ):
             raise ProjectError("Stale effects support/request/parent")
         read_revision(project, parent, state["developed_id"])
@@ -1986,7 +2057,27 @@ def run_effects(
                 raise ProjectError("Stale cleanup saved RGB lock")
 
     # saved_layers above validates all inherited effects, including disabled operands.
+    parent_mist = manifest.get("mist")
     request_inputs: dict[str, bytes] = dict(tone_input_bytes)
+    if (
+        mist_changed
+        and not mist_apply
+        and (parent_mist is None or not parent_mist["settings"]["enabled"])
+    ):
+        recheck()
+        return {
+            "revision": parent,
+            "developed_id": state["developed_id"],
+            "kind": "effects",
+            "status": "unchanged",
+            "reused": True,
+            "final_acceptable": True,
+            "inputs_digest": operation["inputs_digest"],
+            "revision_inputs_digest": manifest["draft_digest"],
+            "base_manifest_sha256": digest(parent_bytes),
+            "revision_manifest_sha256": digest(parent_bytes),
+            **({"mist": parent_mist} if parent_mist is not None else {}),
+        }
     for name in (
         "sharpening_protection_file",
         "support_file",
@@ -2015,7 +2106,9 @@ def run_effects(
     identity: dict[str, Any] = {
         "schema_version": 1,
         "execution": _effects_execution_identity(),
-        "request": _effects_request_identity(operation, settings, input_hashes, shading_record),
+        "request": _effects_request_identity(
+            operation, settings, input_hashes, shading_record, mist_request=mist_request
+        ),
         "inputs": {
             "source": digest(snapshots["source.json"]),
             "guides": digest(snapshots["guides.json"]),
@@ -2034,6 +2127,7 @@ def run_effects(
                     "background",
                     "background_light",
                     "spatial_fade",
+                    "mist",
                     "notes",
                 }
             },
@@ -2054,6 +2148,41 @@ def run_effects(
     }
     if identity["execution"] is not None and (texture_changed or "local_texture" in manifest):
         identity["execution"]["algorithms"]["local_texture"] = TEXTURE_ALGORITHM
+    if identity["execution"] is not None and (mist_changed or parent_mist is not None):
+        identity["execution"]["version"] = "validated-effects-v9-mist"
+        identity["execution"]["algorithms"]["mist"] = MIST_ALGORITHM
+    if parent_mist is not None and not mist_apply:
+        identity["inputs"]["mist"] = (
+            {
+                **{
+                    key: value
+                    for key, value in parent_mist.items()
+                    if key not in {"settings", "settings_sha256"}
+                },
+                "settings": {
+                    key: value for key, value in parent_mist["settings"].items() if key != "enabled"
+                },
+            }
+            if mist_changed
+            else parent_mist
+        )
+    if mist_changed:
+        identity["inputs"]["mist_upstream"] = {
+            key: manifest[key]
+            for key in (
+                "color_cleanup",
+                "shading",
+                "local_sharpening",
+                "local_exposure",
+                "local_tone_curve",
+                "local_texture",
+                "shadow_fade",
+                "spatial_fade",
+                "background",
+                "background_light",
+            )
+            if key in manifest
+        }
     reused_result = _reused_effects_result(
         project,
         state,
@@ -2072,10 +2201,17 @@ def run_effects(
             shadow_fade=_fade_reuse_binding(
                 "shadow_fade", manifest.get("shadow_fade"), revision_hashes(manifest)
             ),
+            **({"mist": parent_mist} if parent_mist is not None else {}),
         ),
     )
     if reused_result is not None:
         recheck()
+        if mist_changed:
+            return dict(
+                reused_result,
+                base_manifest_sha256=digest(parent_bytes),
+                revision_manifest_sha256=digest(parent_bytes),
+            )
         return reused_result
     check_space(
         project,
@@ -2088,6 +2224,17 @@ def run_effects(
         + (alpha.nbytes * 3 if sharpening_changed else 0)
         + (alpha.nbytes * 3 if tone_replacement else 0)
         + (alpha.nbytes * 3 if texture_area is not None else 0)
+        + (
+            mist_resource_bytes(
+                width,
+                height,
+                rebuild_clear=bool(
+                    mist_request and mist_apply and mist_request["clear_area"]["regions"]
+                ),
+            )
+            if mist_changed or parent_mist is not None
+            else 0
+        )
         + retained_reduction_bytes
         + (0 if reduction16 is None else reduction16.nbytes)
         + 1024**2,
@@ -2567,7 +2714,10 @@ def run_effects(
         )
         (directory / "settings.json").write_bytes(_json_bytes(texture_record))
 
+    mist_record = stage_mist(project, parent, stage, assets, manifest, mist_request)
     effect_records = {}
+    if mist_record is not None:
+        effect_records["mist"] = mist_record
     if light_record is not None:
         effect_records["background_light"] = light_record
     if sharpening_record is not None:
@@ -2619,6 +2769,7 @@ def run_effects(
         ),
         ("background", background_changed),
         ("background_light", light_changed),
+        ("mist", mist_changed),
     ):
         if changed:
             effective_recipe[name] = dict(effect_records[name]["settings"])
@@ -2699,22 +2850,26 @@ def run_effects(
             light_pixels,
             enabled=True,
         )
+    overview_options = {
+        "developed_id": state["developed_id"],
+        "background16": review_background,
+        "spatial_fade": spatial_operands,
+        "fade_background16": review_base
+        if review_base is not None
+        else np.zeros_like(appearance)
+        if spatial_operands is not None
+        else None,
+        "weight16": review_weight,
+        "opacity": opacity,
+    }
     review = write_revision_overview(
         stage / "review",
         source,
         appearance,
         alpha,
-        developed_id=state["developed_id"],
         revision=revision,
-        background16=review_background,
-        spatial_fade=spatial_operands,
-        fade_background16=review_base
-        if review_base is not None
-        else np.zeros_like(appearance)
-        if spatial_operands is not None
-        else None,
-        weight16=review_weight,
-        opacity=opacity,
+        mist=saved_mist(project, stage, {"assets": assets, **effect_records}, effects_off=stale),
+        **overview_options,
     )
     review.update(effect_records)
     if sharpening_record is not None:
@@ -2759,6 +2914,19 @@ def run_effects(
             "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need scoped rebuild or explicit disable"
         )
     (stage / "review/manifest.json").write_bytes(_json_bytes(review))
+    if mist_changed:
+        write_revision_overview(
+            stage / "review-before",
+            source,
+            appearance,
+            alpha,
+            revision=parent,
+            mist=saved_mist(
+                project, saved_asset(project, f"revisions/{parent}"), manifest, effects_off=stale
+            ),
+            align_result=True,
+            **overview_options,
+        )
     # Input snapshots remain consumed-input evidence. Bind the new output only
     # after its actual record and all four operands exist, so first repeats hit.
     if sharpening_record is not None or tone_record is not None or texture_record is not None:
@@ -2806,6 +2974,8 @@ def run_effects(
         if light_record is not None
         else {},
     )
+    if mist_record is not None:
+        identity["mist"] = mist_record
     result = {
         "revision": revision,
         "parent": parent,
@@ -2839,7 +3009,8 @@ def run_effects(
 
     destination = revisions / revision
     validated_appearance = any(
-        record is not None for record in (spatial_record, light_record, tone_record, texture_record)
+        record is not None
+        for record in (spatial_record, light_record, tone_record, texture_record, mist_record)
     )
     if validated_appearance:
         _validate_revision_directory(
@@ -2858,10 +3029,16 @@ def run_effects(
             snapshots["recipe.toml"] = published_recipe
         record_generated_result(state, revision, new_manifest)
         _atomic_json(saved_asset(project, "state.json"), state, validate_before_replace=recheck)
-    except OSError as error:
-        if validated_appearance and destination.exists():
+    except (OSError, ProjectError) as error:
+        if (
+            validated_appearance
+            and destination.exists()
+            and (isinstance(error, OSError) or mist_changed)
+        ):
             effect_name = (
-                "Background light"
+                "Mist"
+                if mist_changed
+                else "Background light"
                 if light_changed
                 else "Fade into background"
                 if spatial_changed
@@ -2883,4 +3060,12 @@ def run_effects(
         revision_inputs_digest=new_manifest["draft_digest"],
         manifest_file=str(destination / "manifest.json"),
         review_manifest_file=str(destination / "review/manifest.json"),
+        **(
+            {
+                "base_manifest_sha256": digest(parent_bytes),
+                "revision_manifest_sha256": digest(_json_bytes(new_manifest)),
+            }
+            if mist_changed
+            else {}
+        ),
     )

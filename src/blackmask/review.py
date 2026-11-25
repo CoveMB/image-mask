@@ -26,6 +26,7 @@ from .export import (
 )
 from .guidance import coordinates
 from .library import StorageConfig, validate_library_project
+from .mist import MistOperands, blend_mist_into_result, saved_mist, separate_result_panel
 from .previews import _read_regular
 from .project import (
     ProjectError,
@@ -56,6 +57,7 @@ def review_panels(
     background16: np.ndarray | None = None,
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
+    mist: MistOperands | None = None,
 ) -> dict[str, np.ndarray]:
     """Shared labelled RGB8 approximations; authoritative layers remain RGB16/alpha16."""
     factor = alpha16.astype(np.float64)[..., None] / 65535
@@ -84,23 +86,25 @@ def review_panels(
         and not spatial_fade.record["stale"]
         else appearance * factor
     )
+    result = (
+        black
+        if background16 is None
+        else render_background(
+            foreground,
+            alpha16,
+            background16,
+            weight16,
+            opacity,
+            spatial_fade=spatial_fade,
+            fade_background16=fade_background16,
+        )
+    )
+    if mist is not None:
+        result = blend_mist_into_result(
+            black.copy() if result is black else result, mist.density16, mist.clear16, mist.settings
+        )
     return {
-        "result": np.rint(
-            (
-                black
-                if background16 is None
-                else render_background(
-                    foreground,
-                    alpha16,
-                    background16,
-                    weight16,
-                    opacity,
-                    spatial_fade=spatial_fade,
-                    fade_background16=fade_background16,
-                )
-            ).astype(np.float64)
-            / 257
-        ).astype(np.uint8),
+        "result": np.rint(result.astype(np.float64) / 257).astype(np.uint8),
         "source": np.rint(source.astype(np.float64) / 257).astype(np.uint8),
         "black": np.rint(black.astype(np.float64) / 257).astype(np.uint8),
         "gray": np.rint((contribution + 32768 * (1 - factor)) / 257).astype(np.uint8),
@@ -125,6 +129,7 @@ def write_review(
     background16: np.ndarray | None = None,
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
+    mist: MistOperands | None = None,
 ) -> dict[str, Any]:
     height, width = alpha16.shape
     if crops is None:
@@ -135,6 +140,7 @@ def write_review(
     directory.mkdir()
     records = []
     rows = []
+    show_result = separate_result_panel(background16 is not None, mist)
     for index, (x0, y0, x1, y1) in enumerate(validated):
         source_crop = source[y0:y1, x0:x1]
         rgb = foreground[y0:y1, x0:x1]
@@ -159,6 +165,7 @@ def write_review(
             fade_background16=None
             if fade_background16 is None
             else fade_background16[y0:y1, x0:x1],
+            mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
         )
         names = {
             "source": "source_RGB8_VIEW",
@@ -167,7 +174,7 @@ def write_review(
             "white": "white_RGB8_VIEW",
             "alpha": "alpha8_VIEW",
         }
-        if background16 is not None:
+        if show_result:
             names["result"] = "result_RGB8_VIEW"
         panels = {label: native_panels[name] for name, label in names.items()}
         files = {}
@@ -199,7 +206,7 @@ def write_review(
         "revision": revision,
         "label": "RGB8/alpha8 viewing approximations; native pixels, no resize; inspect saved RGB16/alpha16 separately",
         "panel_order": ["source", "black", "gray", "white", "alpha"]
-        + (["result"] if background16 is not None else []),
+        + (["result"] if show_result else []),
         "crops": records,
         "visual_review": "human photographic review pending",
     }
@@ -231,15 +238,14 @@ def write_revision_overview(
     label_rows: bool = False,
     height_limit: int = 1600,
     row_label: str = "Comparison",
+    mist: MistOperands | None = None,
+    align_result: bool = False,
 ) -> dict[str, Any]:
     """One reduced JPEG per revision; native inspection stays in explicit reviews/."""
     from .ingest import srgb_profile
 
     height, width = alpha16.shape
     boxes = [coordinates(c, width, height, box=True) for c in (crops or [[0, 0, width, height]])]
-    selected = ["source", "black", "gray", "white", "alpha"] + (
-        ["result"] if background16 is not None else []
-    )
     preview = directory.parent / "preview.jpg"
     previous = directory.parent / "review/manifest.json"
     old_record = (
@@ -247,6 +253,11 @@ def write_revision_overview(
         if directory.name == "review-before" and previous.exists()
         else None
     )
+    selected = ["source", "black", "gray", "white", "alpha"]
+    if separate_result_panel(background16 is not None, mist) or (
+        align_result and old_record is not None and "result" in old_record["panel_order"]
+    ):
+        selected.append("result")
     total_rows = len(boxes) + (len(old_record["crops"]) if old_record is not None else 0)
     label_height = 24 if label_rows else 0
     if total_rows * (label_height + 1) > height_limit:
@@ -317,16 +328,22 @@ def write_revision_overview(
             fade_background16=None
             if fade_background16 is None
             else fade_background16[y0:y1, x0:x1],
+            mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
         )
         crop: dict[str, Any] = {"crop_xyxy": [x0, y0, x1, y1]}
         append_row({name: Image.fromarray(pixels[name]) for name in selected}, crop)
         records.append(crop)
     if old_record is not None:
+        old_panels = old_record["panel_order"]
+        if align_result and "result" in selected and "result" not in old_panels:
+            old_record["panel_order"] = [*old_panels, "result"]
         with Image.open(preview) as image:
             for crop in old_record["crops"]:
                 append_row(
                     {
-                        name: image.crop(crop["panel_boxes_xyxy"][name])
+                        name: image.crop(
+                            crop["panel_boxes_xyxy"][name if name in old_panels else "black"]
+                        )
                         for name in old_record["panel_order"]
                     },
                     crop,
@@ -422,6 +439,22 @@ def review_project(
         return _review_project_locked(project, revision=revision, crops=crops)
 
 
+def _native_review_parent(project: Path, manifest: dict[str, Any]) -> dict[str, Any] | None:
+    if manifest["kind"] != "repair":
+        if manifest["kind"] != "effects" or "mist" not in manifest:
+            return None
+        reuse = manifest.get("effects_reuse")
+        request = reuse.get("request") if isinstance(reuse, dict) else None
+        if not isinstance(request, dict) or "mist" not in request:
+            return None
+    parent = read_revision(project, manifest["parent"], manifest["developed_id"])
+    if parent["kind"] == "prepare":
+        from .repair import prepared_parent_layers
+
+        return prepared_parent_layers(project, parent["revision"], manifest["developed_id"])
+    return parent
+
+
 def _review_project_locked(
     project: Path,
     *,
@@ -514,6 +547,12 @@ def _review_project_locked(
         fade_background16=target,
         weight16=weight,
         opacity=opacity,
+        mist=saved_mist(
+            project,
+            saved_asset(project, prefix),
+            revision_manifest,
+            effects_off=base_comparison or effects_stale(revision_manifest),
+        ),
     )
     directory_identities[directory] = directory.lstat()
     filenames = {name for crop in record["crops"] for name in crop["files"].values()}
@@ -641,14 +680,8 @@ def _review_project_locked(
         )
     before_manifest = None
     before_manifest_bytes = None
-    if include_before and revision_manifest["kind"] == "repair":
-        from .repair import prepared_parent_layers
-
-        before_parent = read_revision(project, revision_manifest["parent"], state["developed_id"])
-        if before_parent["kind"] == "prepare":
-            before_parent = prepared_parent_layers(
-                project, before_parent["revision"], state["developed_id"]
-            )
+    before_parent = _native_review_parent(project, revision_manifest) if include_before else None
+    if before_parent is not None:
         before_review = _review_project_locked(
             project,
             revision=before_parent["revision"],
@@ -873,6 +906,7 @@ def render_presentation_preview(
         raise ProjectError("Stale framing preview saved layers")
     weight, opacity = saved_shading(project, revision, alpha, loaded_manifest)
     spatial = saved_spatial_fade(project, revision, alpha, loaded_manifest)
+    directory = saved_asset(project, f"revisions/{revision}")
     series_mode = presentation["mode"] == "match-series"
     if series_mode:
         settings = validate_series_settings(presentation["settings"])
@@ -893,6 +927,7 @@ def render_presentation_preview(
             background_settings=loaded_manifest.get("background", {}).get("settings"),
             background_light_settings=loaded_manifest.get("background_light", {}).get("settings"),
             spatial_fade=spatial,
+            mist=saved_mist(project, directory, loaded_manifest),
         )
         pixels = np.empty((*rgb16.shape[:2], 3), np.uint8)
         for start in range(0, pixels.shape[0], 64):
@@ -910,9 +945,7 @@ def render_presentation_preview(
         margins = validate_margins(
             presentation["margins"], (foreground.shape[1], foreground.shape[0])
         )
-        base_background, background = saved_backgrounds(
-            project, saved_asset(project, f"revisions/{revision}"), loaded_manifest
-        )
+        base_background, background = saved_backgrounds(project, directory, loaded_manifest)
         native = (
             render_black(
                 foreground,
@@ -933,7 +966,10 @@ def render_presentation_preview(
                 fade_background16=base_background,
             )
         )
-        pixels, geometry = framing_preview(native, background, margins)
+        mist = saved_mist(project, directory, loaded_manifest)
+        if mist is not None:
+            blend_mist_into_result(native, mist.density16, mist.clear16, mist.settings)
+        pixels, geometry = framing_preview(native, background, margins, mist=mist)
         settings_record = dict(margins.to_dict())
     else:
         raise ProjectError("Unknown presentation preview mode")
@@ -1230,23 +1266,20 @@ def _comparison_project_locked(
             raise ProjectError("Stale enabled appearance cannot produce a presentation comparison")
     before_revision = None
     manifests = {revision: manifest}
-    if retain_native and manifest["kind"] == "repair":
-        from .repair import prepared_parent_layers
-
-        parent = read_revision(project, manifest["parent"], state["developed_id"])
-        if parent["kind"] == "prepare":
-            parent = prepared_parent_layers(project, parent["revision"], state["developed_id"])
+    parent = _native_review_parent(project, manifest) if retain_native else None
+    if parent is not None:
         before_revision = parent["revision"]
         manifests[before_revision] = parent
         captured[f"revisions/{before_revision}/manifest.json"] = saved_asset(
             project, f"revisions/{before_revision}/manifest.json"
         ).read_bytes()
+    selected_directory = saved_asset(project, f"revisions/{revision}")
+    selected_mist = saved_mist(
+        project, selected_directory, manifest, effects_off=effects_stale(manifest)
+    )
     has_background = not effects_stale(manifest) and (
         "background" in manifest
-        or read_active_background_light(
-            project, saved_asset(project, f"revisions/{revision}"), manifest
-        )
-        is not None
+        or read_active_background_light(project, selected_directory, manifest) is not None
     )
     request = {
         "encoding": "focused-comparison-jpeg-v1",
@@ -1271,7 +1304,7 @@ def _comparison_project_locked(
         "crops": crops,
         "retain_native": retain_native,
         "panel_order": ["source", "black", "gray", "white", "alpha"]
-        + (["result"] if has_background else []),
+        + (["result"] if separate_result_panel(has_background, selected_mist) else []),
         "presentation": presentation,
         "settings_by_revision": {
             name: _comparison_settings(project, name, item) for name, item in manifests.items()
@@ -1382,6 +1415,7 @@ def _comparison_project_locked(
         row_label="BASE comparison - stale appearance OFF"
         if effects_stale(manifest)
         else "Comparison",
+        mist=selected_mist,
     )
     intermediate_directories = {path: path.lstat() for path in (stage, stage / "review")}
     intermediate_files = {

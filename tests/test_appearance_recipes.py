@@ -744,11 +744,13 @@ def test_layout_validates_arcs_when_group_disabled(field, value):
 def test_layout_uniform_conversion_preserves_values_and_inputs():
     recipes = appearance_module()
     native = native_layout()
+    native["target"] = "lit"
     before = copy.deepcopy(native)
     assert recipes.spatial_layout_from_settings(native, (10, 20, 110, 100)) == portable_layout()
     assert native == before
-    proposal = layout_proposal()
+    proposal = layout_proposal(target=dict(target_layout(), target="lit"))
     assert proposal["enabled"] is False
+    assert proposal["target"] == "lit"
     assert proposal["preserve_highlights"] == 0.7
     assert proposal["oval"] == {
         "enabled": False,

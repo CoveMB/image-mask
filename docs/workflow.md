@@ -548,6 +548,20 @@ feature switches off Protected inward shading and retains its saved settings.
 Enabling inward shading switches this feature off. Disabling either does not
 automatically revive the other.
 
+**Fade target** defaults to **Base backdrop**. Choose **Lit backdrop** to let the
+subject fade into the same illumination as the displayed backdrop in Result.
+At full effective fade, the subject matches the backdrop at that point. The fade
+uses the base when Background light is absent, OFF or zero. Black, Gray, White and
+transparent views always use Base backdrop. **Compare Background light OFF**
+removes light from the Result backdrop and the Lit backdrop target. **Compare
+Mist OFF** keeps the selected fade and light. These comparisons use the saved
+native view.
+
+Target edits join the same draft as the shapes. **Apply fade shapes** saves the
+choice. **Disable fade** uses saved settings, and **Cancel / reload saved fade
+shapes** restores the saved form. A transferred fade layout or shape default
+keeps the target project's choice.
+
 ### Oval only
 
 1. Select the working revision and **Canvas authoring mode → Fade shapes**.
@@ -800,8 +814,9 @@ Native Result, crops, saved review and gallery use the saved RGB16 light. **Add
 margins** copies that native Result and extends its displayed backdrop at the edge.
 **Match series** regenerates the base on the output canvas and evaluates the light
 with the same subject-relative transform, including outside the native rectangle.
-Its reduced preview is approximate. Black and transparent deliveries omit the
-visible light while retaining the unlit fade target.
+When **Fade target** is **Lit backdrop**, Match series fades toward that displayed
+output backdrop. Its reduced preview is approximate. Black and transparent
+deliveries use the unlit fade target and omit visible light.
 
 For recovery, request **editable**. Native editable delivery keeps the unlit
 `background_rgb16.tif` separately from `background_light_rgb16.tif` and
@@ -825,6 +840,61 @@ subject RGB by design, with source and alpha recoverable; it cannot restore
 missing or clipped detail or fix a mask. Downstream fade highlight weighting can
 change because exposure precedes fading, and exposure OFF recalculates that
 weighting. Background light never enables exposure automatically.
+
+## Mist
+
+Mist adds a single textured layer over the saved **Result** after the subject and
+backdrop are composited. It works offline. The original capture, saved matte and
+photographic acceptance stay independent. Source, Alpha, Black, Gray and White
+diagnostics keep their existing pixels.
+
+1. Complete the matte and select the current working revision. Use an accepted
+   base or select **Explicitly compare Mist on an unaccepted candidate**.
+2. Select **Mist ON**. Adjust **Density**, **Mist tint** or **Wisp size**. Open
+   **Placement and pattern** for the other controls. Enter the centre in native
+   coordinates or select **Place centre on canvas** and click the image. **Next
+   pattern** advances the seed in the draft and wraps after 4294967295.
+3. Open **Clear mist** and select **Draw Clear mist on canvas**. Use a brush or
+   rectangle. For keyboard entry, set **Inward feather**, enter `x0,y0,x1,y1` in
+   the rectangle field and activate **Add Clear mist rectangle**. Select a shape
+   in **Clear mist shapes** to highlight it or remove it. **Hide Mist outlines**
+   keeps the image visible while hiding the guides.
+4. Select **Apply Mist**. The **Unapplied changes** status marks draft edits.
+   Result shows saved pixels during authoring. Apply saves the visible settings
+   and area even when Mist ON is unchecked.
+5. Use **Compare Mist OFF** to view the selected saved Result with Mist bypassed.
+   **Turn Mist OFF** saves only the enabled switch from the working revision.
+   Both Apply and Turn Mist OFF require the matching complete working view.
+   A historical revision remains available for viewing and comparison.
+
+| Control | First-use setting | Range and units |
+| --- | --- | --- |
+| Mist ON | OFF | One saved layer |
+| Density | 22% | 0–100% peak opacity. The slider moves in 0.1-point steps and the numeric field accepts fractional values. |
+| Mist tint | `#8C9192` | sRGB colour picker or six-digit hex |
+| Wisp size | 22% | 4–60% of the shorter native axis, with a 16 px minimum wavelength |
+| Wisp stretch | 2× | 1–5× along Direction |
+| Direction | 25° | 0° to below 360° clockwise from native X |
+| Centre | Native image midpoint | Continuous native X/Y inside the image rectangle |
+| Radii | 60% of native width and height | Each from 0.5 px to twice the longer native axis |
+| Coverage softness | 72% | 5–100% of the radius feathers inward |
+| Pattern seed | 1 | Whole number from 0 to 4294967295 |
+| Clear mist | Empty | Up to 64 shapes and 8192 brush points total. Brush radius starts at 10 px, capped by the longer native axis, and ranges from 1 px to that axis. Inward feather starts at 0 px and ranges up to that axis. |
+
+A fully cleared point preserves the incoming Result exactly. Saved locks are
+fully clear, including locks on partially transparent or zero-alpha pixels. A stale
+form stays visible. **Rebind pending Mist** keeps its settings and shapes when
+the capture, native dimensions, saved Mist and hard protection match its former
+base. **Reload saved Mist** replaces the pending form with the current saved
+settings and area. [Mist recovery](troubleshooting.md#mist-recovery)
+
+Choose **Include native editable companion** for editable framed delivery or
+**Include complete editable layers at original size** for native delivery.
+**Add margins** copies the native RGB16 rectangle exactly and extends Mist over
+the padded backdrop. **Match series** composes Mist at the output size using the
+projected clearance. Keep both folders for an editable framed handoff. The
+reduced series preview is approximate. Black and transparent variants bypass
+Mist in every mode. [Saved Mist contract](file-contract.md#saved-mist)
 
 ## Add presentation margins
 
@@ -875,7 +945,8 @@ Keep the local project or add `--variant editable` to this same margins command
 for a native editable sibling. The presentation's manifest binds that sibling and
 freezes its margins; the editable operands retain native coordinates.
 
-Margins extend the saved backdrop's edge and corner colours. Wide margins may
+Margins extend the saved backdrop's edge and corner colours. When enabled, Mist
+continues into the margins using its native field and boundary clearance. Wide margins may
 show bands; inspect the resulting composition in a suitable colour-managed viewer.
 The photograph is neither resized nor stretched. Original editing coordinates
 stay native: the presentation merely places their origin at `(left, top)`.
@@ -979,6 +1050,8 @@ editable project, masks, original capture and accepted dependencies independentl
 For an editable handoff, add `--variant editable` to the Match series command or
 select **Include native editable companion**. Keep the native sibling and this
 presentation together; its manifest freezes the chosen settings and byte binding.
+Saved Mist is applied after series composition. The native companion retains both
+Mist maps, the settings and the editable Clear mist shapes.
 Repeating an intact delivery validates its
 actual files and current source/revision authorization before returning without rendering.
 See [preservation and recovery](troubleshooting.md#series-framing-recovery).

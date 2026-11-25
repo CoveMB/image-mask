@@ -1,0 +1,212 @@
+import math
+import subprocess
+import sys
+
+import numpy as np
+import pytest
+
+from blackmask import mist
+from blackmask.project import ProjectError
+
+
+def settings(width=64, height=48, **changes):
+    return {
+        "enabled": True,
+        "density": 0.72,
+        "tint_srgb": "#8c9192",
+        "wisp_size": 0.22,
+        "stretch": 2,
+        "rotation_degrees": 25,
+        "seed": 1,
+        "coverage": {
+            "center_xy": [width / 2, height / 2],
+            "radii_xy": [width, height],
+            "softness": 0.72,
+        },
+        **changes,
+    }
+
+
+def _scalar_density(config, size, x, y, footprint=1):
+    def smooth(value):
+        t = max(0, min(1, value))
+        return t**2 * (3 - 2 * t)
+
+    def fade(t):
+        return 6 * t**5 - 15 * t**4 + 10 * t**3
+
+    def lattice(x, y, octave):
+        modulus = 2**32
+        bits = (
+            (x * 2654435761) ^ (y * 2246822519) ^ config["seed"] ^ ((octave + 1) * 3266489917)
+        ) % modulus
+        bits = ((bits ^ (bits // 65536)) * 2146121005) % modulus
+        bits = ((bits ^ (bits // 32768)) * 2221713035) % modulus
+        return (bits ^ (bits // 65536)) / (modulus - 1)
+
+    coverage = config["coverage"]
+    dx, dy = x - coverage["center_xy"][0], y - coverage["center_xy"][1]
+    angle = math.radians(config["rotation_degrees"])
+    u = dx * math.cos(angle) + dy * math.sin(angle)
+    v = dy * math.cos(angle) - dx * math.sin(angle)
+    radius = math.hypot(u / coverage["radii_xy"][0], v / coverage["radii_xy"][1])
+    field = 0.0
+    for octave, weight in enumerate((4, 2, 1)):
+        wavelength = max(16, min(size) * config["wisp_size"]) / 2**octave
+        tx, ty = u / config["stretch"] / wavelength, v / wavelength
+        ix, iy = math.floor(tx), math.floor(ty)
+        wx, wy = fade(tx - ix), fade(ty - iy)
+        value = sum(
+            lattice(ix + a, iy + b, octave) * (wx if a else 1 - wx) * (wy if b else 1 - wy)
+            for a in (0, 1)
+            for b in (0, 1)
+        )
+        gain = smooth((wavelength / footprint - 2) / 2)
+        field += weight * (0.5 + gain * (value - 0.5)) / 7
+    return round(
+        65535
+        * config["density"]
+        * smooth((1 - radius) / coverage["softness"])
+        * smooth((field - 0.30) / 0.55)
+    )
+
+
+def test_native_and_cropped_density_match_scalar_signed_coordinate_oracle():
+    size = (64, 48)
+    config = mist.validate_mist_settings(settings(*size), *size)
+    points = [(-4.5, 18.5), (4.5, 3.5), (31.5, 23.5), (52.5, 39.5), (100.5, 24.5)]
+    x, y = map(np.asarray, zip(*points, strict=True))
+    for footprint in (1, 5.2):
+        assert mist.sample_mist_density(config, size, x, y, footprint).tolist() == [
+            _scalar_density(config, size, cx, cy, footprint) for cx, cy in points
+        ]
+    native = mist.make_mist_density(config, size)
+    assert native.dtype == np.uint16
+    assert native[y[1:4].astype(int), x[1:4].astype(int)].tolist() == [
+        _scalar_density(config, size, cx, cy) for cx, cy in points[1:4]
+    ]
+    assert _scalar_density(config, size, *points[-1]) == 0
+
+
+def test_density_stays_stable_across_processes_and_varies_with_pattern_controls():
+    size = (128, 96)
+    config = mist.validate_mist_settings(settings(*size), *size)
+    x = np.array([-4.5, 19.5, 39.5, 70.5])
+    y = np.array([37.5, 19.5, 55.5, 70.5])
+    expected = [_scalar_density(config, size, cx, cy) for cx, cy in zip(x, y, strict=True)]
+    assert expected == [15012, 31290, 47073, 39594]
+    assert (
+        mist.make_mist_density(config, size)[y[1:].astype(int), x[1:].astype(int)].tolist()
+        == expected[1:]
+    )
+    script = (
+        "import numpy as np\nfrom blackmask.mist import sample_mist_density\n"
+        f"print(sample_mist_density({config!r}, {size!r}, np.array({x.tolist()!r}), "
+        f"np.array({y.tolist()!r})).tolist())"
+    )
+    assert subprocess.check_output([sys.executable, "-c", script], text=True).strip() == str(
+        expected
+    )
+    for change in (
+        {"seed": 2**32 - 1},
+        {"wisp_size": 0.47},
+        {"stretch": 3.4},
+        {"rotation_degrees": 110},
+    ):
+        varied = mist.validate_mist_settings(dict(config, **change), *size)
+        assert mist.sample_mist_density(varied, size, x, y).tolist() != expected
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"density": True},
+        {"density": float("nan")},
+        {"enabled": 1},
+        {"seed": -1},
+        {"seed": 2**32},
+        {"seed": 1.0},
+        {"stretch": 0.99},
+        {"rotation_degrees": 360},
+        {"wisp_size": 0.61},
+        {"tint_srgb": "#123"},
+        {"extra": 0},
+        {"coverage": {"center_xy": [65, 10], "radii_xy": [30, 30], "softness": 1}},
+        {"coverage": {"center_xy": [2, 10], "radii_xy": [0, 30], "softness": 1}},
+        {"coverage": {"center_xy": [2, 10], "radii_xy": [30, 30], "softness": 0.04}},
+    ],
+)
+def test_closed_settings_reject_invalid_values(change):
+    with pytest.raises(ProjectError):
+        mist.validate_mist_settings(settings(**change), 64, 48)
+
+
+def test_linear_blend_bypasses_off_zero_and_clear_and_tints_both_sides():
+    config = mist.validate_mist_settings(settings(4, 1, tint_srgb="#ffffff"), 4, 1)
+    assert config["tint_srgb"] == "#FFFFFF"
+    incoming = np.array(
+        [[[0, 0, 0], [20000, 5000, 1000], [40000, 20000, 7000], [1, 2, 3]]], np.uint16
+    )
+    density = np.array([[32768, 32768, 40000, 0]], np.uint16)
+    clear = np.array([[0, 32768, 65535, 0]], np.uint16)
+    assert np.array_equal(
+        mist.blend_mist_into_result(incoming.copy(), density, clear, dict(config, enabled=False)),
+        incoming,
+    )
+    assert np.array_equal(
+        mist.blend_mist_into_result(incoming.copy(), density, clear, dict(config, density=0)),
+        incoming,
+    )
+    result = incoming.copy()
+    assert mist.blend_mist_into_result(result, density, clear, config) is result
+    assert result[0, 0].tolist() == [48192] * 3
+    expected = []
+    for channel in incoming[0, 1]:
+        encoded = int(channel) / 65535
+        linear = ((encoded + 0.055) / 1.055) ** 2.4 if encoded > 0.04045 else encoded / 12.92
+        opacity = 32768 * (65535 - 32768) / 65535**2
+        out = linear + opacity * (1 - linear)
+        expected.append(round(65535 * (1.055 * out ** (1 / 2.4) - 0.055)))
+    assert result[0, 1].tolist() == expected
+    np.testing.assert_array_equal(result[:, 2:], incoming[:, 2:])
+
+
+def test_clear_area_feathers_inward_and_unconditionally_protects_saved_values():
+    area = {
+        "regions": [
+            {
+                "id": "clear",
+                "role": "support",
+                "shape": "rectangle",
+                "xyxy": [1, 1, 8, 8],
+                "feather_px": 3,
+            }
+        ],
+        "protection": [],
+    }
+    hard = np.zeros((10, 12), dtype=np.bool_)
+    hard[0, 10] = True
+    clear = mist.make_mist_clear(area, "synthetic", hard)
+    assert clear.dtype == np.uint16
+    assert [clear[3, x] for x in (0, 1, 2, 3, 7, 8)] == [0, 21845, 43690, 65535, 21845, 0]
+    assert clear[0, 10] == 65535
+
+
+def test_clear_area_bounds_are_checked_before_rasterization():
+    stroke = {
+        "id": "clear",
+        "role": "support",
+        "shape": "stroke",
+        "points": [[1, 1]],
+        "radius_px": 1,
+        "feather_px": 1,
+    }
+    with pytest.raises(ProjectError, match="64 shapes"):
+        mist.validate_mist_area({"regions": [stroke] * 65, "protection": []}, "synthetic", 12, 10)
+    with pytest.raises(ProjectError, match="8192 stroke points"):
+        mist.validate_mist_area(
+            {"regions": [dict(stroke, points=[[1, 1]] * 8193)], "protection": []},
+            "synthetic",
+            12,
+            10,
+        )

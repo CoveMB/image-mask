@@ -85,7 +85,9 @@ protected RGB16. [Local texture](docs/workflow.md#local-texture)
 
 **Fade into background** blends subject colour toward the chosen background using
 an editable oval, independently directed arcs, or both. It preserves alpha and
-keeps Shadow fade independent. Local **fade reduction** brushes and rectangles can
+keeps Shadow fade independent. **Fade target** defaults to **Base backdrop**.
+Choose **Lit backdrop** to fade toward the illuminated backdrop in Result.
+Local **fade reduction** brushes and rectangles can
 reduce either effect independently without changing saved areas, protection or alpha. See the [offline walkthrough](docs/workflow.md#fade-into-background)
 for shape controls, saved strength maps, recovery and portable two-folder exports.
 
@@ -98,9 +100,15 @@ Undo controls. See [reuse appearance settings](docs/workflow.md#reuse-appearance
 for privacy, sequential Apply and stale-draft recovery.
 
 **Background light** adds one independent Soft oval or Broad directional gradient
-behind the saved matte. It starts OFF, preserves the foreground and keeps the
-unlit base as the fade target. Native editable exports retain its separate field,
+behind the saved matte. It starts OFF. When enabled, it illuminates the backdrop
+and participates in the opt-in **Lit backdrop** fade target. Native editable
+exports retain its separate field,
 including OFF. See the [light and gentle exposure walkthrough](docs/workflow.md#background-light).
+
+**Mist** adds an optional textured layer across the saved subject and backdrop
+in Result. Feathered Clear mist shapes and saved locks protect detail. Apply or
+compare the saved layer offline. Native editable exports keep the Mist maps and
+settings, and both framing modes support editable delivery. [Mist workflow](docs/workflow.md#mist)
 
 Background appearance saves a tone and broad variation behind the matte. New
 projects start warm near-black (`#120708`, variation 55%); schema-2 recipes without background settings stay
@@ -257,6 +265,7 @@ The skill applies no photo edits.
 | Bounded, editable local fade reduction geometry | `src/blackmask/fade_reduction.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Independent backdrop light field, bindings and B0/B1 composition | `src/blackmask/background_light.py` |
+| Deterministic post-composite Mist, Clear mist and saved operands | `src/blackmask/mist.py` |
 | Shared immutable raster references and role validation | `src/blackmask/assets.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
 | Portable appearance recipes and subject-relative scalar/layout conversion | `src/blackmask/appearance_recipes.py` |

@@ -139,11 +139,19 @@ soft endpoints and overlapping branches; selected, combined and effective saved
 maps explain different parts of the result. Pending outlines do not preview saved
 pixels. A flattened reference cannot establish source-detail preservation.
 
+Use **Fade target → Lit backdrop** when the request calls for fading the subject
+into the displayed illumination. Set it with the same explicit Apply as the
+shapes. The portable layout and scalar settings leave the destination's selection
+in place. Keep the native view, diagnostics and independent OFF comparisons
+available when reviewing the change.
+
 For CLI use, `blackmask run PROJECT --request FILE` accepts the exclusive
 `spatial_fade` effects operation documented in the
 [file contract](file-contract.md#optional-fade-into-background). Supply a complete
-settings snapshot and current identities, never merge arcs by list index. Protection
-is additive and cannot be removed by omitting its file. Rebuild after alpha changes
+settings snapshot and current identities. Include `"target": "lit"` inside
+`spatial_fade` for Lit backdrop. Omit `target` for Base backdrop. Use each arc's
+saved ID. Protection is additive and omission of its file keeps it in place.
+Rebuild after alpha changes
 or explicitly disable; do not silently bypass stale or accepted-base guards. Do not
 change exposure, white balance or other effects to improve this comparison unless
 the user separately requests it. Keep photographic evaluation local, preserve both
@@ -355,10 +363,11 @@ scope and current source/base/draft identities; viewer actions additionally bind
 the raw revision manifest. Do not enable Local exposure automatically.
 
 Keep the base B0 and saved light L16 separate. Light changes the displayed
-backdrop B1, while foreground contribution and the B0 fade target remain unchanged.
-Protected partial-alpha composites can change without changing protected RGB or
-alpha. Compare saved light OFF, with authoring marks hidden, before presenting a
-result for human acceptance. Lower brightness if the backdrop clips.
+backdrop B1. The default fade uses B0. An explicit Lit backdrop fade uses B1 for
+Result and falls back to B0 when light is OFF. Protected partial-alpha composites
+can show the illuminated backdrop through their saved alpha. Compare saved light
+OFF with authoring marks hidden before presenting a result for human acceptance.
+Lower brightness if the backdrop clips.
 
 Turn OFF from validated saved settings, retaining pending edits and exact L16;
 Apply explicitly saves visible settings even OFF. Preserve unrelated base,
@@ -367,6 +376,23 @@ not a portable appearance-recipe section. For final assisted deliveries request
 editable and retain the native companion for margins/series; native replay uses
 saved fields, while series analytically evaluates light through its saved transform.
 Human photographic acceptance remains separate from completed processing.
+
+## Explicit Mist
+
+Use Mist for an explicitly requested atmosphere across the saved subject and
+backdrop. Apply or disable it with the exclusive schema-2 effects request and
+current source, base and draft identities. Preserve saved hard protection and
+author any additional Clear mist as native typed support shapes. Apply while
+OFF saves the visible settings and shapes. Saved-only Disable keeps both maps
+and pending authoring independent. [Mist workflow](workflow.md#mist),
+[Mist request and operands](file-contract.md#saved-mist)
+
+Compare the saved revision's Result and **Compare Mist OFF** at matching
+coordinates. Disable guides for the appearance comparison. Existing global BASE
+comparisons bypass Mist. Use editable for the final delivery and retain both
+folders for either framing mode. Mist remains source-bound. Appearance recipes
+continue to use their supported portable settings. Human photographic acceptance
+follows inspection of the actual Result.
 
 ## Presentation framing
 

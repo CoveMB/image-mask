@@ -872,6 +872,7 @@ def test_native_consumers_keep_unlit_spatial_target_and_independent_light(tmp_pa
     np.testing.assert_array_equal(actual, wanted)
 
 
+@pytest.mark.parametrize("target", ["base", "lit"])
 @pytest.mark.parametrize("kind", ["oval", "directional"])
 @pytest.mark.parametrize(
     "shape,output,display,margin",
@@ -884,8 +885,8 @@ def test_native_consumers_keep_unlit_spatial_target_and_independent_light(tmp_pa
         ((8, 1), (15, 13), (7, 9), 150),
     ],
 )
-def test_series_light_uses_native_half_centres_and_unlit_target(
-    kind, shape, output, display, margin
+def test_series_light_uses_native_half_centres_and_saved_target(
+    kind, shape, output, display, margin, target
 ):
     from test_background import scalar_background
     from test_series_framing import scalar_background_blend, scalar_sample
@@ -902,6 +903,8 @@ def test_series_light_uses_native_half_centres_and_unlit_target(
     alpha.flat[0], alpha.flat[-1] = 1, 65535
     foreground = (np.arange(alpha.size * 3).reshape((*shape, 3)) * 293 + 17001).astype(np.uint16)
     spatial = operands(spatial_settings(shape[1], shape[0]), np.full(shape, 49151, np.uint16))
+    if target == "lit":
+        spatial.record["settings"]["target"] = "lit"
     spatial.protection.flat[1] = True
     sampling = series_sampling_plan(
         compute_series_layout(
@@ -967,8 +970,8 @@ def test_series_light_uses_native_half_centres_and_unlit_target(
             for x in range(a.shape[1]):
                 oy, ox = sampling.y.output_start + y, sampling.x.output_start + x
                 b, lit = int(base[oy, ox, channel]), int(displayed[oy, ox, channel])
-                for target, result in ((b, expected), (lit, wrong_target)):
-                    faded = scalar_background_blend(straight[y, x], target, ratio[y, x])
+                for background_target, result in ((b, expected), (lit, wrong_target)):
+                    faded = scalar_background_blend(straight[y, x], background_target, ratio[y, x])
                     contribution = p[y, x] if ratio[y, x] == 0 else faded * a[y, x]
                     result[oy, ox, channel] = round(contribution + lit * (1 - a[y, x]))
     assert np.any(expected != wrong_target), (
@@ -996,7 +999,10 @@ def test_series_light_uses_native_half_centres_and_unlit_target(
         background_light_settings=light,
     )
     np.testing.assert_allclose(
-        actual.astype(int), expected.astype(int), atol=0 if sampling.identity else 2, rtol=0
+        actual.astype(int),
+        (wrong_target if target == "lit" else expected).astype(int),
+        atol=0 if sampling.identity else 2,
+        rtol=0,
     )
     for diagnostic in ({"black_background": True}, {"transparent": True}):
         baseline = render_series(
