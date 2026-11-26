@@ -27,6 +27,114 @@ def settings(width=64, height=48, **changes):
     }
 
 
+def vapor_settings(width=64, height=48, **changes):
+    return {
+        "style": "vapor",
+        "enabled": True,
+        "density": 1.0,
+        "tint_srgb": "#3C403E",
+        "focus_xy": [width * 0.53, height * 0.405],
+        "rotation_degrees": 55,
+        "seed": 1,
+        **changes,
+    }
+
+
+def test_vapor_can_subdue_a_petal_and_lift_the_backdrop_around_clear_detail():
+    width, height = 272, 361
+    config = mist.validate_mist_settings(vapor_settings(width, height), width, height)
+    density = mist.make_mist_density(config, (width, height))
+    assert density.dtype == np.uint16
+    assert not density[142:152, 139:149].any()
+    bank = density[253:267, 205:219]
+    assert bank.mean() > 0.55 * 65535
+    assert bank.mean() > 2 * density[51:65, 141:155].mean()
+    assert density[345:, 258:].max() < 0.06 * 65535
+    assert np.ptp(bank) > 0
+    y, x = np.mgrid[253:267, 205:219]
+    np.testing.assert_array_equal(
+        mist.sample_mist_density(config, (width, height), x + 0.5, y + 0.5), bank
+    )
+    midpoint = mist.make_mist_density(dict(config, density=0.5), (width, height))
+    assert np.max(np.abs(midpoint.astype(float) * 2 - density)) <= 1
+    assert not mist.make_mist_density(dict(config, density=0), (width, height)).any()
+
+    backdrop, gold = np.array([[11, 12, 12], [203, 145, 12]], dtype=np.uint16) * 257
+    incoming = np.array([[backdrop, gold, gold, gold]])
+    density_row = np.array([[bank[0, 0], bank[0, 0], bank[0, 0], density[147, 144]]])
+    clear = np.array([[0, 0, 65535, 0]], dtype=np.uint16)
+    result = mist.blend_mist_into_result(incoming.copy(), density_row, clear, config)
+    assert result[0, 0, 0] > backdrop[0]
+    assert result[0, 1, 0] < gold[0]
+    np.testing.assert_array_equal(result[0, 2:], incoming[0, 2:])
+
+
+@pytest.mark.parametrize(
+    ("footprint", "expected"),
+    [
+        (1, [0, 61061, 19452, 7822, 0, 60122, 14295]),
+        (29.25, [0, 57871, 18554, 7851, 0, 57923, 13740]),
+    ],
+)
+def test_vapor_v1_native_and_minified_samples_match_scalar_reference(footprint, expected):
+    size = (272, 361)
+    config = mist.validate_mist_settings(vapor_settings(*size), *size)
+    # Independently evaluated v1 field at focus, bank, plume, faded edges and
+    # two points outside the capture as sampled by framed export.
+    x = np.array([144.5, 210.5, 144.5, 16.5, 259.5, 275.5, -1.5])
+    y = np.array([146.5, 271.5, 54.5, 210.5, 345.5, 260.5, 92.5])
+    np.testing.assert_array_equal(mist.sample_mist_density(config, size, x, y, footprint), expected)
+
+
+@pytest.mark.parametrize(
+    ("footprint", "expected"),
+    [
+        (1, [0, 25204, 9925, 0, 1642, 778, 1677, 33211, 6200]),
+        (13.25, [0, 25911, 12871, 0, 1037, 4528, 1279, 28289, 5678]),
+    ],
+)
+def test_wispy_vapor_pins_native_and_framed_density(footprint, expected):
+    size = (272, 361)
+    config = mist.validate_mist_settings(
+        vapor_settings(*size, pattern_version=2, rotation_degrees=78.5, seed=14), *size
+    )
+    x = np.array([144.5, 210.5, 144.5, 16.5, 259.5, 275.5, -1.5, 162.5, 195.5])
+    y = np.array([146.5, 271.5, 54.5, 210.5, 345.5, 260.5, 92.5, 285.5, 306.5])
+    np.testing.assert_array_equal(mist.sample_mist_density(config, size, x, y, footprint), expected)
+
+
+def test_vapor_bank_rotates_about_an_off_center_focus():
+    portrait = vapor_settings(80, 160, focus_xy=[6, 110], rotation_degrees=0)
+    landscape = dict(portrait, focus_xy=[50, 6], rotation_degrees=90)
+    x = np.array([10.5, 35.5, 45.5, 57.5])
+    y = np.array([112.5, 119.5, 128.5, 131.5])
+    expected = mist.sample_mist_density(portrait, (80, 160), x, y)
+    assert expected[0] == 0 and np.count_nonzero(expected) >= 2
+    np.testing.assert_array_equal(
+        mist.sample_mist_density(landscape, (160, 80), 160 - y, x), expected
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"style": "unknown"},
+        {"focus_xy": [65, 12]},
+        {"focus_xy": [True, 12]},
+        {"focus_xy": [0, float("nan")]},
+        {"coverage": {}},
+        {"seed": True},
+        {"pattern_version": 1},
+        {"pattern_version": 2.0},
+        {"pattern_version": True},
+        {"pattern_version": 3},
+    ],
+)
+def test_vapor_settings_are_closed_even_when_disabled(changes):
+    with pytest.raises(ProjectError):
+        mist.validate_mist_settings(vapor_settings(enabled=False, **changes), 64, 48)
+
+
 def _scalar_density(config, size, x, y, footprint=1):
     def smooth(value):
         t = max(0, min(1, value))

@@ -443,6 +443,8 @@ def _check_flat_delivery(directory: Path, names: set[str]) -> None:
 EXPORT_VERSION = "requested-result-v5"
 MIST_EXPORT_VERSION = "requested-result-v6"
 LIT_FADE_EXPORT_VERSION = "requested-result-v7"
+VAPOR_EXPORT_VERSION = "requested-result-v8"
+WISPY_VAPOR_EXPORT_VERSION = "requested-result-v9"
 
 
 def _delivery_effect_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -592,6 +594,10 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         text += "Saved compositing: " + record["result_compositing"] + "\n"
     if "mist" in record:
         text += "Mist applies once to Result after foreground and backdrop composition. Black and transparent views bypass Mist.\n"
+        if record["export_version"] == VAPOR_EXPORT_VERSION:
+            text += "Vapor replay requires support for linear-srgb-vapor-v1.\n"
+        if record["export_version"] == WISPY_VAPOR_EXPORT_VERSION:
+            text += "Vapor replay requires support for linear-srgb-vapor-v2.\n"
         if mode == "native" and "editable" in record["requested_variants"]:
             text += (
                 "Keep mist_density16.png, mist_clear16.png, mist_settings.json and mist_area.json, including with Mist OFF. "
@@ -1230,9 +1236,15 @@ def _delivery_request_record(
                     " and Shadow fade", ", Local texture and Shadow fade"
                 )
     if "mist" in manifest:
+        from .mist import VAPOR_ALGORITHM, WISPY_VAPOR_ALGORITHM
+
         mist = manifest["mist"]
-        record["export_version"] = MIST_EXPORT_VERSION
-        record["encoding"]["version"] = MIST_EXPORT_VERSION
+        version = {
+            VAPOR_ALGORITHM: VAPOR_EXPORT_VERSION,
+            WISPY_VAPOR_ALGORITHM: WISPY_VAPOR_EXPORT_VERSION,
+        }.get(mist["algorithm"], MIST_EXPORT_VERSION)
+        record["export_version"] = version
+        record["encoding"]["version"] = version
         record["mist"] = mist
         record["effects"]["mist"] = {
             "enabled": mist["settings"]["enabled"],
@@ -1242,7 +1254,10 @@ def _delivery_request_record(
             record["result_compositing"] += (
                 ". Apply the saved linear-sRGB Mist layer to this pre-Mist Result."
             )
-    if lit_fade_target:
+    if lit_fade_target and record["export_version"] not in (
+        VAPOR_EXPORT_VERSION,
+        WISPY_VAPOR_EXPORT_VERSION,
+    ):
         record["export_version"] = LIT_FADE_EXPORT_VERSION
         record["encoding"]["version"] = LIT_FADE_EXPORT_VERSION
     record["identity_sha256"] = digest(_json_bytes(record))

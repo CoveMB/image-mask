@@ -532,22 +532,25 @@
       </fieldset>
       <fieldset id="mistControls">
         <legend>Mist</legend>
+        <label>Style <select id="mistStyle"><option value="mist">Mist</option><option value="vapor">Vapor</option></select></label>
         <label><input id="mistEnabled" type="checkbox" /> Mist ON</label>
-        <label>Density (%) <input id="mistDensityRange" type="range" min="0" max="100" step="0.1" value="22" /></label>
-        <label>Density (numeric %) <input id="mistDensity" type="number" min="0" max="100" step="any" value="22" /></label>
-        <label>Mist tint <input id="mistColor" type="color" value="#8c9192" /></label>
-        <label>Mist tint #RRGGBB <input id="mistHex" type="text" maxlength="7" value="#8C9192" /></label>
-        <label>Wisp size (% of shorter side) <input id="mistSize" type="number" min="4" max="60" step="any" value="22" /></label>
+        <label><span id="mistDensityRangeLabel">Density (%)</span> <input id="mistDensityRange" type="range" min="0" max="100" step="0.1" value="22" /></label>
+        <label><span id="mistDensityLabel">Density (numeric %)</span> <input id="mistDensity" type="number" min="0" max="100" step="any" value="22" /></label>
+        <label><span id="mistCenterXLabel">Centre X (native pixels)</span> <input id="mistCenterX" type="number" min="0" step="any" /></label>
+        <label><span id="mistCenterYLabel">Centre Y (native pixels)</span> <input id="mistCenterY" type="number" min="0" step="any" /></label>
+        <button id="mistPlaceCentre">Place centre on canvas</button>
         <details>
-          <summary>Placement and pattern</summary>
-          <label>Centre X (native pixels) <input id="mistCenterX" type="number" min="0" step="any" /></label>
-          <label>Centre Y (native pixels) <input id="mistCenterY" type="number" min="0" step="any" /></label>
-          <button id="mistPlaceCentre">Place centre on canvas</button>
-          <label>Radius along direction (native pixels) <input id="mistRadiusX" type="number" min="0.5" step="any" /></label>
-          <label>Radius across direction (native pixels) <input id="mistRadiusY" type="number" min="0.5" step="any" /></label>
-          <label>Coverage softness (%) <input id="mistSoftness" type="number" min="5" max="100" step="any" value="72" /></label>
-          <label>Wisp stretch (×) <input id="mistStretch" type="number" min="1" max="5" step="any" value="2" /></label>
-          <label>Direction (clockwise degrees, 0 to below 360) <input id="mistRotation" type="number" min="0" step="any" value="25" /></label>
+          <summary>Pattern and tint</summary>
+          <label>Mist tint <input id="mistColor" type="color" value="#8c9192" /></label>
+          <label>Mist tint #RRGGBB <input id="mistHex" type="text" maxlength="7" value="#8C9192" /></label>
+          <div id="mistCoverageFields">
+            <label>Wisp size (% of shorter side) <input id="mistSize" type="number" min="4" max="60" step="any" value="22" /></label>
+            <label>Radius along direction (native pixels) <input id="mistRadiusX" type="number" min="0.5" step="any" /></label>
+            <label>Radius across direction (native pixels) <input id="mistRadiusY" type="number" min="0.5" step="any" /></label>
+            <label>Coverage softness (%) <input id="mistSoftness" type="number" min="5" max="100" step="any" value="72" /></label>
+            <label>Wisp stretch (×) <input id="mistStretch" type="number" min="1" max="5" step="any" value="2" /></label>
+          </div>
+          <label><span id="mistRotationLabel">Direction (clockwise degrees, 0 to below 360)</span> <input id="mistRotation" type="number" min="0" step="any" value="25" /></label>
           <label>Pattern seed <input id="mistSeed" type="number" min="0" max="4294967295" step="1" value="1" /></label>
           <button id="mistNextPattern">Next pattern</button>
         </details>
@@ -3126,36 +3129,69 @@
     }
     function mistFormSettings() {
       const [width, height] = state.dimensions_wh, limit = 2 * Math.max(width, height);
+      const vapor = $("mistStyle").value === "vapor";
       const tint = $("mistHex").value.trim().toUpperCase();
       if (!/^#[0-9A-F]{6}$/.test(tint)) throw Error("Use a Mist tint in #RRGGBB format");
-      return {enabled: $("mistEnabled").checked, tint_srgb: tint,
-        density: mistNumber("mistDensity", "Density (%)", 0, 100, {percent: true}),
-        wisp_size: mistNumber("mistSize", "Wisp size (%)", 4, 60, {percent: true}),
-        stretch: mistNumber("mistStretch", "Wisp stretch", 1, 5),
+      const positionLabel = vapor ? "Clear focus" : "Centre";
+      const point = [mistNumber("mistCenterX", positionLabel + " X", 0, width),
+        mistNumber("mistCenterY", positionLabel + " Y", 0, height)];
+      const common = {enabled: $("mistEnabled").checked, tint_srgb: tint,
+        density: mistNumber("mistDensity", vapor ? "Strength (%)" : "Density (%)", 0, 100, {percent: true}),
         rotation_degrees: mistNumber("mistRotation", "Direction", 0, 360, {exclusiveMax: true}),
         seed: mistNumber("mistSeed", "Pattern seed", 0, 4294967295, {whole: true}),
+      };
+      if (vapor) return {...common, style: "vapor", pattern_version: 2, focus_xy: point};
+      return {...common,
+        wisp_size: mistNumber("mistSize", "Wisp size (%)", 4, 60, {percent: true}),
+        stretch: mistNumber("mistStretch", "Wisp stretch", 1, 5),
         coverage: {
-          center_xy: [mistNumber("mistCenterX", "Centre X", 0, width), mistNumber("mistCenterY", "Centre Y", 0, height)],
+          center_xy: point,
           radii_xy: [mistNumber("mistRadiusX", "Radius along direction", .5, limit), mistNumber("mistRadiusY", "Radius across direction", .5, limit)],
           softness: mistNumber("mistSoftness", "Coverage softness (%)", 5, 100, {percent: true}),
         }};
     }
+    function defaultMistSettings(style, width, height) {
+      if (style === "vapor") return {style, enabled: false, density: .74, tint_srgb: "#414849",
+        rotation_degrees: 55, seed: 14, focus_xy: [width / 2, height / 2]};
+      return {enabled: false, density: .22, tint_srgb: "#8C9192", wisp_size: .22, stretch: 2,
+        rotation_degrees: 25, seed: 1, coverage: {center_xy: [width / 2, height / 2],
+          radii_xy: [width * .6, height * .6], softness: .72}};
+    }
+    function setMistStyleFields(settings) {
+      const [width, height] = state.dimensions_wh;
+      const [centerX, centerY] = settings.focus_xy ?? settings.coverage.center_xy;
+      const [radiusX, radiusY] = settings.coverage?.radii_xy ?? [width * .6, height * .6];
+      const density = backgroundPercentage(settings.density);
+      for (const [id, value] of Object.entries({mistDensity: density, mistDensityRange: density,
+        mistHex: settings.tint_srgb, mistColor: settings.tint_srgb.toLowerCase(),
+        mistSize: backgroundPercentage(settings.wisp_size ?? .22), mistCenterX: centerX, mistCenterY: centerY,
+        mistRadiusX: radiusX, mistRadiusY: radiusY, mistSoftness: backgroundPercentage(settings.coverage?.softness ?? .72),
+        mistStretch: settings.stretch ?? 2, mistRotation: settings.rotation_degrees, mistSeed: settings.seed})) $(id).value = String(value);
+    }
+    function showMistStyle() {
+      const vapor = $("mistStyle").value === "vapor";
+      const densityLabel = vapor ? "Strength" : "Density";
+      const pointLabel = vapor ? "Clear focus" : "Centre";
+      $("mistDensityRangeLabel").textContent = densityLabel + " (%)";
+      $("mistDensityLabel").textContent = densityLabel + " (numeric %)";
+      $("mistCenterXLabel").textContent = pointLabel + " X (native pixels)";
+      $("mistCenterYLabel").textContent = pointLabel + " Y (native pixels)";
+      $("mistPlaceCentre").textContent = vapor ? "Place clear focus on canvas" : "Place centre on canvas";
+      $("mistRotationLabel").textContent = (vapor ? "Bank direction" : "Direction") + " (clockwise degrees, 0 to below 360)";
+      $("mistCoverageFields").hidden = vapor;
+    }
     function loadSavedMist(current) {
       const [width, height] = state.dimensions_wh, axis = Math.max(width, height);
-      const settings = current?.mist?.settings || {enabled: false, density: .22, tint_srgb: "#8C9192",
-        wisp_size: .22, stretch: 2, rotation_degrees: 25, seed: 1,
-        coverage: {center_xy: [width / 2, height / 2], radii_xy: [width * .6, height * .6], softness: .72}};
-      mistDraft = {base: mistBinding(current), area: structuredClone(current?.mist_area || {regions: [], protection: []}), dirty: false};
+      const settings = current?.mist?.settings || defaultMistSettings("mist", width, height);
+      const style = settings.style ?? "mist";
+      mistDraft = {base: mistBinding(current), area: structuredClone(current?.mist_area || {regions: [], protection: []}),
+        style, styleForms: {}, dirty: false};
       mistVersion++;
+      $("mistStyle").value = style;
       $("mistEnabled").checked = settings.enabled;
       $("mistCandidate").checked = false;
-      $("mistColor").value = settings.tint_srgb.toLowerCase();
-      const {center_xy: [centerX, centerY], radii_xy: [radiusX, radiusY], softness} = settings.coverage;
-      const density = backgroundPercentage(settings.density);
-      for (const [id, value] of Object.entries({mistDensity: density, mistDensityRange: density, mistHex: settings.tint_srgb,
-        mistSize: backgroundPercentage(settings.wisp_size), mistCenterX: centerX, mistCenterY: centerY,
-        mistRadiusX: radiusX, mistRadiusY: radiusY, mistSoftness: backgroundPercentage(softness),
-        mistStretch: settings.stretch, mistRotation: settings.rotation_degrees, mistSeed: settings.seed})) $(id).value = String(value);
+      setMistStyleFields(settings);
+      showMistStyle();
       for (const [id, value] of Object.entries({mistCenterX: width, mistCenterY: height, mistRadiusX: 2 * axis, mistRadiusY: 2 * axis,
         mistRadius: axis, mistFeather: axis})) $(id).max = String(value);
       if (Number($("mistRadius").value) > axis) $("mistRadius").value = String(axis);
@@ -3167,7 +3203,7 @@
       const matching = !!mistViewReady(current), writable = matching && !authoringBusy();
       const target = mistBinding(current), stale = mistDraftStale(target);
       const rebind = stale && mistCanRebind(mistDraft.base, target), sameSource = mistSameSource(mistDraft.base, target);
-      for (const id of [...mistSettingsIds, "mistNextPattern", "mistShape", "mistRadius", "mistFeather", "mistRectangle",
+      for (const id of [...mistSettingsIds, "mistStyle", "mistNextPattern", "mistShape", "mistRadius", "mistFeather", "mistRectangle",
         "mistAddRectangle", "mistRemove", "mistPlaceCentre", "mistDrawClear"]) $(id).disabled = !writable || !sameSource;
       $("mistCandidate").disabled = !writable || current?.revision === state.accepted_revision;
       $("mistApply").disabled = !writable || stale || current?.revision !== state.accepted_revision && !$("mistCandidate").checked;
@@ -3238,17 +3274,34 @@
       if ($("authorMode").value !== "mist-placement" || $("mistHide").checked || !mistViewReady(workingMistRevision())) return;
       let settings;
       try { settings = mistFormSettings(); } catch { return; }
-      const {center_xy: [x, y], radii_xy: [rx, ry], softness} = settings.coverage;
-      const angle = settings.rotation_degrees * Math.PI / 180;
+      const [x, y] = settings.focus_xy ?? settings.coverage.center_xy;
       ctx.save(); ctx.beginPath(); ctx.rect(0, 0, image.width, image.height); ctx.clip();
       ctx.strokeStyle = "#ffcb72"; ctx.lineWidth = 2 / scale;
-      for (const size of [1, 1 - softness]) if (size > 0) {
-        ctx.beginPath(); ctx.ellipse(x - crop[0], y - crop[1], rx * size, ry * size, angle, 0, 2 * Math.PI); ctx.stroke();
+      if (settings.coverage) {
+        const {radii_xy: [rx, ry], softness} = settings.coverage;
+        const angle = settings.rotation_degrees * Math.PI / 180;
+        for (const size of [1, 1 - softness]) if (size > 0) {
+          ctx.beginPath(); ctx.ellipse(x - crop[0], y - crop[1], rx * size, ry * size, angle, 0, 2 * Math.PI); ctx.stroke();
+        }
       }
       ctx.beginPath(); ctx.arc(x - crop[0], y - crop[1], 3 / scale, 0, 2 * Math.PI); ctx.stroke();
       ctx.restore();
     }
     for (const id of mistSettingsIds) $(id).oninput = markMistDirty;
+    $("mistStyle").onchange = guarded(() => {
+      const style = $("mistStyle").value;
+      const fields = mistSettingsIds.filter(id => id !== "mistEnabled");
+      mistDraft.styleForms[mistDraft.style] = Object.fromEntries(fields.map(id => [id, $(id).value]));
+      const prior = mistDraft.styleForms[style];
+      if (prior) {
+        for (const id of fields) $(id).value = prior[id];
+      } else {
+        setMistStyleFields(defaultMistSettings(style, ...state.dimensions_wh));
+      }
+      mistDraft.style = style;
+      showMistStyle();
+      markMistDirty();
+    });
     for (const [from, to] of [["mistDensity", "mistDensityRange"], ["mistDensityRange", "mistDensity"]]) {
       $(from).oninput = () => { $(to).value = $(from).value; markMistDirty(); };
     }

@@ -1,3 +1,4 @@
+import json
 import tomllib
 from unittest.mock import patch
 
@@ -8,7 +9,7 @@ from PIL import Image
 from test_effects import fixture_project
 from test_ingest import bind_raster
 from test_matte_operations import run_matte
-from test_mist import settings
+from test_mist import settings, vapor_settings
 from test_operations import edits, request
 
 from blackmask import operations
@@ -42,6 +43,70 @@ def mist_request(project, *, config=None, area=FEATHERED_AREA, disable=False, ca
         if disable
         else {"action": "apply", "settings": config or settings(6, 4), "clear_area": area},
     )
+
+
+def test_vapor_round_trip_and_style_switch_preserve_base(tmp_path):
+    project, _, base = fixture_project(tmp_path)
+    developed_id = base["developed_id"]
+    vapor = vapor_settings(6, 4)
+    operation = mist_request(project, config=vapor, area=EMPTY_AREA)
+    applied = operations.apply_operation(project, operation)
+    assert applied["mist"]["algorithm"] == "linear-srgb-vapor-v1"
+    assert operations.apply_operation(
+        project, mist_request(project, config=vapor, area=EMPTY_AREA)
+    )["reused"]
+    with pytest.raises(ProjectError, match="[Ss]tale"):
+        operations.apply_operation(project, operation)
+    disabled = operations.apply_operation(project, mist_request(project, disable=True))
+    assert disabled["mist"]["algorithm"] == applied["mist"]["algorithm"]
+    assert disabled["mist"]["density_sha256"] == applied["mist"]["density_sha256"]
+    np.testing.assert_array_equal(
+        render_saved_result(project, disabled["revision"], developed_id),
+        render_saved_result(project, base["revision"], developed_id),
+    )
+    original = operations.apply_operation(project, mist_request(project))
+    assert original["mist"]["algorithm"] == "linear-srgb-mist-v1"
+    operations.restore_revision(project, applied["revision"])
+    state = read_project(project)
+    restored = read_revision(project, state["working_revision"], developed_id)
+    assert restored["mist"] == applied["mist"]
+    assert state["accepted_revision"] == base["revision"]
+    base_manifest = read_revision(project, base["revision"], developed_id)
+    for name in ("foreground_rgb16.tif", "base_alpha16.png"):
+        assert revision_hashes(restored)[name] == revision_hashes(base_manifest)[name]
+
+
+def test_vapor_rejects_a_mist_algorithm_binding_even_when_disabled(tmp_path):
+    project, _, _ = fixture_project(tmp_path)
+    applied = operations.apply_operation(
+        project, mist_request(project, config=vapor_settings(6, 4, enabled=False))
+    )
+    path = project / "revisions" / applied["revision"] / "manifest.json"
+    manifest = json.loads(path.read_bytes())
+    manifest["mist"]["algorithm"] = "linear-srgb-mist-v1"
+    path.write_bytes(_json_bytes(manifest))
+    with pytest.raises(ProjectError, match="algorithm"):
+        read_revision(project, applied["revision"], applied["developed_id"])
+
+
+def test_wispy_vapor_can_replace_and_restore_a_legacy_vapor_revision(tmp_path):
+    project, _, base = fixture_project(tmp_path)
+    config = vapor_settings(6, 4)
+    legacy = operations.apply_operation(project, mist_request(project, config=config))
+    legacy_pixels = render_saved_result(project, legacy["revision"], base["developed_id"])
+    request = mist_request(project, config=dict(config, pattern_version=2))
+    updated = operations.apply_operation(project, request)
+    assert updated["mist"]["algorithm"] == "linear-srgb-vapor-v2"
+    assert updated["mist"]["density_sha256"] != legacy["mist"]["density_sha256"]
+    assert updated["mist"]["clear_sha256"] == legacy["mist"]["clear_sha256"]
+    assert operations.apply_operation(
+        project, mist_request(project, config=dict(config, pattern_version=2))
+    )["reused"]
+    operations.restore_revision(project, legacy["revision"])
+    np.testing.assert_array_equal(
+        render_saved_result(project, legacy["revision"], base["developed_id"]), legacy_pixels
+    )
+    assert read_project(project)["accepted_revision"] == base["revision"]
 
 
 def test_apply_repeat_disable_and_pending_cleanup_preserve_accepted_pixels(tmp_path):

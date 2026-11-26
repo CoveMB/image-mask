@@ -1574,6 +1574,14 @@ and height. Each radius is in [0.5, twice the longer native axis]. Numeric
 settings are finite and exclude booleans. Tint normalizes to uppercase `#RRGGBB`.
 Projects without a Mist section can be read and exported without migration.
 
+**Vapor settings.** The alternative closed layout requires `style`
+(`"vapor"`), `enabled`, `density`, `tint_srgb`, `rotation_degrees`, `seed`,
+and `focus_xy`. The common values retain the ranges above. `focus_xy` is a
+pair of finite native pixel-edge coordinates in [0,width] and [0,height].
+The optional `pattern_version` accepts only integer `2`. Its absence selects
+the original Vapor pattern. The viewer writes `2` when applying Vapor. Omit
+`style` and `pattern_version` for the Mist layout.
+
 Use the existing exclusive `blackmask run PROJECT --request REQUEST.json` effects request.
 Here is an Apply example for a 3072 × 4080 complete saved revision. Replace the
 developed ID, draft digest and base with current values.
@@ -1623,8 +1631,26 @@ and half-open rectangles, with the `protection` list empty. Full native scope
 is required. Viewer requests additionally bind the raw revision-manifest
 SHA-256 and authoring digest under the writer lock.
 
+For a Vapor Apply in the same example, replace the entire `settings` object
+with the following and keep `clear_area` and the native request bindings.
+
+```json
+{
+  "style": "vapor",
+  "pattern_version": 2,
+  "enabled": true,
+  "density": 0.74,
+  "tint_srgb": "#414849",
+  "rotation_degrees": 55,
+  "seed": 14,
+  "focus_xy": [1600, 1650]
+}
+```
+
 The revision manifest's `mist` record is closed. It contains `schema_version`
-(1), `algorithm` (`linear-srgb-mist-v1`), `developed_id`, `width`, `height`,
+(1), `algorithm` (`linear-srgb-mist-v1` for Mist, `linear-srgb-vapor-v1`
+for the original Vapor pattern, or `linear-srgb-vapor-v2` for pattern 2),
+`developed_id`, `width`, `height`,
 `settings`, `settings_sha256`, `area_sha256`, `density_sha256`, `clear_sha256`
 and `protection_sha256`. Raster roles `mist/density16.png` and `mist/clear16.png`
 are shared immutable scalar16 PNGs. `mist/settings.json` and `mist/area.json`
@@ -1637,7 +1663,9 @@ A protection change regenerates clear16 from saved Clear mist support and the
 destination protection raster. Alpha and RGB changes alone reuse both maps.
 Restore validates the same bindings and retains acceptance.
 
-Mist-bearing effects use `validated-effects-v9-mist`. An Apply keys on the
+Mist-bearing effects use `validated-effects-v9-mist`,
+`validated-effects-v10-vapor` or `validated-effects-v11-vapor` according to the
+resulting algorithm. An Apply keys on the
 normalized replacement, current protection and the other rendering inputs.
 Disable keys on inherited settings with the enabled flag removed, plus the area
 and map bindings. Unrelated effects bind inherited Mist. Output identities bind
@@ -1667,8 +1695,42 @@ protection. Blend the opaque pre-Mist Result toward the decoded tint in linear
 sRGB at `density16/65535 * (1 - clear16/65535)`, then encode and round to
 RGB16. No Mist, OFF, zero density and zero effective opacity use exact bypasses.
 
+**Original Vapor field.** Rotate native sample-centre offsets about `focus_xy` in the
+same direction as Mist. Divide the rotated coordinates by the shorter native
+axis to get `u,v`. Let `S` be the clamped cubic smoothstep. The primary bank,
+secondary plume and clear focus are shaped as follows.
+
+```text
+bank_radius = hypot((u + .65*v - .50) / .39, (v - .10) / .69)
+plume_radius = hypot((u + .34) / .53, (v - .04) / .58)
+bank = S((1 - bank_radius) / .60)
+plume = S((1 - plume_radius) / .80)
+focus = S((hypot(u,v) - .12) / .17)
+```
+
+Evaluate the same quintic-interpolated lattice at `(u/.55,v/.30)` for octave 0
+and `(u/.26,v/.15)` for octave 1. Multiply each deviation from 0.5 by its
+weight (.7 and .3, respectively) and its footprint taper, then add both to
+0.5 to obtain `texture`. The taper uses the across-axis wavelengths .30
+and .15 times the shorter native axis. Quantize
+`density * (.98*bank + .39*plume*(1-bank)) * (.75+.25*texture) * focus`
+to uint16 using the same rounding as Mist. Vapor uses the same Clear16,
+saved-lock clearance and linear-sRGB blend as Mist.
+
+**Vapor pattern 2.** Let `s` be the shorter native axis and `a` the saved
+clockwise bank direction. Offset the bank centre from `focus_xy` by
+`.24*s*(cos(a),sin(a))`. Evaluate the Mist field about that centre at rotation
+`a - 95°`, elliptical radii `(.83*s,.765*s)`, coverage softness `.72`, wisp
+size `.25` and stretch `3.4`. Use the saved seed and the Mist octave weights,
+thresholds and footprint taper above. Multiply the unquantized field by
+`S((distance_from_focus/s - .12)/.157)` before quantizing to uint16 once.
+The saved Clear mist and hard-lock maps and the blend retain their meanings.
+
 **Replay.** Mist-bearing deliveries use `requested-result-v6` for the top-level
 and encoding versions unless they also save Lit backdrop, which uses v7.
+Original Vapor records use `requested-result-v8`. Vapor pattern 2 uses
+`requested-result-v9`. The Vapor version also applies when OFF or combined with
+Lit backdrop. Each Vapor delivery requires a reader supporting its algorithm.
 Native editable adds `mist_density16.png`,
 `mist_clear16.png`, `mist_settings.json` and `mist_area.json`, including for
 OFF. Rebuild the existing pre-Mist Result from the native editable operands,
@@ -1739,8 +1801,9 @@ disabled or absent shading means effective opacity zero, regardless of retained
 nonzero W/opacity. A missing W means zero. Keep retained editing settings unchanged.
 
 Schema-2 manifests identify `export_version=requested-result-v5`,
-`requested-result-v6` for Mist, or `requested-result-v7` for a saved Lit backdrop
-target. They also identify the selected revision,
+`requested-result-v6` for Mist, `requested-result-v7` for a saved Lit backdrop
+target, `requested-result-v8` for the original Vapor pattern, or
+`requested-result-v9` for Vapor pattern 2. They also identify the selected revision,
 raw source/revision-manifest hashes, effective recipe hash, explicit draft status,
 mode/settings/geometry/algorithm, requested variants, native asset/effect identities,
 actual Python/NumPy/Pillow/tifffile encoding versions and profile digest. The
@@ -1756,8 +1819,9 @@ Version 7 retains the existing member inventory, uses the same version in the
 encoding record and carries the saved spatial fade target. Native editable
 validation and framed companion bindings check the fade settings and its rasters,
 the base backdrop pixels and settings, and the saved light pixels and settings
-against the selected revision when those operands exist. Revisions with the
-Base backdrop setting omitted keep the v5 or v6 identity and notes.
+against the selected revision when those operands exist. Versions 8 and 9 retain
+the inventory and bindings for the selected operands and identify their Vapor
+fields. With Mist or no atmosphere, Base backdrop keeps the v5 or v6 identity and notes.
 Unversioned and v1–v4 files remain preserved at their existing paths; no legacy
 lookup, recreation, migration or rewrite is performed.
 

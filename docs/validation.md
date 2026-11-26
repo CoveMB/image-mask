@@ -1865,6 +1865,43 @@ are tested separately from these physical measurements.
 Photographic evaluation of charcoal mist and feathered detail on a real image
 remains for a separately authorized local copy and human review.
 
+### Vapor style
+
+Synthetic coverage includes fixed scalar v1 samples at native and minified
+footprints, an off-center rotation, a closed request, style switching and
+restore, an invalid disabled algorithm binding, and detached RGB16 replay
+for Native, Add margins and Match series. Editable delivery tests cover Vapor
+OFF, zero strength, Lit backdrop and hard clearance at partial alpha in
+minified Match series. A 1% opacity change in the test process failed both
+fixed-sample cases.
+
+The repository suite reported 2,822 passed, 7 skipped and 5 failures applying
+a nested macOS sandbox. All five passed outside the shell sandbox with their
+own sandbox enabled. The five cases added after suite collection passed in
+focused runs. Ruff lint and formatting, mypy and Git whitespace checks passed.
+
+Headless Chrome on a synthetic local project exercised pointer placement,
+numeric focus entry, Apply, Compare Mist OFF, reopen and native editable draft
+export. Reload disconnected one in-flight image request. The saved settings
+were visible after reload, and the browser-initiated export contained all four
+Mist operands.
+
+A local copy of a real 3072 × 4080 flower project used its existing matte,
+applied Vapor, and exported a native editable draft. Verification matched
+foreground, alpha and hard protection bindings to the base, reproduced the
+exported RGB16 result using the saved Mist operands and confirmed exact incoming
+RGB16 in the sampled focal crop and fully cleared pixels. The demonstration
+also used the base's existing Fade into background. Its haze was smoother and
+the stem easier to see than in the reference. Photographic acceptance remains
+with the photographer.
+
+Vapor pattern 2 adds independently calculated native and minified density
+samples, legacy revision restore, and editable replay for native and both
+framed modes, including with Lit backdrop. In a real-photo comparison, the
+Vapor result retained the exact matte and stem fade maps from the edited Mist
+draft. The sampled focal crop matched in RGB16. The fitted RGB8 previews
+differed by 0.15 code values per channel on average.
+
 ## Lit backdrop fade target
 
 Synthetic fixtures check exact RGB16 convergence to a nonuniform lit backdrop

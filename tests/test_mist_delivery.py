@@ -9,13 +9,18 @@ from PIL import Image
 from test_background_light import scalar_decode, scalar_encode
 from test_effects import fixture_project
 from test_export import mode_arguments
-from test_mist import _scalar_density, settings
+from test_mist import _scalar_density, settings, vapor_settings
 from test_mist_project import FEATHERED_AREA, mist_request
 
 from blackmask import operations
 from blackmask.export import export_project, read_rgb16, render_background
 from blackmask.framing import frame_result, framing_preview, validate_margins
-from blackmask.mist import MistOperands, blend_mist_into_result, make_mist_density
+from blackmask.mist import (
+    MistOperands,
+    blend_mist_into_result,
+    make_mist_density,
+    sample_mist_density,
+)
 from blackmask.project import ProjectError, _json_bytes, digest
 from blackmask.repair import scalar16
 from blackmask.series_framing import (
@@ -28,16 +33,27 @@ from blackmask.series_framing import (
 
 
 @pytest.mark.parametrize(
-    ("mode", "switch"),
+    ("mode", "switch", "style"),
     [
-        ("native", "on"),
-        ("add-margins", "on"),
-        ("match-series", "on"),
-        ("add-margins", "off"),
-        ("match-series", "zero"),
+        ("native", "on", "mist"),
+        ("add-margins", "on", "mist"),
+        ("match-series", "on", "mist"),
+        ("add-margins", "off", "mist"),
+        ("match-series", "zero", "mist"),
+        ("native", "on", "vapor"),
+        ("add-margins", "on", "vapor"),
+        ("match-series", "on", "vapor"),
+        ("add-margins", "off", "vapor"),
+        ("match-series", "zero", "vapor"),
+        ("native", "on", "wispy-vapor"),
+        ("add-margins", "on", "wispy-vapor"),
+        ("match-series", "on", "wispy-vapor"),
+        ("match-series", "off", "wispy-vapor"),
     ],
 )
-def test_editable_mist_replays_without_original_project_and_keeps_variants(tmp_path, mode, switch):
+def test_editable_mist_replays_without_original_project_and_keeps_variants(
+    tmp_path, mode, switch, style
+):
     ramp = np.arange(24, dtype=np.uint16).reshape(4, 6, 1)
     project, _, base = fixture_project(
         tmp_path, ramp * 400 + np.array([36000, 22000, 4000], np.uint16)
@@ -55,7 +71,10 @@ def test_editable_mist_replays_without_original_project_and_keeps_variants(tmp_p
         ],
         "protection": [],
     }
-    config = settings(6, 4, density=0 if switch == "zero" else 0.75, tint_srgb="#8c9192")
+    make_config = settings if style == "mist" else vapor_settings
+    config = make_config(6, 4, density=0 if switch == "zero" else 0.75, tint_srgb="#8c9192")
+    if style == "wispy-vapor":
+        config["pattern_version"] = 2
     applied = operations.apply_operation(project, mist_request(project, area=area, config=config))
     if switch == "off":
         applied = operations.apply_operation(project, mist_request(project, disable=True))
@@ -86,7 +105,12 @@ def test_editable_mist_replays_without_original_project_and_keeps_variants(tmp_p
     record = json.loads((presentation / "manifest.json").read_bytes())
     native_record = json.loads((native / "manifest.json").read_bytes())
     assert record["mist"] == native_record["mist"] == applied["mist"]
-    assert record["export_version"] == record["encoding"]["version"] == "requested-result-v6"
+    version = {
+        "mist": "requested-result-v6",
+        "vapor": "requested-result-v8",
+        "wispy-vapor": "requested-result-v9",
+    }[style]
+    assert record["export_version"] == record["encoding"]["version"] == version
     for name in ("area", "settings", "density", "clear"):
         filename = f"mist_{name}.json" if name in ("area", "settings") else f"mist_{name}16.png"
         assert digest((native / filename).read_bytes()) == record["mist"][name + "_sha256"]
@@ -212,7 +236,10 @@ def test_series_unit_translation_uses_saved_native_maps_inside_capture():
 
 
 @pytest.mark.parametrize("display", [None, (7, 6)])
-def test_minified_series_projects_clearance_beyond_nearest_and_uses_full_pixel_centres(display):
+@pytest.mark.parametrize("style", ["mist", "vapor"])
+def test_minified_series_projects_clearance_beyond_nearest_and_uses_full_pixel_centres(
+    display, style
+):
     size = (100, 100)
     alpha = np.full((100, 100), 17500, np.uint16)
     foreground = np.full((100, 100, 3), [16000, 27000, 55000], np.uint16)
@@ -220,7 +247,11 @@ def test_minified_series_projects_clearance_beyond_nearest_and_uses_full_pixel_c
         compute_series_layout(alpha, SeriesSettings("Small", 12, 11, 0, 0)),
         display_dimensions_wh=display,
     )
-    config = settings(*size, tint_srgb="#ffffff", density=1, seed=501)
+    config = (
+        vapor_settings(*size, tint_srgb="#ffffff", density=1, seed=501, focus_xy=[21, 21])
+        if style == "vapor"
+        else settings(*size, tint_srgb="#ffffff", density=1, seed=501)
+    )
     clear = np.zeros_like(alpha)
     clear[50, 50] = 65535
     density = make_mist_density(config, size)
@@ -238,7 +269,11 @@ def test_minified_series_projects_clearance_beyond_nearest_and_uses_full_pixel_c
         for i in range(width):
             x = (((2 * i + 1) * 12 // (2 * width)) + 0.5 - tx) / scale
             y = (((2 * j + 1) * 11 // (2 * height)) + 0.5 - ty) / scale
-            density_value = _scalar_density(config, size, x, y, footprint)
+            density_value = (
+                int(sample_mist_density(config, size, np.array(x), np.array(y), footprint))
+                if style == "vapor"
+                else _scalar_density(config, size, x, y, footprint)
+            )
             expected = []
             for channel in baseline[j, i]:
                 linear = scalar_decode(int(channel) / 65535)
