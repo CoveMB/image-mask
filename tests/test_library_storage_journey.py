@@ -19,6 +19,7 @@ import pytest
 import tifffile
 from PIL import Image
 from storage_journey_process import filesystem_entries, install_guard, perform, running_process
+from test_background import assert_adjacent_result_codes
 from test_cache_management import inventory
 from test_export import DEFAULT_MEMBERS
 from test_ingest import saved_raster, tiff
@@ -598,7 +599,7 @@ def shade(project, opacity, *, opacity_only=False):
     return result
 
 
-def assert_delivery(directory, size, members=DEFAULT_MEMBERS):
+def assert_delivery(directory, size, members=DEFAULT_MEMBERS, *, backdrop_only=None):
     assert {path.name for path in directory.iterdir()} == members
     with tifffile.TiffFile(directory / "result_rgb16.tif") as image:
         assert image.pages[0].dtype == np.dtype("uint16")
@@ -607,9 +608,12 @@ def assert_delivery(directory, size, members=DEFAULT_MEMBERS):
     assert pixels.shape == (size[1], size[0], 3)
     with Image.open(directory / "result_RGB8_VIEW.png") as image:
         assert image.info["icc_profile"] == srgb_profile()
-        np.testing.assert_array_equal(
-            np.array(image), np.rint(pixels.astype(float) / 257).astype(np.uint8)
-        )
+        view = np.array(image)
+    assert_adjacent_result_codes(view, pixels)
+    if backdrop_only is not None:
+        nearest = np.rint(pixels.astype(float) / 257).astype(np.uint8)
+        np.testing.assert_array_equal(view[~backdrop_only], nearest[~backdrop_only])
+        assert np.any(view[backdrop_only] != nearest[backdrop_only])
     return pixels
 
 
@@ -625,7 +629,9 @@ def assert_editable_native(
         "background_rgb16.tif",
         "background_settings.json",
     }
-    np.testing.assert_array_equal(assert_delivery(directory, (96, 64), members), expected)
+    np.testing.assert_array_equal(
+        assert_delivery(directory, (96, 64), members, backdrop_only=alpha == 0), expected
+    )
     record = json.loads((directory / "manifest.json").read_bytes())
     assert record["mode"] == "native" and record["requested_variants"] == ["editable"]
     assert set(record["files"]) == members - {"manifest.json"}
@@ -861,8 +867,18 @@ def storage_journey(tmp_path):
     default_deliveries = [
         export_project(project, revision=selected, draft=True, **mode) for mode in options
     ]
-    native_pixels = assert_delivery(Path(default_deliveries[0]["directory"]), (96, 64))
-    framed_pixels = assert_delivery(Path(default_deliveries[1]["directory"]), (101, 73))
+    alpha = np.array(
+        Image.open(saved_raster(project / f"revisions/{selected}/base_alpha16.png")),
+        dtype=np.uint16,
+    )
+    native_backdrop = alpha == 0
+    framed_backdrop = np.pad(native_backdrop, ((4, 5), (2, 3)), constant_values=True)
+    native_pixels = assert_delivery(
+        Path(default_deliveries[0]["directory"]), (96, 64), backdrop_only=native_backdrop
+    )
+    framed_pixels = assert_delivery(
+        Path(default_deliveries[1]["directory"]), (101, 73), backdrop_only=framed_backdrop
+    )
     series_pixels = assert_delivery(Path(default_deliveries[2]["directory"]), (137, 181))
     for result in default_deliveries:
         record = json.loads(Path(result["manifest_file"]).read_bytes())
@@ -875,10 +891,6 @@ def storage_journey(tmp_path):
     expected_padding[4:68, 2:98] = native_pixels
     np.testing.assert_array_equal(framed_pixels, expected_padding)
     # Independently evaluate the saved native scalar equation at every pixel/channel.
-    alpha = np.array(
-        Image.open(saved_raster(project / f"revisions/{selected}/base_alpha16.png")),
-        dtype=np.uint16,
-    )
     weight = np.array(
         Image.open(saved_raster(project / f"revisions/{selected}/shadow_weight16.png")),
         dtype=np.uint16,
@@ -919,11 +931,17 @@ def storage_journey(tmp_path):
         json.loads((native_directory / "shading_settings.json").read_bytes())
         == native_record["shading"]
     )
-    for output, size, expected_pixels in zip(
-        deliveries[1:], ((101, 73), (137, 181)), (framed_pixels, series_pixels), strict=True
+    for output, size, expected_pixels, backdrop in zip(
+        deliveries[1:],
+        ((101, 73), (137, 181)),
+        (framed_pixels, series_pixels),
+        (framed_backdrop, None),
+        strict=True,
     ):
         primary = Path(output["directory"])
-        np.testing.assert_array_equal(assert_delivery(primary, size), expected_pixels)
+        np.testing.assert_array_equal(
+            assert_delivery(primary, size, backdrop_only=backdrop), expected_pixels
+        )
         record = json.loads((primary / "manifest.json").read_bytes())
         assert record["requested_variants"] == ["editable"]
         assert record["editable_companion_request"] == {

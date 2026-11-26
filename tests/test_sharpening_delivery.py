@@ -32,6 +32,7 @@ from blackmask.shadow_fade import apply_shadow_fade
 from blackmask.spatial_fade import SpatialFadeOperands
 from blackmask.export import render_background, render_black
 from blackmask.framing import frame_result, validate_margins
+from blackmask.pixel_math import BACKDROP_DITHER_PNG_SUFFIX, result_rgb8
 from blackmask.series_framing import (render_series, compute_series_layout,
                                     series_sampling_plan, validate_series_settings)
 from blackmask.repair import scalar16
@@ -69,16 +70,23 @@ with patch('socket.socket', side_effect=AssertionError('offline')), patch('black
                                rgb, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target)
     np.testing.assert_array_equal(native, tifffile.imread(root/'result_rgb16.tif'))
     record = json.loads((output/'manifest.json').read_text())
+    dither = record['encoding']['png'].endswith(BACKDROP_DITHER_PNG_SUFFIX)
+    backdrop = alpha == 0 if dither else None
     if record['mode'] == 'add-margins':
         native = frame_result(native, background, validate_margins(record['margins'], (6,4)))
+        if dither:
+            x0, y0, x1, y1 = record['source_rect_xyxy']
+            backdrop = np.ones(native.shape[:2], dtype=bool)
+            backdrop[y0:y1, x0:x1] = alpha == 0
     elif record['mode'] == 'match-series':
         plan = series_sampling_plan(compute_series_layout(alpha, validate_series_settings(record['settings'])))
+        backdrop = np.empty(plan.display_dimensions_wh[::-1], dtype=bool) if dither else None
         native = render_series(rgb, alpha, plan, weight16=weight, opacity=opacity,
-                               spatial_fade=spatial,
+                               spatial_fade=spatial, backdrop_only=backdrop,
                                background_settings=json.loads((root/'background_settings.json').read_text()) if background is not None else None)
     np.testing.assert_array_equal(native, tifffile.imread(output/'result_rgb16.tif'))
     with Image.open(output/'result_RGB8_VIEW.png') as image:
-        np.testing.assert_array_equal(np.array(image), np.rint(native.astype(float)/257).astype(np.uint8))
+        np.testing.assert_array_equal(np.array(image), result_rgb8(native, backdrop_only=backdrop))
 print('exported-only replay exact; actual Pillow core verified')
 """
 

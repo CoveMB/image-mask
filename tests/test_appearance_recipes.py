@@ -491,6 +491,30 @@ def test_recipe_uses_selected_saved_revision_not_latest_or_draft(tmp_path, monke
     assert project_inventory(project) == before
 
 
+def test_reference_png_uses_saved_backdrop_only_dither(tmp_path):
+    from test_background import background_request
+    from test_effects import fixture_project
+
+    from blackmask import operations
+    from blackmask.export import render_saved_result, saved_layers
+    from blackmask.pixel_math import result_rgb8
+
+    project, _, _ = fixture_project(tmp_path)
+    result = operations.apply_operation(project, background_request(project, "#070707"))
+    revision, developed = result["revision"], result["developed_id"]
+    _, alpha, _ = saved_layers(project, revision, developed)
+    native = render_saved_result(project, revision, developed)
+    expected = result_rgb8(native, backdrop_only=alpha == 0)
+    plain = result_rgb8(native)
+    assert np.any(expected[alpha == 0] != plain[alpha == 0])
+    payload = json.loads(saved_recipe(project, revision, ["background"], reference=True))
+    raw = base64.b64decode(payload["reference"]["png_base64"])
+    with Image.open(io.BytesIO(raw)) as image:
+        pixels = np.asarray(image)
+    np.testing.assert_array_equal(pixels, expected)
+    np.testing.assert_array_equal(pixels[alpha != 0], plain[alpha != 0])
+
+
 def test_recipe_spatial_defaults_select_saved_shape_without_geometry(tmp_path):
     from test_effects import fixture_project
     from test_spatial_fade import arc_settings, spatial_request, spatial_settings

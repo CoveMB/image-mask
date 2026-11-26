@@ -401,6 +401,11 @@ Accepted complete revisions and exports remain saved separately. For a new
 protection choice rebuild within explicit support; prior protected W=0 samples
 remain protected. Human comparison decides whether shading improves the photo.
 
+To try the smoother transition across soft edges on a previously shaded photo,
+choose **Enable / rebuild shading within declared support**. Compare the new
+draft with the saved revision on the same native crop. Background edits and the
+global opacity button reuse the old revision's saved shading weight.
+
 CLI uses the existing `.venv/bin/blackmask run PROJECT --request FILE`. Add, for example,
 `shading={"enabled":true,"opacity":0.12,"width_px":YOUR_WIDTH,"direction_degrees":YOUR_DIRECTION}`
 and `shading_protection_file` to the common effects request. Values shown as
@@ -764,8 +769,14 @@ The background changes flattened partial-alpha colours, including protected
 translucent edges; protection preserves underlying foreground RGB/alpha. It does
 not freeze their old black composite. The field is generated at native resolution
 and saved; crops slice those same pixels and screen resizing happens afterward.
-No model, internet, noise generation or photographed-detail synthesis is involved.
-RGB8 previews may band; inspect native RGB16 in a suitable colour-managed viewer.
+Generating the saved backdrop uses no model, internet or photographed-detail synthesis.
+The live Result, native review Result PNG and opaque RGB8 Result previews and deliveries
+spread rounding steps across pixels wholly covered by the varied backdrop. This reduces
+visible bands while retaining the chosen tone and variation. New overviews,
+comparison JPEGs, gallery previews and portable recipe thumbnails use the same
+backdrop dithering. For a pending gallery preview, use **Repair latest Result
+preview**. These viewing copies are still 8-bit. Inspect native RGB16 in a suitable
+colour-managed viewer when judging very dark tones.
 A processed sRGB RGB16 TIFF is not sensor RAW. See the [saved contract](file-contract.md#saved-background-appearance).
 
 ## Background light

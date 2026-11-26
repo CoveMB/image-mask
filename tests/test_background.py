@@ -414,9 +414,8 @@ def test_background_combined_noncompounding_and_repair_staleness(tmp_path):
             )
             w, p = saved_shading(project, parent["revision"], a, m, effects_off=mode == "base")
             b = np.zeros_like(rgb) if mode == "base" else read_background(project, old_dir, m)
-            expected = np.rint(scalar_composite(rgb, a, b, w, p).astype(float) / 257).astype(
-                np.uint8
-            )
+            native = scalar_composite(rgb, a, b, w, p)
+            expected = np.rint(native.astype(float) / 257).astype(np.uint8)
             actual = np.array(
                 Image.open(
                     saved_raster(
@@ -426,7 +425,11 @@ def test_background_combined_noncompounding_and_repair_staleness(tmp_path):
                     )
                 )
             )
-            np.testing.assert_array_equal(actual, expected)
+            if mode == "base":
+                np.testing.assert_array_equal(actual, expected)
+            else:
+                np.testing.assert_array_equal(actual[a > 0], expected[a > 0])
+                assert_adjacent_result_codes(actual[a == 0], native[a == 0])
     for color, variation in [("#120708", 0.55), ("#000000", 1), ("#120708", 0.55)]:
         result = operations.apply_operation(project, background_request(project, color, variation))
         rgb, actual_alpha, saved = saved_layers(project, result["revision"], master)
@@ -606,6 +609,11 @@ def test_unapplied_background_blocks_prepare_before_model(tmp_path, monkeypatch)
         operations.apply_operation(project, request(project))
 
 
+def assert_adjacent_result_codes(actual, native):
+    assert actual.dtype == np.uint8 and actual.shape == native.shape
+    np.testing.assert_array_less(np.abs(actual.astype(np.float64) - native / 257), 1)
+
+
 def scalar_composite(foreground, alpha, backdrop, weight=None, opacity=0):
     result = np.empty_like(foreground)
     for y in range(alpha.shape[0]):
@@ -619,7 +627,59 @@ def scalar_composite(foreground, alpha, backdrop, weight=None, opacity=0):
     return result
 
 
+def test_dithered_midpoint_keeps_both_levels_across_nearest_neighbor_fit_phases():
+    from blackmask.pixel_math import result_rgb8
+
+    rgb16 = np.full((512, 512, 3), 7 * 257 + 128, dtype=np.uint16)
+    backdrop = np.ones(rgb16.shape[:2], dtype=bool)
+    pixels = result_rgb8(rgb16, backdrop_only=backdrop)
+    assert set(np.unique(pixels)) == {7, 8}
+    np.testing.assert_array_equal(pixels[..., 0], pixels[..., 1])
+    np.testing.assert_array_equal(pixels[..., 0], pixels[..., 2])
+    high = pixels[..., 0] == 8
+    for increment in (1, 2, 4, 8):
+        for row in range(increment):
+            for column in range(increment):
+                share = float(high[row::increment, column::increment].mean())
+                assert abs(share - 128 / 257) < 0.04
+    for increment in (2.7, 7.6):
+        for phase in (0.2, 0.8):
+            coordinates = np.floor(np.arange(int(512 / increment)) * increment + phase).astype(int)
+            share = float(high[np.ix_(coordinates, coordinates)].mean())
+            assert abs(share - 128 / 257) < 0.04
+    np.testing.assert_array_equal(
+        result_rgb8(rgb16[9:74, 3:70], backdrop_only=backdrop[9:74, 3:70], origin_xy=(3, 9)),
+        pixels[9:74, 3:70],
+    )
+    exact = np.array([[[0, 257, 65535]]], np.uint16)
+    np.testing.assert_array_equal(
+        result_rgb8(exact, backdrop_only=np.ones((1, 1), bool)), [[[0, 1, 255]]]
+    )
+
+
+def test_backdrop_dither_v1_replays_fixed_rgb8_codes_at_nonzero_origin():
+    from blackmask.pixel_math import result_rgb8
+
+    rgb16 = np.array(
+        [
+            [[1940, 1930, 1995], [1780, 1780, 1780], [10, 240, 149], [466, 805, 1159]],
+            [[65534, 100, 257], [3401, 602, 1950], [65535, 256, 59836], [1130, 879, 522]],
+        ],
+        dtype=np.uint16,
+    )
+    backdrop = np.array([[True, True, False, True], [True, False, True, True]])
+    np.testing.assert_array_equal(
+        result_rgb8(rgb16, backdrop_only=backdrop, origin_xy=(13, 29)),
+        [
+            [[7, 7, 7], [7, 7, 7], [0, 1, 1], [2, 4, 5]],
+            [[255, 0, 1], [13, 2, 8], [255, 1, 233], [4, 3, 2]],
+        ],
+    )
+
+
 def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path):
+    import base64
+    import hashlib
     import io
     import subprocess
     import sys
@@ -638,7 +698,7 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
 
     project, source, _ = fixture_project(tmp_path)
     operations.apply_operation(project, shading_request(project))
-    result = operations.apply_operation(project, background_request(project))
+    result = operations.apply_operation(project, background_request(project, color="#070707"))
     master = read_project(project)["developed_id"]
     foreground, alpha, manifest = saved_layers(project, result["revision"], master)
     directory = project / "revisions" / result["revision"]
@@ -646,6 +706,16 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
     weight, opacity = saved_shading(project, result["revision"], alpha, manifest)
     expected = scalar_composite(foreground, alpha, backdrop, weight, opacity)
     app = ReviewServer(project)
+    full = np.array(
+        Image.open(io.BytesIO(app.image(f"/image/result/{result['revision']}/0,0,6,4")))
+    )
+    nearest = np.rint(expected.astype(float) / 257).astype(np.uint8)
+    assert np.any(full[alpha == 0] != nearest[alpha == 0]), (
+        "varied backdrop still uses nearest rounding"
+    )
+    np.testing.assert_array_equal(full[alpha != 0], nearest[alpha != 0])
+    np.testing.assert_array_equal(full[alpha == 0, 0], full[alpha == 0, 1])
+    np.testing.assert_array_equal(full[alpha == 0, 1], full[alpha == 0, 2])
     for crop in [[0, 0, 6, 4], [2, 1, 6, 4], [5, 3, 6, 4], [0, 0, 1, 4]]:
         x0, y0, x1, y1 = crop
         wanted = np.rint(expected[y0:y1, x0:x1].astype(float) / 257).astype(np.uint8)
@@ -667,13 +737,29 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
                 )
             )
         )
-        np.testing.assert_array_equal(pixels, wanted)
+        np.testing.assert_array_equal(pixels, full[y0:y1, x0:x1])
+    off_crop = [0, 1, 1, 4]
+    off = app.preview_spatial(
+        {
+            "view": "off",
+            "crop_xyxy": off_crop,
+            "revision": result["revision"],
+            "developed_id": master,
+            "revision_manifest_sha256": hashlib.sha256(
+                (directory / "manifest.json").read_bytes()
+            ).hexdigest(),
+        }
+    )
+    np.testing.assert_array_equal(
+        np.array(Image.open(io.BytesIO(base64.b64decode(off["png_base64"])))),
+        full[1:4, :1],
+    )
     app.server_close()
     reviewed = review_project(project, crops=[[2, 1, 6, 4]])
     assets = __import__("pathlib").Path(reviewed["manifest_file"]).parent
     np.testing.assert_array_equal(
         np.array(Image.open(saved_raster(assets / "crop-000-result_RGB8_VIEW.png"))),
-        np.rint(expected[1:4, 2:6].astype(float) / 257).astype(np.uint8),
+        full[1:4, 2:6],
     )
     exported = export_project(
         project,
@@ -682,6 +768,9 @@ def test_result_native_crop_review_viewer_export_and_saved_only_replay(tmp_path)
         variants=("black", "transparent", "editable"),
     )
     output = __import__("pathlib").Path(exported["directory"])
+    np.testing.assert_array_equal(
+        np.array(Image.open(saved_raster(output / "result_RGB8_VIEW.png"))), full
+    )
     np.testing.assert_array_equal(
         tifffile.imread(saved_raster(output / "result_rgb16.tif")), expected
     )

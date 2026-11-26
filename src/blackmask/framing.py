@@ -9,6 +9,7 @@ import numpy as np
 
 from .assets import saved_asset
 from .mist import ROWS_PER_CHUNK, MistOperands, blend_mist_into_result, sample_mist_density
+from .pixel_math import result_rgb8
 from .project import (
     ProjectError,
     _atomic_json,
@@ -188,6 +189,7 @@ def framing_preview(
     *,
     max_edge: int = 1600,
     mist: MistOperands | None = None,
+    dither_alpha16: np.ndarray | None = None,
 ) -> tuple[np.ndarray, dict[str, object]]:
     """Sample the virtual presentation canvas using only bounded display-row scratch."""
     if type(max_edge) is not int or not 1 <= max_edge <= 1600:
@@ -207,6 +209,12 @@ def framing_preview(
         or background_rgb16.shape != native_rgb16.shape
     ):
         raise ValueError("Framing preview requires an aligned saved RGB16 backdrop")
+    if dither_alpha16 is not None and (
+        background_rgb16 is None
+        or dither_alpha16.dtype != np.uint16
+        or dither_alpha16.shape != native_rgb16.shape[:2]
+    ):
+        raise ValueError("Framing preview dither requires aligned native alpha16 and backdrop")
     longest = max(width, height)
     display_width = max(1, width * min(max_edge, longest) // longest)
     display_height = max(1, height * min(max_edge, longest) // longest)
@@ -236,7 +244,14 @@ def framing_preview(
                 margin_row = row[exterior][None, ...]
                 _blend_margin_mist(margin_row, mist, source_x[exterior], np.array([source_y]))
                 row[exterior] = margin_row[0]
-        pixels[row_index] = np.rint(row.astype(np.float64) / 257).astype(np.uint8)
+        backdrop = None
+        if dither_alpha16 is not None:
+            backdrop = np.ones((1, display_width), dtype=bool)
+            if inside_y:
+                backdrop[0, inside_x] = dither_alpha16[source_y, source_x[inside_x]] == 0
+        pixels[row_index] = result_rgb8(
+            row[None], backdrop_only=backdrop, origin_xy=(0, row_index)
+        )[0]
     return pixels, {
         "source_dimensions_wh": [source_width, source_height],
         "output_dimensions_wh": [width, height],

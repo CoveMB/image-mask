@@ -20,6 +20,7 @@ from PIL import Image
 
 from . import operations
 from .assets import revision_hashes, saved_asset
+from .background import uses_backdrop_dither
 from .export import export_project, saved_layers
 from .framing import (
     FramingSaveUncertain,
@@ -662,6 +663,9 @@ class ReviewServer(ThreadingHTTPServer):
                     spatial_fade=comparison_spatial,
                     fade_background16=target if comparison_spatial is not None else None,
                     mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
+                    dither_background=data.get("panel", "result") == "result"
+                    and uses_backdrop_dither(manifest.get("background", {}).get("settings")),
+                    origin_xy=(x0, y0),
                 )[data.get("panel", "result")]
                 label = (
                     "Fade OFF; BASE comparison: all optional foreground effects and background OFF"
@@ -1308,6 +1312,9 @@ class ReviewServer(ThreadingHTTPServer):
                 ),
                 fade_background16=None if target is None else target[y0:y1, x0:x1],
                 mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
+                dither_background=panel == "result"
+                and uses_backdrop_dither(manifest.get("background", {}).get("settings")),
+                origin_xy=(x0, y0),
             )[panel]
         buffer = io.BytesIO()
         Image.fromarray(pixels).save(buffer, format="PNG")

@@ -658,6 +658,12 @@ def test_series_sampling_zero_extended_edges_singletons_and_identity():
         identity_rgb.astype(np.float64) * (identity_alpha.astype(np.float64) / 65535)[..., None]
     ).astype(np.uint16)
     np.testing.assert_array_equal(render_series(identity_rgb, identity_alpha, identity), expected)
+    identity_backdrop = np.empty_like(identity_alpha, dtype=bool)
+    np.testing.assert_array_equal(
+        render_series(identity_rgb, identity_alpha, identity, backdrop_only=identity_backdrop),
+        expected,
+    )
+    assert not identity_backdrop.any()
     shifted = np.zeros((100, 32000), np.uint16)
     shifted[90:94, 31000:31007] = 26214
     shifted_plan = series_sampling_plan(compute_series_layout(shifted, settings))
@@ -673,9 +679,23 @@ def test_series_sampling_bounds_alpha_and_rgba():
         compute_series_layout(alpha, series_settings(output_width_px=19, output_height_px=21))
     )
     rgba = render_series(foreground, alpha, sampling, transparent=True)
+    backdrop = np.empty((21, 19), dtype=bool)
     composed = render_series(
-        foreground, alpha, sampling, background_settings={"color_srgb": "#315579", "variation": 0}
+        foreground,
+        alpha,
+        sampling,
+        background_settings={"color_srgb": "#315579", "variation": 0},
+        backdrop_only=backdrop,
     )
+    filtered = sampled_plane(foreground, alpha, sampling, -1)
+    x, y = sampling.x, sampling.y
+    expected_backdrop = np.ones_like(backdrop)
+    expected_backdrop[
+        y.output_start : y.output_start + y.output_length,
+        x.output_start : x.output_start + x.output_length,
+    ] = filtered <= 0
+    assert np.any((filtered > 0) & (filtered < 0.5 / 255))
+    np.testing.assert_array_equal(backdrop, expected_backdrop)
     assert rgba.shape == (21, 19, 4) and composed.dtype == np.uint16
     assert not rgba[rgba[..., 3] == 0, :3].any()
     before = foreground.copy()
@@ -753,10 +773,28 @@ def test_series_export_round_trip_identity_and_preservation(tmp_path):
     pixels = tifffile.imread(saved_raster(directory / "result_rgb16.tif"))
     assert pixels.shape == (50, 40, 3) and pixels.dtype == np.uint16
     assert np.any(pixels % 257)
+    with Image.open(saved_raster(directory / "result_RGB8_VIEW.png")) as image:
+        result8 = np.array(image)
+    nearest = np.rint(pixels.astype(float) / 257).astype(np.uint8)
+    assert np.any(result8[0] != nearest[0])
     with Image.open(saved_raster(directory / "transparent_RGBA8_VIEW.png")) as image:
         rgba = np.array(image)
         assert image.info["icc_profile"] == srgb_profile()
     assert not rgba[rgba[..., 3] == 0, :3].any()
+    np.testing.assert_array_equal(result8[rgba[..., 3] != 0], nearest[rgba[..., 3] != 0])
+    from blackmask.project import read_project, read_revision
+    from blackmask.review import render_presentation_preview
+
+    developed_id = read_project(project)["developed_id"]
+    manifest = read_revision(project, output["revision"], developed_id)
+    preview, _ = render_presentation_preview(
+        project,
+        output["revision"],
+        developed_id,
+        manifest,
+        {"mode": "match-series", "settings": settings},
+    )
+    np.testing.assert_array_equal(preview, result8)
     assert "resized presentation" in (directory / "README.txt").read_text()
     assert not any(text in json.dumps(record) for text in (str(tmp_path), "/Users/", "source.tif"))
     first = hashes(project)

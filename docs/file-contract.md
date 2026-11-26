@@ -226,14 +226,19 @@ spatial fade, its protection and the selected backdrop target. It does not flatt
 those appearance settings into source pixels or change native alpha.
 
 The photograph retains native aspect, with integer thumbnail rounding, long edge
-at most 1600 and no upscale. Explicit RGB16-to-RGB8 conversion and quality85/optimize
-JPEG are lossy; canonical sRGB ICC is included without copied EXIF/GPS/XMP. An 18px
+at most 1600 and no upscale. The gallery uses optimized JPEG at quality 85 or
+quality 98 for a nonblack backdrop with positive variation. In the latter case,
+fully exposed backdrop pixels are resized at higher precision and dithered at
+thumbnail size. Both encodings carry canonical sRGB ICC and omit EXIF/GPS/XMP. An 18px
 Draft/Accepted revision footer sits outside the photograph. Tiny/narrow photographs
 are centred on a canvas at least 360px wide without photographic enlargement.
 
-Project-local `preview.json` uses independent schema1, kind `result-preview` and
-encoding `native-result-jpeg-v1`. It binds photo/folder/source/developed identities,
-revision/raw manifest hash, label, dimensions, photo rectangle and JPEG hash. A JPEG
+Project-local `preview.json` uses independent schema1 and kind `result-preview`.
+Its encoding is `native-result-jpeg-v1` or `native-result-jpeg-backdrop-dither-v2`.
+An owned v1 gallery for a varied backdrop is pending refresh. The existing repair
+path validates and replaces it using the saved revision. The record binds
+photo/folder/source/developed identities, revision/raw manifest hash, label,
+dimensions, photo rectangle and JPEG hash. A JPEG
 comment repeats ownership/layout except its own hash, allowing recovery after JPEG
 publication without a receipt. Neither record selects pointers or grants acceptance.
 Inspection is bounded to 16KiB records/16MiB JPEG, without native rendering. Foreign,
@@ -698,7 +703,7 @@ viewing approximations, never replacements for authoritative precision layers.
 
 Schema-2 manual processing requests remain compatible. Prepare/repair optionally accept `assisted_review` as defined by [the assisted workflow](assistant-workflow.md). Immutable `requests/review-<identity>/000-<content-sha256>.json`, `001-<content-sha256>.json`, etc. record the original explicit cycle request, reservations and source comparisons with content-addressed filenames and predecessor hashes. Terminal-byte changes, missing/reordered predecessors, contradictory transitions and lost reservations referenced by retained recovery requests fail closed. A per-cycle `head.sha256` integrity anchor binds the latest event, detecting removal of a valid terminal suffix as well as altered bytes. Events publish before the atomic anchor update; any partial event/anchor publication fails closed and remains retained for inspection. The anchor owns no working/accepted pointers or separate attempt counter. The single project lock serializes writes. This history is advisory, not another working/accepted state authority. A repair reservation is durable before model execution and reused by the same resume request. Two attempts total are shared across all defects; judgement is required between attempts. Stop keeps the best valid revision identity without changing acceptance or restoring drafts. Original prepare/repair requests/results and recovery snapshots retain existing meanings.
 
-Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; protected inward shading uses the additive contract below.
+Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels or rendered PNG hashes change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; protected inward shading uses the additive contract below.
 
 Each successful native review removes only its own unchanged duplicate staging files or empty outer staging directory after validating durable canonical evidence, required before evidence and current inputs. Canonical manifests and PNGs are rechecked after synchronization and final input checks, before any disposal. Earlier stages, unknown or changed members, replacements, links and failed or uncertain invocations remain for inspection. A late disposal failure may leave some validated duplicates removed; its error identifies the durable canonical evidence and remaining stage. Completed native evidence remains usable if a later comparison or assessment write fails. This lifecycle does not change review identities, rendering, acceptance or existing recovery retention.
 
@@ -855,9 +860,17 @@ Choose protected hairs, antennae, web, petal tips, genuine highlights and bee
 explicitly. This mask combines with saved protection and RGB/alpha locks.
 Heuristic thickness/highlight attenuation does not promise semantic protection.
 The inward smoothstep uses the alpha >= 0.5 silhouette, an explicitly empty
-padded exterior, thickness and directional-normal attenuation, source luminance
-and low-alpha attenuation. The reference thickness/smoothing ratios scale with
-the chosen band. The reference 48/88px widths and tentative 24% opacity never
+padded exterior, thickness and directional-normal attenuation and source luminance.
+On a new build, the weight across a soft outer edge tends toward the nearby
+opaque boundary in the same connected subject. For a component that never reaches
+full opacity, its highest-alpha pixels provide that boundary. The transfer depends
+on rising alpha toward the boundary. The existing local thickness field limits the
+transfer on the subject side. A more transparent outer sample uses the thickness
+at half alpha on its way inward. This keeps a thin detail from inheriting a thicker
+region's shadow. Components below the silhouette threshold receive zero weight.
+Matte opacity still controls how much
+of the shaded subject is visible. The reference thickness/smoothing ratios scale
+with the chosen band. The reference 48/88px widths and tentative 24% opacity never
 become global defaults.
 
 Save `shadow_weight16.png` separately from opacity, with own cumulative support,
@@ -867,7 +880,10 @@ rebuild preserves previous W outside its support and keeps previous protection
 inside it. Alpha dependency samples update only within that support; remaining
 uncovered changes keep the enabled effect stale. Each immutable revision retains
 its actual settings and previous complete revisions remain available.
-`opacity_only=true` reuses W and geometry exactly; its settings explicitly label
+`inward-interior-edge-weight-v2` records the calculation used by the latest
+scoped build. An enabled v2 rebuild writes its declared support and inherits any
+weight outside it from its parent. Old builds keep their original saved weight
+through restore and unrelated edits. `opacity_only=true` reuses W and geometry exactly; its settings explicitly label
 a **global opacity only** operation. Disabling is an explicit global setting,
 retains saved geometry/assets, and restores appearance without changing alpha.
 Neither shading nor rendering invokes models.
@@ -1480,6 +1496,33 @@ reviews are not regenerated on open. Current readers restore prior revisions; ol
 are not promised to understand new records. Retain a prior project/revision for
 recovery rather than stripping fields. No automatic cleanup occurs.
 
+### Varied backdrop in opaque RGB8 views
+
+An operative nonblack Background with positive variation enables deterministic
+coordinate-hashed rounding on pure-backdrop pixels of the live Result, native
+review Result PNG and opaque Result PNG deliveries and presentation previews.
+New Result overviews, focused comparisons, gallery JPEGs and optional recipe
+reference PNGs preserve the gradient at reduced size. Thumbnail dithering is
+limited to locations whose resize footprint contains only backdrop. New focused
+comparison sheets for an active varied backdrop have encoding
+`focused-comparison-jpeg-backdrop-dither-v3` and use a separate output identity.
+Each eligible fractional RGB16 sample uses the adjacent RGB8 codes with a
+shared per-pixel threshold across all three channels. Exact code values and
+pixels with foreground coverage retain ordinary nearest rounding. Native
+crops anchor the threshold to the oriented master's coordinates. Add margins
+uses zero native alpha inside the placed rectangle and all margin pixels.
+Match series uses zero coverage at integer placement or zero clipped filtered
+alpha before RGBA8 quantization. Presentation views anchor the threshold to
+their output grid, so a sampled preview can differ by a display code from a
+sample of the full-size delivery. Source, alpha and black/gray/white diagnostic
+panels, RGB16 layers and straight RGBA8 use their own existing encodings.
+
+Deliveries bind the varied-backdrop policy in the existing PNG encoding
+identity. Comparison requests bind the changed presentation JPEG policy and
+retained native PNG policy independently. Prior deliveries and comparison
+sheets retain their identities. Explicit review or export produces the new
+encoding under the usual content and request identity rules.
+
 ## Saved background light
 
 The optional recipe `background_light` has exactly `enabled` (boolean),
@@ -1934,8 +1977,10 @@ never swept by an export retry.
 Resource admission retains the 10 GiB disk reserve and adds the existing native
 allowance plus 16 bytes per output pixel, another 10 when black is selected, and
 2 MiB. Expanded variants/readbacks are
-processed sequentially; RGB8 conversion uses one row of float64 scratch and PNG
-readback hashes decoded rows. Admission is a disk-capacity estimate, not a RAM
+processed sequentially; RGB8 conversion uses bounded row scratch and PNG
+readback hashes decoded rows. Series resource estimation includes a one-byte
+selection plane per output pixel when the varied-backdrop RGB8 path needs it.
+Admission is a disk-capacity estimate, not a RAM
 estimate/reservation or a guarantee that every supported size fits current memory.
 
 

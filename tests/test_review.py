@@ -660,6 +660,39 @@ def test_assisted_assessment_materializes_matching_native_evidence_outside_revis
                     assert image.size == (x1 - x0, y1 - y0)
 
 
+def test_overview_jpeg_keeps_resized_dark_backdrop_smooth(tmp_path):
+    from blackmask.background import make_background
+    from blackmask.review import write_revision_overview
+
+    shape = (512, 768)
+    background = make_background(shape, {"color_srgb": "#070707", "variation": 0.55})
+    source = np.full_like(background, 30000)
+    alpha = np.zeros(shape, np.uint16)
+    alpha[:, -80:] = 65535
+    overview = write_revision_overview(
+        tmp_path / "review",
+        source,
+        source,
+        alpha,
+        developed_id="a" * 64,
+        revision="rev-002",
+        background16=background,
+        dither_background=True,
+    )
+    box = overview["crops"][0]["panel_boxes_xyxy"]["result"]
+    width, height = box[2] - box[0], box[3] - box[1]
+    with (
+        Image.open(tmp_path / "preview.jpg") as image,
+        Image.fromarray(background[..., 0].astype(np.float32) / 257) as native,
+    ):
+        pixels = np.asarray(image.crop(tuple(box)))[..., 0]
+        reference = np.asarray(native.resize((width, height), Image.Resampling.LANCZOS))
+    height, width = height // 16 * 16, (width * 3 // 4) // 16 * 16
+    error = (pixels - reference)[:height, :width]
+    block_error = np.abs(error.reshape(height // 16, 16, width // 16, 16).mean((1, 3))).mean()
+    assert block_error < 0.07
+
+
 @pytest.mark.parametrize("shape", [(401, 803), (1600, 1), (4000, 1)])
 @pytest.mark.parametrize("background", [False, True])
 def test_repair_overview_is_one_bounded_jpeg_with_recoverable_panel_coordinates(
@@ -1011,6 +1044,51 @@ def test_comparison_presentation_binds_layout_and_keeps_native_coordinates(
             presentation={**presentation, "revision_manifest_sha256": "0" * 64},
         )
     assert (project / "state.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("retain_native", [False, True])
+@pytest.mark.parametrize("include_presentation", [False, True])
+def test_comparison_reencodes_backdrop_without_replacing_old_sheet(
+    tmp_path, monkeypatch, retain_native, include_presentation
+):
+    from test_background import background_request
+    from test_effects import fixture_project
+    from test_framing import hashes, margins
+
+    from blackmask import operations, review
+    from blackmask.project import digest, read_project
+
+    project, _, _ = fixture_project(tmp_path)
+    revision = operations.apply_operation(project, background_request(project, color="#070707"))[
+        "revision"
+    ]
+    presentation = {
+        "mode": "add-margins",
+        "revision": revision,
+        "developed_id": read_project(project)["developed_id"],
+        "revision_manifest_sha256": digest(
+            (project / "revisions" / revision / "manifest.json").read_bytes()
+        ),
+        "margins": margins(),
+    }
+    options = {"comparison": True, "retain_native": retain_native}
+    if include_presentation:
+        options["presentation"] = presentation
+    with monkeypatch.context() as previous_encoding:
+        previous_encoding.setattr(review, "uses_backdrop_dither", lambda _settings: False)
+        legacy = Path(review.review_project(project, **options)["comparison_manifest_file"])
+        legacy_bytes = hashes(legacy.parent)
+    result = review.review_project(project, **options)
+    current = Path(result["comparison_manifest_file"])
+    assert current != legacy
+    assert hashes(legacy.parent) == legacy_bytes
+    before = json.loads(legacy.read_bytes())["request"]
+    after = json.loads(current.read_bytes())["request"]
+    assert before["encoding"] != after["encoding"] == "focused-comparison-jpeg-backdrop-dither-v3"
+    assert (
+        before["native_evidence_encoding"] != after["native_evidence_encoding"]
+    ) == retain_native
+    assert review.review_project(project, **options) == {**result, "reused": True}
 
 
 @pytest.mark.parametrize("mode", [None, "add-margins", "match-series"])

@@ -19,10 +19,11 @@ from PIL import Image
 from PIL.PngImagePlugin import PngImageFile
 
 from .assets import saved_asset
-from .background import normalized_background
+from .background import normalized_background, uses_backdrop_dither
 from .effects import effects_stale, validate_cleanup, validate_shading
 from .export import render_saved_result, validated_layer_inputs
 from .exposure import validate_exposure
+from .pixel_math import dither_resized_backdrop, result_rgb8
 from .project import ProjectError, _json_bytes, _root, digest, read_project, read_revision
 from .series_framing import nonzero_alpha_bounds
 from .shadow_fade import validate_shadow_fade
@@ -745,10 +746,15 @@ def appearance_recipe_from_revision(
     )
     if include_reference:
         pixels = render_saved_result(project, revision, state["developed_id"])
-        with Image.fromarray(np.rint(pixels.astype(np.float64) / 257).astype(np.uint8)) as image:
+        with Image.fromarray(result_rgb8(pixels)) as image:
             image.thumbnail((512, 512), Image.Resampling.LANCZOS)
             stream = io.BytesIO()
-            image.save(stream, format="PNG")
+            if uses_backdrop_dither(manifest.get("background", {}).get("settings")):
+                backdrop = dither_resized_backdrop(pixels, alpha, np.asarray(image))
+                with Image.fromarray(backdrop) as dithered:
+                    dithered.save(stream, format="PNG")
+            else:
+                image.save(stream, format="PNG")
             recipe["reference"] = {
                 "mime": "image/png",
                 "width": image.width,

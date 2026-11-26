@@ -349,6 +349,7 @@ def estimate_series_resources(
     black_background: bool = False,
     background_light: bool = False,
     mist_native_shape: tuple[int, int] | None = None,
+    backdrop_selection: bool = False,
 ) -> dict[str, int]:
     if (
         type(retained_native_bytes) is not int
@@ -356,6 +357,7 @@ def estimate_series_resources(
         or type(transparent) is not bool
         or type(black_background) is not bool
         or type(background_light) is not bool
+        or type(backdrop_selection) is not bool
         or type(spatial_fade_pixels) is not int
         or spatial_fade_pixels < 0
         or type(native_export_peak_bytes) is not int
@@ -383,6 +385,8 @@ def estimate_series_resources(
         "coefficient_bytes": coefficients,
         "row_and_allocator_headroom_bytes": 2 * 1024**2 + 64 * 256 * max(width, height),
     }
+    if backdrop_selection:
+        values["output_backdrop_selection_bytes"] = width * height
     if spatial_fade_pixels:
         values.update(
             native_spatial_amount_bytes=8 * spatial_fade_pixels,
@@ -614,6 +618,7 @@ def render_series(
     spatial_fade: SpatialFadeOperands | None = None,
     black_background: bool = False,
     mist: MistOperands | None = None,
+    backdrop_only: np.ndarray | None = None,
 ) -> np.ndarray:
     from .background import LEGACY_BACKGROUND, make_background, sample_background
     from .background_light import (
@@ -636,6 +641,14 @@ def render_series(
         raise ValueError("Series rendering requires aligned saved RGB16 and alpha16")
     if weight16 is not None and (weight16.dtype != np.uint16 or weight16.shape != alpha16.shape):
         raise ValueError("Series shading requires aligned W16")
+    if backdrop_only is not None and (
+        transparent
+        or black_background
+        or backdrop_only.dtype != np.bool_
+        or backdrop_only.shape != sampling.display_dimensions_wh[::-1]
+        or not backdrop_only.flags.writeable
+    ):
+        raise ValueError("Series backdrop selection requires an aligned writable Result plane")
     if mist is not None:
         if (
             transparent
@@ -697,7 +710,10 @@ def render_series(
         background_light=light_enabled,
         spatial_fade_pixels=alpha16.size if active_spatial else 0,
         mist_native_shape=(alpha16.shape[0], alpha16.shape[1]) if mist is not None else None,
+        backdrop_selection=backdrop_only is not None,
     )
+    if backdrop_only is not None:
+        backdrop_only.fill(True)
     native_amount = (
         spatial_fade_amount(foreground, alpha16, spatial_fade)
         if active_spatial and spatial_fade is not None
@@ -759,6 +775,8 @@ def render_series(
             stop = min(start + 64, y1)
             rows, columns = slice(start + ty, stop + ty), slice(x0 + tx, x1 + tx)
             alpha = alpha16[start:stop, x0:x1].astype(np.float64) / 65535
+            if backdrop_only is not None:
+                backdrop_only[rows, columns] = alpha == 0
             contribution = _foreground_contribution(
                 foreground[start:stop, x0:x1],
                 alpha16[start:stop, x0:x1],
@@ -792,6 +810,10 @@ def render_series(
         if not np.isfinite(tile).all():
             raise ValueError("Nonfinite series alpha samples")
         alpha[rows, columns] = np.clip(tile, 0, 1)
+        if backdrop_only is not None:
+            target_rows = slice(rows.start + y.output_start, rows.stop + y.output_start)
+            target_columns = slice(columns.start + x.output_start, columns.stop + x.output_start)
+            backdrop_only[target_rows, target_columns] = alpha[rows, columns] == 0
     filtered_amount = None
     if native_amount is not None:
         filtered_amount = np.empty_like(alpha)

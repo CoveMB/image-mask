@@ -1070,7 +1070,7 @@ def test_series_delivery_and_preview_extend_saved_light_on_output_canvas(
     from pathlib import Path
 
     import tifffile
-    from test_background import scalar_background
+    from test_background import assert_adjacent_result_codes, scalar_background
     from test_effects import fixture_project
 
     from blackmask import background_light, operations
@@ -1135,9 +1135,8 @@ def test_series_delivery_and_preview_extend_saved_light_on_output_canvas(
             {"mode": "match-series", "settings": settings.to_dict()},
         )
         assert metadata["output_dimensions_wh"] == [17, 39]
-        np.testing.assert_array_equal(
-            actual[0], np.rint(expected_empty[0].astype(float) / 257).astype(np.uint8)
-        )
+        assert_adjacent_result_codes(actual[0], expected_empty[0])
+        assert np.any(actual[0] != np.rint(expected_empty[0] / 257))
 
 
 def test_background_light_real_http_apply_off_snapshot_and_stale_manifest(tmp_path):
@@ -1421,6 +1420,7 @@ def test_light_gallery_and_historical_appearance_reference_use_saved_pixels(tmp_
 
     from blackmask import operations, previews
     from blackmask.export import saved_layers
+    from blackmask.pixel_math import result_rgb8
     from blackmask.project import read_project
 
     _, config, project = managed(tmp_path)
@@ -1440,7 +1440,9 @@ def test_light_gallery_and_historical_appearance_reference_use_saved_pixels(tmp_
     expected = np.rint(
         contribution + displayed * (1 - alpha.astype(float)[..., None] / 65535)
     ).astype(np.uint16)
-    np.testing.assert_array_equal(previews._render_latest(project, state), expected)
+    gallery16, gallery_alpha16 = previews._render_latest(project, state)
+    np.testing.assert_array_equal(gallery16, expected)
+    np.testing.assert_array_equal(gallery_alpha16, alpha)
     assert not applied["preview_pending"]
     assert marker(jpeg(config, project))["revision"] == applied["revision"]
     operations.apply_operation(
@@ -1452,9 +1454,9 @@ def test_light_gallery_and_historical_appearance_reference_use_saved_pixels(tmp_
     )
     assert set(document["sections"]) == {"background"}
     with Image.open(io.BytesIO(base64.b64decode(document["reference"]["png_base64"]))) as image:
-        np.testing.assert_array_equal(
-            np.array(image), np.rint(expected.astype(float) / 257).astype(np.uint8)
-        )
+        pixels = np.asarray(image)
+    np.testing.assert_array_equal(pixels, result_rgb8(expected, backdrop_only=alpha == 0))
+    np.testing.assert_array_equal(pixels[alpha != 0], result_rgb8(expected)[alpha != 0])
     assert inventory(project) == before
 
 

@@ -14,7 +14,9 @@ import numpy as np
 import tifffile
 import tomli_w
 from PIL import Image
-from scipy.ndimage import distance_transform_edt, gaussian_filter
+from scipy.ndimage import binary_erosion, distance_transform_edt, gaussian_filter, map_coordinates
+from scipy.ndimage import label as label_components
+from scipy.spatial import cKDTree
 
 from .assets import (
     collect_stage_assets,
@@ -104,6 +106,8 @@ from .tone_curve import (
 
 # Bump when validation, request equivalence or effect arithmetic changes.
 EFFECTS_EXECUTION_VERSION = "validated-effects-v8"
+LEGACY_SHADING_ALGORITHM = "inward-smoothstep-thickness-direction-highlight-v1"
+SHADING_ALGORITHM = "inward-interior-edge-weight-v2"
 
 
 def _effects_execution_identity() -> dict[str, Any] | None:
@@ -122,7 +126,6 @@ def _effects_execution_identity() -> dict[str, Any] | None:
         "packages": packages,
         "algorithms": {
             "color_cleanup": "nearest-confirmed-empty-inverse-mixture-v1",
-            "shading": "inward-smoothstep-thickness-direction-highlight-v1",
             "local_exposure": "linear-srgb-local-exposure-v1",
             "local_tone_curve": TONE_CURVE_ALGORITHM,
             "local_sharpening": "linear-srgb-local-sharpening-v1",
@@ -473,6 +476,140 @@ def read_shading_protection(path: Path | BinaryIO) -> np.ndarray:
     return scalar16(path)
 
 
+def _shadow_geometry(
+    source16: np.ndarray, alpha16: np.ndarray, width: float, direction_degrees: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    shape = alpha16.shape
+    alpha = alpha16.astype(np.float64) / 65535
+
+    def smooth(value):
+        value = np.clip(value, 0, 1)
+        return value * value * (3 - 2 * value)
+
+    # Padding makes the image boundary an explicit empty exterior on every side.
+    distance = distance_transform_edt(np.pad(alpha >= 0.5, 1))[1:-1, 1:-1]
+    edge = 1 - smooth(distance / width)
+    # Scale the reference thickness/normal heuristics to the chosen band, not a photo default.
+    radius = width * 14 / 48
+    core = distance >= radius
+    thickness = (
+        np.zeros(shape)
+        if not core.any()
+        else 1 - smooth((distance_transform_edt(~core) - radius) / (width * 8 / 48))
+    )
+    thickness = gaussian_filter(thickness, width * 2 / 48)
+    blurred = gaussian_filter(alpha, width / 4)
+    gy = np.gradient(blurred, axis=0) if shape[0] > 1 else np.zeros(shape)
+    gx = np.gradient(blurred, axis=1) if shape[1] > 1 else np.zeros(shape)
+    magnitude = np.hypot(gx, gy)
+    angle = np.deg2rad(direction_degrees)
+    normal = np.divide(
+        -gx * np.cos(angle) - gy * np.sin(angle),
+        magnitude,
+        out=np.zeros(shape),
+        where=magnitude > 1e-5,
+    )
+    direction = 0.35 + 0.65 * smooth((normal + 1) / 2)
+    luminance = source16.astype(np.float64) @ np.array([0.2126, 0.7152, 0.0722]) / 65535
+    highlights = 1 - 0.75 * smooth((gaussian_filter(luminance, width / 8) - 0.68) / 0.25)
+    return edge * thickness * direction * highlights, thickness, distance < width
+
+
+def _shadow_points_by_component(selection: np.ndarray, labels: np.ndarray) -> dict[int, np.ndarray]:
+    points = np.argwhere(selection)
+    components = labels[selection]
+    order = np.argsort(components, kind="stable")
+    keys, starts = np.unique(components[order], return_index=True)
+    return {
+        int(key): group
+        for key, group in zip(keys, np.split(points[order], starts[1:]), strict=True)
+    }
+
+
+def _shadow_anchor_fraction(
+    alpha16: np.ndarray,
+    labels: np.ndarray,
+    thickness: np.ndarray,
+    points: np.ndarray,
+    nearest: np.ndarray,
+) -> np.ndarray:
+    start = points.T
+    offset = nearest.T.astype(np.float64) - start
+    local_alpha = alpha16[tuple(start)]
+    remaining = alpha16[tuple(nearest.T)] - local_alpha
+    midpoint = map_coordinates(
+        alpha16, start + offset * 0.5, order=1, prefilter=False, output=np.float64
+    )
+    # A soft feather grows appreciably on the way to the anchor, even with
+    # zero slope at its outer end. A flat or slowly varying bridge need not.
+    progress = np.clip(((midpoint - local_alpha) / remaining - 0.125) / 0.1, 0, 1)
+    mix = progress * progress * (3 - 2 * progress)
+
+    # Use the existing thickness field on the subject side of the silhouette.
+    # A faint outer feather can inherit its edge's thickness. A thin appendage
+    # remains thin at half coverage, even when its opaque anchor is far thicker.
+    local_thickness = thickness[tuple(start)]
+    outside = (local_alpha < 32768) & (mix > 0)
+    if outside.any():
+        positions = start[:, outside]
+        step = offset[:, outside]
+        lower = np.zeros(step.shape[1])
+        upper = np.ones(step.shape[1])
+        for _ in range(8):
+            middle = (lower + upper) * 0.5
+            sampled_alpha = map_coordinates(
+                alpha16, positions + step * middle, order=1, prefilter=False, output=np.float64
+            )
+            inside = sampled_alpha >= 32767.5
+            lower = np.where(inside, lower, middle)
+            upper = np.where(inside, middle, upper)
+        contour = positions + step * upper
+        same_component = (
+            map_coordinates(labels, contour, order=0, prefilter=False) == labels[tuple(positions)]
+        )
+        local_thickness[outside] = (
+            map_coordinates(thickness, contour, order=1, prefilter=False) * same_component
+        )
+    thickness_mix = np.clip(2 * local_thickness, 0, 1)
+    return mix * thickness_mix * thickness_mix * (3 - 2 * thickness_mix)
+
+
+def _extend_shadow_weight(
+    weight: np.ndarray, thickness: np.ndarray, alpha16: np.ndarray, soft: np.ndarray
+) -> None:
+    if not soft.any():
+        return
+
+    # Keep isolated translucent objects from taking on a nearby subject's weight.
+    connectivity = np.ones((3, 3), dtype=bool)
+    labels, count = label_components(alpha16 != 0, structure=connectivity)
+    peaks = np.zeros(count + 1, dtype=np.uint16)
+    np.maximum.at(peaks, labels.ravel(), alpha16.ravel())
+    peak_alpha = peaks[labels]
+    weight[soft & (peak_alpha < 32768)] = 0
+    targets = soft & (alpha16 < peak_alpha) & (peak_alpha >= 32768)
+    if not targets.any():
+        return
+
+    needed = np.zeros(count + 1, dtype=bool)
+    needed[labels[targets]] = True
+    anchors = (alpha16 == peak_alpha) & needed[labels]
+    # An interior anchor cannot be closest to a non-anchor. Use boundary points
+    # and group sparse coordinates once, even for components with overlapping boxes.
+    anchors &= ~binary_erosion(anchors, structure=connectivity)
+    anchor_points = _shadow_points_by_component(anchors, labels)
+    for component, points in _shadow_points_by_component(targets, labels).items():
+        candidates = anchor_points[component]
+        tree = cKDTree(candidates)
+        for start in range(0, len(points), 65536):
+            batch = points[start : start + 65536]
+            _, nearest = tree.query(batch)
+            nearest_anchors = candidates[nearest]
+            selected = tuple(batch.T)
+            mix = _shadow_anchor_fraction(alpha16, labels, thickness, batch, nearest_anchors)
+            weight[selected] += mix * (weight[tuple(nearest_anchors.T)] - weight[selected])
+
+
 def make_shadow_weight(
     source16: np.ndarray,
     alpha16: np.ndarray,
@@ -500,41 +637,15 @@ def make_shadow_weight(
     width = settings["width_px"]
     if width > max(shape):
         raise ProjectError("Shading width exceeds native image extent")
-    alpha = alpha16.astype(np.float64) / 65535
-
-    def smooth(value):
-        value = np.clip(value, 0, 1)
-        return value * value * (3 - 2 * value)
-
-    # Padding makes the image boundary an explicit empty exterior on every side.
-    distance = distance_transform_edt(np.pad(alpha >= 0.5, 1))[1:-1, 1:-1]
-    edge = 1 - smooth(distance / width)
-    # Scale the reference thickness/normal heuristics to the chosen band, not a photo default.
-    radius = width * 14 / 48
-    core = distance >= radius
-    thickness = (
-        np.zeros(shape)
-        if not core.any()
-        else 1 - smooth((distance_transform_edt(~core) - radius) / (width * 8 / 48))
+    weight, thickness, inside = _shadow_geometry(
+        source16, alpha16, width, settings["direction_degrees"]
     )
-    thickness = gaussian_filter(thickness, width * 2 / 48)
-    blurred = gaussian_filter(alpha, width / 4)
-    gy = np.gradient(blurred, axis=0) if shape[0] > 1 else np.zeros(shape)
-    gx = np.gradient(blurred, axis=1) if shape[1] > 1 else np.zeros(shape)
-    magnitude = np.hypot(gx, gy)
-    angle = np.deg2rad(settings["direction_degrees"])
-    normal = np.divide(
-        -gx * np.cos(angle) - gy * np.sin(angle),
-        magnitude,
-        out=np.zeros(shape),
-        where=magnitude > 1e-5,
-    )
-    direction = 0.35 + 0.65 * smooth((normal + 1) / 2)
-    luminance = source16.astype(np.float64) @ np.array([0.2126, 0.7152, 0.0722]) / 65535
-    highlights = 1 - 0.75 * smooth((gaussian_filter(luminance, width / 8) - 0.68) / 0.25)
-    weight = edge * thickness * direction * highlights * smooth(alpha / 0.35)
+    eligible = inside & (support16 != 0) & (alpha16 != 0) & ~protection
+    # The compositor already increases the subject contribution with alpha.
+    # The edge's relative shadow must not ramp up independently with coverage.
+    _extend_shadow_weight(weight, thickness, alpha16, eligible & (alpha16 < 65535))
     weight *= support16.astype(np.float64) / 65535
-    weight[(alpha16 == 0) | (distance >= width) | protection] = 0
+    weight[~eligible] = 0
     return np.rint(np.clip(weight, 0, 1) * 65535).astype(np.uint16)
 
 
@@ -2103,6 +2214,14 @@ def run_effects(
                 captured = path.read_bytes()
             request_inputs[name] = captured
     input_hashes = {name: digest(data) for name, data in request_inputs.items()}
+    shading_rebuild = operation.get("shading", {}).get("enabled", False) and not operation.get(
+        "opacity_only", False
+    )
+    shading_algorithm = (
+        SHADING_ALGORITHM
+        if shading_rebuild
+        else (shading_record or {}).get("algorithm", LEGACY_SHADING_ALGORITHM)
+    )
     identity: dict[str, Any] = {
         "schema_version": 1,
         "execution": _effects_execution_identity(),
@@ -2146,6 +2265,8 @@ def run_effects(
             "request_files": input_hashes,
         },
     }
+    if identity["execution"] is not None:
+        identity["execution"]["algorithms"]["shading"] = shading_algorithm
     if identity["execution"] is not None and (texture_changed or "local_texture" in manifest):
         identity["execution"]["algorithms"]["local_texture"] = TEXTURE_ALGORITHM
     if identity["execution"] is not None and (mist_changed or parent_mist is not None):
@@ -2376,7 +2497,7 @@ def run_effects(
             saved_protection = scalar16(
                 stage_asset(project, stage, assets, "effects/shading/protection16.png")
             )
-        if shading_settings["enabled"] and not operation.get("opacity_only"):
+        if shading_rebuild:
             explicit = (own_protection != 0) | (saved_protection != 0) | protection
             rebuilt = make_shadow_weight(
                 source, alpha, support, shading_settings, protection=explicit
@@ -2395,7 +2516,7 @@ def run_effects(
             "stale": bool(
                 shading_settings["enabled"] and not np.array_equal(shading_dependency, alpha)
             ),
-            "algorithm": "inward-smoothstep-thickness-direction-highlight-v1",
+            "algorithm": shading_algorithm,
             "scope_xyxy": scope,
             "operation_scope": "global opacity only"
             if operation.get("opacity_only")
@@ -2406,7 +2527,7 @@ def run_effects(
         }
         directory = stage / "effects/shading"
         directory.mkdir(parents=True, exist_ok=True)
-        if old is None or (shading_settings["enabled"] and not operation.get("opacity_only")):
+        if old is None or shading_rebuild:
             for name, value in (
                 ("support16", shading_support),
                 ("alpha16", shading_dependency),
@@ -2859,9 +2980,15 @@ def run_effects(
             light_pixels,
             enabled=True,
         )
+    from .background import uses_backdrop_dither
+
     overview_options = {
         "developed_id": state["developed_id"],
         "background16": review_background,
+        "dither_background": not stale
+        and uses_backdrop_dither(
+            background_record["settings"] if background_record is not None else None
+        ),
         "spatial_fade": spatial_operands,
         "fade_background16": review_base
         if review_base is not None
