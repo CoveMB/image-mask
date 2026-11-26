@@ -1439,7 +1439,7 @@ def test_light_gallery_and_historical_appearance_reference_use_saved_pixels(tmp_
     expected = np.rint(
         contribution + displayed * (1 - alpha.astype(float)[..., None] / 65535)
     ).astype(np.uint16)
-    np.testing.assert_array_equal(previews._render_latest(project, state), expected)
+    np.testing.assert_array_equal(previews._render_latest(project, state)[0], expected)
     assert not applied["preview_pending"]
     assert marker(jpeg(config, project))["revision"] == applied["revision"]
     operations.apply_operation(

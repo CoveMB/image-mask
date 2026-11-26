@@ -226,13 +226,17 @@ spatial fade, its protection and the selected backdrop target. It does not flatt
 those appearance settings into source pixels or change native alpha.
 
 The photograph retains native aspect, with integer thumbnail rounding, long edge
-at most 1600 and no upscale. Explicit RGB16-to-RGB8 conversion and quality85/optimize
-JPEG are lossy; canonical sRGB ICC is included without copied EXIF/GPS/XMP. An 18px
+at most 1600 and no upscale. The gallery uses optimized JPEG at quality 85 or
+quality 98 for a nonblack backdrop with positive variation. In the latter case,
+fully exposed backdrop pixels are resized at higher precision and dithered at
+thumbnail size. Both encodings carry canonical sRGB ICC and omit EXIF/GPS/XMP. An 18px
 Draft/Accepted revision footer sits outside the photograph. Tiny/narrow photographs
 are centred on a canvas at least 360px wide without photographic enlargement.
 
-Project-local `preview.json` uses independent schema1, kind `result-preview` and
-encoding `native-result-jpeg-v1`. It binds photo/folder/source/developed identities,
+Project-local `preview.json` uses independent schema1 and kind `result-preview`.
+Its encoding is `native-result-jpeg-v1` or `native-result-jpeg-backdrop-dither-v2`.
+An owned v1 gallery for a varied backdrop is pending refresh. The existing repair
+path validates and replaces it using the saved revision. It binds photo/folder/source/developed identities,
 revision/raw manifest hash, label, dimensions, photo rectangle and JPEG hash. A JPEG
 comment repeats ownership/layout except its own hash, allowing recovery after JPEG
 publication without a receipt. Neither record selects pointers or grants acceptance.
@@ -855,9 +859,14 @@ Choose protected hairs, antennae, web, petal tips, genuine highlights and bee
 explicitly. This mask combines with saved protection and RGB/alpha locks.
 Heuristic thickness/highlight attenuation does not promise semantic protection.
 The inward smoothstep uses the alpha >= 0.5 silhouette, an explicitly empty
-padded exterior, thickness and directional-normal attenuation, source luminance
-and low-alpha attenuation. The reference thickness/smoothing ratios scale with
-the chosen band. The reference 48/88px widths and tentative 24% opacity never
+padded exterior, thickness and directional-normal attenuation and source luminance.
+On a new build, the weight across a soft outer edge tends toward the nearby
+opaque boundary in the same connected subject. For a component that never reaches
+full opacity, its highest-alpha pixels provide that boundary. The local alpha
+gradient limits the transfer across translucent interiors. Components below the
+silhouette threshold receive zero weight. Matte opacity still controls how much
+of the shaded subject is visible. The reference thickness/smoothing ratios scale
+with the chosen band. The reference 48/88px widths and tentative 24% opacity never
 become global defaults.
 
 Save `shadow_weight16.png` separately from opacity, with own cumulative support,
@@ -867,7 +876,10 @@ rebuild preserves previous W outside its support and keeps previous protection
 inside it. Alpha dependency samples update only within that support; remaining
 uncovered changes keep the enabled effect stale. Each immutable revision retains
 its actual settings and previous complete revisions remain available.
-`opacity_only=true` reuses W and geometry exactly; its settings explicitly label
+`inward-interior-edge-weight-v2` records the calculation used by the latest
+scoped build. An enabled v2 rebuild writes its declared support and inherits any
+weight outside it from its parent. Old builds keep their original saved weight
+through restore and unrelated edits. `opacity_only=true` reuses W and geometry exactly; its settings explicitly label
 a **global opacity only** operation. Disabling is an explicit global setting,
 retains saved geometry/assets, and restores appearance without changing alpha.
 Neither shading nor rendering invokes models.
@@ -1485,6 +1497,11 @@ recovery rather than stripping fields. No automatic cleanup occurs.
 An operative nonblack Background with positive variation enables deterministic
 coordinate-hashed rounding on pure-backdrop pixels of the live Result, native
 review Result PNG and opaque Result PNG deliveries and presentation previews.
+New Result overviews, focused comparisons, gallery JPEGs and optional recipe
+reference PNGs preserve the gradient at reduced size. Thumbnail dithering is
+limited to locations whose resize footprint contains only backdrop. New focused
+comparison sheets for an active varied backdrop have encoding
+`focused-comparison-jpeg-backdrop-dither-v3` and use a separate output identity.
 Each eligible fractional RGB16 sample uses the adjacent RGB8 codes with a
 shared per-pixel threshold across all three channels. Exact code values and
 pixels with foreground coverage retain ordinary nearest rounding. Native

@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from .assets import saved_asset
+from .background import uses_backdrop_dither
 from .ingest import srgb_profile
 from .library import (
     ResultPreviewNameTooLong,
@@ -19,6 +20,7 @@ from .library import (
     _check_result_preview_capacity,
     validate_library_project,
 )
+from .pixel_math import BACKDROP_JPEG_QUALITY, dither_resized_backdrop, result_rgb8
 from .project import (
     ProjectError,
     _atomic_json,
@@ -33,6 +35,8 @@ from .project import (
 )
 
 JPEG_LIMIT = 16 * 1024**2
+GALLERY_ENCODING = "native-result-jpeg-v1"
+DITHERED_GALLERY_ENCODING = "native-result-jpeg-backdrop-dither-v2"
 IDENTITY_FIELDS = {
     "schema_version",
     "kind",
@@ -90,14 +94,18 @@ def _identity(project: Path, state: dict[str, Any]) -> dict[str, Any]:
             saved_asset(project, f"revisions/{revision}/manifest.json").read_bytes()
         ),
         "status": "Accepted" if revision == state["accepted_revision"] else "Draft",
-        "encoding": "native-result-jpeg-v1",
+        "encoding": DITHERED_GALLERY_ENCODING
+        if uses_backdrop_dither(manifest.get("background", {}).get("settings"))
+        else GALLERY_ENCODING,
     }
 
 
 def _validate_record(project: Path, value: Any, identity: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != IDENTITY_FIELDS | LAYOUT_FIELDS:
         raise ProjectError("Unrecognized result preview ownership record; preserved")
-    for key in IDENTITY_FIELDS - {"revision", "revision_manifest_sha256", "status"}:
+    if value["encoding"] not in (GALLERY_ENCODING, DITHERED_GALLERY_ENCODING):
+        raise ProjectError("Unrecognized result preview encoding; preserved")
+    for key in IDENTITY_FIELDS - {"revision", "revision_manifest_sha256", "status", "encoding"}:
         if value[key] != identity[key] or type(value[key]) is not type(identity[key]):
             raise ProjectError("Foreign result preview identity; preserved")
     if value["status"] not in {"Draft", "Accepted"}:
@@ -209,16 +217,20 @@ def result_preview_status(project: Path, config: StorageConfig | None = None) ->
         )
 
 
-def _render_latest(project: Path, state: dict[str, Any]) -> np.ndarray:
-    from .export import render_saved_result
+def _render_latest(project: Path, state: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+    from .export import render_saved_result_with_alpha
 
-    return render_saved_result(project, state["latest_result_revision"], state["developed_id"])
+    return render_saved_result_with_alpha(
+        project, state["latest_result_revision"], state["developed_id"]
+    )
 
 
-def _encode_preview(pixels: np.ndarray, record: dict[str, Any]) -> tuple[bytes, dict[str, Any]]:
+def _encode_preview(
+    pixels: np.ndarray, record: dict[str, Any], *, alpha16: np.ndarray | None = None
+) -> tuple[bytes, dict[str, Any]]:
     if pixels.dtype != np.uint16 or pixels.ndim != 3 or pixels.shape[2] != 3:
         raise ProjectError("Preview requires native RGB16 Result pixels")
-    with Image.fromarray(np.rint(pixels.astype(np.float64) / 257).astype(np.uint8)) as photo:
+    with Image.fromarray(result_rgb8(pixels)) as photo:
         photo.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
         width = max(360, photo.width)
         font = ImageFont.load_default(size=18)
@@ -234,7 +246,12 @@ def _encode_preview(pixels: np.ndarray, record: dict[str, Any]) -> tuple[bytes, 
         height = photo.height + max(44, 24 + len(lines) * 24)
         with Image.new("RGB", (width, height), "#181818") as canvas:
             left = (width - photo.width) // 2
-            canvas.paste(photo, (left, 0))
+            if alpha16 is None:
+                canvas.paste(photo, (left, 0))
+            else:
+                backdrop = dither_resized_backdrop(pixels, alpha16, np.asarray(photo))
+                with Image.fromarray(backdrop) as dithered:
+                    canvas.paste(dithered, (left, 0))
             ImageDraw.Draw(canvas).multiline_text(
                 (12, photo.height + 12), "\n".join(lines), font=font, fill="white", spacing=6
             )
@@ -246,7 +263,7 @@ def _encode_preview(pixels: np.ndarray, record: dict[str, Any]) -> tuple[bytes, 
             canvas.save(
                 output,
                 format="JPEG",
-                quality=85,
+                quality=BACKDROP_JPEG_QUALITY if alpha16 is not None else 85,
                 optimize=True,
                 icc_profile=srgb_profile(),
                 comment=_json_bytes(dict(record, **layout)),
@@ -319,8 +336,12 @@ def _publish_locked(
         previous, _ = _owned_jpeg(project, parent, name, identity)
     except FileNotFoundError:
         previous = None
-    pixels = _render_latest(project, state)
-    data, layout = _encode_preview(pixels, identity)
+    pixels, alpha = _render_latest(project, state)
+    data, layout = _encode_preview(
+        pixels,
+        identity,
+        alpha16=alpha if identity["encoding"] == DITHERED_GALLERY_ENCODING else None,
+    )
 
     def recheck() -> None:
         if any(saved_asset(project, name).read_bytes() != raw for name, raw in captured.items()):

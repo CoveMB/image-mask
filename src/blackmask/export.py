@@ -319,6 +319,13 @@ def saved_layers(
 
 def render_saved_result(project: Path, revision: str, developed_id: str) -> np.ndarray:
     """Compose one explicitly selected saved Result without publishing a preview."""
+    return render_saved_result_with_alpha(project, revision, developed_id)[0]
+
+
+def render_saved_result_with_alpha(
+    project: Path, revision: str, developed_id: str
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return the composed native Result and the exact alpha used for it."""
     from .background_light import saved_backgrounds
     from .effects import effects_stale, saved_shading, saved_spatial_fade
     from .mist import blend_mist_into_result, mist_resource_bytes, saved_mist
@@ -354,11 +361,9 @@ def render_saved_result(project: Path, revision: str, developed_id: str) -> np.n
         )
     )
     mist = saved_mist(project, directory, manifest, effects_off=effects_stale(manifest))
-    return (
-        result
-        if mist is None
-        else blend_mist_into_result(result, mist.density16, mist.clear16, mist.settings)
-    )
+    if mist is not None:
+        blend_mist_into_result(result, mist.density16, mist.clear16, mist.settings)
+    return result, alpha
 
 
 def publish_artifacts(stage: Path, destination: Path) -> None:

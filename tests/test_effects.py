@@ -834,6 +834,80 @@ def test_shading_exact_single_round_renderer_and_straight_preview():
     assert rgba[0, 0, 0] == 191 and rgba[0, 0, 3] == 128
 
 
+@pytest.mark.parametrize("opacity", [0, 0.12, 0.24, 0.65, 0.9, 1.0])
+@pytest.mark.parametrize("peak_alpha", [65535, 60000])
+def test_inward_shading_soft_ramp_has_no_native_rim(opacity, peak_alpha):
+    from blackmask.effects import make_shadow_weight
+    from blackmask.export import render_background
+
+    ramp = np.rint(np.clip((np.arange(256) - 48) / 32, 0, 1) * peak_alpha).astype(np.uint16)
+    alpha = np.tile(ramp, (160, 1))
+    source = np.full((*alpha.shape, 3), 100 * 257, dtype=np.uint16)
+    weight = make_shadow_weight(
+        source,
+        alpha,
+        np.full_like(alpha, 65535),
+        {"enabled": True, "opacity": opacity, "width_px": 96, "direction_degrees": 180},
+        protection=np.zeros_like(alpha, dtype=bool),
+    )
+    for backdrop in (0, 7 * 257, 180 * 257):
+        pixels = render_background(source, alpha, np.full_like(source, backdrop), weight, opacity)
+        profile = pixels[80, 48:81, 0].astype(np.int32)
+        expected = [
+            round(backdrop + int(a) / peak_alpha * (int(profile[-1]) - backdrop))
+            for a in alpha[80, 48:81]
+        ]
+        np.testing.assert_allclose(profile, expected, atol=1, rtol=0)
+        assert (np.diff(profile) * np.sign(profile[-1] - backdrop) >= 0).all()
+
+
+def test_inward_shading_anchors_do_not_cross_transparent_gaps():
+    from blackmask.effects import make_shadow_weight
+
+    alpha = np.zeros((72, 120), dtype=np.uint16)
+    alpha[8:64, 4:75] = 65535
+    alpha[16:56, 75:79] = [52428, 39321, 26214, 13107]
+    alpha[16:56, 80:84] = 18000
+    alpha[16:56, 84:88] = 25000
+    alpha[62:65, 90:110] = 65535
+    source = np.full((*alpha.shape, 3), 25000, dtype=np.uint16)
+    support = np.full_like(alpha, 65535)
+    support[34, 76] = 32768
+    protection = np.zeros_like(alpha, dtype=bool)
+    protection[35, 76] = True
+    settings = {"enabled": True, "opacity": 0.65, "width_px": 18, "direction_degrees": 0}
+    weight = make_shadow_weight(source, alpha, support, settings, protection=protection)
+    full = make_shadow_weight(
+        source, alpha, np.full_like(alpha, 65535), settings, protection=np.zeros_like(protection)
+    )
+    assert full[34, 76] == full[34, 74] > 0
+    assert abs(int(weight[34, 76]) - round(int(full[34, 76]) * 32768 / 65535)) <= 1
+    assert weight[35, 76] == 0
+    assert not weight[16:56, 79:88].any()
+    assert not weight[alpha == 0].any()
+    assert weight[63, 109] < weight[35, 74]
+
+
+def test_inward_shading_does_not_add_a_seam_between_opaque_areas():
+    from blackmask.effects import make_shadow_weight
+    from blackmask.export import render_background
+
+    alpha = np.zeros((154, 192), np.uint16)
+    alpha[28:125, 10:70] = 65535
+    alpha[28:125, 114:182] = 65535
+    alpha[58:96, 70:114] = np.linspace(40000, 50000, 44, dtype=np.uint16)
+    source = np.full((*alpha.shape, 3), 100 * 257, dtype=np.uint16)
+    settings = {"enabled": True, "opacity": 0.65, "width_px": 30, "direction_degrees": 0}
+    weight = make_shadow_weight(
+        source, alpha, np.full_like(alpha, 65535), settings, protection=np.zeros_like(alpha, bool)
+    )
+    pixels = render_background(source, alpha, np.full_like(source, 7 * 257), weight, 0.65)
+    # The opaque anchors change sides at x=92. The continuous partial-alpha
+    # material between them must not inherit a brightness step at that point.
+    middle = pixels[77, 89:95, 0].astype(np.int32)
+    assert np.max(np.abs(np.diff(middle))) < 257
+
+
 def test_shadow_weight_unbaked_protection_band_and_thin_features():
     from blackmask.effects import make_shadow_weight
 
@@ -877,6 +951,66 @@ def shading_request(project, *, opacity=0.12, enabled=True, opacity_only=False, 
         Image.fromarray(protection).save(project / "shading-protection.png")
         operation["shading_protection_file"] = "shading-protection.png"
     return operation
+
+
+def test_legacy_shading_reuses_saved_weight_until_explicit_scoped_rebuild(tmp_path, monkeypatch):
+    from test_background import background_request
+
+    from blackmask import effects
+    from blackmask.assets import saved_asset
+    from blackmask.export import render_saved_result
+    from blackmask.project import read_revision
+    from blackmask.repair import scalar16
+
+    project, _, _ = fixture_project(tmp_path)
+    legacy_w = np.zeros((4, 6), dtype=np.uint16)
+    legacy_w[:, 1:5] = 12345
+    legacy_w[2, 3] = 0
+    with monkeypatch.context() as legacy:
+        legacy.setattr(
+            effects, "SHADING_ALGORITHM", "inward-smoothstep-thickness-direction-highlight-v1"
+        )
+        legacy.setattr(effects, "make_shadow_weight", lambda *args, **kwargs: legacy_w)
+        old = operations.apply_operation(project, shading_request(project))
+    revision, developed = old["revision"], old["developed_id"]
+    operations.accept_revision(project, revision)
+
+    def weight_file(rev):
+        return saved_asset(project, f"revisions/{rev}/shadow_weight16.png").read_bytes()
+
+    native_before = render_saved_result(project, revision, developed)
+    old_weight = weight_file(revision)
+
+    def rebuild_forbidden(*args, **kwargs):
+        raise AssertionError("inherited shading must use saved weights")
+
+    with monkeypatch.context() as frozen:
+        frozen.setattr(effects, "make_shadow_weight", rebuild_forbidden)
+        changed = operations.apply_operation(project, background_request(project, "#070707"))
+        opacity = operations.apply_operation(
+            project, shading_request(project, opacity=0.65, opacity_only=True)
+        )
+        for child in (changed, opacity):
+            assert weight_file(child["revision"]) == old_weight
+            record = read_revision(project, child["revision"], developed)["shading"]
+            assert record["algorithm"] == "inward-smoothstep-thickness-direction-highlight-v1"
+        restored = operations.restore_revision(project, revision)
+        np.testing.assert_array_equal(
+            render_saved_result(project, restored["working_revision"], developed), native_before
+        )
+
+    support = np.zeros_like(legacy_w)
+    support[:, 2:4] = 65535
+    result = operations.apply_operation(project, shading_request(project, support=support))
+    record = read_revision(project, result["revision"], developed)
+    assert record["shading"]["algorithm"] == "inward-interior-edge-weight-v2"
+    rebuilt = scalar16(saved_asset(project, f"revisions/{result['revision']}/shadow_weight16.png"))
+    np.testing.assert_array_equal(rebuilt[support == 0], legacy_w[support == 0])
+    assert rebuilt[2, 3] == 0 and np.any(rebuilt[support != 0] != legacy_w[support != 0])
+    assert weight_file(revision) == old_weight
+    assert read_project(project)["accepted_revision"] == revision
+    again = operations.apply_operation(project, shading_request(project, support=support))
+    assert again["revision"] == result["revision"] and again["reused"]
 
 
 @pytest.mark.parametrize("prior_shading", [True, False])

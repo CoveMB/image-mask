@@ -801,7 +801,7 @@ def test_sharpening_native_review_and_managed_gallery(tmp_path):
     background = read_background(project, project / "revisions" / result["revision"], manifest)
     weight = (alpha.astype(np.float64) / 65535)[..., None]
     expected = np.rint(selected * weight + background * (1 - weight)).astype(np.uint16)
-    np.testing.assert_array_equal(previews._render_latest(project, state), expected)
+    np.testing.assert_array_equal(previews._render_latest(project, state)[0], expected)
     assert marker(jpeg(config, project))["revision"] == result["revision"]
     assert state["accepted_revision"] == parent["revision"]
     reviewed = review_project(project, crops=[[1, 0, 5, 4]], storage_config=config)

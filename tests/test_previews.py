@@ -212,6 +212,64 @@ def test_preview_status_and_intact_repair_do_not_write_or_render(tmp_path):
     assert inventory(config.destination) == before
 
 
+@pytest.mark.parametrize("shape", [(512, 768), (640, 2048)])
+def test_gallery_jpeg_preserves_dark_backdrop_local_tones(shape):
+    import io
+
+    from blackmask import previews
+    from blackmask.background import make_background
+
+    pixels = make_background(shape, {"color_srgb": "#070707", "variation": 0.55})
+    alpha = np.zeros(shape, np.uint16)
+    alpha[:, -shape[1] // 8 :] = 65535
+    pixels[alpha != 0] = 35000
+    record = {"revision": "rev-001", "status": "Draft"}
+    old_jpeg, layout = previews._encode_preview(pixels, record)
+    jpeg_data, new_layout = previews._encode_preview(pixels, record, alpha16=alpha)
+    assert new_layout == layout
+    x0, y0, x1, y1 = layout["photo_rectangle_xyxy"]
+    width, height = x1 - x0, y1 - y0
+    with Image.fromarray(pixels[..., 0].astype(np.float32) / 257) as channel:
+        reference = np.asarray(channel.resize((width, height), Image.Resampling.LANCZOS))
+    # Test the fully exposed part, away from subject/JPEG block boundaries.
+    height = height // 16 * 16
+    width = (width * 3 // 4) // 16 * 16
+
+    def block_error(data):
+        with Image.open(io.BytesIO(data)) as image:
+            decoded = np.asarray(image)[y0 : y0 + height, x0 : x0 + width]
+        assert np.array_equal(decoded[..., 0], decoded[..., 1])
+        assert np.array_equal(decoded[..., 1], decoded[..., 2])
+        error = decoded[..., 0] - reference[:height, :width]
+        return np.abs(error.reshape(height // 16, 16, width // 16, 16).mean((1, 3))).mean()
+
+    assert block_error(jpeg_data) < 0.06
+    assert block_error(jpeg_data) < block_error(old_jpeg) / 2
+
+
+def test_gallery_repair_upgrades_owned_legacy_dither_candidate(tmp_path, monkeypatch):
+    from blackmask import previews
+
+    _, config, project = managed(tmp_path)
+    original_identity = previews._identity
+
+    def legacy_identity(*args):
+        return dict(original_identity(*args), encoding="native-result-jpeg-v1")
+
+    with monkeypatch.context() as legacy:
+        legacy.setattr(previews, "_identity", legacy_identity)
+        generate(project, config)
+    path = jpeg(config, project)
+    before = path.read_bytes()
+    state = (project / "state.json").read_bytes()
+    assert marker(path)["encoding"] == "native-result-jpeg-v1"
+    assert previews.result_preview_status(project, config)["reason"] == "stale"
+    assert path.read_bytes() == before
+    assert previews.refresh_result_preview(project, config)["status"] == "current"
+    assert marker(path)["encoding"] != "native-result-jpeg-v1"
+    assert (project / "state.json").read_bytes() == state
+
+
 def test_missing_receipt_repairs_owned_jpeg_without_state_changes(tmp_path):
     from blackmask import previews
 
@@ -796,7 +854,7 @@ def test_renderer_matches_independent_native_scalar_composite(tmp_path):
         weight,
         opacity,
     )
-    np.testing.assert_array_equal(previews._render_latest(project, state), expected)
+    np.testing.assert_array_equal(previews._render_latest(project, state)[0], expected)
 
 
 @pytest.mark.parametrize("umask", [0o077, 0o777])
@@ -1280,7 +1338,7 @@ def test_gallery_renders_saved_spatial_fade_with_protected_partial_pixels(
     for directory in ("assets", "revisions"):
         after = inventory(project / directory)
         assert all(after[name] == value for name, value in preserved[directory].items())
-    np.testing.assert_array_equal(previews._render_latest(project, state), expected)
+    np.testing.assert_array_equal(previews._render_latest(project, state)[0], expected)
     assert result["preview_pending"] is False
     record = marker(jpeg(config, project))
     assert record["revision"] == result["revision"] and record["status"] == "Draft"

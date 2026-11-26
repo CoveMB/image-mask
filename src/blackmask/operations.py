@@ -1824,7 +1824,7 @@ def _matte(
     spatial = inherit_spatial_fade(
         project, parent, stage, state["developed_id"], alpha, rgb_protection, assets=assets
     )
-    from .background import inherit_background
+    from .background import inherit_background, uses_backdrop_dither
     from .background_light import combine_background_light, inherit_background_light
 
     background = inherit_background(
@@ -1988,12 +1988,16 @@ def _matte(
             light_pixels,
             enabled=True,
         )
+    overview_dither = not stale_effects and uses_backdrop_dither(
+        background["settings"] if background is not None else None
+    )
     write_revision_overview(
         stage / "review",
         pixels,
         review_foreground,
         alpha,
         background16=background_pixels,
+        dither_background=overview_dither,
         spatial_fade=spatial_operands,
         fade_background16=fade_target,
         developed_id=state["developed_id"],
@@ -2033,6 +2037,7 @@ def _matte(
             before_foreground,
             parent_alpha,
             background16=background_pixels,
+            dither_background=overview_dither,
             spatial_fade=saved_spatial_fade(
                 project, parent, parent_alpha, manifest, effects_off=stale_effects
             ),
