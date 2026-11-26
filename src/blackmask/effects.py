@@ -35,6 +35,7 @@ from .guidance import coordinates, rasterize_regions
 from .ingest import write_developed
 from .mist import (
     VAPOR_ALGORITHM,
+    WISPY_VAPOR_ALGORITHM,
     mist_algorithm,
     mist_resource_bytes,
     parse_mist_json,
@@ -2154,11 +2155,10 @@ def run_effects(
         else:
             assert parent_mist is not None
             algorithm = parent_mist["algorithm"]
-        identity["execution"]["version"] = (
-            "validated-effects-v10-vapor"
-            if algorithm == VAPOR_ALGORITHM
-            else "validated-effects-v9-mist"
-        )
+        identity["execution"]["version"] = {
+            VAPOR_ALGORITHM: "validated-effects-v10-vapor",
+            WISPY_VAPOR_ALGORITHM: "validated-effects-v11-vapor",
+        }.get(algorithm, "validated-effects-v9-mist")
         identity["execution"]["algorithms"]["mist"] = algorithm
     if parent_mist is not None and not mist_apply:
         identity["inputs"]["mist"] = (

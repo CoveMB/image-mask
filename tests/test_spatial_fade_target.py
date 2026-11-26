@@ -133,11 +133,14 @@ def test_saved_lit_target_native_comparisons_and_restore(tmp_path):
             )
 
 
-@pytest.mark.parametrize("style", ["none", "mist", "vapor"])
+@pytest.mark.parametrize("style", ["none", "mist", "vapor", "wispy-vapor"])
 def test_lit_delivery_replays_all_modes_and_binds_saved_operands(tmp_path, style):
     project, accepted, base, lit, light = lit_project(tmp_path)
     if style != "none":
-        config = vapor_settings(6, 4) if style == "vapor" else None
+        config = vapor_settings(6, 4) if style in {"vapor", "wispy-vapor"} else None
+        if style == "wispy-vapor":
+            assert config is not None
+            config["pattern_version"] = 2
         lit_revision = lit["revision"]
         operations.restore_revision(project, base["revision"])
         base = operations.apply_operation(project, mist_request(project, config=config))
@@ -159,7 +162,9 @@ def test_lit_delivery_replays_all_modes_and_binds_saved_operands(tmp_path, style
             assert (source / name).read_bytes() == (Path(legacy["directory"]) / name).read_bytes()
     native = detached / "native"
     record = json.loads((native / "manifest.json").read_bytes())
-    version = "requested-result-v8" if style == "vapor" else "requested-result-v7"
+    version = {"vapor": "requested-result-v8", "wispy-vapor": "requested-result-v9"}.get(
+        style, "requested-result-v7"
+    )
     assert record["export_version"] == record["encoding"]["version"] == version
     native_members = (
         "spatial_fade_settings.json",

@@ -19,6 +19,7 @@ from .repair import scalar16
 
 ALGORITHM = "linear-srgb-mist-v1"
 VAPOR_ALGORITHM = "linear-srgb-vapor-v1"
+WISPY_VAPOR_ALGORITHM = "linear-srgb-vapor-v2"
 MAX_REQUEST_BYTES = 2_000_000
 MAX_SEED = 2**32 - 1
 ROWS_PER_CHUNK = 64
@@ -87,6 +88,10 @@ def validate_mist_settings(value: Any, width: int, height: int) -> dict[str, Any
         ranges.update(wisp_size=(0.04, 0.60), stretch=(1, 5))
     ranges["rotation_degrees"] = (0, 360)
     geometry = {"style", "focus_xy"} if vapor else {"coverage"}
+    if vapor and "pattern_version" in value:
+        geometry.add("pattern_version")
+        if type(value["pattern_version"]) is not int or value["pattern_version"] != 2:
+            raise ProjectError("Vapor pattern_version must be the integer 2 when present")
     if (
         not isinstance(value, dict)
         or set(value) != {"enabled", "tint_srgb", "seed", *geometry, *ranges}
@@ -117,6 +122,8 @@ def validate_mist_settings(value: Any, width: int, height: int) -> dict[str, Any
             or not _number(focus[1], 0, height)
         ):
             raise ProjectError("Vapor focus outside native bounds")
+        if "pattern_version" in value:
+            normalized["pattern_version"] = value["pattern_version"]
         return dict(normalized, style="vapor", focus_xy=[float(axis) or 0.0 for axis in focus])
     coverage = value["coverage"]
     if not isinstance(coverage, dict) or set(coverage) != {"center_xy", "radii_xy", "softness"}:
@@ -144,7 +151,9 @@ def validate_mist_settings(value: Any, width: int, height: int) -> dict[str, Any
 
 
 def mist_algorithm(settings: dict[str, Any]) -> str:
-    return VAPOR_ALGORITHM if settings.get("style") == "vapor" else ALGORITHM
+    if settings.get("style") != "vapor":
+        return ALGORITHM
+    return WISPY_VAPOR_ALGORITHM if settings.get("pattern_version") == 2 else VAPOR_ALGORITHM
 
 
 def _smoothstep(value: np.ndarray) -> np.ndarray:
@@ -185,6 +194,19 @@ def _noise_gain(wavelength: float, footprint_px: float) -> float:
     return taper * taper * (3 - 2 * taper)
 
 
+def _wisp_opacity(
+    u: np.ndarray, v: np.ndarray, wavelength_px: float, seed: int, footprint_px: float
+) -> np.ndarray:
+    field = np.zeros(u.shape, dtype=np.float64)
+    for octave, weight in enumerate((4, 2, 1)):
+        wavelength = wavelength_px / 2**octave
+        gain = _noise_gain(wavelength, footprint_px)
+        field += weight * (
+            0.5 + gain * (_value_noise(u / wavelength, v / wavelength, seed, octave) - 0.5)
+        )
+    return _smoothstep(np.clip((field / 7 - 0.30) / 0.55, 0, 1))
+
+
 def _vapor_opacity(
     u: np.ndarray, v: np.ndarray, short_axis: int, seed: int, footprint_px: float
 ) -> np.ndarray:
@@ -202,6 +224,27 @@ def _vapor_opacity(
     return (0.98 * bank + 0.39 * plume * (1 - bank)) * (0.75 + 0.25 * texture) * focus
 
 
+def _wispy_vapor_opacity(
+    dx: np.ndarray,
+    dy: np.ndarray,
+    bearing: float,
+    short_axis: int,
+    seed: int,
+    footprint_px: float,
+) -> np.ndarray:
+    """Offset the bank from the focus and run fine wisps across its bearing."""
+    bank_x = dx - 0.24 * short_axis * math.cos(bearing)
+    bank_y = dy - 0.24 * short_axis * math.sin(bearing)
+    angle = bearing - math.radians(95)
+    u = math.cos(angle) * bank_x + math.sin(angle) * bank_y
+    v = -math.sin(angle) * bank_x + math.cos(angle) * bank_y
+    radius = np.hypot(u / (0.83 * short_axis), v / (0.765 * short_axis))
+    bank = _smoothstep(np.clip((1 - radius) / 0.72, 0, 1))
+    wisps = _wisp_opacity(u / 3.4, v, max(16, 0.25 * short_axis), seed, footprint_px)
+    focus = _smoothstep(np.clip((np.hypot(dx, dy) / short_axis - 0.12) / 0.157, 0, 1))
+    return bank * wisps * focus
+
+
 def sample_mist_density(
     settings: dict[str, Any],
     native_size_wh: tuple[int, int],
@@ -217,9 +260,12 @@ def sample_mist_density(
     center = settings["focus_xy"] if vapor else settings["coverage"]["center_xy"]
     angle = math.radians(settings["rotation_degrees"])
     dx, dy = x - center[0], y - center[1]
+    short_axis = min(native_size_wh)
+    if vapor and settings.get("pattern_version") == 2:
+        opacity = _wispy_vapor_opacity(dx, dy, angle, short_axis, settings["seed"], footprint_px)
+        return np.rint(65535 * settings["density"] * opacity).astype(np.uint16)
     u = math.cos(angle) * dx + math.sin(angle) * dy
     v = -math.sin(angle) * dx + math.cos(angle) * dy
-    short_axis = min(native_size_wh)
     if vapor:
         opacity = _vapor_opacity(
             u / short_axis, v / short_axis, short_axis, settings["seed"], footprint_px
@@ -230,15 +276,7 @@ def sample_mist_density(
     envelope = _smoothstep(np.clip((1 - radius) / coverage["softness"], 0, 1))
     u /= settings["stretch"]
     base_wavelength = max(16, settings["wisp_size"] * short_axis)
-    field = np.zeros(x.shape, dtype=np.float64)
-    for octave, weight in enumerate((4, 2, 1)):
-        wavelength = base_wavelength / 2**octave
-        gain = _noise_gain(wavelength, footprint_px)
-        field += weight * (
-            0.5
-            + gain * (_value_noise(u / wavelength, v / wavelength, settings["seed"], octave) - 0.5)
-        )
-    opacity = _smoothstep(np.clip((field / 7 - 0.30) / 0.55, 0, 1))
+    opacity = _wisp_opacity(u, v, base_wavelength, settings["seed"], footprint_px)
     return np.rint(65535 * settings["density"] * envelope * opacity).astype(np.uint16)
 
 

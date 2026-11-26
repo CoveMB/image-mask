@@ -883,16 +883,17 @@ diagnostics keep their existing pixels.
 | Pattern seed | 1 | Whole number from 0 to 4294967295 |
 | Clear mist | Empty | Up to 64 shapes and 8192 brush points total. Brush radius starts at 10 px, capped by the longer native axis, and ranges from 1 px to that axis. Inward feather starts at 0 px and ranges up to that axis. |
 
-For **Vapor**, Strength starts at 85% and has the same 0–100% range and precision
+For **Vapor**, Strength starts at 74% and has the same 0–100% range and precision
 as Density. Clear focus starts at the native image midpoint. The field is fully
 clear within 12% of the shorter native axis from the focus and feathers out to
-29%. Its default tint is `#343937`, bank direction is 55° clockwise from native
-X and seed is 1. The wisp size, stretch and coverage ellipse controls apply to
-the Mist style. A dense dark bank can subdue subject contrast as it crosses
-the frame. Pair it with [Fade into background](#fade-into-background) when a stem
+27.7%. Its default tint is `#414849`, bank direction is 55° clockwise from native
+X and seed is 14. Fine wisps run across the bank. Changing the bank direction
+turns both the bank and its wisps. The wisp size, stretch and coverage ellipse
+controls apply to the Mist style. A dense dark bank can subdue subject contrast
+as it crosses the frame. Pair it with [Fade into background](#fade-into-background) when a stem
 or selected petal needs to recede farther. Clear mist shapes are shared when
-switching styles. Apply saves the selected style. An earlier style remains
-available through its saved revision.
+switching styles. Apply saves the selected style. Applying Vapor to an older
+Vapor revision uses the finer pattern. The older revision retains its saved look.
 
 A fully cleared point preserves the incoming Result exactly. Saved locks are
 fully clear, including locks on partially transparent or zero-alpha pixels. A stale

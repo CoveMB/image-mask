@@ -391,10 +391,10 @@ OFF saves the visible settings and shapes. Saved-only Disable keeps both maps
 and pending authoring independent. [Mist workflow](workflow.md#mist),
 [Mist request and operands](file-contract.md#saved-mist)
 
-For an emerging-from-vapor look, set `style` to `"vapor"` and place
-`focus_xy` on the detail that should stay clear. Adjust Strength and Bank
-direction to position the dark bank. Use independent Fade into background
-only where the requested look calls for additional subject recession.
+For an emerging-from-vapor look, set `style` to `"vapor"` and `pattern_version`
+to `2`. Place `focus_xy` on the detail that should stay clear. Adjust Strength
+and Bank direction to position the wisps. Use independent Fade into background
+where the requested look calls for additional subject recession.
 
 Compare the saved revision's Result and **Compare Mist OFF** at matching
 coordinates. Disable guides for the appearance comparison. Existing global BASE

@@ -45,6 +45,10 @@ from blackmask.series_framing import (
         ("match-series", "on", "vapor"),
         ("add-margins", "off", "vapor"),
         ("match-series", "zero", "vapor"),
+        ("native", "on", "wispy-vapor"),
+        ("add-margins", "on", "wispy-vapor"),
+        ("match-series", "on", "wispy-vapor"),
+        ("match-series", "off", "wispy-vapor"),
     ],
 )
 def test_editable_mist_replays_without_original_project_and_keeps_variants(
@@ -67,8 +71,10 @@ def test_editable_mist_replays_without_original_project_and_keeps_variants(
         ],
         "protection": [],
     }
-    make_config = vapor_settings if style == "vapor" else settings
+    make_config = settings if style == "mist" else vapor_settings
     config = make_config(6, 4, density=0 if switch == "zero" else 0.75, tint_srgb="#8c9192")
+    if style == "wispy-vapor":
+        config["pattern_version"] = 2
     applied = operations.apply_operation(project, mist_request(project, area=area, config=config))
     if switch == "off":
         applied = operations.apply_operation(project, mist_request(project, disable=True))
@@ -99,7 +105,11 @@ def test_editable_mist_replays_without_original_project_and_keeps_variants(
     record = json.loads((presentation / "manifest.json").read_bytes())
     native_record = json.loads((native / "manifest.json").read_bytes())
     assert record["mist"] == native_record["mist"] == applied["mist"]
-    version = "requested-result-v8" if style == "vapor" else "requested-result-v6"
+    version = {
+        "mist": "requested-result-v6",
+        "vapor": "requested-result-v8",
+        "wispy-vapor": "requested-result-v9",
+    }[style]
     assert record["export_version"] == record["encoding"]["version"] == version
     for name in ("area", "settings", "density", "clear"):
         filename = f"mist_{name}.json" if name in ("area", "settings") else f"mist_{name}16.png"

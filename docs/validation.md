@@ -1895,6 +1895,13 @@ also used the base's existing Fade into background. Its haze was smoother and
 the stem easier to see than in the reference. Photographic acceptance remains
 with the photographer.
 
+Vapor pattern 2 adds independently calculated native and minified density
+samples, legacy revision restore, and editable replay for native and both
+framed modes, including with Lit backdrop. In a real-photo comparison, the
+Vapor result retained the exact matte and stem fade maps from the edited Mist
+draft. The sampled focal crop matched in RGB16. The fitted RGB8 previews
+differed by 0.15 code values per channel on average.
+
 ## Lit backdrop fade target
 
 Synthetic fixtures check exact RGB16 convergence to a nonuniform lit backdrop

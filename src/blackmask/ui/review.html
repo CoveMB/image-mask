@@ -3140,7 +3140,7 @@
         rotation_degrees: mistNumber("mistRotation", "Direction", 0, 360, {exclusiveMax: true}),
         seed: mistNumber("mistSeed", "Pattern seed", 0, 4294967295, {whole: true}),
       };
-      if (vapor) return {...common, style: "vapor", focus_xy: point};
+      if (vapor) return {...common, style: "vapor", pattern_version: 2, focus_xy: point};
       return {...common,
         wisp_size: mistNumber("mistSize", "Wisp size (%)", 4, 60, {percent: true}),
         stretch: mistNumber("mistStretch", "Wisp stretch", 1, 5),
@@ -3151,8 +3151,8 @@
         }};
     }
     function defaultMistSettings(style, width, height) {
-      if (style === "vapor") return {style, enabled: false, density: .85, tint_srgb: "#343937",
-        rotation_degrees: 55, seed: 1, focus_xy: [width / 2, height / 2]};
+      if (style === "vapor") return {style, enabled: false, density: .74, tint_srgb: "#414849",
+        rotation_degrees: 55, seed: 14, focus_xy: [width / 2, height / 2]};
       return {enabled: false, density: .22, tint_srgb: "#8C9192", wisp_size: .22, stretch: 2,
         rotation_degrees: 25, seed: 1, coverage: {center_xy: [width / 2, height / 2],
           radii_xy: [width * .6, height * .6], softness: .72}};

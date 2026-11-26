@@ -86,6 +86,23 @@ def test_vapor_v1_native_and_minified_samples_match_scalar_reference(footprint, 
     np.testing.assert_array_equal(mist.sample_mist_density(config, size, x, y, footprint), expected)
 
 
+@pytest.mark.parametrize(
+    ("footprint", "expected"),
+    [
+        (1, [0, 25204, 9925, 0, 1642, 778, 1677, 33211, 6200]),
+        (13.25, [0, 25911, 12871, 0, 1037, 4528, 1279, 28289, 5678]),
+    ],
+)
+def test_wispy_vapor_pins_native_and_framed_density(footprint, expected):
+    size = (272, 361)
+    config = mist.validate_mist_settings(
+        vapor_settings(*size, pattern_version=2, rotation_degrees=78.5, seed=14), *size
+    )
+    x = np.array([144.5, 210.5, 144.5, 16.5, 259.5, 275.5, -1.5, 162.5, 195.5])
+    y = np.array([146.5, 271.5, 54.5, 210.5, 345.5, 260.5, 92.5, 285.5, 306.5])
+    np.testing.assert_array_equal(mist.sample_mist_density(config, size, x, y, footprint), expected)
+
+
 def test_vapor_bank_rotates_about_an_off_center_focus():
     portrait = vapor_settings(80, 160, focus_xy=[6, 110], rotation_degrees=0)
     landscape = dict(portrait, focus_xy=[50, 6], rotation_degrees=90)
@@ -107,6 +124,10 @@ def test_vapor_bank_rotates_about_an_off_center_focus():
         {"focus_xy": [0, float("nan")]},
         {"coverage": {}},
         {"seed": True},
+        {"pattern_version": 1},
+        {"pattern_version": 2.0},
+        {"pattern_version": True},
+        {"pattern_version": 3},
     ],
 )
 def test_vapor_settings_are_closed_even_when_disabled(changes):

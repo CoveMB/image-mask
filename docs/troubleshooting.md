@@ -359,8 +359,8 @@ accepted dependencies, failed stages or recovery material automatically.
   feathered Clear mist area for a second point of detail. Compare the saved
   Result with **Compare Mist OFF** at the same zoom.
 - **An earlier version cannot open a Vapor revision.** Open it with a version
-  that supports Vapor. To continue with the earlier version, keep a copy of an
-  earlier Mist revision or delivery.
+  that supports the saved Vapor pattern. Keep a copy of an earlier compatible
+  revision or delivery for use with the earlier version.
 - **Apply or Turn Mist OFF is unavailable.** Load the current complete working
   revision and wait for the matching native view. For Apply on an unaccepted
   base, select **Explicitly compare Mist on an unaccepted candidate**.

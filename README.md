@@ -106,9 +106,9 @@ exports retain its separate field,
 including OFF. See the [light and gentle exposure walkthrough](docs/workflow.md#background-light).
 
 **Mist** adds an optional textured layer across the saved subject and backdrop
-in Result. Its **Vapor** style places a charcoal bank around a point you keep
-clear. Feathered Clear mist shapes and saved locks protect other detail. Apply or
-compare the saved layer offline. Native editable exports keep the Mist maps and
+in Result. Its **Vapor** style draws uneven wisps through a charcoal bank around
+a point you keep clear. Feathered Clear mist shapes and saved locks protect other
+detail. Apply or compare the saved layer offline. Native editable exports keep the Mist maps and
 settings, and both framing modes support editable delivery. [Mist workflow](docs/workflow.md#mist)
 
 Background appearance saves a tone and broad variation behind the matte. New

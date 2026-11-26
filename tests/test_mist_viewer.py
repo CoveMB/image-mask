@@ -289,6 +289,7 @@ await $('mistStyle').onchange();
 await $('mistApply').onclick();
 const submission = posts.at(-1).mist;
 assert.equal(submission.settings.style, 'vapor');
+assert.equal(submission.settings.pattern_version, 2);
 assert.equal(submission.settings.density, .825);
 assert.equal(submission.settings.focus_xy[0], 27.25);
 assert.equal(submission.settings.coverage, undefined);

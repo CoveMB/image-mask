@@ -89,6 +89,26 @@ def test_vapor_rejects_a_mist_algorithm_binding_even_when_disabled(tmp_path):
         read_revision(project, applied["revision"], applied["developed_id"])
 
 
+def test_wispy_vapor_can_replace_and_restore_a_legacy_vapor_revision(tmp_path):
+    project, _, base = fixture_project(tmp_path)
+    config = vapor_settings(6, 4)
+    legacy = operations.apply_operation(project, mist_request(project, config=config))
+    legacy_pixels = render_saved_result(project, legacy["revision"], base["developed_id"])
+    request = mist_request(project, config=dict(config, pattern_version=2))
+    updated = operations.apply_operation(project, request)
+    assert updated["mist"]["algorithm"] == "linear-srgb-vapor-v2"
+    assert updated["mist"]["density_sha256"] != legacy["mist"]["density_sha256"]
+    assert updated["mist"]["clear_sha256"] == legacy["mist"]["clear_sha256"]
+    assert operations.apply_operation(
+        project, mist_request(project, config=dict(config, pattern_version=2))
+    )["reused"]
+    operations.restore_revision(project, legacy["revision"])
+    np.testing.assert_array_equal(
+        render_saved_result(project, legacy["revision"], base["developed_id"]), legacy_pixels
+    )
+    assert read_project(project)["accepted_revision"] == base["revision"]
+
+
 def test_apply_repeat_disable_and_pending_cleanup_preserve_accepted_pixels(tmp_path):
     project, _, parent = fixture_project(tmp_path)
     developed_id, base_revision = parent["developed_id"], parent["revision"]
