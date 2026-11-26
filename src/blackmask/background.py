@@ -37,6 +37,14 @@ def normalized_background(settings: Any) -> dict[str, Any]:
     return {"color_srgb": settings["color_srgb"].upper(), "variation": settings["variation"]}
 
 
+def uses_backdrop_dither(settings: dict[str, Any] | None) -> bool:
+    return (
+        settings is not None
+        and settings["variation"] > 0
+        and settings["color_srgb"].upper() != "#000000"
+    )
+
+
 def _background_shape(shape: tuple[int, int]) -> tuple[int, int]:
     if len(shape) != 2 or any(type(n) is not int or n < 1 for n in shape):
         raise ProjectError("Background requires positive native height and width")

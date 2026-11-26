@@ -1148,12 +1148,13 @@ def test_spatial_framing_preview_uses_saved_fade_and_bound_target(tmp_path, seri
     import numpy as np
     import tifffile
     from PIL import Image
+    from test_background import assert_adjacent_result_codes
     from test_effects import fixture_project
     from test_series_framing import series_settings
     from test_spatial_fade import spatial_request, spatial_settings
 
     from blackmask.background import make_background
-    from blackmask.framing import framing_preview, validate_margins
+    from blackmask.framing import frame_result, validate_margins
 
     project, _, _ = fixture_project(tmp_path)
     settings = spatial_settings(6, 4)
@@ -1183,18 +1184,18 @@ def test_spatial_framing_preview_uses_saved_fade_and_bound_target(tmp_path, seri
         assert status == 200, body
         data = json.loads(body)
         if series_mode:
-            expected = np.rint(
-                make_background((19, 17), {"color_srgb": "#120708", "variation": 0.55}) / 257
-            ).astype(np.uint8)
+            expected = make_background((19, 17), {"color_srgb": "#120708", "variation": 0.55})
         else:
             background = tifffile.imread(
                 saved_raster(
                     project / "revisions" / result["revision"] / "background/background_rgb16.tif"
                 )
             )
-            expected = framing_preview(background, background, validate_margins(margins, (6, 4)))[0]
+            expected = frame_result(background, background, validate_margins(margins, (6, 4)))
         with Image.open(io.BytesIO(base64.b64decode(data["png_base64"]))) as image:
-            np.testing.assert_array_equal(np.array(image), expected)
+            pixels = np.array(image)
+        assert_adjacent_result_codes(pixels, expected)
+        assert np.any(pixels != np.rint(expected / 257))
 
 
 def test_series_http_validation_preview_and_independent_errors(tmp_path):

@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from .assets import saved_asset
+from .background import uses_backdrop_dither
 from .effects import validate_cleanup
 from .export import (
     _foreground_contribution,
@@ -27,6 +28,7 @@ from .export import (
 from .guidance import coordinates
 from .library import StorageConfig, validate_library_project
 from .mist import MistOperands, blend_mist_into_result, saved_mist, separate_result_panel
+from .pixel_math import result_rgb8
 from .previews import _read_regular
 from .project import (
     ProjectError,
@@ -58,6 +60,8 @@ def review_panels(
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
     mist: MistOperands | None = None,
+    dither_background: bool = False,
+    origin_xy: tuple[int, int] = (0, 0),
 ) -> dict[str, np.ndarray]:
     """Shared labelled RGB8 approximations; authoritative layers remain RGB16/alpha16."""
     factor = alpha16.astype(np.float64)[..., None] / 65535
@@ -104,7 +108,11 @@ def review_panels(
             black.copy() if result is black else result, mist.density16, mist.clear16, mist.settings
         )
     return {
-        "result": np.rint(result.astype(np.float64) / 257).astype(np.uint8),
+        "result": result_rgb8(
+            result,
+            backdrop_only=alpha16 == 0 if dither_background and background16 is not None else None,
+            origin_xy=origin_xy,
+        ),
         "source": np.rint(source.astype(np.float64) / 257).astype(np.uint8),
         "black": np.rint(black.astype(np.float64) / 257).astype(np.uint8),
         "gray": np.rint((contribution + 32768 * (1 - factor)) / 257).astype(np.uint8),
@@ -130,6 +138,7 @@ def write_review(
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
     mist: MistOperands | None = None,
+    dither_background: bool = False,
 ) -> dict[str, Any]:
     height, width = alpha16.shape
     if crops is None:
@@ -166,6 +175,8 @@ def write_review(
             if fade_background16 is None
             else fade_background16[y0:y1, x0:x1],
             mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
+            dither_background=dither_background,
+            origin_xy=(x0, y0),
         )
         names = {
             "source": "source_RGB8_VIEW",
@@ -543,6 +554,9 @@ def _review_project_locked(
         revision=revision,
         crops=selected,
         background16=background,
+        dither_background=uses_backdrop_dither(
+            revision_manifest.get("background", {}).get("settings")
+        ),
         spatial_fade=spatial,
         fade_background16=target,
         weight16=weight,
@@ -908,6 +922,8 @@ def render_presentation_preview(
     spatial = saved_spatial_fade(project, revision, alpha, loaded_manifest)
     directory = saved_asset(project, f"revisions/{revision}")
     series_mode = presentation["mode"] == "match-series"
+    background_settings = loaded_manifest.get("background", {}).get("settings")
+    dither_background = uses_backdrop_dither(background_settings)
     if series_mode:
         settings = validate_series_settings(presentation["settings"])
         layout = compute_series_layout(alpha, settings)
@@ -918,22 +934,30 @@ def render_presentation_preview(
             max(1, int(height * min(1600, longest) / longest)),
         )
         sampling = series_sampling_plan(layout, display_dimensions_wh=display)
+        backdrop_only = None
+        if dither_background:
+            from .series_framing import estimate_series_resources
+
+            estimate_series_resources(
+                sampling,
+                retained_native_bytes=foreground.nbytes + alpha.nbytes,
+                transparent=False,
+                backdrop_selection=True,
+            )
+            backdrop_only = np.empty(display[::-1], dtype=bool)
         rgb16 = render_series(
             foreground,
             alpha,
             sampling,
             weight16=weight,
             opacity=opacity,
-            background_settings=loaded_manifest.get("background", {}).get("settings"),
+            background_settings=background_settings,
             background_light_settings=loaded_manifest.get("background_light", {}).get("settings"),
             spatial_fade=spatial,
             mist=saved_mist(project, directory, loaded_manifest),
+            backdrop_only=backdrop_only,
         )
-        pixels = np.empty((*rgb16.shape[:2], 3), np.uint8)
-        for start in range(0, pixels.shape[0], 64):
-            pixels[start : start + 64] = np.rint(
-                rgb16[start : start + 64].astype(np.float64) / 257
-            ).astype(np.uint8)
+        pixels = result_rgb8(rgb16, backdrop_only=backdrop_only)
         geometry: dict[str, Any] = {
             "layout": layout.to_dict(),
             "output_dimensions_wh": [width, height],
@@ -969,7 +993,13 @@ def render_presentation_preview(
         mist = saved_mist(project, directory, loaded_manifest)
         if mist is not None:
             blend_mist_into_result(native, mist.density16, mist.clear16, mist.settings)
-        pixels, geometry = framing_preview(native, background, margins, mist=mist)
+        pixels, geometry = framing_preview(
+            native,
+            background,
+            margins,
+            mist=mist,
+            dither_alpha16=alpha if dither_background else None,
+        )
         settings_record = dict(margins.to_dict())
     else:
         raise ProjectError("Unknown presentation preview mode")
@@ -1281,9 +1311,25 @@ def _comparison_project_locked(
         "background" in manifest
         or read_active_background_light(project, selected_directory, manifest) is not None
     )
+    presentation_dither = presentation is not None and uses_backdrop_dither(
+        manifest.get("background", {}).get("settings")
+    )
+    native_dither = (
+        retain_native
+        and not effects_stale(manifest)
+        and any(
+            not effects_stale(item)
+            and uses_backdrop_dither(item.get("background", {}).get("settings"))
+            for item in manifests.values()
+        )
+    )
     request = {
-        "encoding": "focused-comparison-jpeg-v1",
-        "native_evidence_encoding": "native-review-png-v1",
+        "encoding": "focused-comparison-jpeg-backdrop-dither-v2"
+        if presentation_dither
+        else "focused-comparison-jpeg-v1",
+        "native_evidence_encoding": "native-review-png-backdrop-dither-v2"
+        if native_dither
+        else "native-review-png-v1",
         "developed_id": state["developed_id"],
         "revision": revision,
         "before_revision": before_revision,

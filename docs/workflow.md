@@ -764,8 +764,12 @@ The background changes flattened partial-alpha colours, including protected
 translucent edges; protection preserves underlying foreground RGB/alpha. It does
 not freeze their old black composite. The field is generated at native resolution
 and saved; crops slice those same pixels and screen resizing happens afterward.
-No model, internet, noise generation or photographed-detail synthesis is involved.
-RGB8 previews may band; inspect native RGB16 in a suitable colour-managed viewer.
+Generating the saved backdrop uses no model, internet or photographed-detail synthesis.
+The live Result, native review Result PNG and opaque RGB8 Result previews and deliveries
+spread rounding steps across pixels wholly covered by the varied backdrop. This reduces
+visible bands while retaining the chosen tone and variation. Small JPEG overviews and
+gallery previews still use their existing approximation. Inspect native RGB16 in a
+suitable colour-managed viewer when judging very dark tones.
 A processed sRGB RGB16 TIFF is not sensor RAW. See the [saved contract](file-contract.md#saved-background-appearance).
 
 ## Background light

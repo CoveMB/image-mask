@@ -1630,6 +1630,7 @@ def test_spatial_saved_reviews_use_canonical_colour_and_new_background_retains_g
     from blackmask import operations
     from blackmask.effects import saved_spatial_fade
     from blackmask.export import render_background, saved_layers
+    from blackmask.pixel_math import result_rgb8
     from blackmask.review import review_project
 
     project, _, _ = fixture_project(tmp_path)
@@ -1652,7 +1653,9 @@ def test_spatial_saved_reviews_use_canonical_colour_and_new_background_retains_g
     assert record["effects"]["spatial_fade"] == before["spatial_fade"]
     assert record["assets"]["spatial_fade"].endswith("effects/spatial-fade/settings.json")
     with Image.open(reviewed.parent / "crop-000-result_RGB8_VIEW.png") as image:
-        np.testing.assert_array_equal(np.array(image), np.rint(expected / 257).astype(np.uint8))
+        np.testing.assert_array_equal(
+            np.array(image), result_rgb8(expected, backdrop_only=alpha == 0)
+        )
     changed = operations.apply_operation(project, background_request(project, "#552233", 0.2))
     new_rgb, new_alpha, after = saved_layers(project, changed["revision"], result["developed_id"])
     assert after["spatial_fade"] == before["spatial_fade"]

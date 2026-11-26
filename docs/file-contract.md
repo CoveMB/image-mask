@@ -698,7 +698,7 @@ viewing approximations, never replacements for authoritative precision layers.
 
 Schema-2 manual processing requests remain compatible. Prepare/repair optionally accept `assisted_review` as defined by [the assisted workflow](assistant-workflow.md). Immutable `requests/review-<identity>/000-<content-sha256>.json`, `001-<content-sha256>.json`, etc. record the original explicit cycle request, reservations and source comparisons with content-addressed filenames and predecessor hashes. Terminal-byte changes, missing/reordered predecessors, contradictory transitions and lost reservations referenced by retained recovery requests fail closed. A per-cycle `head.sha256` integrity anchor binds the latest event, detecting removal of a valid terminal suffix as well as altered bytes. Events publish before the atomic anchor update; any partial event/anchor publication fails closed and remains retained for inspection. The anchor owns no working/accepted pointers or separate attempt counter. The single project lock serializes writes. This history is advisory, not another working/accepted state authority. A repair reservation is durable before model execution and reused by the same resume request. Two attempts total are shared across all defects; judgement is required between attempts. Stop keeps the best valid revision identity without changing acceptance or restoring drafts. Original prepare/repair requests/results and recovery snapshots retain existing meanings.
 
-Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; protected inward shading uses the additive contract below.
+Current `review` exports include current working/accepted/draft identities, selected revision draft digest, frozen actual recipe/model settings, authoritative asset paths, structural QA, crop-image hashes and stale/effects labels. These fields are additive; existing RGB8/alpha8 panels, exact native crop origins/scales and full-precision layer contracts remain unchanged. A refreshed manifest receives a new content-addressed directory when current draft/state labels or rendered PNG hashes change. Saved revision-local before/after panels describe that operation's immutable comparison; obtain a current `review` export before proposing another correction. Cleanup availability and actual enabled/stale state are explicit; protected inward shading uses the additive contract below.
 
 Each successful native review removes only its own unchanged duplicate staging files or empty outer staging directory after validating durable canonical evidence, required before evidence and current inputs. Canonical manifests and PNGs are rechecked after synchronization and final input checks, before any disposal. Earlier stages, unknown or changed members, replacements, links and failed or uncertain invocations remain for inspection. A late disposal failure may leave some validated duplicates removed; its error identifies the durable canonical evidence and remaining stage. Completed native evidence remains usable if a later comparison or assessment write fails. This lifecycle does not change review identities, rendering, acceptance or existing recovery retention.
 
@@ -1480,6 +1480,28 @@ reviews are not regenerated on open. Current readers restore prior revisions; ol
 are not promised to understand new records. Retain a prior project/revision for
 recovery rather than stripping fields. No automatic cleanup occurs.
 
+### Varied backdrop in opaque RGB8 views
+
+An operative nonblack Background with positive variation enables deterministic
+coordinate-hashed rounding on pure-backdrop pixels of the live Result, native
+review Result PNG and opaque Result PNG deliveries and presentation previews.
+Each eligible fractional RGB16 sample uses the adjacent RGB8 codes with a
+shared per-pixel threshold across all three channels. Exact code values and
+pixels with foreground coverage retain ordinary nearest rounding. Native
+crops anchor the threshold to the oriented master's coordinates. Add margins
+uses zero native alpha inside the placed rectangle and all margin pixels.
+Match series uses zero coverage at integer placement or zero clipped filtered
+alpha before RGBA8 quantization. Presentation views anchor the threshold to
+their output grid, so a sampled preview can differ by a display code from a
+sample of the full-size delivery. Source, alpha and black/gray/white diagnostic
+panels, RGB16 layers and straight RGBA8 use their own existing encodings.
+
+Deliveries bind the varied-backdrop policy in the existing PNG encoding
+identity. Comparison requests bind the changed presentation JPEG policy and
+retained native PNG policy independently. Prior deliveries and comparison
+sheets retain their identities. Explicit review or export produces the new
+encoding under the usual content and request identity rules.
+
 ## Saved background light
 
 The optional recipe `background_light` has exactly `enabled` (boolean),
@@ -1934,8 +1956,10 @@ never swept by an export retry.
 Resource admission retains the 10 GiB disk reserve and adds the existing native
 allowance plus 16 bytes per output pixel, another 10 when black is selected, and
 2 MiB. Expanded variants/readbacks are
-processed sequentially; RGB8 conversion uses one row of float64 scratch and PNG
-readback hashes decoded rows. Admission is a disk-capacity estimate, not a RAM
+processed sequentially; RGB8 conversion uses bounded row scratch and PNG
+readback hashes decoded rows. Series resource estimation includes a one-byte
+selection plane per output pixel when the varied-backdrop RGB8 path needs it.
+Admission is a disk-capacity estimate, not a RAM
 estimate/reservation or a guarantee that every supported size fits current memory.
 
 

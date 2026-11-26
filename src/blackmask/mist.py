@@ -14,6 +14,7 @@ from PIL import Image
 from .assets import _checksum, inherit_revision_files, revision_asset, revision_hashes, stage_asset
 from .exposure import linear_to_rgb16, srgb_to_linear
 from .guidance import rasterize_regions, validate_guides
+from .pixel_math import HASH32_MAX, coordinate_hash32
 from .project import ProjectError, _json_bytes, digest
 from .repair import scalar16
 
@@ -21,7 +22,7 @@ ALGORITHM = "linear-srgb-mist-v1"
 VAPOR_ALGORITHM = "linear-srgb-vapor-v1"
 WISPY_VAPOR_ALGORITHM = "linear-srgb-vapor-v2"
 MAX_REQUEST_BYTES = 2_000_000
-MAX_SEED = 2**32 - 1
+MAX_SEED = HASH32_MAX
 ROWS_PER_CHUNK = 64
 MIST_MEMBERS = {
     "density16.png": "density_sha256",
@@ -166,14 +167,8 @@ def _quintic(value: np.ndarray) -> np.ndarray:
 
 def _lattice(x: np.ndarray, y: np.ndarray, seed: int, octave: int) -> np.ndarray:
     # V1 hashes signed cells modulo 2**32. Keep unsigned arithmetic explicit.
-    bits = np.bitwise_xor(
-        np.multiply(x, np.uint32(0x9E3779B1), dtype=np.uint32),
-        np.multiply(y, np.uint32(0x85EBCA77), dtype=np.uint32),
-    )
-    bits = bits ^ np.uint32(seed) ^ np.uint32(((octave + 1) * 0xC2B2AE3D) & MAX_SEED)
-    bits = np.multiply(bits ^ (bits >> np.uint32(16)), np.uint32(0x7FEB352D), dtype=np.uint32)
-    bits = np.multiply(bits ^ (bits >> np.uint32(15)), np.uint32(0x846CA68B), dtype=np.uint32)
-    return (bits ^ (bits >> np.uint32(16))).astype(np.float64) / MAX_SEED
+    salt = seed ^ (((octave + 1) * 0xC2B2AE3D) & MAX_SEED)
+    return coordinate_hash32(x, y, salt).astype(np.float64) / MAX_SEED
 
 
 def _value_noise(x: np.ndarray, y: np.ndarray, seed: int, octave: int) -> np.ndarray:

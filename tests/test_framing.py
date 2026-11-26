@@ -484,10 +484,11 @@ def protected_project(tmp_path):
     return project, source, result
 
 
-def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_path):
+def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_path, monkeypatch):
     from blackmask.background import read_background
     from blackmask.effects import saved_shading
     from blackmask.ingest import srgb_profile
+    from blackmask.review import render_presentation_preview
 
     project, _, selected = protected_project(tmp_path)
     state = read_project(project)
@@ -511,7 +512,14 @@ def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_
                 else backdrop[min(3, max(0, y - 2)), min(5, max(0, x - 1))]
             )
     before = hashes(project / "revisions"), (project / "state.json").read_bytes()
-    output = export_project(project, framing=margins(1, 2, 2, 1), framed_transparent=True)
+    framing_settings = margins(1, 2, 2, 1)
+    with monkeypatch.context() as previous_encoding:
+        previous_encoding.setattr("blackmask.export.uses_backdrop_dither", lambda _settings: False)
+        legacy = Path(
+            export_project(project, framing=framing_settings, framed_transparent=True)["directory"]
+        )
+        legacy_hashes = hashes(legacy)
+    output = export_project(project, framing=framing_settings, framed_transparent=True)
     delivery = Path(output["directory"])
     assert {path.name for path in delivery.iterdir()} == {
         "result_rgb16.tif",
@@ -528,7 +536,23 @@ def test_saved_framed_exports_scalar_pixels_protection_and_compact_manifest(tmp_
         assert image.pages[0].tags[34675].value == srgb_profile()
         assert image.pages[0].compression == 1
     with Image.open(saved_raster(delivery / "result_RGB8_VIEW.png")) as image:
-        np.testing.assert_array_equal(np.array(image), np.rint(expected / 257).astype(np.uint8))
+        rgb8 = np.array(image)
+    backdrop_only = np.ones(expected.shape[:2], dtype=bool)
+    backdrop_only[2:6, 1:7] = alpha == 0
+    rounded = np.rint(expected / 257).astype(np.uint8)
+    assert np.any(rgb8[backdrop_only] != rounded[backdrop_only])
+    np.testing.assert_array_equal(rgb8[~backdrop_only], rounded[~backdrop_only])
+    assert np.all(np.abs(rgb8[backdrop_only].astype(float) - expected[backdrop_only] / 257) < 1)
+    assert delivery != legacy
+    assert hashes(legacy) == legacy_hashes
+    preview, _ = render_presentation_preview(
+        project,
+        selected["revision"],
+        state["developed_id"],
+        manifest,
+        {"mode": "add-margins", "margins": framing_settings},
+    )
+    np.testing.assert_array_equal(preview, rgb8)
     with Image.open(saved_raster(delivery / "transparent_RGBA8_VIEW.png")) as image:
         rgba = np.array(image)
     expected_rgba = np.zeros((7, 9, 4), np.uint8)
@@ -828,8 +852,8 @@ def test_changes_during_render_fail_before_publication(tmp_path, monkeypatch, ch
         "asset": revision / "base_alpha16.png",
     }[changed]
 
-    def change_after_render(*args):
-        result = original(*args)
+    def change_after_render(*args, **kwargs):
+        result = original(*args, **kwargs)
         if changed == "asset":
             saved_raster(target).write_bytes(b"deliberately corrupt synthetic saved alpha")
         else:
@@ -968,8 +992,8 @@ def test_written_raster_must_roundtrip_before_publication(tmp_path, monkeypatch,
     else:
         original_png = export._write_framed_rgb8
 
-        def write_changed_png(path, pixels):
-            expected = original_png(path, pixels)
+        def write_changed_png(path, pixels, **kwargs):
+            expected = original_png(path, pixels, **kwargs)
             with Image.open(saved_raster(path)) as image:
                 changed = np.array(image)
                 profile = image.info["icc_profile"]

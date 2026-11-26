@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import tifffile
 from PIL import Image
+from test_background import assert_adjacent_result_codes
 from test_effects import fixture_project
 from test_framing import hashes, margins, protected_project, scalar_composite
 
@@ -56,7 +57,7 @@ def test_default_result_delivery_is_compact_and_profiled(tmp_path, mode):
         assert pixels.shape == (4, 6, 3), "Native delivery must retain full source pixel dimensions"
     with Image.open(directory / "result_RGB8_VIEW.png") as image:
         assert image.mode == "RGB" and image.info["icc_profile"] == srgb_profile()
-        np.testing.assert_array_equal(np.array(image), np.rint(pixels / 257).astype(np.uint8))
+        assert_adjacent_result_codes(np.array(image), pixels)
     assert all(hashes(project)[name] == value for name, value in preserved.items())
 
 
@@ -594,7 +595,9 @@ def test_default_native_export_uses_accepted_full_resolution_with_newer_draft(tm
     np.testing.assert_array_equal(actual, expected)
     with Image.open(directory / "result_RGB8_VIEW.png") as image:
         assert image.size == (6, 4)
-        np.testing.assert_array_equal(np.array(image), np.rint(expected / 257).astype(np.uint8))
+        rgb8 = np.array(image)
+        np.testing.assert_array_equal(rgb8[alpha > 0], np.rint(expected[alpha > 0] / 257))
+        assert_adjacent_result_codes(rgb8[alpha == 0], expected[alpha == 0])
     assert (project / "state.json").read_bytes() == before
 
 

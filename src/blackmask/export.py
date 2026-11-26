@@ -19,7 +19,9 @@ import tifffile
 from PIL import Image
 
 from .assets import revision_hashes, saved_asset
+from .background import uses_backdrop_dither
 from .ingest import srgb_profile, write_developed
+from .pixel_math import BACKDROP_DITHER_PNG_SUFFIX, result_rgb8
 from .project import (
     ProjectError,
     _json_bytes,
@@ -400,12 +402,18 @@ def _file_digest(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def _write_framed_rgb8(path: Path, pixels: np.ndarray) -> str:
-    """Keep conversion scratch to one row, rather than an expanded float64 RGB."""
+def _write_framed_rgb8(
+    path: Path, pixels: np.ndarray, *, backdrop_only: np.ndarray | None = None
+) -> str:
+    """Keep conversion scratch to one row."""
     expected = hashlib.sha256()
     with Image.new("RGB", (pixels.shape[1], pixels.shape[0])) as image:
         for y, row in enumerate(pixels):
-            converted = np.rint(row.astype(np.float64) / 257).astype(np.uint8)
+            converted = result_rgb8(
+                row[None],
+                backdrop_only=None if backdrop_only is None else backdrop_only[y : y + 1],
+                origin_xy=(0, y),
+            )[0]
             expected.update(converted.tobytes())
             with Image.fromarray(converted[None]) as strip:
                 image.paste(strip, (0, y))
@@ -936,10 +944,14 @@ def _recheck_export_inputs(
         raise ProjectError("Stale export state or saved inputs")
 
 
-def _write_rgb_pair(stage: Path, stem: str, pixels: np.ndarray) -> tuple[str, str]:
+def _write_rgb_pair(
+    stage: Path, stem: str, pixels: np.ndarray, *, backdrop_only: np.ndarray | None = None
+) -> tuple[str, str]:
     checksum = _pixel_digest(pixels)
     write_developed(stage / (stem + "_rgb16.tif"), pixels)
-    view = _write_framed_rgb8(stage / (stem + "_RGB8_VIEW.png"), pixels)
+    view = _write_framed_rgb8(
+        stage / (stem + "_RGB8_VIEW.png"), pixels, backdrop_only=backdrop_only
+    )
     return checksum, view
 
 
@@ -1260,6 +1272,8 @@ def _delivery_request_record(
     ):
         record["export_version"] = LIT_FADE_EXPORT_VERSION
         record["encoding"]["version"] = LIT_FADE_EXPORT_VERSION
+    if uses_backdrop_dither(manifest.get("background", {}).get("settings")):
+        record["encoding"]["png"] += BACKDROP_DITHER_PNG_SUFFIX
     record["identity_sha256"] = digest(_json_bytes(record))
     return record
 
@@ -1478,6 +1492,7 @@ def _export_delivery(
             sampling,
             retained_native_bytes=base.nbytes + alpha.nbytes + reduction_bytes,
             transparent="transparent" in variants,
+            backdrop_selection=record["encoding"]["png"].endswith(BACKDROP_DITHER_PNG_SUFFIX),
             spatial_fade_pixels=alpha.size
             if manifest.get("spatial_fade", {}).get("enabled")
             else 0,
@@ -1642,9 +1657,15 @@ def _write_delivery(
     exports.mkdir(exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".export-", dir=exports))
     for stem in ("result", *(["black"] if "black" in variants else [])):
+        dither_background = stem == "result" and record["encoding"]["png"].endswith(
+            BACKDROP_DITHER_PNG_SUFFIX
+        )
+        backdrop_only = None
         if sampling is not None:
             from .series_framing import render_series
 
+            if dither_background:
+                backdrop_only = np.empty((height, width), dtype=bool)
             pixels = render_series(
                 foreground,
                 alpha,
@@ -1656,6 +1677,7 @@ def _write_delivery(
                 spatial_fade=spatial,
                 black_background=stem == "black",
                 mist=mist if stem == "result" else None,
+                backdrop_only=backdrop_only,
             )
         else:
             native = (
@@ -1694,8 +1716,15 @@ def _write_delivery(
                 else native
             )
             del native
-        checksums = _write_rgb_pair(stage, stem, pixels)
-        del pixels
+            if dither_background:
+                if margins_settings is None:
+                    backdrop_only = alpha == 0
+                else:
+                    x0, y0, x1, y1 = record["source_rect_xyxy"]
+                    backdrop_only = np.ones((height, width), dtype=bool)
+                    np.equal(alpha, 0, out=backdrop_only[y0:y1, x0:x1])
+        checksums = _write_rgb_pair(stage, stem, pixels, backdrop_only=backdrop_only)
+        del pixels, backdrop_only
         _verify_rgb_pair(stage, stem, (width, height), checksums)
     if "transparent" in variants:
         rgba = (

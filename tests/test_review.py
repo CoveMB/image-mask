@@ -1013,6 +1013,48 @@ def test_comparison_presentation_binds_layout_and_keeps_native_coordinates(
     assert (project / "state.json").read_bytes() == before
 
 
+@pytest.mark.parametrize("retain_native", [False, True])
+def test_comparison_reencodes_changed_backdrop_presentation_without_replacing_old_sheet(
+    tmp_path, monkeypatch, retain_native
+):
+    from test_background import background_request
+    from test_effects import fixture_project
+    from test_framing import hashes, margins
+
+    from blackmask import operations, review
+    from blackmask.project import digest, read_project
+
+    project, _, _ = fixture_project(tmp_path)
+    revision = operations.apply_operation(project, background_request(project, color="#070707"))[
+        "revision"
+    ]
+    presentation = {
+        "mode": "add-margins",
+        "revision": revision,
+        "developed_id": read_project(project)["developed_id"],
+        "revision_manifest_sha256": digest(
+            (project / "revisions" / revision / "manifest.json").read_bytes()
+        ),
+        "margins": margins(),
+    }
+    options = {"comparison": True, "retain_native": retain_native, "presentation": presentation}
+    with monkeypatch.context() as previous_encoding:
+        previous_encoding.setattr(review, "uses_backdrop_dither", lambda _settings: False)
+        legacy = Path(review.review_project(project, **options)["comparison_manifest_file"])
+        legacy_bytes = hashes(legacy.parent)
+    result = review.review_project(project, **options)
+    current = Path(result["comparison_manifest_file"])
+    assert current != legacy
+    assert hashes(legacy.parent) == legacy_bytes
+    before = json.loads(legacy.read_bytes())["request"]
+    after = json.loads(current.read_bytes())["request"]
+    assert before["encoding"] != after["encoding"]
+    assert (
+        before["native_evidence_encoding"] != after["native_evidence_encoding"]
+    ) == retain_native
+    assert review.review_project(project, **options) == {**result, "reused": True}
+
+
 @pytest.mark.parametrize("mode", [None, "add-margins", "match-series"])
 @pytest.mark.parametrize("damage", ["order", "origin", "scale", "panel", "sheet"])
 def test_comparison_rejects_generated_layout_before_publication(

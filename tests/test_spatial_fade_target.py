@@ -21,10 +21,12 @@ from test_viewer import http, running
 from test_viewer_page import run_page
 
 from blackmask import operations
+from blackmask.assets import saved_asset
 from blackmask.background_light import combine_background_light
 from blackmask.export import export_project, read_rgb16, render_background, render_saved_result
 from blackmask.framing import frame_result, validate_margins
 from blackmask.mist import MistOperands, blend_mist_into_result
+from blackmask.pixel_math import result_rgb8
 from blackmask.project import ProjectError, _json_bytes, digest, read_project
 from blackmask.repair import scalar16
 from blackmask.series_framing import (
@@ -96,6 +98,9 @@ def test_saved_lit_target_native_comparisons_and_restore(tmp_path):
         project, light_request(project, dict(light, enabled=False))
     )
     master = accepted["developed_id"]
+    base_alpha = scalar16(
+        saved_asset(project, f"revisions/{accepted['revision']}/base_alpha16.png")
+    )
     lit_result = render_saved_result(project, lit["revision"], master)
     assert np.any(lit_result != render_saved_result(project, base["revision"], master))
     assert np.any(lit_result != render_saved_result(project, reduced["revision"], master))
@@ -117,7 +122,9 @@ def test_saved_lit_target_native_comparisons_and_restore(tmp_path):
                 return np.array(image)
 
         def expected(revision):
-            return np.rint(render_saved_result(project, revision, master) / 257).astype(np.uint8)
+            return result_rgb8(
+                render_saved_result(project, revision, master), backdrop_only=base_alpha == 0
+            )
 
         current = with_mist["revision"]
         np.testing.assert_array_equal(pixels(current), expected(current))
@@ -166,6 +173,7 @@ def test_lit_delivery_replays_all_modes_and_binds_saved_operands(tmp_path, style
         style, "requested-result-v7"
     )
     assert record["export_version"] == record["encoding"]["version"] == version
+    assert record["encoding"]["png"].endswith("+backdrop-coordinate-dither-v1")
     native_members = (
         "spatial_fade_settings.json",
         "background_rgb16.tif",
@@ -223,6 +231,10 @@ def test_lit_delivery_replays_all_modes_and_binds_saved_operands(tmp_path, style
         blend_mist_into_result(replayed, mist.density16, mist.clear16, mist.settings)
         assert np.any(pre_mist != replayed)
     np.testing.assert_array_equal(replayed, read_rgb16(native / "result_rgb16.tif"))
+    with Image.open(native / "result_RGB8_VIEW.png") as image:
+        np.testing.assert_array_equal(
+            np.array(image), result_rgb8(replayed, backdrop_only=alpha == 0)
+        )
     margins = detached / "add-margins"
     margins_record = json.loads((margins / "manifest.json").read_bytes())
     assert margins_record["spatial_fade"] == spatial_record
