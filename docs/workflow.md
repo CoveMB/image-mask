@@ -852,6 +852,55 @@ missing or clipped detail or fix a mask. Downstream fade highlight weighting can
 change because exposure precedes fading, and exposure OFF recalculates that
 weighting. Background light never enables exposure automatically.
 
+## Background pattern
+
+Complete the matte first and select the working **Result**. **Background pattern**
+starts OFF at 28% **Strength**. **Neutral gray** uses `#010101` and `#202020`.
+**Cool charcoal** uses `#010205` and `#141D27`. **Warm charcoal** uses `#040201`
+and `#251913`. Enter two custom `#RRGGBB` colours to set your own targets.
+**Reverse tones** swaps where the two colours appear. Use the numeric
+0–100% strength to retain fractions. At 0%, the backdrop is exact.
+
+1. Use **Add wave** and **Add oval** to build up to eight shapes. Choose a shape
+   by name to change its centre, clockwise rotation, enabled state and tone.
+   Set the geometry with the labelled numeric fields. You can also select
+   **Canvas authoring mode → Background pattern**, click to place its centre
+   and drag the round handle to rotate it.
+   Centres use native coordinates. Rotation and wave phase run from zero to
+   below 360 degrees. Wave bend starts at 0 px. Wavelength, spacing and oval
+   radii start at 0.5 px. Those distances go up to twice the longer native side.
+   A wave has 1–4 alternating bands, with feather from 0.5 px to its spacing.
+   Oval softness runs from 0.05 to 1. Shape extents can cross the image boundary.
+2. To start from a generated layout, choose **Waves**, **Ovals** or **Mixed** and
+   click **Generate pattern**. The first seed depends on the current photo and
+   style. **Next variation** advances the seed. **Use this pattern** replaces the
+   draft shapes and preserves the chosen colours, strength and ON/OFF switch.
+   **Cancel** keeps the current draft. Edit any generated shape as you would a
+   manually added shape.
+3. Select **Pattern ON** with at least one enabled shape. **Preview pattern**
+   shows the current native crop as a separate temporary RGB8 image, capped at
+   1024 pixels on the long side. **Apply pattern** saves the controls in a new
+   working revision or reuses the identical revision. For an unaccepted base,
+   check **Explicitly compare pattern on an unaccepted candidate** first.
+4. In **Result**, use **Compare pattern OFF** to view the saved revision without
+   its pattern. The comparison retains Background light, fade and Mist, and
+   leaves your draft available. **Turn pattern OFF** saves only the switch while
+   retaining the saved geometry, colours and weight field. **Reload saved pattern**
+   reloads this section from the working revision. Use it when the draft is stale
+   after a change to the working inputs.
+
+Opaque subject pixels receive no pattern. At partial alpha, the backdrop shows
+through the saved matte, including at protected translucent edges. The
+underlying foreground, alpha and saved fade target are retained. Black, Gray,
+White and transparent diagnostics exclude the pattern.
+
+Native Result uses the saved weight field. **Add margins** copies native Result
+and extends its patterned edge. **Match series** evaluates the saved shapes at
+the transformed output coordinates, including outside the native image.
+Request editable delivery to keep the field and settings, including when OFF.
+Keep the native companion with a framed delivery. See the
+[saved pattern contract](file-contract.md#saved-background-pattern).
+
 ## Mist
 
 Mist adds a single textured layer over the saved **Result** after the subject and

@@ -172,6 +172,7 @@ def _effects_request_identity(
         "shadow_fade",
         "background",
         "background_light",
+        "background_pattern",
         "spatial_fade",
         "fade_reduction",
         "mist",
@@ -183,6 +184,13 @@ def _effects_request_identity(
         normalized["mist"] = mist_request
     if "background" in normalized:
         normalized["background"] = normalized_background(normalized["background"])
+    if "background_pattern" in normalized:
+        from .background_pattern import normalize_background_pattern
+
+        normalized.pop("candidate_comparison")
+        normalized["background_pattern"] = normalize_background_pattern(
+            normalized["background_pattern"], *normalized["scope_xyxy"][2:]
+        )
     if "fade_reduction" in normalized:
         from .fade_reduction import REDUCTION_ALGORITHM
 
@@ -385,6 +393,7 @@ def _reused_effects_result(
                     "spatial_fade",
                     "shadow_fade",
                     "background_light",
+                    "background_pattern",
                     "local_tone_curve",
                     "local_texture",
                     "mist",
@@ -415,6 +424,7 @@ def _reused_effects_result(
             "shadow_fade",
             "background",
             "background_light",
+            "background_pattern",
             "spatial_fade",
         ):
             if name not in identity["request"]:
@@ -1259,6 +1269,19 @@ def run_effects(
     expected_authoring_digest: str | None = None,
 ) -> dict[str, Any]:
     """Caller holds the canonical writer lock; preserve all prior complete revisions."""
+    from .background_pattern import (
+        ALGORITHM as PATTERN_ALGORITHM,
+    )
+    from .background_pattern import (
+        PATTERN_FILES,
+        PatternOperands,
+        display_background,
+        normalize_background_pattern,
+        pattern_resource_bytes,
+        pattern_visible,
+        saved_pattern,
+        stage_background_pattern,
+    )
     from .export import publish_artifacts, read_rgb16, saved_layers
     from .operations import (
         _input_file,
@@ -1284,6 +1307,7 @@ def run_effects(
         - {
             "background",
             "background_light",
+            "background_pattern",
             "mist",
             "support_file",
             "color_cleanup",
@@ -1385,6 +1409,9 @@ def run_effects(
     light_changed = "background_light" in operation
     if light_changed and set(operation) != required | {"background_light"}:
         raise ProjectError("Background light must be an exclusive effects operation")
+    pattern_changed = "background_pattern" in operation
+    if pattern_changed and set(operation) != required | {"background_pattern"}:
+        raise ProjectError("Background pattern must be an exclusive effects operation")
     if background_changed:
         from .background import validate_background
 
@@ -1461,6 +1488,7 @@ def run_effects(
         and not texture_changed
         and not background_changed
         and not light_changed
+        and not pattern_changed
         and not spatial_changed
         and not reduction_changed
         and not mist_changed
@@ -1563,6 +1591,7 @@ def run_effects(
         or fade_changed
         or background_changed
         or light_changed
+        or pattern_changed
         or spatial_changed
         or reduction_changed
         or mist_changed
@@ -1602,6 +1631,17 @@ def run_effects(
         if parent != state["accepted_revision"] and not operation["candidate_comparison"]:
             raise ProjectError(
                 "Background light requires accepted base or explicit candidate comparison"
+            )
+    pattern_settings = None
+    if pattern_changed:
+        pattern_settings = normalize_background_pattern(
+            operation["background_pattern"], width, height
+        )
+        if scope != [0, 0, width, height]:
+            raise ProjectError("Background pattern scope must cover the full native image")
+        if parent != state["accepted_revision"] and not operation["candidate_comparison"]:
+            raise ProjectError(
+                "Background pattern requires accepted base or explicit candidate comparison"
             )
     reduction16 = None
     reduction_area_bytes = None
@@ -1725,6 +1765,7 @@ def run_effects(
             "spatial_fade",
             "background",
             "background_light",
+            "background_pattern",
             "mist",
             "notes",
         }
@@ -2245,6 +2286,7 @@ def run_effects(
                     "shadow_fade",
                     "background",
                     "background_light",
+                    "background_pattern",
                     "spatial_fade",
                     "mist",
                     "notes",
@@ -2269,6 +2311,8 @@ def run_effects(
         identity["execution"]["algorithms"]["shading"] = shading_algorithm
     if identity["execution"] is not None and (texture_changed or "local_texture" in manifest):
         identity["execution"]["algorithms"]["local_texture"] = TEXTURE_ALGORITHM
+    if identity["execution"] is not None and (pattern_changed or "background_pattern" in manifest):
+        identity["execution"]["algorithms"]["background_pattern"] = PATTERN_ALGORITHM
     if identity["execution"] is not None and (mist_changed or parent_mist is not None):
         if mist_apply:
             assert mist_request is not None
@@ -2332,11 +2376,16 @@ def run_effects(
                 "shadow_fade", manifest.get("shadow_fade"), revision_hashes(manifest)
             ),
             **({"mist": parent_mist} if parent_mist is not None else {}),
+            **(
+                {"background_pattern": manifest["background_pattern"]}
+                if "background_pattern" in manifest
+                else {}
+            ),
         ),
     )
     if reused_result is not None:
         recheck()
-        if mist_changed:
+        if mist_changed or pattern_changed:
             return dict(
                 reused_result,
                 base_manifest_sha256=digest(parent_bytes),
@@ -2354,6 +2403,11 @@ def run_effects(
         + (alpha.nbytes * 3 if sharpening_changed else 0)
         + (alpha.nbytes * 3 if tone_replacement else 0)
         + (alpha.nbytes * 3 if texture_area is not None else 0)
+        + (
+            pattern_resource_bytes(width, height)
+            if pattern_changed or "background_pattern" in manifest
+            else 0
+        )
         + (
             mist_resource_bytes(
                 width,
@@ -2769,6 +2823,9 @@ def run_effects(
             assets=assets,
         )
     )
+    pattern_record = stage_background_pattern(
+        project, parent, stage, state["developed_id"], (width, height), assets, pattern_settings
+    )
     tone_record = (
         None
         if tone_replacement
@@ -2850,6 +2907,8 @@ def run_effects(
         effect_records["mist"] = mist_record
     if light_record is not None:
         effect_records["background_light"] = light_record
+    if pattern_record is not None:
+        effect_records["background_pattern"] = pattern_record
     if sharpening_record is not None:
         effect_records["local_sharpening"] = sharpening_record
     if background_record is not None:
@@ -2899,6 +2958,7 @@ def run_effects(
         ),
         ("background", background_changed),
         ("background_light", light_changed),
+        ("background_pattern", pattern_changed),
         ("mist", mist_changed),
     ):
         if changed:
@@ -2982,12 +3042,27 @@ def run_effects(
         )
     from .background import uses_backdrop_dither
 
+    shown = (
+        display_background(
+            review_background,
+            PatternOperands(
+                pattern_record["settings"],
+                scalar16(stage_asset(project, stage, assets, PATTERN_FILES[0])),
+            ),
+        )
+        if pattern_record is not None and not stale
+        else None
+    )
     overview_options = {
         "developed_id": state["developed_id"],
         "background16": review_background,
+        "display_background16": shown,
         "dither_background": not stale
-        and uses_backdrop_dither(
-            background_record["settings"] if background_record is not None else None
+        and (
+            uses_backdrop_dither(
+                background_record["settings"] if background_record is not None else None
+            )
+            or pattern_visible(pattern_record["settings"] if pattern_record is not None else None)
         ),
         "spatial_fade": spatial_operands,
         "fade_background16": review_base
@@ -3050,7 +3125,19 @@ def run_effects(
             "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need scoped rebuild or explicit disable"
         )
     (stage / "review/manifest.json").write_bytes(_json_bytes(review))
-    if mist_changed:
+    if mist_changed or pattern_changed:
+        before_options = dict(overview_options)
+        if pattern_changed:
+            old_pattern = saved_pattern(
+                project, saved_asset(project, f"revisions/{parent}"), manifest, off=stale
+            )
+            before_options["display_background16"] = display_background(
+                review_background, old_pattern
+            )
+            before_options["dither_background"] = not stale and (
+                uses_backdrop_dither(manifest.get("background", {}).get("settings"))
+                or pattern_visible(old_pattern.settings if old_pattern is not None else None)
+            )
         write_revision_overview(
             stage / "review-before",
             source,
@@ -3061,7 +3148,7 @@ def run_effects(
                 project, saved_asset(project, f"revisions/{parent}"), manifest, effects_off=stale
             ),
             align_result=True,
-            **overview_options,
+            **before_options,
         )
     # Input snapshots remain consumed-input evidence. Bind the new output only
     # after its actual record and all four operands exist, so first repeats hit.
@@ -3112,6 +3199,8 @@ def run_effects(
     )
     if mist_record is not None:
         identity["mist"] = mist_record
+    if pattern_record is not None:
+        identity["background_pattern"] = pattern_record
     result = {
         "revision": revision,
         "parent": parent,
@@ -3146,7 +3235,14 @@ def run_effects(
     destination = revisions / revision
     validated_appearance = any(
         record is not None
-        for record in (spatial_record, light_record, tone_record, texture_record, mist_record)
+        for record in (
+            spatial_record,
+            light_record,
+            pattern_record,
+            tone_record,
+            texture_record,
+            mist_record,
+        )
     )
     if validated_appearance:
         _validate_revision_directory(
@@ -3176,6 +3272,8 @@ def run_effects(
                 if mist_changed
                 else "Background light"
                 if light_changed
+                else "Background pattern"
+                if pattern_changed
                 else "Fade into background"
                 if spatial_changed
                 else "Local tone curve"
@@ -3208,7 +3306,7 @@ def run_effects(
                 "base_manifest_sha256": digest(parent_bytes),
                 "revision_manifest_sha256": digest(_json_bytes(new_manifest)),
             }
-            if mist_changed
+            if mist_changed or pattern_changed
             else {}
         ),
     )

@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .assets import saved_asset
 from .background import uses_backdrop_dither
+from .background_pattern import pattern_visible
 from .ingest import srgb_profile
 from .library import (
     ResultPreviewNameTooLong,
@@ -96,6 +97,7 @@ def _identity(project: Path, state: dict[str, Any]) -> dict[str, Any]:
         "status": "Accepted" if revision == state["accepted_revision"] else "Draft",
         "encoding": DITHERED_GALLERY_ENCODING
         if uses_backdrop_dither(manifest.get("background", {}).get("settings"))
+        or pattern_visible(manifest.get("background_pattern", {}).get("settings"))
         else GALLERY_ENCODING,
     }
 

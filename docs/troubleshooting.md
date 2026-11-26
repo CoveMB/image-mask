@@ -352,6 +352,20 @@ in recovery storage and selects that revision's background; acceptance is unchan
 Export collisions preserve the existing delivery. Do not delete original projects,
 accepted dependencies, failed stages or recovery material automatically.
 
+## Background pattern recovery
+
+- **Preview or Apply reports stale.** Select the current working Result and use
+  **Reload saved pattern** before re-entering the intended changes. Reload
+  replaces this control's draft. A generated proposal is temporary until you
+  select **Use this pattern** and then **Apply pattern**.
+- **Turn the effect off while keeping the layout.** Use **Turn pattern OFF**.
+  Pending edits remain available. To reopen the saved layout, use **Reload
+  saved pattern**. **Compare pattern OFF** is a read-only view of the saved result.
+- **Reopen or recover an earlier layout.** **Restore saved revision** recovers
+  the pattern from that revision, including an OFF state or legacy absence.
+  Acceptance stays separate. For missing or damaged saved assets, restore an
+  intact backup. Keep both the presentation and its native editable companion.
+
 ## Mist recovery
 
 - **The Vapor bank covers the wrong part of the frame.** Reposition **Clear

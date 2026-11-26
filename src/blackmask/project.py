@@ -929,6 +929,7 @@ def _validate_revision_directory(
         raise ProjectError("Unbound saved Local sharpening authored area")
     from .background import validate_background_bindings
     from .background_light import validate_background_light_bindings
+    from .background_pattern import read_background_pattern, validate_background_pattern_bindings
     from .mist import parse_mist_json, validate_mist_bindings, validate_mist_revision
     from .shadow_fade import validate_shadow_fade_bindings
     from .spatial_fade import validate_spatial_bindings
@@ -979,6 +980,8 @@ def _validate_revision_directory(
 
     validate_background_bindings(project, _asset(project, directory), manifest)
     validate_background_light_bindings(project, _asset(project, directory), manifest)
+    pattern_directory = _asset(project, directory)
+    validate_background_pattern_bindings(pattern_directory, manifest)
     validate_mist_bindings(_asset(project, directory), manifest)
     if "mist" in manifest and _json_bytes(
         parse_mist_json(_asset(project, f"{directory}/manifest.json").read_bytes())
@@ -1000,6 +1003,13 @@ def _validate_revision_directory(
             record.get(name) != metadata[name] for name in ("width", "height")
         ):
             raise ProjectError("Saved background light dimensions differ from master")
+    if "background_pattern" in manifest:
+        record = manifest["background_pattern"]
+        metadata = _read_json(project, "source.json")["metadata"]
+        if not isinstance(record, dict) or any(
+            record.get(name) != metadata[name] for name in ("width", "height")
+        ):
+            raise ProjectError("Saved Background pattern dimensions differ from master")
     validation = _read_validation.get()
     key = (str(project), directory)
     signature = (
@@ -1055,6 +1065,7 @@ def _validate_revision_directory(
         raise ProjectError("Incomplete repair operands")
     _validate_background_semantics(project, _asset(project, directory), _json_bytes(manifest))
     _validate_background_light_semantics(project, _asset(project, directory), _json_bytes(manifest))
+    read_background_pattern(project, pattern_directory, manifest)
     if "mist" in manifest:
         metadata = _read_json(project, "source.json")["metadata"]
         _validate_mist_semantics(

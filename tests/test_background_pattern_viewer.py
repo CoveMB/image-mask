@@ -1,0 +1,297 @@
+import base64
+import io
+import json
+from http.client import HTTPConnection
+
+import numpy as np
+from PIL import Image
+from test_background_pattern_project import pattern_request, target_settings
+from test_spatial_fade_target import lit_project
+from test_viewer import http, running
+from test_viewer_page import run_page
+
+
+def png_pixels(payload):
+    with Image.open(io.BytesIO(payload)) as image:
+        return np.asarray(image).copy()
+
+
+def test_pattern_generate_preview_and_saved_comparison(tmp_path):
+    project, _, _, lit, _ = lit_project(tmp_path)
+    before = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
+    with running(project) as server:
+        snapshot = server.snapshot()
+        row = next(row for row in snapshot["revisions"] if row["revision"] == lit["revision"])
+        binding = {
+            "developed_id": snapshot["developed_id"],
+            "revision": lit["revision"],
+            "inputs_digest": snapshot["inputs_digest"],
+            "revision_manifest_sha256": row["revision_manifest_sha256"],
+        }
+        generate_route = "/api/background-pattern-generate"
+        preview_route = "/api/background-pattern-preview"
+        generation = dict(binding, style="mixed", seed=None)
+        status, payload, _ = http(server, generate_route, "POST", generation)
+        assert status == 200, payload
+        proposal = json.loads(payload)
+        assert {key: proposal[key] for key in binding} == binding
+        assert proposal["version"] == 1 and len(proposal["shapes"]) == 3
+        assert (
+            http(server, generate_route, "POST", dict(generation, seed=proposal["seed"]))[1]
+            == payload
+        )
+        assert (
+            http(server, generate_route, "POST", generation, **{"X-Blackmask-Token": ""})[0] == 403
+        )
+        assert (
+            http(server, generate_route, "POST", generation, **{"Content-Length": "2000001"})[0]
+            == 413
+        )
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        connection.request(
+            "POST",
+            generate_route,
+            json.dumps(generation)[:-1] + ', "seed": 0}',
+            {
+                "X-Blackmask-Token": server.token,
+                "Origin": server.origin,
+                "Content-Type": "application/json",
+            },
+        )
+        assert connection.getresponse().status == 400
+        connection.close()
+        crop = [1, 0, 6, 4]
+        preview_request = dict(binding, crop_xyxy=crop, background_pattern=target_settings())
+        status, payload, _ = http(server, preview_route, "POST", preview_request)
+        assert status == 200, payload
+        preview = json.loads(payload)
+        assert preview["crop_xyxy"] == crop and preview["display_dimensions_wh"] == [5, 4]
+        assert {key: preview[key] for key in binding} == binding
+        assert (
+            http(server, preview_route, "POST", dict(preview_request, crop_xyxy=[-1, 0, 6, 4]))[0]
+            == 400
+        )
+        assert (
+            http(
+                server,
+                preview_route,
+                "POST",
+                dict(preview_request, revision_manifest_sha256="b" * 64),
+            )[0]
+            == 409
+        )
+        assert {path: path.read_bytes() for path in project.rglob("*") if path.is_file()} == before
+
+        operation = pattern_request(project)
+        operation.pop("kind")
+        operation.pop("schema_version")
+        operation.update(
+            action="effects",
+            authoring_digest=snapshot["authoring_digest"],
+            revision_manifest_sha256=binding["revision_manifest_sha256"],
+        )
+        assert (
+            http(server, "/api/action", "POST", dict(operation, candidate_comparison=False))[0]
+            == 202
+        )
+        with server.action_lock:
+            assert server.action["error"] and "candidate" in server.action["error"].lower()
+        assert http(server, "/api/action", "POST", operation)[0] == 202
+        with server.action_lock:
+            assert server.action["error"] is None, server.action
+            result = server.action["result"]
+        assert result["base_manifest_sha256"] == binding["revision_manifest_sha256"]
+        row = next(
+            row for row in server.snapshot()["revisions"] if row["revision"] == result["revision"]
+        )
+        assert row["revision_manifest_sha256"] == result["revision_manifest_sha256"]
+        assert row["background_pattern"]["settings_sha256"] == preview["settings_sha256"]
+        url = f"/image/result/{result['revision']}/1,0,6,4"
+        status, pixels, _ = http(server, url)
+        assert status == 200
+        np.testing.assert_array_equal(
+            png_pixels(base64.b64decode(preview["png_base64"])), png_pixels(pixels)
+        )
+        baseline = http(server, f"/image/result/{lit['revision']}/1,0,6,4")[1]
+        assert http(server, url + "/background-pattern-off")[1] == baseline
+        assert http(server, generate_route, "POST", generation)[0] == 409
+
+
+PATTERN_PAGE = r"""
+function change(id, value) {
+  const control = $(id);
+  control.value = value;
+  control.oninput();
+}
+const previousFetch = fetch;
+let deferGeneration = false, lateGeneration;
+let latePreview;
+globalThis.fetch = async (path, options) => {
+  if (path === '/api/background-pattern-generate') {
+    const request = JSON.parse(options.body);
+    const response = {ok:true, json:async()=>({
+      ...request, version:1, seed:request.seed ?? 5,
+      shapes:[{id:'lower-wave',type:'wave',enabled:true,center_xy:[25,72+(request.seed ?? 5)],
+               rotation_degrees:5,bend_px:8,wavelength_px:90,phase_degrees:1,
+               spacing_px:9,band_count:3,feather_px:4,first_tone:'tone1'}],
+    })};
+    if (deferGeneration) return new Promise(resolve => {lateGeneration = () => resolve(response);});
+    return response;
+  }
+  if (path === '/api/background-pattern-preview') {
+    const request = JSON.parse(options.body);
+    return new Promise(resolve => {latePreview = () => resolve({ok:true, json:async()=>({
+      ...request, png_base64:'AAAA', label:'Temporary pattern view',
+    })});});
+  }
+  if (path === '/api/action') servedState.action = {name:'effects', running:true, error:null, result:null};
+  return previousFetch(path, options);
+};
+"""
+
+
+def test_page_pattern_edits_generate_cancel_and_apply():
+    run_page(
+        PATTERN_PAGE
+        + r"""
+await ready();
+assert.equal(patternDraft.settings.strength, .28);
+await $('patternAddWave').onclick();
+change('patternCenterX', '11.125');
+assert.equal(patternDraft.settings.shapes[0].center_xy[0], 11.125);
+await $('patternAddOval').onclick();
+change('patternStrength', '23.625');
+change('patternTone1', '#090a0b');
+change('patternTone2', '#213141');
+$('patternReverse').checked = true;
+$('patternReverse').oninput();
+const original = structuredClone(patternDraft.settings);
+$('patternStyle').value = 'mixed';
+await $('patternGenerate').onclick();
+const proposal = structuredClone(patternProposal);
+await $('patternNext').onclick();
+assert.equal(patternProposal.seed, (proposal.seed + 1) >>> 0);
+await $('patternCancel').onclick();
+assert.deepEqual(patternDraft.settings, original);
+await $('patternGenerate').onclick();
+await $('patternUse').onclick();
+assert.deepEqual(patternDraft.settings.shapes, proposal.shapes);
+assert.deepEqual(patternDraft.settings.tones_srgb, ['#090A0B','#213141']);
+assert.equal(patternDraft.settings.generator.seed, proposal.seed);
+$('patternEnabled').checked = true;
+$('patternEnabled').oninput();
+await $('patternApply').onclick();
+assert.deepEqual(posts.at(-1).background_pattern, patternDraft.settings);
+assert.equal(posts.at(-1).revision_manifest_sha256, 'a'.repeat(64));
+const submitted = posts.at(-1).background_pattern;
+const row = {...servedState.revisions[0], revision:'rev-002', revision_manifest_sha256:'b'.repeat(64),
+  background_pattern:{settings:submitted}};
+change('patternCenterX', '32.125');
+servedState.revisions.push(row);
+servedState.working_revision = row.revision;
+servedState.action = {name:'effects', running:false, error:null, result:{revision:row.revision,
+  revision_manifest_sha256:row.revision_manifest_sha256, parent:'rev-001',
+  base_manifest_sha256:'a'.repeat(64), developed_id:servedState.developed_id,
+  background_pattern:row.background_pattern}};
+await refresh();
+assert.equal(patternDraft.settings.shapes[0].center_xy[0], 32.125);
+assert.match($('patternStatus').textContent, /stale/i);
+"""
+    )
+
+
+def test_page_pattern_late_generation_cannot_replace_newer_draft():
+    run_page(
+        PATTERN_PAGE
+        + r"""
+await ready();
+await $('patternAddOval').onclick();
+$('patternStyle').value = 'mixed';
+deferGeneration = true;
+const pending = $('patternGenerate').onclick();
+change('patternCenterX', '12.125');
+lateGeneration();
+await pending;
+assert.equal(patternProposal, null);
+assert.equal(patternDraft.settings.shapes[0].center_xy[0], 12.125);
+const next = $('patternGenerate').onclick();
+const newRow = {...servedState.revisions[0], revision:'rev-002', revision_manifest_sha256:'b'.repeat(64)};
+servedState.working_revision = newRow.revision;
+servedState.revisions.push(newRow);
+await refresh();
+lateGeneration();
+await next;
+assert.equal(patternProposal, null);
+assert.match($('patternStatus').textContent, /stale/i);
+await $('patternReload').onclick();
+assert.equal(patternDraft.settings.shapes.length, 0);
+"""
+    )
+
+
+def test_page_pattern_preview_and_saved_only_off_preserve_newer_edits():
+    run_page(
+        PATTERN_PAGE
+        + r"""
+await ready();
+await $('patternAddOval').onclick();
+$('patternEnabled').checked = true;
+$('patternEnabled').oninput();
+const base = servedState.revisions[0];
+base.background_pattern = {settings:structuredClone(patternDraft.settings)};
+await refresh(true);
+const preview = $('patternPreview').onclick();
+change('patternCenterX', '13.125');
+latePreview();
+await preview;
+assert.equal($('patternPreviewPanel').hidden, true);
+const pending = structuredClone(patternDraft.settings);
+await $('patternOff').onclick();
+assert.deepEqual(posts.at(-1).background_pattern, {...base.background_pattern.settings, enabled:false});
+const row = {...base, revision:'rev-002', revision_manifest_sha256:'b'.repeat(64),
+  background_pattern:{settings:posts.at(-1).background_pattern}};
+servedState.revisions.push(row);
+servedState.working_revision = row.revision;
+servedState.action = {name:'effects', running:false, error:null, result:{revision:row.revision,
+  revision_manifest_sha256:row.revision_manifest_sha256, parent:base.revision,
+  base_manifest_sha256:base.revision_manifest_sha256, developed_id:servedState.developed_id,
+  background_pattern:row.background_pattern}};
+await refresh();
+assert.deepEqual(patternDraft.settings, pending);
+assert.match($('patternStatus').textContent, /stale/i);
+await $('patternReload').onclick();
+assert.deepEqual(patternDraft.settings, row.background_pattern.settings);
+"""
+    )
+
+
+def test_page_pattern_rotation_handle_tracks_pixel_centres_at_high_zoom():
+    run_page(
+        PATTERN_PAGE
+        + r"""
+await ready();
+await $('patternAddOval').onclick();
+change('patternCenterX', '42');
+change('patternCenterY', '50');
+$('authorMode').value = 'background-pattern';
+zoom = 8;
+draw();
+assert.equal(transform.scale, 16);
+const shape = currentPatternShape();
+const radius = Math.hypot(...state.dimensions_wh) * .09;
+const rect = canvas.getBoundingClientRect();
+function pointer(x, y) {
+  const [clientX, clientY] = nativeToScreen([x + .5, y + .5], rect,
+    [canvas.width, canvas.height], transform, crop);
+  return {clientX, clientY, pointerId:1};
+}
+canvas.onpointerdown(pointer(42 + radius, 50));
+assert.equal(gesture?.patternRotation, shape.id);
+canvas.onpointermove(pointer(42, 52));
+canvas.onpointerup(pointer(42, 52));
+assert.deepEqual(shape.center_xy, [42, 50]);
+assert.equal(shape.rotation_degrees, 90);
+canvas.onpointerdown(pointer(49.25, 51.125));
+assert.deepEqual(shape.center_xy, [49.25, 51.125]);
+"""
+    )

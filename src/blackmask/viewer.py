@@ -6,6 +6,7 @@ import io
 import json
 import re
 import secrets
+import sys
 import threading
 import tomllib
 import webbrowser
@@ -21,6 +22,16 @@ from PIL import Image
 from . import operations
 from .assets import revision_hashes, saved_asset
 from .background import uses_backdrop_dither
+from .background_pattern import (
+    PatternOperands,
+    PatternSettings,
+    display_background,
+    make_background_pattern,
+    normalize_background_pattern,
+    pattern_resource_bytes,
+    pattern_visible,
+    saved_pattern,
+)
 from .export import export_project, saved_layers
 from .framing import (
     FramingSaveUncertain,
@@ -258,6 +269,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "fade_reduction_areas": reduction_areas,
                         "background": manifest.get("background"),
                         "background_light": manifest.get("background_light"),
+                        "background_pattern": manifest.get("background_pattern"),
                         "mist": manifest.get("mist"),
                         "mist_area": read_mist_area(self.project, path, manifest)
                         if "mist" in manifest
@@ -482,6 +494,98 @@ class ReviewServer(ThreadingHTTPServer):
             self.framing_preview_lock.release()
 
     @_validation_scope()
+    def generate_background_pattern(self, data: Any) -> dict[str, Any]:
+        from .background_pattern_generation import default_pattern_seed, generate_background_pattern
+
+        binding, native_wh = self._pattern_target(data, {"style", "seed"})
+        style = data["style"]
+        seed = data["seed"]
+        try:
+            if seed is None:
+                seed = default_pattern_seed(binding["developed_id"], style)
+            shapes = generate_background_pattern(style, seed, *native_wh)
+        except ProjectError as error:
+            raise ValueError(str(error)) from error
+        self._pattern_target(data, {"style", "seed"})
+        return {**binding, "version": 1, "style": style, "seed": seed, "shapes": shapes}
+
+    @_validation_scope()
+    def preview_background_pattern(self, data: Any) -> dict[str, Any]:
+        if not self.framing_preview_lock.acquire(blocking=False):
+            raise ProjectError("Background pattern preview busy; retry after the current preview")
+        try:
+            fields = {"crop_xyxy", "background_pattern"}
+            binding, native_wh = self._pattern_target(data, fields)
+            crop = coordinates(data["crop_xyxy"], *native_wh, box=True)
+            try:
+                settings = normalize_background_pattern(data["background_pattern"], *native_wh)
+            except ProjectError as error:
+                raise ValueError(str(error)) from error
+            x0, y0, x1, y1 = crop
+            width, height = x1 - x0, y1 - y0
+            if pattern_resource_bytes(width, height) + 128 * width * height > sys.maxsize:
+                raise ValueError("Background pattern preview exceeds allocation bounds")
+            limit = min(1024, max(width, height))
+            size = (
+                max(1, width * limit // max(width, height)),
+                max(1, height * limit // max(width, height)),
+            )
+            path = f"/image/result/{binding['revision']}/" + ",".join(map(str, crop))
+            png = self._image_png(path, draft_pattern=settings, result_size_wh=size)
+            self._pattern_target(data, fields)
+            return {
+                **binding,
+                "crop_xyxy": crop,
+                "settings_sha256": digest(_json_bytes(dict(settings))),
+                "png_base64": base64.b64encode(png).decode("ascii"),
+                "display_dimensions_wh": list(size),
+                "scale_xy": [size[0] / width, size[1] / height],
+                "label": "RGB8 preview of unapplied Background pattern",
+            }
+        finally:
+            self.framing_preview_lock.release()
+
+    def _pattern_target(
+        self, data: Any, fields: set[str]
+    ) -> tuple[dict[str, str], tuple[int, int]]:
+        from .effects import effects_stale
+
+        keys = ("developed_id", "revision", "revision_manifest_sha256", "inputs_digest")
+        if (
+            not isinstance(data, dict)
+            or set(data) != set(keys) | fields
+            or any(
+                not isinstance(data[key], str) or re.fullmatch("[a-f0-9]{64}", data[key]) is None
+                for key in ("developed_id", "revision_manifest_sha256", "inputs_digest")
+            )
+            or not isinstance(data["revision"], str)
+            or re.fullmatch("rev-[0-9]{3,}", data["revision"]) is None
+        ):
+            raise ValueError("Invalid Background pattern request fields")
+        state_file = saved_asset(self.project, "state.json")
+        state_bytes = state_file.read_bytes()
+        source_file = saved_asset(self.project, "source.json")
+        source_bytes = source_file.read_bytes()
+        state = read_project(self.project, validate_drafts=False)
+        if (
+            data["developed_id"] != state["developed_id"]
+            or data["revision"] != state["working_revision"]
+            or data["inputs_digest"] != operations.draft_digest(self.project)
+        ):
+            raise ProjectError("Stale Background pattern working inputs; reload saved pattern")
+        manifest, raw = self._validated_revision(data["revision"], state["developed_id"])
+        if digest(raw) != data["revision_manifest_sha256"]:
+            raise ProjectError("Stale Background pattern revision manifest; reload saved pattern")
+        if not manifest["final_acceptable"] or effects_stale(manifest):
+            raise ProjectError(
+                "Background pattern requires a complete working Result with current effects"
+            )
+        master, _ = _validate_assets(self.project, state, validate_drafts=False)
+        if state_file.read_bytes() != state_bytes or source_file.read_bytes() != source_bytes:
+            raise ProjectError("Stale Background pattern working inputs; reload saved pattern")
+        return {key: data[key] for key in keys}, (master.shape[1], master.shape[0])
+
+    @_validation_scope()
     def preview_framing(self, data: Any, *, series_mode: bool = False) -> dict[str, Any]:
         """Read-only final-result preview; never author or publish native assets."""
         if (
@@ -648,6 +752,12 @@ class ReviewServer(ThreadingHTTPServer):
                     if base_background is not None
                     else np.zeros_like(foreground[y0:y1, x0:x1])
                 )
+                pattern = saved_pattern(
+                    self.project,
+                    directory,
+                    manifest,
+                    off=stale or data.get("panel", "result") != "result",
+                )
                 mist = (
                     saved_mist(self.project, directory, manifest, effects_off=stale)
                     if data.get("panel", "result") == "result"
@@ -660,11 +770,18 @@ class ReviewServer(ThreadingHTTPServer):
                     None if weight is None else weight[y0:y1, x0:x1],
                     opacity,
                     background16=None if background is None else background[y0:y1, x0:x1],
+                    display_background16=display_background(
+                        None if background is None else background[y0:y1, x0:x1],
+                        pattern.crop(x0, y0, x1, y1) if pattern is not None else None,
+                    ),
                     spatial_fade=comparison_spatial,
                     fade_background16=target if comparison_spatial is not None else None,
                     mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
                     dither_background=data.get("panel", "result") == "result"
-                    and uses_backdrop_dither(manifest.get("background", {}).get("settings")),
+                    and (
+                        uses_backdrop_dither(manifest.get("background", {}).get("settings"))
+                        or pattern_visible(pattern.settings if pattern is not None else None)
+                    ),
                     origin_xy=(x0, y0),
                 )[data.get("panel", "result")]
                 label = (
@@ -851,6 +968,7 @@ class ReviewServer(ThreadingHTTPServer):
                 "fade_reduction",
                 "background",
                 "background_light",
+                "background_pattern",
             }
             fields["effects"] |= set(data) & ({"mist"} if "mist" in data else optional)
             if any(
@@ -859,6 +977,7 @@ class ReviewServer(ThreadingHTTPServer):
                     "spatial_fade",
                     "fade_reduction",
                     "background_light",
+                    "background_pattern",
                     "local_tone_curve",
                     "local_texture",
                     "mist",
@@ -1130,6 +1249,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "fade_reduction",
                         "background",
                         "background_light",
+                        "background_pattern",
                         "mist",
                     )
                     if k in data
@@ -1148,6 +1268,7 @@ class ReviewServer(ThreadingHTTPServer):
                 "spatial_fade",
                 "fade_reduction",
                 "background_light",
+                "background_pattern",
                 "local_tone_curve",
                 "local_texture",
                 "mist",
@@ -1166,7 +1287,8 @@ class ReviewServer(ThreadingHTTPServer):
                 model_cache=self.model_cache,
                 expected_revision_manifest_sha256=expected_manifest,
                 expected_authoring_digest=data["authoring_digest"]
-                if {"local_tone_curve", "local_texture", "mist"} & request.keys()
+                if {"local_tone_curve", "local_texture", "mist", "background_pattern"}
+                & request.keys()
                 else None,
                 storage_config=self.storage_config,
             )
@@ -1213,11 +1335,20 @@ class ReviewServer(ThreadingHTTPServer):
 
     @_validation_scope()
     def image(self, path: str) -> bytes:
+        return self._image_png(path)
+
+    def _image_png(
+        self,
+        path: str,
+        *,
+        draft_pattern: PatternSettings | None = None,
+        result_size_wh: tuple[int, int] | None = None,
+    ) -> bytes:
         state = read_project(self.project, validate_drafts=False)
         match = re.fullmatch(
             r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/"
             r"([0-9]+,[0-9]+,[0-9]+,[0-9]+)"
-            r"(/base|/background-light-off|/mist-off|/exposure-off|/tone-curve-off|/texture-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
+            r"(/base|/background-light-off|/background-pattern-off|/mist-off|/exposure-off|/tone-curve-off|/texture-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -1266,6 +1397,19 @@ class ReviewServer(ThreadingHTTPServer):
 
             directory = saved_asset(self.project, f"revisions/{identity}")
             effects_off = base == "/base" or stale or effects_stale(manifest)
+            pattern = None
+            if draft_pattern is not None:
+                if pattern_visible(draft_pattern):
+                    pattern = PatternOperands(
+                        draft_pattern,
+                        make_background_pattern(
+                            draft_pattern, (width, height), crop_xyxy=[x0, y0, x1, y1]
+                        ),
+                    )
+            elif panel == "result" and not effects_off and base != "/background-pattern-off":
+                saved = saved_pattern(self.project, directory, manifest)
+                if saved is not None:
+                    pattern = saved.crop(x0, y0, x1, y1)
             base_background, background = (
                 saved_backgrounds(
                     self.project,
@@ -1302,6 +1446,10 @@ class ReviewServer(ThreadingHTTPServer):
                 background16=None
                 if background is None or panel != "result"
                 else background[y0:y1, x0:x1],
+                display_background16=display_background(
+                    None if background is None else background[y0:y1, x0:x1],
+                    pattern,
+                ),
                 spatial_fade=None
                 if spatial is None
                 else SpatialFadeOperands(
@@ -1313,12 +1461,20 @@ class ReviewServer(ThreadingHTTPServer):
                 fade_background16=None if target is None else target[y0:y1, x0:x1],
                 mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
                 dither_background=panel == "result"
-                and uses_backdrop_dither(manifest.get("background", {}).get("settings")),
+                and (
+                    uses_backdrop_dither(manifest.get("background", {}).get("settings"))
+                    or pattern_visible(pattern.settings if pattern is not None else None)
+                ),
                 origin_xy=(x0, y0),
+                result_size_wh=result_size_wh if result_size_wh != (x1 - x0, y1 - y0) else None,
             )[panel]
-        buffer = io.BytesIO()
-        Image.fromarray(pixels).save(buffer, format="PNG")
-        return buffer.getvalue()
+        with io.BytesIO() as buffer, Image.fromarray(pixels) as image:
+            if result_size_wh is not None and image.size != result_size_wh:
+                with image.resize(result_size_wh, Image.Resampling.LANCZOS) as reduced:
+                    reduced.save(buffer, format="PNG")
+            else:
+                image.save(buffer, format="PNG")
+            return buffer.getvalue()
 
     @_validation_scope()
     def mask(self, path: str) -> bytes:
@@ -1445,6 +1601,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
             "/api/appearance-recipe-create",
             "/api/appearance-recipe-validate",
             "/api/appearance-layout-preview",
+            "/api/background-pattern-generate",
+            "/api/background-pattern-preview",
         }:
             self.error(404, "Unknown route")
             return
@@ -1472,11 +1630,24 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 if self.path.startswith("/api/appearance-recipe-")
                 or self.path == "/api/appearance-layout-preview"
                 else _unique_object
-                if self.path.startswith(("/api/series-", "/api/spatial-", "/api/fade-reduction-"))
+                if self.path.startswith(
+                    (
+                        "/api/series-",
+                        "/api/spatial-",
+                        "/api/fade-reduction-",
+                        "/api/background-pattern-",
+                    )
+                )
                 else None,
                 parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Nonfinite JSON")),
             )
-            if self.path == "/api/appearance-recipe-create":
+            if self.path == "/api/background-pattern-generate":
+                result = self.server.generate_background_pattern(data)
+                self.reply(200, json.dumps(result, allow_nan=False).encode())
+            elif self.path == "/api/background-pattern-preview":
+                result = self.server.preview_background_pattern(data)
+                self.reply(200, json.dumps(result, allow_nan=False).encode())
+            elif self.path == "/api/appearance-recipe-create":
                 self.reply(
                     200,
                     json.dumps(
@@ -1531,7 +1702,12 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     or data.get("action") == "effects"
                     and any(
                         field in data
-                        for field in ("spatial_fade", "fade_reduction", "background_light")
+                        for field in (
+                            "spatial_fade",
+                            "fade_reduction",
+                            "background_light",
+                            "background_pattern",
+                        )
                     )
                 ):
                     data = json.loads(
@@ -1554,6 +1730,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     "/api/appearance-recipe-create",
                     "/api/appearance-recipe-validate",
                     "/api/appearance-layout-preview",
+                    "/api/background-pattern-generate",
+                    "/api/background-pattern-preview",
                 }
                 and isinstance(error, ProjectError)
             )

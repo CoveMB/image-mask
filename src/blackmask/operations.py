@@ -492,6 +492,11 @@ def _prepare(
             ) as prior:
                 rebuild = not np.array_equal(np.asarray(prior) != 0, raster.protection)
         mist_bytes = mist_resource_bytes(width, height, rebuild_clear=rebuild)
+    from .background_pattern import pattern_resource_bytes, stage_background_pattern
+
+    prepared_pattern = (parent_manifest or {}).get("background_pattern")
+    if recipe.background_pattern != (prepared_pattern or {}).get("settings"):
+        raise ProjectError("Changed Background pattern draft requires explicit Apply pattern")
     check_space(
         project,
         pixels.nbytes
@@ -500,6 +505,7 @@ def _prepare(
             + (2 if recipe.background_light is not None else 0)
         )
         + mist_bytes
+        + (pattern_resource_bytes(width, height) if prepared_pattern is not None else 0)
         + 1024**2,
     )
     revisions = saved_asset(project, "revisions")
@@ -602,6 +608,9 @@ def _prepare(
         (height, width),
         recipe.background_light,
         assets=assets,
+    )
+    background_pattern = stage_background_pattern(
+        project, parent, stage, state["developed_id"], (width, height), assets
     )
     # RGB8 is a separately labelled proxy. It never becomes a precision output owner.
     proxy = np.rint(pixels.astype(np.float64) / 257).astype(np.uint8)
@@ -727,6 +736,7 @@ def _prepare(
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
         **({"background_light": background_light} if background_light is not None else {}),
+        **({"background_pattern": background_pattern} if background_pattern is not None else {}),
         **({"mist": mist_record} if mist_record is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
@@ -1339,6 +1349,15 @@ def _matte(
     )
     background_settings = recipe.background
     light_settings = recipe.background_light
+    from .background_pattern import (
+        PATTERN_FILES,
+        PatternOperands,
+        display_background,
+        pattern_resource_bytes,
+        pattern_visible,
+        stage_background_pattern,
+    )
+
     guides = json.loads(saved_asset(project, f"revisions/{parent}/guides.json").read_bytes())
     if edge:
         parent_recipe = tomllib.loads(
@@ -1438,6 +1457,7 @@ def _matte(
             )
             + (min(height, 64) * width * 128 if light_settings is not None else 0)
             + (mist_resource_bytes(width, height) if "mist" in manifest else 0)
+            + (pattern_resource_bytes(width, height) if "background_pattern" in manifest else 0)
             + 1024**2,
         )
     foreground = pixels.copy()
@@ -1845,6 +1865,9 @@ def _matte(
         light_settings,
         assets=assets,
     )
+    background_pattern = stage_background_pattern(
+        project, parent, stage, state["developed_id"], (width, height), assets
+    )
     mist_record = stage_mist(project, parent, stage, assets, manifest)
     # Preparation snapshots requested drafts. A completed matte applies those
     # guides/matting settings but only inherits the previously generated effects.
@@ -1861,6 +1884,7 @@ def _matte(
         ("spatial_fade", spatial),
         ("background", background),
         ("background_light", background_light),
+        ("background_pattern", background_pattern),
         ("mist", mist_record),
     ):
         if inherited is not None:
@@ -1988,8 +2012,22 @@ def _matte(
             light_pixels,
             enabled=True,
         )
-    overview_dither = not stale_effects and uses_backdrop_dither(
-        background["settings"] if background is not None else None
+    shown = (
+        display_background(
+            background_pixels,
+            PatternOperands(
+                background_pattern["settings"],
+                scalar16(stage_asset(project, stage, assets, PATTERN_FILES[0])),
+            ),
+        )
+        if background_pattern is not None and not stale_effects
+        else None
+    )
+    overview_dither = not stale_effects and (
+        uses_backdrop_dither(background["settings"] if background is not None else None)
+        or pattern_visible(
+            background_pattern["settings"] if background_pattern is not None else None
+        )
     )
     write_revision_overview(
         stage / "review",
@@ -1997,6 +2035,7 @@ def _matte(
         review_foreground,
         alpha,
         background16=background_pixels,
+        display_background16=shown,
         dither_background=overview_dither,
         spatial_fade=spatial_operands,
         fade_background16=fade_target,
@@ -2037,6 +2076,7 @@ def _matte(
             before_foreground,
             parent_alpha,
             background16=background_pixels,
+            display_background16=shown,
             dither_background=overview_dither,
             spatial_fade=saved_spatial_fade(
                 project, parent, parent_alpha, manifest, effects_off=stale_effects
@@ -2176,6 +2216,7 @@ def _matte(
         **({"spatial_fade": spatial} if spatial is not None else {}),
         **({"background": background} if background is not None else {}),
         **({"background_light": background_light} if background_light is not None else {}),
+        **({"background_pattern": background_pattern} if background_pattern is not None else {}),
         **({"mist": mist_record} if mist_record is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))

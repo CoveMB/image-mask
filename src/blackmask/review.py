@@ -16,6 +16,12 @@ from PIL import Image, ImageDraw
 
 from .assets import saved_asset
 from .background import uses_backdrop_dither
+from .background_pattern import (
+    display_background,
+    pattern_resource_bytes,
+    pattern_visible,
+    saved_pattern,
+)
 from .effects import validate_cleanup
 from .export import (
     _foreground_contribution,
@@ -57,6 +63,7 @@ def review_panels(
     opacity: float = 0,
     *,
     background16: np.ndarray | None = None,
+    display_background16: np.ndarray | None = None,
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
     mist: MistOperands | None = None,
@@ -93,7 +100,7 @@ def review_panels(
     )
     result = (
         black
-        if background16 is None
+        if background16 is None and display_background16 is None
         else render_background(
             foreground,
             alpha16,
@@ -102,13 +109,14 @@ def review_panels(
             opacity,
             spatial_fade=spatial_fade,
             fade_background16=fade_background16,
+            display_background16=display_background16,
         )
     )
     if mist is not None:
         result = blend_mist_into_result(
             black.copy() if result is black else result, mist.density16, mist.clear16, mist.settings
         )
-    dither = dither_background and background16 is not None
+    dither = dither_background and (background16 is not None or display_background16 is not None)
     if dither and result_size_wh is not None:
         with (
             Image.fromarray(result_rgb8(result)) as image,
@@ -145,6 +153,7 @@ def write_review(
     weight16: np.ndarray | None = None,
     opacity: float = 0,
     background16: np.ndarray | None = None,
+    display_background16: np.ndarray | None = None,
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
     mist: MistOperands | None = None,
@@ -159,7 +168,9 @@ def write_review(
     directory.mkdir()
     records = []
     rows = []
-    show_result = separate_result_panel(background16 is not None, mist)
+    show_result = separate_result_panel(
+        background16 is not None or display_background16 is not None, mist
+    )
     for index, (x0, y0, x1, y1) in enumerate(validated):
         source_crop = source[y0:y1, x0:x1]
         rgb = foreground[y0:y1, x0:x1]
@@ -171,6 +182,9 @@ def write_review(
             None if weight16 is None else weight16[y0:y1, x0:x1],
             opacity,
             background16=None if background16 is None else background16[y0:y1, x0:x1],
+            display_background16=None
+            if display_background16 is None
+            else display_background16[y0:y1, x0:x1],
             spatial_fade=None
             if spatial_fade is None
             else SpatialFadeOperands(
@@ -254,6 +268,7 @@ def write_revision_overview(
     weight16: np.ndarray | None = None,
     opacity: float = 0,
     background16: np.ndarray | None = None,
+    display_background16: np.ndarray | None = None,
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
     label_rows: bool = False,
@@ -276,9 +291,9 @@ def write_revision_overview(
         else None
     )
     selected = ["source", "black", "gray", "white", "alpha"]
-    if separate_result_panel(background16 is not None, mist) or (
-        align_result and old_record is not None and "result" in old_record["panel_order"]
-    ):
+    if separate_result_panel(
+        background16 is not None or display_background16 is not None, mist
+    ) or (align_result and old_record is not None and "result" in old_record["panel_order"]):
         selected.append("result")
     total_rows = len(boxes) + (len(old_record["crops"]) if old_record is not None else 0)
     label_height = 24 if label_rows else 0
@@ -337,6 +352,9 @@ def write_revision_overview(
             None if weight16 is None else weight16[y0:y1, x0:x1],
             opacity,
             background16=None if background16 is None else background16[y0:y1, x0:x1],
+            display_background16=None
+            if display_background16 is None
+            else display_background16[y0:y1, x0:x1],
             spatial_fade=None
             if spatial_fade is None
             else SpatialFadeOperands(
@@ -474,11 +492,11 @@ def review_project(
 
 def _native_review_parent(project: Path, manifest: dict[str, Any]) -> dict[str, Any] | None:
     if manifest["kind"] != "repair":
-        if manifest["kind"] != "effects" or "mist" not in manifest:
+        if manifest["kind"] != "effects" or not {"mist", "background_pattern"} & manifest.keys():
             return None
         reuse = manifest.get("effects_reuse")
         request = reuse.get("request") if isinstance(reuse, dict) else None
-        if not isinstance(request, dict) or "mist" not in request:
+        if not isinstance(request, dict) or not {"mist", "background_pattern"} & request.keys():
             return None
     parent = read_revision(project, manifest["parent"], manifest["developed_id"])
     if parent["kind"] == "prepare":
@@ -541,7 +559,14 @@ def _review_project_locked(
     manifest_bytes = saved_asset(project, f"revisions/{revision}/manifest.json").read_bytes()
     check_space(
         project,
-        source.nbytes * 30 + sum((c[2] - c[0]) * (c[3] - c[1]) for c in selected) * 32 + 1024**2,
+        source.nbytes * 30
+        + sum((c[2] - c[0]) * (c[3] - c[1]) for c in selected) * 32
+        + (
+            pattern_resource_bytes(width, height)
+            if "background_pattern" in revision_manifest
+            else 0
+        )
+        + 1024**2,
     )
     root = saved_asset(project, f"reviews/{revision}")
     root.mkdir(parents=True, exist_ok=True)
@@ -560,6 +585,12 @@ def _review_project_locked(
     spatial = saved_spatial_fade(
         project, revision, alpha, revision_manifest, effects_off=base_comparison
     )
+    pattern = saved_pattern(
+        project,
+        saved_asset(project, f"revisions/{revision}"),
+        revision_manifest,
+        off=base_comparison or effects_stale(revision_manifest),
+    )
     target = (
         base_background
         if base_background is not None
@@ -576,9 +607,11 @@ def _review_project_locked(
         revision=revision,
         crops=selected,
         background16=background,
+        display_background16=display_background(background, pattern),
         dither_background=uses_backdrop_dither(
             revision_manifest.get("background", {}).get("settings")
-        ),
+        )
+        or pattern_visible(pattern.settings if pattern is not None else None),
         spatial_fade=spatial,
         fade_background16=target,
         weight16=weight,
@@ -926,6 +959,7 @@ def render_presentation_preview(
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Shared bounded layout preview; callers own identity capture, locks and rechecks."""
     from .background_light import saved_backgrounds
+    from .background_pattern import display_background, saved_pattern
     from .effects import effects_stale, saved_shading, saved_spatial_fade
     from .framing import framing_preview, validate_margins
     from .series_framing import (
@@ -945,7 +979,10 @@ def render_presentation_preview(
     directory = saved_asset(project, f"revisions/{revision}")
     series_mode = presentation["mode"] == "match-series"
     background_settings = loaded_manifest.get("background", {}).get("settings")
-    dither_background = uses_backdrop_dither(background_settings)
+    pattern_settings = loaded_manifest.get("background_pattern", {}).get("settings")
+    dither_background = uses_backdrop_dither(background_settings) or pattern_visible(
+        pattern_settings
+    )
     if series_mode:
         settings = validate_series_settings(presentation["settings"])
         layout = compute_series_layout(alpha, settings)
@@ -965,6 +1002,7 @@ def render_presentation_preview(
                 retained_native_bytes=foreground.nbytes + alpha.nbytes,
                 transparent=False,
                 backdrop_selection=True,
+                background_pattern=pattern_settings is not None,
             )
             backdrop_only = np.empty(display[::-1], dtype=bool)
         rgb16 = render_series(
@@ -975,6 +1013,7 @@ def render_presentation_preview(
             opacity=opacity,
             background_settings=background_settings,
             background_light_settings=loaded_manifest.get("background_light", {}).get("settings"),
+            background_pattern_settings=pattern_settings,
             spatial_fade=spatial,
             mist=saved_mist(project, directory, loaded_manifest),
             backdrop_only=backdrop_only,
@@ -992,6 +1031,12 @@ def render_presentation_preview(
             presentation["margins"], (foreground.shape[1], foreground.shape[0])
         )
         base_background, background = saved_backgrounds(project, directory, loaded_manifest)
+        shown = display_background(background, saved_pattern(project, directory, loaded_manifest))
+        fade_target = (
+            np.zeros_like(foreground)
+            if base_background is None and spatial is not None
+            else base_background
+        )
         native = (
             render_black(
                 foreground,
@@ -999,9 +1044,9 @@ def render_presentation_preview(
                 weight,
                 opacity,
                 spatial_fade=spatial,
-                fade_background16=np.zeros_like(foreground) if spatial is not None else None,
+                fade_background16=fade_target,
             )
-            if background is None
+            if background is None and shown is None
             else render_background(
                 foreground,
                 alpha,
@@ -1009,7 +1054,8 @@ def render_presentation_preview(
                 weight,
                 opacity,
                 spatial_fade=spatial,
-                fade_background16=base_background,
+                fade_background16=fade_target,
+                display_background16=shown,
             )
         )
         mist = saved_mist(project, directory, loaded_manifest)
@@ -1017,7 +1063,7 @@ def render_presentation_preview(
             blend_mist_into_result(native, mist.density16, mist.clear16, mist.settings)
         pixels, geometry = framing_preview(
             native,
-            background,
+            shown if shown is not None else background,
             margins,
             mist=mist,
             dither_alpha16=alpha if dither_background else None,
@@ -1332,16 +1378,21 @@ def _comparison_project_locked(
     has_background = not effects_stale(manifest) and (
         "background" in manifest
         or read_active_background_light(project, selected_directory, manifest) is not None
+        or pattern_visible(manifest.get("background_pattern", {}).get("settings"))
     )
-    overview_dither = has_background and uses_backdrop_dither(
-        manifest.get("background", {}).get("settings")
+    overview_dither = has_background and (
+        uses_backdrop_dither(manifest.get("background", {}).get("settings"))
+        or pattern_visible(manifest.get("background_pattern", {}).get("settings"))
     )
     native_dither = (
         retain_native
         and not effects_stale(manifest)
         and any(
             not effects_stale(item)
-            and uses_backdrop_dither(item.get("background", {}).get("settings"))
+            and (
+                uses_backdrop_dither(item.get("background", {}).get("settings"))
+                or pattern_visible(item.get("background_pattern", {}).get("settings"))
+            )
             for item in manifests.values()
         )
     )
@@ -1446,7 +1497,14 @@ def _comparison_project_locked(
         return response(record, reused=True)
     check_space(
         project,
-        source.nbytes * 30 + sum((c[2] - c[0]) * (c[3] - c[1]) for c in crops) * 32 + 16 * 1024**2,
+        source.nbytes * 30
+        + sum((c[2] - c[0]) * (c[3] - c[1]) for c in crops) * 32
+        + (
+            pattern_resource_bytes(source.shape[1], source.shape[0])
+            if "background_pattern" in manifest
+            else 0
+        )
+        + 16 * 1024**2,
     )
     stage = Path(tempfile.mkdtemp(prefix=".comparison-", dir=root))
     output = stage / "bundle"
@@ -1458,6 +1516,7 @@ def _comparison_project_locked(
         if effects_stale(manifest)
         else saved_backgrounds(project, saved_asset(project, f"revisions/{revision}"), manifest)
     )
+    pattern = saved_pattern(project, selected_directory, manifest, off=effects_stale(manifest))
     target = (
         base_background
         if base_background is not None
@@ -1476,6 +1535,7 @@ def _comparison_project_locked(
         weight16=weight,
         opacity=opacity,
         background16=background,
+        display_background16=display_background(background, pattern),
         spatial_fade=spatial,
         fade_background16=target,
         label_rows=True,

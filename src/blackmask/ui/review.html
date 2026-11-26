@@ -461,7 +461,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="edge">Refine edge</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option><option value="mist-placement">Mist coverage</option><option value="mist">Clear mist</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="edge">Refine edge</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option><option value="background-pattern">Background pattern</option><option value="mist-placement">Mist coverage</option><option value="mist">Clear mist</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -529,6 +529,64 @@
         <label><input id="backgroundLightCompare" type="checkbox" /> Compare Background light OFF</label>
         <p id="backgroundLightStatus" role="status" class="small"></p>
         <p id="backgroundLightDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset id="patternControls" disabled>
+        <legend>Background pattern</legend>
+        <label><input id="patternEnabled" type="checkbox" /> Pattern ON</label>
+        <label>Strength <input id="patternRange" type="range" min="0" max="100" step="1" value="28" /></label>
+        <label>Strength (%) <input id="patternStrength" type="number" min="0" max="100" step="any" value="28" /></label>
+        <label>Palette <select id="patternPalette"><option value="neutral">Neutral gray</option><option value="cool">Cool charcoal</option><option value="warm">Warm charcoal</option><option value="custom" disabled>Custom</option></select></label>
+        <label>Tone 1 <input id="patternColor1" type="color" value="#010101" /></label>
+        <label>Tone 1 #RRGGBB <input id="patternTone1" type="text" maxlength="7" value="#010101" /></label>
+        <label>Tone 2 <input id="patternColor2" type="color" value="#202020" /></label>
+        <label>Tone 2 #RRGGBB <input id="patternTone2" type="text" maxlength="7" value="#202020" /></label>
+        <label><input id="patternReverse" type="checkbox" /> Reverse tones</label>
+        <div>
+          <label>Generator style <select id="patternStyle"><option value="mixed">Mixed</option><option value="waves">Waves</option><option value="ovals">Ovals</option></select></label>
+          <button id="patternGenerate">Generate pattern</button>
+          <div id="patternProposal" hidden>
+            <span id="patternSeed" role="status"></span>
+            <button id="patternNext">Next variation</button>
+            <button id="patternUse">Use this pattern</button>
+            <button id="patternCancel">Cancel</button>
+          </div>
+        </div>
+        <button id="patternAddWave">Add wave</button>
+        <button id="patternAddOval">Add oval</button>
+        <label>Selected shape <select id="patternShape"></select></label>
+        <div id="patternShapeControls" hidden>
+          <label><input id="patternShapeEnabled" type="checkbox" /> Shape enabled</label>
+          <label>Centre X (native pixels) <input id="patternCenterX" type="number" min="0" step="any" /></label>
+          <label>Centre Y (native pixels) <input id="patternCenterY" type="number" min="0" step="any" /></label>
+          <label>Rotation (clockwise degrees) <input id="patternRotation" type="number" min="0" step="any" /></label>
+          <div id="patternWave" hidden>
+            <label>Bend (native pixels) <input id="patternBend" type="number" min="0" step="any" /></label>
+            <label>Wavelength (native pixels) <input id="patternWavelength" type="number" min="0.5" step="any" /></label>
+            <label>Phase (degrees) <input id="patternPhase" type="number" min="0" step="any" /></label>
+            <label>Spacing (native pixels) <input id="patternSpacing" type="number" min="0.5" step="any" /></label>
+            <label>Band count <input id="patternBands" type="number" min="1" max="4" step="1" /></label>
+            <label>Feather (native pixels) <input id="patternFeather" type="number" min="0.5" step="any" /></label>
+          </div>
+          <div id="patternOval" hidden>
+            <label>Horizontal radius (native pixels) <input id="patternRadiusX" type="number" min="0.5" step="any" /></label>
+            <label>Vertical radius (native pixels) <input id="patternRadiusY" type="number" min="0.5" step="any" /></label>
+            <label>Softness (0.05–1) <input id="patternSoftness" type="number" min="0.05" max="1" step="any" /></label>
+          </div>
+          <label><span id="patternShapeToneLabel">Shape tone</span> <select id="patternShapeTone"><option value="tone1">Tone 1</option><option value="tone2">Tone 2</option></select></label>
+          <button id="patternRemove">Remove selected shape</button>
+        </div>
+        <p class="small">Choose Background pattern in Canvas authoring mode. Click to place the selected shape and drag its rotation handle to turn it. Numeric controls work by keyboard.</p>
+        <button id="patternPreview">Preview pattern</button>
+        <label><input id="patternCandidate" type="checkbox" /> Explicitly compare pattern on an unaccepted candidate</label>
+        <button id="patternApply">Apply pattern</button>
+        <button id="patternOff">Turn pattern OFF</button>
+        <button id="patternReload">Reload saved pattern</button>
+        <label><input id="patternCompare" type="checkbox" /> Compare pattern OFF</label>
+        <p id="patternStatus" role="status" class="small"></p>
+        <figure id="patternPreviewPanel" hidden>
+          <figcaption id="patternPreviewLabel"></figcaption>
+          <img id="patternPreviewImage" alt="Temporary Result with the unapplied background pattern" style="max-width:100%;height:auto" />
+        </figure>
       </fieldset>
       <fieldset id="mistControls">
         <legend>Mist</legend>
@@ -860,12 +918,14 @@
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
     let backgroundDirty = false, backgroundPublished = false;
     let backgroundLightDraft = null, backgroundLightSubmitted = null;
+    let patternDraft = null, patternProposal = null, patternSubmission = null;
+    let patternRequest = 0, patternPreviewCrop = null, patternPreviewURL = null, selectedPatternShape = "";
     const backgroundLightGeometries = new Map();
     const backgroundLightControlIds = ["backgroundLightEnabled", "backgroundLightRange", "backgroundLightBrightness", "backgroundLightColor", "backgroundLightHex", "backgroundLightShape", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition", "backgroundLightReverse", "backgroundLightCandidate", "backgroundLightApply", "backgroundLightOff", "backgroundLightReload"];
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let sharpeningArea = {regions: [], protection: []}, sharpeningDirty = false, sharpeningAreaPublished = false;
     const nativeAreaModes = ["exposure", "fade", "sharpening", "toneCurve", "texture", "mist"];
-    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "textureCompare", "spatialCompare", "backgroundLightCompare", "mistCompare"];
+    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "textureCompare", "spatialCompare", "backgroundLightCompare", "patternCompare", "mistCompare"];
     const mistSettingsIds = ["mistEnabled", "mistDensityRange", "mistDensity", "mistColor", "mistHex", "mistSize", "mistCenterX", "mistCenterY", "mistRadiusX", "mistRadiusY", "mistSoftness", "mistStretch", "mistRotation", "mistSeed"];
     let mistDraft = null, mistSubmission = null, mistVersion = 0, loadedNativeView = null;
     let toneCurveArea = {regions: [], protection: []}, toneCurvePointRows = [];
@@ -1985,6 +2045,7 @@
       syncToneCurve(current, a, completed);
       syncTexture(current, a, completed);
       syncMist(current, a, completed);
+      syncPattern(current, a, completed, reload);
       const reductionSubmission = fadeReductionSubmitted;
       const reductionCompleted = completed && !a.error && reductionSubmission && a.name === "effects"
         && (a.result?.reused ? a.result.revision === reductionSubmission.base_revision : a.result?.parent === reductionSubmission.base_revision)
@@ -2259,6 +2320,7 @@
       updateToneCurveControls();
       updateTextureControls();
       updateMistControls();
+      updatePatternControls();
       updateEdgeControls();
       $("previewRepair").disabled = authoringBusy() || !state?.preview || ["not_applicable","no_result"].includes(state.preview.status) || state.preview.reason === "configuration_required";
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
@@ -2305,14 +2367,18 @@
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
       const lightLabel = " · Background light " + (["black", "gray", "white"].includes(panel) ? "excluded from diagnostic" : $("backgroundLightCompare").checked ? "OFF comparison" : viewed?.background_light?.settings?.enabled ? "ON" : "OFF");
       const mistLabel = panel === "result" && viewed?.mist ? " · Mist " + ($("mistCompare").checked ? "OFF comparison" : viewed.mist.settings.enabled ? "ON" : "OFF") : "";
+      const patternLabel = panel === "result" && viewed?.background_pattern
+        ? " · Background pattern " + ($("patternCompare").checked ? "OFF comparison" : viewed.background_pattern.settings.enabled ? "ON" : "OFF") : "";
       const spatialTarget = spatialTargetLabel(panel === "result" && !$("backgroundLightCompare").checked ? viewed?.spatial_fade?.settings : null);
       const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Local tone curve " + toneCurve + " · Local texture " + texture + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON · " + spatialTarget : "OFF") + ($("exposureCompare").checked ? " · curve, texture and fade recalculated from exposure-OFF RGB" : "");
-      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel + mistLabel;
+      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel + mistLabel + patternLabel;
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
-      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup + lightLabel + mistLabel;
+      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup + lightLabel + mistLabel + patternLabel;
     }
     async function loadImage() {
+      if (patternPreviewCrop !== null && patternPreviewCrop !== crop?.join(",")) clearPatternPreview();
+      updatePatternControls();
       if (!state || !crop) return;
       framingStatus();
       syncSeries();
@@ -2344,6 +2410,7 @@
         $("fadeCompare").checked,
         $("spatialCompare").checked,
         $("backgroundLightCompare").checked,
+        $("patternCompare").checked,
         $("mistCompare").checked,
         spatialMap,
         reductionView,
@@ -2377,7 +2444,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("mistCompare").checked && panel === "result" ? "/mist-off" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("textureCompare").checked ? "/texture-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("patternCompare").checked && panel === "result" ? "/background-pattern-off" : $("mistCompare").checked && panel === "result" ? "/mist-off" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("textureCompare").checked ? "/texture-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = edgePath ? await bitmap(`${edgePath}/${edgePanel}`)
           : reductionView === "off" && !["source", "alpha"].includes(panel)
           ? await spatialBitmap("off", revision, requestedCrop, panel, true)
@@ -2521,6 +2588,7 @@
       if (!activeEdgePreview()) {
         drawSpatialShapes(scale);
         drawBackgroundLight(scale);
+        drawPattern(scale);
         drawMistCoverage(scale);
         if (appearanceLayoutProposal) drawSpatialShapes(scale, appearanceLayoutProposal.settings, true);
       }
@@ -3508,6 +3576,384 @@
     $("backgroundLightCandidate").oninput = markBackgroundLightDirty;
     $("backgroundLightHide").onchange = draw;
     $("backgroundLightApply").onclick = guarded(() => applyBackgroundLight());
+    const PATTERN_PALETTES = {
+      neutral: ["#010101", "#202020"],
+      cool: ["#010205", "#141D27"],
+      warm: ["#040201", "#251913"],
+    };
+    const patternNumberFields = {
+      patternCenterX: ["center_xy", 0], patternCenterY: ["center_xy", 1],
+      patternRotation: ["rotation_degrees"], patternBend: ["bend_px"],
+      patternWavelength: ["wavelength_px"], patternPhase: ["phase_degrees"],
+      patternSpacing: ["spacing_px"], patternBands: ["band_count"], patternFeather: ["feather_px"],
+      patternRadiusX: ["radii_xy", 0], patternRadiusY: ["radii_xy", 1], patternSoftness: ["softness"],
+    };
+    function patternWorkingRow() {
+      return state?.revisions.find(row => row.revision === state.working_revision);
+    }
+    function patternBinding(row = patternWorkingRow()) {
+      return {
+        developed_id: state?.developed_id, revision: row?.revision,
+        revision_manifest_sha256: row?.revision_manifest_sha256, inputs_digest: state?.inputs_digest,
+      };
+    }
+    function patternIdentity() { return JSON.stringify(patternBinding()); }
+    function currentPatternShape() {
+      return patternDraft?.settings.shapes.find(shape => shape.id === selectedPatternShape);
+    }
+    function clearPatternPreview() {
+      if (patternPreviewURL !== null) URL.revokeObjectURL(patternPreviewURL);
+      patternPreviewURL = null;
+      patternPreviewCrop = null;
+      $("patternPreviewPanel").hidden = true;
+    }
+    function cancelPatternProposal() {
+      patternRequest++;
+      patternProposal = null;
+      updatePatternControls();
+      draw();
+    }
+    function reloadPattern(current = patternWorkingRow()) {
+      const saved = current?.background_pattern?.settings;
+      const settings = structuredClone(saved || {
+        enabled:false, strength:.28, tones_srgb:PATTERN_PALETTES.neutral, reverse:false, shapes:[],
+      });
+      patternDraft = {settings, identity:patternIdentity(), dirty:false, version:(patternDraft?.version || 0) + 1};
+      selectedPatternShape = settings.shapes[0]?.id || "";
+      $("patternCandidate").checked = false;
+      $("patternStyle").value = settings.generator?.style || "mixed";
+      clearPatternPreview();
+      cancelPatternProposal();
+      renderPatternControls();
+    }
+    function syncPattern(current, actionState, completed, reload) {
+      const submission = patternSubmission, result = actionState.result;
+      const acknowledged = completed && !actionState.error && actionState.name === "effects" && submission
+        && !submission.preserveDraft && patternDraft.version === submission.version
+        && patternDraft.identity === submission.identity && result?.developed_id === state.developed_id
+        && result.base_manifest_sha256 === submission.binding.revision_manifest_sha256
+        && result.revision_manifest_sha256 === current?.revision_manifest_sha256
+        && result.revision === current?.revision
+        && (result.reused ? result.revision : result.parent) === submission.binding.revision
+        && fadeReductionAreaIdentity(result.background_pattern?.settings) === submission.settings
+        && fadeReductionAreaIdentity(current?.background_pattern?.settings) === submission.settings;
+      if (completed || reload) patternSubmission = null;
+      if (reload || !patternDraft || acknowledged || (!patternDraft.dirty && patternDraft.identity !== patternIdentity())) {
+        reloadPattern(current);
+      } else if (patternDraft.identity !== patternIdentity()) {
+        patternProposal = null;
+        clearPatternPreview();
+      }
+      updatePatternControls();
+    }
+    function validPatternDraft(settings) {
+      const [width, height] = state.dimensions_wh, limit = 2 * Math.max(width, height);
+      const within = (value, low, high) => Number.isFinite(value) && value >= low && value <= high;
+      const angle = value => within(value, 0, 360) && value < 360;
+      const distance = value => within(value, .5, limit);
+      if (!within(settings.strength, 0, 1) || !settings.tones_srgb.every(tone => /^#[0-9A-F]{6}$/.test(tone)))
+        throw Error("Use strength from 0 to 100% and two #RRGGBB tones");
+      if (settings.enabled && !settings.shapes.some(shape => shape.enabled))
+        throw Error("Enable a wave or oval before turning the pattern ON");
+      for (const shape of settings.shapes) {
+        if (!within(shape.center_xy[0], 0, width) || !within(shape.center_xy[1], 0, height) || !angle(shape.rotation_degrees))
+          throw Error("Set each shape centre within the native image and rotation from 0 to below 360");
+        if (shape.type === "oval" && (!shape.radii_xy.every(distance) || !within(shape.softness, .05, 1)))
+          throw Error("Set oval radii from 0.5 to " + limit + " px and softness from 0.05 to 1");
+        if (shape.type === "wave" && (!within(shape.bend_px, 0, limit) || !distance(shape.wavelength_px)
+          || !distance(shape.spacing_px) || !within(shape.feather_px, .5, shape.spacing_px)
+          || !angle(shape.phase_degrees) || !Number.isInteger(shape.band_count) || !within(shape.band_count, 1, 4)))
+          throw Error("Use valid wave distances, feather up to the spacing, phase below 360 and 1–4 bands");
+      }
+    }
+    function updatePatternControls() {
+      if (!patternDraft) return;
+      const current = patternWorkingRow();
+      const busy = authoringBusy();
+      const unavailable = !current?.final_acceptable || !current?.revision_manifest_sha256 || !state.inputs_digest;
+      const stale = patternDraft.identity !== patternIdentity();
+      const saved = current?.background_pattern?.settings;
+      $("patternControls").disabled = busy || unavailable;
+      for (const id of ["patternGenerate", "patternPreview", "patternApply"]) $(id).disabled = busy || unavailable || stale;
+      for (const id of ["patternAddWave", "patternAddOval"]) $(id).disabled = patternDraft.settings.shapes.length >= 8;
+      $("patternOff").disabled = busy || unavailable || !saved?.enabled;
+      $("patternProposal").hidden = !patternProposal;
+      $("patternSeed").textContent = patternProposal ? "Proposed seed " + patternProposal.seed : "";
+      $("patternCompare").disabled = !$("viewRevision").value || $("panel").value !== "result";
+      const source = saved ? "Saved pattern " + (saved.enabled ? "ON" : "OFF")
+        + (saved.generator ? " · seed " + saved.generator.seed : "") : "No saved pattern";
+      $("patternStatus").textContent = unavailable ? "A complete working Result is needed for Background pattern"
+        : stale ? "Stale pattern draft · Reload saved pattern before Preview or Apply"
+        : source + (patternDraft.dirty ? " · Unapplied edits" : "");
+    }
+    function renderPatternPalette() {
+      const tones = patternDraft.settings.tones_srgb;
+      $("patternPalette").value = Object.keys(PATTERN_PALETTES).find(
+        key => PATTERN_PALETTES[key].every((tone, i) => tone === tones[i])) || "custom";
+      for (let i = 0; i < 2; i++) {
+        $("patternTone" + (i + 1)).value = tones[i];
+        if (/^#[0-9A-F]{6}$/.test(tones[i])) $("patternColor" + (i + 1)).value = tones[i].toLowerCase();
+      }
+    }
+    function renderPatternControls() {
+      const settings = patternDraft.settings;
+      $("patternEnabled").checked = settings.enabled;
+      $("patternStrength").value = String(backgroundPercentage(settings.strength));
+      $("patternRange").value = $("patternStrength").value;
+      $("patternReverse").checked = settings.reverse;
+      renderPatternPalette();
+      const list = $("patternShape");
+      list.replaceChildren();
+      for (const shape of settings.shapes) {
+        const option = document.createElement("option");
+        option.value = shape.id;
+        option.textContent = (shape.type === "wave" ? "Wave" : "Oval") + " · " + shape.id + (shape.enabled ? "" : " (OFF)");
+        list.append(option);
+      }
+      list.value = selectedPatternShape;
+      const shape = currentPatternShape();
+      $("patternShapeControls").hidden = !shape;
+      if (shape) {
+        $("patternShapeEnabled").checked = shape.enabled;
+        $("patternWave").hidden = shape.type !== "wave";
+        $("patternOval").hidden = shape.type !== "oval";
+        $("patternShapeToneLabel").textContent = shape.type === "wave" ? "First band tone" : "Oval tone";
+        $("patternShapeTone").value = shape.type === "wave" ? shape.first_tone : shape.tone;
+        for (const [id, [field, index]] of Object.entries(patternNumberFields)) {
+          const value = index === undefined ? shape[field] : shape[field]?.[index];
+          $(id).value = value === undefined || value === null ? "" : String(value);
+        }
+      }
+      updatePatternControls();
+      draw();
+    }
+    function markPatternDirty() {
+      patternDraft.dirty = true;
+      patternDraft.version++;
+      clearPatternPreview();
+      cancelPatternProposal();
+    }
+    function addPatternShape(type) {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const shapes = patternDraft.settings.shapes;
+      if (shapes.length >= 8) throw Error("A pattern can contain at most eight shapes");
+      const [width, height] = state.dimensions_wh, short = Math.min(width, height);
+      let index = 1;
+      while (shapes.some(shape => shape.id === type + "-" + index)) index++;
+      const id = type + "-" + index;
+      const placement = {id, type, enabled:true, center_xy:[width / 2, height * .65], rotation_degrees:0};
+      const spacing = Math.max(.5, short * .13);
+      shapes.push(type === "wave" ? {...placement, bend_px:short * .07, wavelength_px:Math.max(.5, short * .8),
+        phase_degrees:0, spacing_px:spacing, band_count:3, feather_px:Math.max(.5, spacing / 2), first_tone:"tone2"}
+        : {...placement, radii_xy:[Math.max(.5, width * .27), Math.max(.5, height * .26)], softness:.8, tone:"tone1"});
+      selectedPatternShape = id;
+      markPatternDirty();
+      renderPatternControls();
+    }
+    function requirePatternTarget(savedOnly = false) {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const current = patternWorkingRow();
+      if (!current?.final_acceptable || !current.revision_manifest_sha256 || !state.inputs_digest)
+        throw Error("Load a complete working Result for Background pattern");
+      if (!savedOnly && patternDraft.identity !== patternIdentity())
+        throw Error("Stale pattern draft · Reload saved pattern");
+      return current;
+    }
+    async function requestPattern(route, extra) {
+      requirePatternTarget();
+      const identity = patternIdentity(), binding = patternBinding(), version = patternDraft.version;
+      const request = ++patternRequest;
+      const current = () => request === patternRequest && version === patternDraft.version
+        && identity === patternIdentity() && !authoringBusy();
+      try {
+        const result = await (await api(route, {...binding, ...extra})).json();
+        return current() && Object.entries(binding).every(([key, value]) => result[key] === value) ? result : null;
+      } catch (error) {
+        if (current()) throw error;
+        return null;
+      }
+    }
+    async function generatePattern(next = false) {
+      const style = $("patternStyle").value || "mixed";
+      const seed = next && patternProposal ? (patternProposal.seed + 1) >>> 0 : null;
+      const proposal = await requestPattern("/api/background-pattern-generate", {style, seed});
+      if (!proposal) return;
+      patternProposal = proposal;
+      updatePatternControls();
+      draw();
+    }
+    async function previewPattern() {
+      requirePatternTarget();
+      const settings = structuredClone(patternDraft.settings);
+      validPatternDraft(settings);
+      const rectangle = [...crop], cropKey = rectangle.join(",");
+      const preview = await requestPattern("/api/background-pattern-preview", {crop_xyxy:rectangle, background_pattern:settings});
+      if (!preview || cropKey !== crop.join(",") || preview.crop_xyxy.join(",") !== cropKey) return;
+      clearPatternPreview();
+      const bytes = Uint8Array.from(atob(preview.png_base64), value => value.charCodeAt(0));
+      patternPreviewURL = URL.createObjectURL(new Blob([bytes], {type:"image/png"}));
+      patternPreviewCrop = cropKey;
+      $("patternPreviewImage").src = patternPreviewURL;
+      $("patternPreviewLabel").textContent = preview.label + " · native crop " + cropKey;
+      $("patternPreviewPanel").hidden = false;
+    }
+    async function applyPattern(savedOnly = false) {
+      const current = requirePatternTarget(savedOnly);
+      const saved = current.background_pattern?.settings;
+      if (savedOnly && !saved?.enabled) return;
+      if (dirty) throw Error("Save or reload pending matting guides before Apply pattern");
+      const settings = savedOnly ? {...structuredClone(saved), enabled:false} : structuredClone(patternDraft.settings);
+      validPatternDraft(settings);
+      if (!$("patternCandidate").checked && current.revision !== state.accepted_revision)
+        throw Error("Check explicit candidate comparison to change this unaccepted Result");
+      const binding = patternBinding(current);
+      patternSubmission = {binding, version:patternDraft.version, identity:patternDraft.identity,
+        settings:fadeReductionAreaIdentity(settings), preserveDraft:savedOnly && patternDraft.dirty};
+      if (!savedOnly) patternDraft.dirty = true;
+      clearPatternPreview();
+      cancelPatternProposal();
+      try {
+        await action("effects", {scope_xyxy:[0, 0, ...state.dimensions_wh], background_pattern:settings,
+          candidate_comparison:$("patternCandidate").checked, revision_manifest_sha256:binding.revision_manifest_sha256});
+      } catch (error) {
+        patternSubmission = null;
+        throw error;
+      }
+    }
+    function drawPattern(scale) {
+      if (!patternDraft || patternDraft.identity !== patternIdentity() || $("viewRevision").value !== state.working_revision
+        || (!patternProposal && $("authorMode").value !== "background-pattern")) return;
+      const shapes = patternProposal?.shapes || patternDraft.settings.shapes;
+      for (const shape of shapes) {
+        if (!shape.enabled || !shape.center_xy.every(Number.isFinite) || !Number.isFinite(shape.rotation_degrees)) continue;
+        ctx.save();
+        ctx.translate(shape.center_xy[0] - crop[0] + .5, shape.center_xy[1] - crop[1] + .5);
+        ctx.rotate(shape.rotation_degrees * Math.PI / 180);
+        ctx.strokeStyle = patternProposal || shape.id === selectedPatternShape ? "#55E4E3" : "#D2E3E3";
+        ctx.lineWidth = 1.25 / scale;
+        if (patternProposal) ctx.setLineDash([5 / scale, 5 / scale]);
+        ctx.beginPath();
+        if (shape.type === "oval" && shape.radii_xy.every(radius => radius > 0)) {
+          ctx.ellipse(0, 0, ...shape.radii_xy, 0, 0, Math.PI * 2);
+        } else if (shape.type === "wave" && shape.wavelength_px > 0 && Number.isInteger(shape.band_count)
+          && shape.band_count >= 1 && shape.band_count <= 4) {
+          const length = Math.hypot(...state.dimensions_wh);
+          for (let band = 0; band <= shape.band_count; band++) {
+            const offset = (band - shape.band_count / 2) * shape.spacing_px;
+            for (let step = 0; step <= 128; step++) {
+              const x = length * (step / 64 - 1);
+              const y = offset + shape.bend_px * Math.sin(2 * Math.PI * (x / shape.wavelength_px + shape.phase_degrees / 360));
+              if (step) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+            }
+          }
+        }
+        ctx.stroke();
+        if (!patternProposal && shape.id === selectedPatternShape) {
+          const radius = patternRotationRadius();
+          ctx.beginPath(); ctx.arc(0, 0, 4 / scale, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(6 / scale, 0); ctx.lineTo(radius - 5 / scale, 0); ctx.stroke();
+          ctx.beginPath(); ctx.arc(radius, 0, 5 / scale, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+    function patternRotationRadius() { return Math.max(1, Math.hypot(...state.dimensions_wh) * .09); }
+    function patternPixelCentre(point) {
+      // The canvas displays the first sample at half a pixel from the image edge.
+      return [point[0] - .5, point[1] - .5];
+    }
+    function beginPatternPlacement(event, point) {
+      requirePatternTarget();
+      const shape = currentPatternShape();
+      if ($("viewRevision").value !== state.working_revision || !shape)
+        throw Error("Select a pattern shape and load the working native view");
+      const position = patternPixelCentre(point), radius = patternRotationRadius();
+      const [handleX, handleY] = spatialToNative([radius, 0], shape);
+      const tolerance = Math.min(radius / 2, 9 / transform.scale);
+      if (!patternProposal && shape.enabled && Number.isFinite(shape.rotation_degrees)
+        && Math.hypot(position[0] - handleX, position[1] - handleY) <= tolerance) {
+        gesture = {patternRotation:shape.id, patternIdentity:patternIdentity()};
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
+      shape.center_xy = position.map((value, axis) => Math.max(0, Math.min(state.dimensions_wh[axis], value)));
+      markPatternDirty();
+      renderPatternControls();
+    }
+    function rotatePattern(point) {
+      if (authoringBusy() || gesture.patternIdentity !== patternIdentity()) return;
+      const shape = currentPatternShape();
+      if (!shape || shape.id !== gesture.patternRotation) return;
+      const [x, y] = patternPixelCentre(point);
+      shape.rotation_degrees = (Math.atan2(y - shape.center_xy[1], x - shape.center_xy[0]) * 180 / Math.PI + 360) % 360;
+      $("patternRotation").value = String(shape.rotation_degrees);
+      markPatternDirty();
+    }
+    $("patternEnabled").oninput = () => {patternDraft.settings.enabled = $("patternEnabled").checked; markPatternDirty();};
+    $("patternReverse").oninput = () => {patternDraft.settings.reverse = $("patternReverse").checked; markPatternDirty();};
+    for (const [control, paired] of [["patternStrength", "patternRange"], ["patternRange", "patternStrength"]]) {
+      $(control).oninput = () => {
+        const text = $(control).value;
+        $(paired).value = text;
+        patternDraft.settings.strength = text === "" ? null : Number(text) / 100;
+        markPatternDirty();
+      };
+    }
+    $("patternPalette").onchange = () => {
+      const tones = PATTERN_PALETTES[$("patternPalette").value];
+      if (tones) { patternDraft.settings.tones_srgb = [...tones]; markPatternDirty(); renderPatternPalette(); }
+    };
+    for (let i = 0; i < 2; i++) {
+      for (const id of ["patternColor" + (i + 1), "patternTone" + (i + 1)]) {
+        $(id).oninput = () => {
+          patternDraft.settings.tones_srgb[i] = $(id).value.toUpperCase();
+          markPatternDirty(); renderPatternPalette();
+        };
+      }
+    }
+    for (const [id, [field, index]] of Object.entries(patternNumberFields)) {
+      $(id).oninput = () => {
+        const shape = currentPatternShape(), text = $(id).value;
+        if (!shape) return;
+        const number = text === "" ? null : Number(text);
+        if (index === undefined) shape[field] = number; else shape[field][index] = number;
+        markPatternDirty();
+      };
+    }
+    $("patternShape").onchange = () => {selectedPatternShape = $("patternShape").value; renderPatternControls();};
+    $("patternShapeEnabled").oninput = () => {
+      currentPatternShape().enabled = $("patternShapeEnabled").checked;
+      markPatternDirty(); renderPatternControls();
+    };
+    $("patternShapeTone").oninput = () => {
+      const shape = currentPatternShape();
+      shape[shape.type === "wave" ? "first_tone" : "tone"] = $("patternShapeTone").value;
+      markPatternDirty();
+    };
+    $("patternAddWave").onclick = guarded(() => addPatternShape("wave"));
+    $("patternAddOval").onclick = guarded(() => addPatternShape("oval"));
+    $("patternRemove").onclick = guarded(() => {
+      patternDraft.settings.shapes = patternDraft.settings.shapes.filter(shape => shape.id !== selectedPatternShape);
+      selectedPatternShape = patternDraft.settings.shapes[0]?.id || "";
+      markPatternDirty(); renderPatternControls();
+    });
+    $("patternStyle").onchange = cancelPatternProposal;
+    $("patternGenerate").onclick = guarded(() => generatePattern());
+    $("patternNext").onclick = guarded(() => generatePattern(true));
+    $("patternCancel").onclick = guarded(cancelPatternProposal);
+    $("patternUse").onclick = guarded(() => {
+      requirePatternTarget();
+      if (!patternProposal) return;
+      const {version, style, seed, shapes} = patternProposal;
+      patternDraft.settings.shapes = structuredClone(shapes);
+      patternDraft.settings.generator = {version, style, seed};
+      selectedPatternShape = shapes[0]?.id || "";
+      markPatternDirty(); renderPatternControls();
+    });
+    $("patternPreview").onclick = guarded(previewPattern);
+    $("patternApply").onclick = guarded(() => applyPattern());
+    $("patternOff").onclick = guarded(() => applyPattern(true));
+    $("patternReload").onclick = guarded(() => reloadPattern());
     $("backgroundLightOff").onclick = guarded(() => applyBackgroundLight(true));
     $("backgroundLightReload").onclick = guarded(() => {if (!authoringBusy()) reloadBackgroundLight();});
     $("backgroundLightControls").onkeydown = event => {if (event.key === "Escape" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight();}};
@@ -3608,6 +4054,7 @@
     $("fadeCompare").onchange = guarded(() => compareChanged("fadeCompare"));
     $("spatialCompare").onchange = guarded(() => compareChanged("spatialCompare"));
     $("backgroundLightCompare").onchange = guarded(() => compareChanged("backgroundLightCompare"));
+    $("patternCompare").onchange = guarded(() => compareChanged("patternCompare"));
     $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
     $("exposureRemove").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
@@ -4376,12 +4823,13 @@
     canvas.onpointerdown = (event) => {
       const spatialMode=$("authorMode").value==="spatial";
       const lightMode = $("authorMode").value === "background-light";
+      const patternMode = $("authorMode").value === "background-pattern";
       const mode = $("authorMode").value;
       const edgeMode = mode === "edge";
       const mistPlacement = mode === "mist-placement";
       const effectMode = nativeAreaModes.includes(mode) || mode === "reduction" ? mode : null;
-      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && !edgeMode && !mistPlacement && $("shape").value === "pan");
-      const point = nativePosition(event, spatialMode || lightMode || mistPlacement);
+      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && !patternMode && !edgeMode && !mistPlacement && $("shape").value === "pan");
+      const point = nativePosition(event, spatialMode || lightMode || patternMode || mistPlacement);
       if (!panMode && (authoringBusy() || imageLoading)) {
         message(
           "Guide not started while a writer is active or the native view is loading",
@@ -4389,6 +4837,11 @@
         return;
       }
       if (!panMode && !point) return;
+      if (patternMode && !panMode) {
+        try { beginPatternPlacement(event, point); }
+        catch (error) { message(error.message); }
+        return;
+      }
       if ((mistPlacement || mode === "mist") && !panMode) {
         try {
           const current = requireMistView();
@@ -4440,7 +4893,7 @@
       canvas.setPointerCapture(event.pointerId);
     };
     canvas.onpointermove = (event) => {
-      const point = nativePosition(event,!!gesture?.spatialId || !!gesture?.lightHandle);
+      const point = nativePosition(event,!!gesture?.spatialId || !!gesture?.lightHandle || !!gesture?.patternRotation);
       $("coordinate").textContent = point
         ? "Native " + point.map(Math.floor).join(", ")
         : "Outside image";
@@ -4460,7 +4913,8 @@
           if (gesture.points.length >= 1024) { gesture = null; message("Use a shorter edge stroke"); }
           draw();
         }
-      } else if (point && gesture.lightHandle) dragBackgroundLight(gesture, point);
+      } else if (point && gesture.patternRotation) rotatePattern(point);
+      else if (point && gesture.lightHandle) dragBackgroundLight(gesture, point);
       else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
       else if (point && gesture.shape === "stroke") {
         if (gesture.effectMode === "mist") {
@@ -4476,7 +4930,7 @@
       const g = gesture;
       gesture = null;
       if (g.panMode) return;
-      if(g.spatialId || g.lightHandle) return;
+      if(g.spatialId || g.lightHandle || g.patternRotation) return;
       if (authoringBusy() || imageLoading) {
         message(
           "Guide cancelled because a writer or native view changed; nothing saved",

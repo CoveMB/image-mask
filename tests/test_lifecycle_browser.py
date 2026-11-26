@@ -132,7 +132,7 @@ def browser_session(playwright, server, workspace, name, receipt):
             context.tracing.stop(path=str(workspace / f"{name}-trace.zip"))
 
 
-def test_browser_controls_restart_and_offline_recovery(tmp_path):
+def require_browser_lane():
     if os.environ.get("BLACKMASK_BROWSER") != "1":
         pytest.skip("Real browser evidence not selected; use tests/run_browser.py after setup")
     missing_variables = [
@@ -145,9 +145,6 @@ def test_browser_controls_restart_and_offline_recovery(tmp_path):
             + ". Use tests/run_browser.py.",
             pytrace=False,
         )
-    # Explicit browser runs fail, rather than skip, if setup or isolation is missing.
-    from playwright.sync_api import expect, sync_playwright
-
     with socket.socket() as connection:
         connection.settimeout(1)
         with pytest.raises(PermissionError):
@@ -155,6 +152,70 @@ def test_browser_controls_restart_and_offline_recovery(tmp_path):
     outside = Path("/private/tmp") / ("im-browser-denied-" + uuid.uuid4().hex)
     with pytest.raises(PermissionError):
         outside.write_bytes(b"must be denied")
+
+
+def test_browser_background_pattern_keyboard_generation_preview_and_reopen(tmp_path):
+    require_browser_lane()
+    from playwright.sync_api import expect, sync_playwright
+
+    config_file, _, project, _ = imported_project(tmp_path)
+    receipt = {}
+    with (
+        sync_playwright() as playwright,
+        running_process(project, config_file, tmp_path) as server,
+        browser_session(playwright, server, tmp_path, "pattern", receipt) as page,
+    ):
+        base = submit(page, "#matte", "matte")["revision"]
+        page.locator("#photoReviewed").check()
+        submit(page, "#accept", "accept")
+        page.locator("#panel").select_option("result")
+        ready(page)
+        page.locator("#patternAddWave").press("Enter")
+        page.locator("#patternCenterX").fill("31.125")
+        page.locator("#patternAddOval").press("Enter")
+        page.locator("#patternCenterY").fill("17.5")
+        page.locator("#patternTone1").fill("#090A0B")
+        page.locator("#patternStrength").fill("23.625")
+        page.locator("#patternReverse").check()
+        page.locator("#patternGenerate").press("Enter")
+        expect(page.locator("#patternSeed")).to_contain_text("Proposed seed")
+        seed = int(page.locator("#patternSeed").inner_text().split()[-1])
+        page.locator("#patternNext").press("Enter")
+        expect(page.locator("#patternSeed")).to_have_text(f"Proposed seed {(seed + 1) % 2**32}")
+        page.locator("#patternCancel").press("Enter")
+        expect(page.locator("#patternCenterY")).to_have_value("17.5")
+        page.locator("#patternGenerate").press("Enter")
+        expect(page.locator("#patternUse")).to_be_visible()
+        page.locator("#patternUse").press("Enter")
+        page.locator("#patternCenterX").fill("29.375")
+        page.locator("#patternEnabled").check()
+        page.locator("#patternPreview").press("Enter")
+        expect(page.locator("#patternPreviewImage")).to_be_visible()
+        page.wait_for_function("document.getElementById('patternPreviewImage').naturalWidth === 96")
+        applied = submit(page, "#patternApply", "effects", keyboard=True)
+        revision = applied["revision"]
+        settings = applied["background_pattern"]["settings"]
+        assert settings["generator"] == {"version": 1, "style": "mixed", "seed": seed}
+        assert settings["shapes"][0]["center_xy"][0] == 29.375
+        assert settings["strength"] == 0.23625
+        np.testing.assert_array_equal(alpha(project, base), alpha(project, revision))
+        with page.expect_response(
+            lambda response: response.url.endswith("/background-pattern-off")
+        ) as comparison:
+            page.locator("#patternCompare").check()
+        assert comparison.value.status == 200
+        page.reload()
+        ready(page)
+        expect(page.locator("#patternCenterX")).to_have_value("29.375")
+        expect(page.locator("#patternStrength")).to_have_value("23.625")
+        expect(page.locator("#patternStatus")).to_contain_text("Saved pattern ON")
+
+
+def test_browser_controls_restart_and_offline_recovery(tmp_path):
+    require_browser_lane()
+    # Explicit browser runs fail, rather than skip, if setup or isolation is missing.
+    from playwright.sync_api import expect, sync_playwright
+
     config_file, _config, project, pixels = imported_project(tmp_path)
     originals = inventory(project.parent / "original")
     source_assets = inventory(project / "assets")

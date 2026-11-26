@@ -227,7 +227,8 @@ those appearance settings into source pixels or change native alpha.
 
 The photograph retains native aspect, with integer thumbnail rounding, long edge
 at most 1600 and no upscale. The gallery uses optimized JPEG at quality 85 or
-quality 98 for a nonblack backdrop with positive variation. In the latter case,
+quality 98 for a nonblack backdrop with positive variation or an active Background
+pattern. In the latter case,
 fully exposed backdrop pixels are resized at higher precision and dithered at
 thumbnail size. Both encodings carry canonical sRGB ICC and omit EXIF/GPS/XMP. An 18px
 Draft/Accepted revision footer sits outside the photograph. Tiny/narrow photographs
@@ -1604,6 +1605,66 @@ dimensions and sampling convention), the light record and native editable compan
 Keep the pair. Replay the series field from those delivered settings and use
 the existing premultiplied series kernel with the saved fade target. Subject bounds,
 sampling, source, alpha and retained foreground operands are unchanged.
+
+## Saved background pattern
+
+The optional schema-2 recipe key `background_pattern` has `enabled` (boolean),
+`strength` (0–1), `tones_srgb` (two `#RRGGBB` colours normalized to uppercase),
+`reverse` (boolean) and `shapes` (up to eight). An enabled pattern needs at least
+one enabled shape. Optional `generator` stores `version: 1`, `style` (`waves`,
+`ovals` or `mixed`), and a uint32 `seed`. The resolved shapes are authoritative
+after generation and editing. The per-photo seed uses the first four big-endian
+bytes of SHA-256 over `image-mask/background-pattern/v1`, a zero byte, the binary
+developed identity, a zero byte and the ASCII style. Next variation increments
+the seed modulo 2³². The algorithm uses only the seed, style and native size.
+
+| Shape fields | Valid values |
+| --- | --- |
+| Common | Unique `id` matching `[a-z0-9][a-z0-9-]{0,31}`, `enabled` boolean, `center_xy` in the native rectangle `[0,width]×[0,height]`, clockwise `rotation_degrees` in [0, 360), and `type` |
+| `wave` | `bend_px` in [0, 2D], `wavelength_px` and `spacing_px` in [0.5, 2D], `phase_degrees` in [0, 360), integer `band_count` in 1–4, `feather_px` in [0.5, spacing], and `first_tone` (`tone1` or `tone2`) |
+| `oval` | `radii_xy` in [0.5, 2D] on each axis, `softness` in [0.05, 1], and `tone` (`tone1` or `tone2`) |
+
+D is the longer native side. Unknown keys, invalid numerics and duplicate shape
+IDs are invalid even OFF. An exclusive schema-2 effects request binds full
+native `scope_xyxy`, `developed_id`, `base_revision`, `inputs_digest` and boolean
+`candidate_comparison`. A base that has not been accepted requires explicit
+candidate comparison. Viewer Apply adds the raw revision-manifest SHA-256.
+The bound Generate and Preview POSTs use the current working revision and
+draft digest. Preview also selects a validated native crop and returns a
+temporary RGB8 image with its crop, scale and normalized settings digest.
+
+The version-1 revision record binds algorithm `signed-background-pattern-v1`,
+`developed_id`, `width`, `height`, normalized `settings`, `weight_sha256` and
+`settings_sha256` in addition to `schema_version`. The logical assets are
+`background_pattern/weight16.png` (lossless scalar16) and
+`background_pattern/settings.json` (canonical JSON). Recipe, record and JSON
+settings agree exactly. The signed weight is `(code - 32768) / 32767`. Code 0
+is invalid, codes 1 and 65535 are full Tone 1 and Tone 2, and 32768 is neutral.
+Native pixels sample at integer centres. Overlapping shapes add before clipping
+to [-1, 1]. Native replay reads the field from disk. Changes to palette,
+strength, reversal, the ON/OFF switch or inherited same-master alpha keep the
+field when geometry is unchanged. Missing legacy pattern records require no
+migration or new input. New revisions with a pattern require a reader that
+supports it.
+
+Let B1 be the existing lit backdrop, or B0 when light is absent. Decode B1 and
+the selected tone to linear sRGB, interpolate using `strength * abs(weight)`
+and store B2 as RGB16 with ties-to-even rounding. Reversal flips the weight
+sign. Zero weight or OFF uses B1 exactly. In the established encoded-sRGB
+Result, keep the original subject contribution P (including its B0 or B1 fade)
+and composite `rint(P + B2 * (1 - alpha))`, then apply Mist if saved. Alpha is
+normalized. Opaque pixels, source data and all diagnostics exclude the pattern.
+The RGB8 Result uses coordinate-stable backdrop dithering when active, limited
+to fully exposed backdrop samples. Native crops retain the same sample phase.
+
+Native editable delivery binds `background_pattern_weight16.png` and
+`background_pattern_settings.json` even when OFF. Add margins copies the
+native Result and extends B2 at the edges. Match series samples the saved
+shapes at `native=(output+0.5-translation)/scale-0.5` using its recorded layout,
+including beyond the transformed native rectangle. Both editable presentation
+paths bind the native companion's exact field and settings. Revision restore
+reopens the saved pattern; a missing or corrupted operand requires intact
+saved bytes for recovery.
 
 ## Saved Mist
 

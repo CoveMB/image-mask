@@ -20,6 +20,7 @@ from PIL import Image
 
 from .assets import revision_hashes, saved_asset
 from .background import uses_backdrop_dither
+from .background_pattern import PATTERN_FILES, pattern_resource_bytes, pattern_visible
 from .ingest import srgb_profile, write_developed
 from .pixel_math import BACKDROP_DITHER_PNG_SUFFIX, result_rgb8
 from .project import (
@@ -152,16 +153,17 @@ def render_black(
 def render_background(
     foreground: np.ndarray,
     alpha16: np.ndarray,
-    background16: np.ndarray,
+    background16: np.ndarray | None,
     weight16: np.ndarray | None = None,
     opacity: float = 0,
     *,
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
+    display_background16: np.ndarray | None = None,
 ) -> np.ndarray:
     """Render Result with the chosen fade target and the displayed backdrop."""
     if spatial_fade is not None and uses_lit_fade_target(spatial_fade.record):
-        fade_background16 = background16
+        fade_background16 = background16 if background16 is not None else np.zeros_like(foreground)
     contribution = _foreground_contribution(
         foreground,
         alpha16,
@@ -170,11 +172,12 @@ def render_background(
         spatial_fade=spatial_fade,
         fade_background16=fade_background16,
     )
-    if background16.dtype != np.uint16 or background16.shape != foreground.shape:
+    shown = background16 if display_background16 is None else display_background16
+    if shown is None or shown.dtype != np.uint16 or shown.shape != foreground.shape:
         raise ValueError("Background requires aligned saved RGB16")
     return np.rint(
         contribution
-        + background16.astype(np.float64) * (1 - alpha16.astype(np.float64) / 65535)[..., None]
+        + shown.astype(np.float64) * (1 - alpha16.astype(np.float64) / 65535)[..., None]
     ).astype(np.uint16)
 
 
@@ -327,6 +330,7 @@ def render_saved_result_with_alpha(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the composed native Result and the exact alpha used for it."""
     from .background_light import saved_backgrounds
+    from .background_pattern import display_background, pattern_resource_bytes, saved_pattern
     from .effects import effects_stale, saved_shading, saved_spatial_fade
     from .mist import blend_mist_into_result, mist_resource_bytes, saved_mist
 
@@ -340,7 +344,11 @@ def render_saved_result_with_alpha(
         project,
         foreground.nbytes * 8
         + 16 * 1024**2
-        + (mist_resource_bytes(width, height) if "mist" in manifest else 0),
+        + (mist_resource_bytes(width, height) if "mist" in manifest else 0)
+        + (pattern_resource_bytes(width, height) if "background_pattern" in manifest else 0),
+    )
+    shown = display_background(
+        background, saved_pattern(project, directory, manifest, off=effects_stale(manifest))
     )
     target = (
         base if base is not None else np.zeros_like(foreground) if spatial is not None else None
@@ -349,7 +357,7 @@ def render_saved_result_with_alpha(
         render_black(
             foreground, alpha, weight, opacity, spatial_fade=spatial, fade_background16=target
         )
-        if background is None
+        if background is None and shown is None
         else render_background(
             foreground,
             alpha,
@@ -358,6 +366,7 @@ def render_saved_result_with_alpha(
             opacity,
             spatial_fade=spatial,
             fade_background16=target,
+            display_background16=shown,
         )
     )
     mist = saved_mist(project, directory, manifest, effects_off=effects_stale(manifest))
@@ -531,6 +540,23 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         text += f"Background light is separate from the unlit base B0. Native editable deliveries retain background_rgb16.tif as B0 (missing means zero), background_light_rgb16.tif as L16, and background_light_settings.json, including OFF. When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)); encode to RGB16 with float64 ties-to-even and copy zero-light pixels exactly. OFF uses B1=B0. Native replay reads saved L16 without generating it. {light_effect} can clip a bright backdrop, so lower brightness to retain variation. Black/transparent diagnostics never display light.\n"
     elif lit_fade_target:
         text += "Fade target is Lit backdrop. B1 equals B0 when Background light is absent.\n"
+    if "background_pattern" in record:
+        text += (
+            "Background pattern changes only the displayed backdrop B2. Use B1 (the base B0 "
+            "when light is absent) as the starting backdrop. Decode the native signed weights "
+            "as (code - 32768) / 32767. Reverse optionally changes the sign. Mix B1 toward "
+            "Tone 1 for negative weights or Tone 2 for positive weights in linear sRGB, with "
+            "strength times absolute weight. Encode B2 as RGB16. OFF and zero weights use B1 "
+            "exactly. Composite the existing subject contribution with B2 times one minus "
+            "alpha, then apply saved Mist when present. The subject fade target is still "
+            "B0 or B1. Black and transparent views omit the pattern. Native editable delivery "
+            "retains background_pattern_weight16.png and background_pattern_settings.json.\n"
+        )
+        if mode == "match-series":
+            text += (
+                "Sample the saved shape settings at native=(output+0.5-translation)/scale-0.5, "
+                "including outside the transformed source frame. Layout records the transform.\n"
+            )
     if mode == "add-margins":
         text += "The native image is copied without resampling; margins extend saved backdrop edge pixels. Optional straight RGBA has zero RGBA margins.\n"
     elif mode == "match-series":
@@ -660,6 +686,8 @@ def _delivery_members(
             names.update({"background_rgb16.tif", "background_settings.json"})
         if "background_light" in manifest:
             names.update({"background_light_rgb16.tif", "background_light_settings.json"})
+        if "background_pattern" in manifest:
+            names.update(name.replace("/", "_") for name in PATTERN_FILES)
         if "mist" in manifest:
             from .mist import MIST_MEMBERS
 
@@ -812,6 +840,22 @@ def _validate_delivery(
             for name, checksum in lit_fade_hashes.items()
         ):
             raise ValueError("Lit backdrop operand binding differs from native editable companion")
+        pattern = request_record.get("background_pattern")
+        pattern_hashes = (
+            {
+                name.replace("/", "_"): pattern[role]
+                for name, role in zip(
+                    PATTERN_FILES, ("weight_sha256", "settings_sha256"), strict=True
+                )
+            }
+            if pattern is not None
+            else {}
+        )
+        if companion_binding is not None and any(
+            companion_binding["files_sha256"].get(name) != checksum
+            for name, checksum in pattern_hashes.items()
+        ):
+            raise ValueError("Background pattern binding differs from native editable companion")
         curve_record = request_record.get("local_tone_curve")
         curve_hashes = (
             {
@@ -857,6 +901,8 @@ def _validate_delivery(
                 raise ValueError("Mist operand binding mismatch")
             if name in lit_fade_hashes and metadata["sha256"] != lit_fade_hashes[name]:
                 raise ValueError("Lit backdrop operand binding mismatch")
+            if name in pattern_hashes and metadata["sha256"] != pattern_hashes[name]:
+                raise ValueError("Background pattern operand binding mismatch")
             if name == "mist_settings.json" and (
                 mist_record is None or path.read_bytes() != _json_bytes(mist_record["settings"])
             ):
@@ -1146,6 +1192,8 @@ def _delivery_request_record(
                 "output_dimensions_wh": list(sampling.layout.output_dimensions_wh),
                 "sample_coordinates": "native=(output_integer+0.5-translation)/scale-0.5",
             }
+    if "background_pattern" in manifest:
+        record["background_pattern"] = manifest["background_pattern"]
     if sampling is not None:
         record.update(
             {
@@ -1277,7 +1325,9 @@ def _delivery_request_record(
     ):
         record["export_version"] = LIT_FADE_EXPORT_VERSION
         record["encoding"]["version"] = LIT_FADE_EXPORT_VERSION
-    if uses_backdrop_dither(manifest.get("background", {}).get("settings")):
+    if uses_backdrop_dither(manifest.get("background", {}).get("settings")) or pattern_visible(
+        manifest.get("background_pattern", {}).get("settings")
+    ):
         record["encoding"]["png"] += BACKDROP_DITHER_PNG_SUFFIX
     record["identity_sha256"] = digest(_json_bytes(record))
     return record
@@ -1471,6 +1521,11 @@ def _export_delivery(
     pending += reduction_bytes
     if "background_light" in manifest:
         pending += base.nbytes * 4 + min(64, base.shape[0]) * base.shape[1] * 198
+    pattern_record = manifest.get("background_pattern")
+    if pattern_record is not None:
+        pending += pattern_resource_bytes(*size)
+        if sampling is not None:
+            pending += 6 * width * height + min(64, height) * width * 192
     if "mist" in manifest:
         pending += mist_resource_bytes(*size)
         if mode != "native":
@@ -1508,6 +1563,7 @@ def _export_delivery(
             background_light=bool(
                 manifest.get("background_light", {}).get("settings", {}).get("enabled")
             ),
+            background_pattern=pattern_record is not None,
             **({"mist_native_shape": alpha.shape} if "mist" in manifest else {}),
         )
     foreground = selected_foreground(project, revision, base, alpha, manifest)
@@ -1621,6 +1677,7 @@ def _write_delivery(
     paired_primary: Path | None = None,
 ) -> bool:
     from .background_light import saved_backgrounds
+    from .background_pattern import display_background, saved_pattern
     from .effects import saved_shading, saved_spatial_fade
     from .framing import frame_result, frame_transparent
     from .mist import blend_mist_into_result, saved_mist
@@ -1651,6 +1708,11 @@ def _write_delivery(
     base, background = (
         (None, None) if sampling is not None else saved_backgrounds(project, directory, manifest)
     )
+    shown = (
+        display_background(background, saved_pattern(project, directory, manifest))
+        if sampling is None
+        else None
+    )
     target = (
         base
         if base is not None
@@ -1679,6 +1741,7 @@ def _write_delivery(
                 opacity=opacity,
                 background_settings=manifest.get("background", {}).get("settings"),
                 background_light_settings=manifest.get("background_light", {}).get("settings"),
+                background_pattern_settings=manifest.get("background_pattern", {}).get("settings"),
                 spatial_fade=spatial,
                 black_background=stem == "black",
                 mist=mist if stem == "result" else None,
@@ -1694,8 +1757,9 @@ def _write_delivery(
                     opacity,
                     spatial_fade=spatial,
                     fade_background16=target,
+                    display_background16=shown,
                 )
-                if stem == "result" and background is not None
+                if stem == "result" and (background is not None or shown is not None)
                 else render_black(
                     foreground,
                     alpha,
@@ -1713,7 +1777,7 @@ def _write_delivery(
             pixels = (
                 frame_result(
                     native,
-                    background if stem == "result" else None,
+                    (shown if shown is not None else background) if stem == "result" else None,
                     margins_settings,
                     mist=result_mist,
                 )
@@ -1870,6 +1934,12 @@ def _write_editable(
         ):
             (stage / delivered).write_bytes(
                 saved_asset(project, f"revisions/{revision}/{saved}").read_bytes()
+            )
+    if "background_pattern" in manifest:
+        for name in PATTERN_FILES:
+            shutil.copyfile(
+                saved_asset(project, f"revisions/{revision}/{name}"),
+                stage / name.replace("/", "_"),
             )
     if "mist" in manifest:
         for name in MIST_MEMBERS:

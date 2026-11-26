@@ -105,6 +105,12 @@ and participates in the opt-in **Lit backdrop** fade target. Native editable
 exports retain its separate field,
 including OFF. See the [light and gentle exposure walkthrough](docs/workflow.md#background-light).
 
+**Background pattern** adds soft waves and ovals behind the saved matte. Draw an
+arrangement or generate editable Waves, Ovals or Mixed variations for the photo.
+Adjust strength and two tone colours, then preview the draft or compare the
+saved Result with the pattern OFF. The [pattern workflow](docs/workflow.md#background-pattern)
+covers placement and editable delivery.
+
 **Mist** adds an optional textured layer across the saved subject and backdrop
 in Result. Its **Vapor** style draws uneven wisps through a charcoal bank around
 a point you keep clear. Feathered Clear mist shapes and saved locks protect other
@@ -266,6 +272,7 @@ The skill applies no photo edits.
 | Bounded, editable local fade reduction geometry | `src/blackmask/fade_reduction.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Independent backdrop light field, bindings and B0/B1 composition | `src/blackmask/background_light.py` |
+| Editable backdrop patterns, saved weight field and seeded layouts | `src/blackmask/background_pattern.py`, `src/blackmask/background_pattern_generation.py` |
 | Deterministic post-composite Mist, Clear mist and saved operands | `src/blackmask/mist.py` |
 | Shared immutable raster references and role validation | `src/blackmask/assets.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
