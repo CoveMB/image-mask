@@ -864,10 +864,11 @@ padded exterior, thickness and directional-normal attenuation and source luminan
 On a new build, the weight across a soft outer edge tends toward the nearby
 opaque boundary in the same connected subject. For a component that never reaches
 full opacity, its highest-alpha pixels provide that boundary. The transfer depends
-on rising alpha toward the boundary and neighboring coverage across that direction.
-This retains local shading where thin details or translucent interiors lack the
-support of a broad feather. Components below the silhouette threshold receive
-zero weight. Matte opacity still controls how much
+on rising alpha toward the boundary. The existing local thickness field limits the
+transfer on the subject side. A more transparent outer sample uses the thickness
+at half alpha on its way inward. This keeps a thin detail from inheriting a thicker
+region's shadow. Components below the silhouette threshold receive zero weight.
+Matte opacity still controls how much
 of the shaded subject is visible. The reference thickness/smoothing ratios scale
 with the chosen band. The reference 48/88px widths and tentative 24% opacity never
 become global defaults.

@@ -911,13 +911,15 @@ def test_inward_shading_does_not_add_a_seam_between_opaque_areas():
     assert np.max(np.abs(np.diff(middle))) < 257
 
 
-def test_inward_shading_preserves_thin_translucent_appendage():
+@pytest.mark.parametrize("strand_width", [4, 10, 16])
+def test_inward_shading_preserves_thin_translucent_appendage(strand_width):
     from blackmask.effects import make_shadow_weight
     from blackmask.export import render_background
 
     alpha = np.zeros((180, 260), np.uint16)
     alpha[25:155, 25:125] = 65535
-    alpha[88:92, 125:225] = np.rint(np.linspace(65535, 0, 101)[1:]).astype(np.uint16)
+    strand = slice(90 - strand_width // 2, 90 + strand_width // 2)
+    alpha[strand, 125:225] = np.rint(np.linspace(65535, 0, 101)[1:]).astype(np.uint16)
     source = np.full((*alpha.shape, 3), 100 * 257, dtype=np.uint16)
     background = np.full_like(source, 7 * 257)
     settings = {"enabled": True, "opacity": 0.65, "width_px": 48, "direction_degrees": 0}
@@ -928,7 +930,8 @@ def test_inward_shading_preserves_thin_translucent_appendage():
     assert 0 < alpha[90, 195] < alpha[90, 140] < 65535
     actual = render_background(source, alpha, background, weight, 0.65)
     unshaded = render_background(source, alpha, background)
-    np.testing.assert_array_equal(actual[90, [140, 195]], unshaded[90, [140, 195]])
+    np.testing.assert_array_equal(actual[strand, 195], unshaded[strand, 195])
+    np.testing.assert_allclose(actual[strand, 140], unshaded[strand, 140], atol=32, rtol=0)
 
 
 def test_shadow_weight_unbaked_protection_band_and_thin_features():

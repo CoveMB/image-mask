@@ -478,7 +478,7 @@ def read_shading_protection(path: Path | BinaryIO) -> np.ndarray:
 
 def _shadow_geometry(
     source16: np.ndarray, alpha16: np.ndarray, width: float, direction_degrees: float
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     shape = alpha16.shape
     alpha = alpha16.astype(np.float64) / 65535
 
@@ -512,7 +512,7 @@ def _shadow_geometry(
     direction = 0.35 + 0.65 * smooth((normal + 1) / 2)
     luminance = source16.astype(np.float64) @ np.array([0.2126, 0.7152, 0.0722]) / 65535
     highlights = 1 - 0.75 * smooth((gaussian_filter(luminance, width / 8) - 0.68) / 0.25)
-    return edge * thickness * direction * highlights, distance < width
+    return edge * thickness * direction * highlights, thickness, distance < width
 
 
 def _shadow_points_by_component(selection: np.ndarray, labels: np.ndarray) -> dict[int, np.ndarray]:
@@ -529,9 +529,9 @@ def _shadow_points_by_component(selection: np.ndarray, labels: np.ndarray) -> di
 def _shadow_anchor_fraction(
     alpha16: np.ndarray,
     labels: np.ndarray,
+    thickness: np.ndarray,
     points: np.ndarray,
     nearest: np.ndarray,
-    width: float,
 ) -> np.ndarray:
     start = points.T
     offset = nearest.T.astype(np.float64) - start
@@ -545,22 +545,37 @@ def _shadow_anchor_fraction(
     progress = np.clip(((midpoint - local_alpha) / remaining - 0.125) / 0.1, 0, 1)
     mix = progress * progress * (3 - 2 * progress)
 
-    # A narrow appendage can grow toward a thick object without sharing its
-    # thickness. Require neighboring coverage across the direction of transfer.
-    distance = np.hypot(offset[0], offset[1])
-    probe_radius = float(np.clip(width / 12, 1, 8))
-    tangent = np.stack((offset[1], -offset[0])) * np.minimum(1, probe_radius / distance)
-    component = labels[tuple(start)]
-    for side in (-1, 1):
-        flank = start + side * tangent
-        covered = map_coordinates(alpha16, flank, order=1, prefilter=False, output=np.float64)
-        same_subject = map_coordinates(labels, flank, order=0, prefilter=False) == component
-        mix *= np.clip(2 * covered / local_alpha, 0, 1) * same_subject
-    return mix
+    # Use the existing thickness field on the subject side of the silhouette.
+    # A faint outer feather can inherit its edge's thickness. A thin appendage
+    # remains thin at half coverage, even when its opaque anchor is far thicker.
+    local_thickness = thickness[tuple(start)]
+    outside = (local_alpha < 32768) & (mix > 0)
+    if outside.any():
+        positions = start[:, outside]
+        step = offset[:, outside]
+        lower = np.zeros(step.shape[1])
+        upper = np.ones(step.shape[1])
+        for _ in range(8):
+            middle = (lower + upper) * 0.5
+            sampled_alpha = map_coordinates(
+                alpha16, positions + step * middle, order=1, prefilter=False, output=np.float64
+            )
+            inside = sampled_alpha >= 32767.5
+            lower = np.where(inside, lower, middle)
+            upper = np.where(inside, middle, upper)
+        contour = positions + step * upper
+        same_component = (
+            map_coordinates(labels, contour, order=0, prefilter=False) == labels[tuple(positions)]
+        )
+        local_thickness[outside] = (
+            map_coordinates(thickness, contour, order=1, prefilter=False) * same_component
+        )
+    thickness_mix = np.clip(2 * local_thickness, 0, 1)
+    return mix * thickness_mix * thickness_mix * (3 - 2 * thickness_mix)
 
 
 def _extend_shadow_weight(
-    weight: np.ndarray, alpha16: np.ndarray, soft: np.ndarray, width: float
+    weight: np.ndarray, thickness: np.ndarray, alpha16: np.ndarray, soft: np.ndarray
 ) -> None:
     if not soft.any():
         return
@@ -585,11 +600,14 @@ def _extend_shadow_weight(
     anchor_points = _shadow_points_by_component(anchors, labels)
     for component, points in _shadow_points_by_component(targets, labels).items():
         candidates = anchor_points[component]
-        _, nearest = cKDTree(candidates).query(points)
-        nearest_anchors = candidates[nearest]
-        selected = tuple(points.T)
-        mix = _shadow_anchor_fraction(alpha16, labels, points, nearest_anchors, width)
-        weight[selected] += mix * (weight[tuple(nearest_anchors.T)] - weight[selected])
+        tree = cKDTree(candidates)
+        for start in range(0, len(points), 65536):
+            batch = points[start : start + 65536]
+            _, nearest = tree.query(batch)
+            nearest_anchors = candidates[nearest]
+            selected = tuple(batch.T)
+            mix = _shadow_anchor_fraction(alpha16, labels, thickness, batch, nearest_anchors)
+            weight[selected] += mix * (weight[tuple(nearest_anchors.T)] - weight[selected])
 
 
 def make_shadow_weight(
@@ -619,11 +637,13 @@ def make_shadow_weight(
     width = settings["width_px"]
     if width > max(shape):
         raise ProjectError("Shading width exceeds native image extent")
-    weight, inside = _shadow_geometry(source16, alpha16, width, settings["direction_degrees"])
+    weight, thickness, inside = _shadow_geometry(
+        source16, alpha16, width, settings["direction_degrees"]
+    )
     eligible = inside & (support16 != 0) & (alpha16 != 0) & ~protection
     # The compositor already increases the subject contribution with alpha.
     # The edge's relative shadow must not ramp up independently with coverage.
-    _extend_shadow_weight(weight, alpha16, eligible & (alpha16 < 65535), width)
+    _extend_shadow_weight(weight, thickness, alpha16, eligible & (alpha16 < 65535))
     weight *= support16.astype(np.float64) / 65535
     weight[~eligible] = 0
     return np.rint(np.clip(weight, 0, 1) * 65535).astype(np.uint16)
