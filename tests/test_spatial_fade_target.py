@@ -13,6 +13,7 @@ from test_background_light import light_request, light_settings
 from test_effects import fixture_project
 from test_export import mode_arguments
 from test_fade_reduction import area, rectangle, reduction_request
+from test_mist import vapor_settings
 from test_mist_project import mist_request
 from test_series_framing import scalar_background_blend
 from test_spatial_fade import delivered_spatial, operands, spatial_request, spatial_settings
@@ -132,15 +133,16 @@ def test_saved_lit_target_native_comparisons_and_restore(tmp_path):
             )
 
 
-@pytest.mark.parametrize("with_mist", [False, True])
-def test_lit_delivery_replays_all_modes_and_binds_saved_operands(tmp_path, with_mist):
+@pytest.mark.parametrize("style", ["none", "mist", "vapor"])
+def test_lit_delivery_replays_all_modes_and_binds_saved_operands(tmp_path, style):
     project, accepted, base, lit, light = lit_project(tmp_path)
-    if with_mist:
+    if style != "none":
+        config = vapor_settings(6, 4) if style == "vapor" else None
         lit_revision = lit["revision"]
         operations.restore_revision(project, base["revision"])
-        base = operations.apply_operation(project, mist_request(project))
+        base = operations.apply_operation(project, mist_request(project, config=config))
         operations.restore_revision(project, lit_revision)
-        lit = operations.apply_operation(project, mist_request(project))
+        lit = operations.apply_operation(project, mist_request(project, config=config))
     options = {"variants": ("black", "transparent", "editable"), "draft": True}
     detached = tmp_path / "detached"
     detached.mkdir()
@@ -157,7 +159,8 @@ def test_lit_delivery_replays_all_modes_and_binds_saved_operands(tmp_path, with_
             assert (source / name).read_bytes() == (Path(legacy["directory"]) / name).read_bytes()
     native = detached / "native"
     record = json.loads((native / "manifest.json").read_bytes())
-    assert record["export_version"] == record["encoding"]["version"] == "requested-result-v7"
+    version = "requested-result-v8" if style == "vapor" else "requested-result-v7"
+    assert record["export_version"] == record["encoding"]["version"] == version
     native_members = (
         "spatial_fade_settings.json",
         "background_rgb16.tif",
@@ -205,7 +208,7 @@ def test_lit_delivery_replays_all_modes_and_binds_saved_operands(tmp_path, with_
     )
     replayed = render_background(foreground, alpha, b1, spatial_fade=spatial, fade_background16=b0)
     mist = None
-    if with_mist:
+    if style != "none":
         mist = MistOperands(
             scalar16(native / "mist_density16.png"),
             scalar16(native / "mist_clear16.png"),

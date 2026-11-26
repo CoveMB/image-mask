@@ -18,6 +18,7 @@ from .project import ProjectError, _json_bytes, digest
 from .repair import scalar16
 
 ALGORITHM = "linear-srgb-mist-v1"
+VAPOR_ALGORITHM = "linear-srgb-vapor-v1"
 MAX_REQUEST_BYTES = 2_000_000
 MAX_SEED = 2**32 - 1
 ROWS_PER_CHUNK = 64
@@ -80,15 +81,15 @@ def validate_mist_settings(value: Any, width: int, height: int) -> dict[str, Any
     """Return canonical settings, including geometry retained while Mist is OFF."""
     if type(width) is not int or type(height) is not int or min(width, height) < 1:
         raise ProjectError("Mist needs positive native dimensions")
-    ranges = {
-        "density": (0, 1),
-        "wisp_size": (0.04, 0.60),
-        "stretch": (1, 5),
-        "rotation_degrees": (0, 360),
-    }
+    vapor = isinstance(value, dict) and value.get("style") == "vapor"
+    ranges: dict[str, tuple[float, float]] = {"density": (0, 1)}
+    if not vapor:
+        ranges.update(wisp_size=(0.04, 0.60), stretch=(1, 5))
+    ranges["rotation_degrees"] = (0, 360)
+    geometry = {"style", "focus_xy"} if vapor else {"coverage"}
     if (
         not isinstance(value, dict)
-        or set(value) != {"enabled", "tint_srgb", "seed", "coverage", *ranges}
+        or set(value) != {"enabled", "tint_srgb", "seed", *geometry, *ranges}
         or type(value["enabled"]) is not bool
         or not isinstance(value["tint_srgb"], str)
         or re.fullmatch(r"#[0-9a-fA-F]{6}", value["tint_srgb"]) is None
@@ -101,6 +102,22 @@ def validate_mist_settings(value: Any, width: int, height: int) -> dict[str, Any
             name == "rotation_degrees" and value[name] == maximum
         ):
             raise ProjectError(f"Mist {name} outside its range")
+    normalized = {
+        "enabled": value["enabled"],
+        "tint_srgb": value["tint_srgb"].upper(),
+        "seed": value["seed"],
+        **{name: float(value[name]) or 0.0 for name in ranges},
+    }
+    if vapor:
+        focus = value["focus_xy"]
+        if (
+            not isinstance(focus, list)
+            or len(focus) != 2
+            or not _number(focus[0], 0, width)
+            or not _number(focus[1], 0, height)
+        ):
+            raise ProjectError("Vapor focus outside native bounds")
+        return dict(normalized, style="vapor", focus_xy=[float(axis) or 0.0 for axis in focus])
     coverage = value["coverage"]
     if not isinstance(coverage, dict) or set(coverage) != {"center_xy", "radii_xy", "softness"}:
         raise ProjectError("Invalid Mist coverage settings")
@@ -117,16 +134,17 @@ def validate_mist_settings(value: Any, width: int, height: int) -> dict[str, Any
     ):
         raise ProjectError("Mist coverage centre, radii or softness outside native bounds")
     return {
-        "enabled": value["enabled"],
-        "tint_srgb": value["tint_srgb"].upper(),
-        "seed": value["seed"],
-        **{name: float(value[name]) or 0.0 for name in ranges},
+        **normalized,
         "coverage": {
             "center_xy": [float(axis) or 0.0 for axis in center],
             "radii_xy": [float(axis) for axis in radii],
             "softness": float(coverage["softness"]),
         },
     }
+
+
+def mist_algorithm(settings: dict[str, Any]) -> str:
+    return VAPOR_ALGORITHM if settings.get("style") == "vapor" else ALGORITHM
 
 
 def _smoothstep(value: np.ndarray) -> np.ndarray:
@@ -162,6 +180,28 @@ def _value_noise(x: np.ndarray, y: np.ndarray, seed: int, octave: int) -> np.nda
     return top * (1 - wy) + bottom * wy
 
 
+def _noise_gain(wavelength: float, footprint_px: float) -> float:
+    taper = max(0.0, min(1.0, (wavelength / footprint_px - 2) / 2))
+    return taper * taper * (3 - 2 * taper)
+
+
+def _vapor_opacity(
+    u: np.ndarray, v: np.ndarray, short_axis: int, seed: int, footprint_px: float
+) -> np.ndarray:
+    """Shape a low diagonal bank with a thin secondary plume and a clear focus."""
+    bank_radius = np.hypot((u + 0.65 * v - 0.50) / 0.39, (v - 0.10) / 0.69)
+    bank = _smoothstep(np.clip((1 - bank_radius) / 0.60, 0, 1))
+    plume_radius = np.hypot((u + 0.34) / 0.53, (v - 0.04) / 0.58)
+    plume = _smoothstep(np.clip((1 - plume_radius) / 0.80, 0, 1))
+    texture = np.full(u.shape, 0.5, dtype=np.float64)
+    for octave, (along, across, weight) in enumerate(((0.55, 0.30, 0.7), (0.26, 0.15, 0.3))):
+        gain = _noise_gain(across * short_axis, footprint_px)
+        if gain:
+            texture += weight * gain * (_value_noise(u / along, v / across, seed, octave) - 0.5)
+    focus = _smoothstep(np.clip((np.hypot(u, v) - 0.12) / 0.17, 0, 1))
+    return (0.98 * bank + 0.39 * plume * (1 - bank)) * (0.75 + 0.25 * texture) * focus
+
+
 def sample_mist_density(
     settings: dict[str, Any],
     native_size_wh: tuple[int, int],
@@ -173,20 +213,27 @@ def sample_mist_density(
     x, y = np.broadcast_arrays(np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64))
     if settings["density"] == 0:
         return np.zeros(x.shape, dtype=np.uint16)
-    coverage = settings["coverage"]
+    vapor = settings.get("style") == "vapor"
+    center = settings["focus_xy"] if vapor else settings["coverage"]["center_xy"]
     angle = math.radians(settings["rotation_degrees"])
-    dx, dy = x - coverage["center_xy"][0], y - coverage["center_xy"][1]
+    dx, dy = x - center[0], y - center[1]
     u = math.cos(angle) * dx + math.sin(angle) * dy
     v = -math.sin(angle) * dx + math.cos(angle) * dy
+    short_axis = min(native_size_wh)
+    if vapor:
+        opacity = _vapor_opacity(
+            u / short_axis, v / short_axis, short_axis, settings["seed"], footprint_px
+        )
+        return np.rint(65535 * settings["density"] * opacity).astype(np.uint16)
+    coverage = settings["coverage"]
     radius = np.hypot(u / coverage["radii_xy"][0], v / coverage["radii_xy"][1])
     envelope = _smoothstep(np.clip((1 - radius) / coverage["softness"], 0, 1))
     u /= settings["stretch"]
-    base_wavelength = max(16, settings["wisp_size"] * min(native_size_wh))
+    base_wavelength = max(16, settings["wisp_size"] * short_axis)
     field = np.zeros(x.shape, dtype=np.float64)
     for octave, weight in enumerate((4, 2, 1)):
         wavelength = base_wavelength / 2**octave
-        taper = max(0.0, min(1.0, (wavelength / footprint_px - 2) / 2))
-        gain = taper * taper * (3 - 2 * taper)
+        gain = _noise_gain(wavelength, footprint_px)
         field += weight * (
             0.5
             + gain * (_value_noise(u / wavelength, v / wavelength, settings["seed"], octave) - 0.5)
@@ -374,7 +421,6 @@ def validate_mist_revision(
         }
         or type(record["schema_version"]) is not int
         or record["schema_version"] != 1
-        or record["algorithm"] != ALGORITHM
         or record["developed_id"] != manifest["developed_id"]
         or type(record["width"]) is not int
         or type(record["height"]) is not int
@@ -387,6 +433,8 @@ def validate_mist_revision(
     ):
         raise ProjectError("Mist operand or hard protection hash differs from revision binding")
     settings = validate_mist_settings(record["settings"], width, height)
+    if record["algorithm"] != mist_algorithm(settings):
+        raise ProjectError("Saved Mist algorithm differs from settings")
     saved_settings = revision_asset(project, directory, manifest, "mist/settings.json").read_bytes()
     if _json_bytes(settings) != saved_settings or _json_bytes(record["settings"]) != saved_settings:
         raise ProjectError("Invalid canonical saved Mist settings")
@@ -461,7 +509,7 @@ def stage_mist(
         (stage / "mist/area.json").write_bytes(encoded_area)
         record = {
             "schema_version": 1,
-            "algorithm": ALGORITHM,
+            "algorithm": mist_algorithm(settings),
             "developed_id": developed_id,
             "width": width,
             "height": height,

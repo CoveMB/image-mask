@@ -34,9 +34,8 @@ from .exposure import (
 from .guidance import coordinates, rasterize_regions
 from .ingest import write_developed
 from .mist import (
-    ALGORITHM as MIST_ALGORITHM,
-)
-from .mist import (
+    VAPOR_ALGORITHM,
+    mist_algorithm,
     mist_resource_bytes,
     parse_mist_json,
     read_mist_request_bytes,
@@ -2149,8 +2148,18 @@ def run_effects(
     if identity["execution"] is not None and (texture_changed or "local_texture" in manifest):
         identity["execution"]["algorithms"]["local_texture"] = TEXTURE_ALGORITHM
     if identity["execution"] is not None and (mist_changed or parent_mist is not None):
-        identity["execution"]["version"] = "validated-effects-v9-mist"
-        identity["execution"]["algorithms"]["mist"] = MIST_ALGORITHM
+        if mist_apply:
+            assert mist_request is not None
+            algorithm = mist_algorithm(mist_request["settings"])
+        else:
+            assert parent_mist is not None
+            algorithm = parent_mist["algorithm"]
+        identity["execution"]["version"] = (
+            "validated-effects-v10-vapor"
+            if algorithm == VAPOR_ALGORITHM
+            else "validated-effects-v9-mist"
+        )
+        identity["execution"]["algorithms"]["mist"] = algorithm
     if parent_mist is not None and not mist_apply:
         identity["inputs"]["mist"] = (
             {

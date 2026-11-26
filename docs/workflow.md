@@ -850,10 +850,12 @@ diagnostics keep their existing pixels.
 
 1. Complete the matte and select the current working revision. Use an accepted
    base or select **Explicitly compare Mist on an unaccepted candidate**.
-2. Select **Mist ON**. Adjust **Density**, **Mist tint** or **Wisp size**. Open
-   **Placement and pattern** for the other controls. Enter the centre in native
-   coordinates or select **Place centre on canvas** and click the image. **Next
-   pattern** advances the seed in the draft and wraps after 4294967295.
+2. Keep **Style → Mist** or choose **Style → Vapor**, then select **Mist ON**.
+   For Mist, adjust **Density** and enter a native centre or select
+   **Place centre on canvas** and click the image. For Vapor, adjust **Strength**
+   and select **Place clear focus on canvas** or enter its native X/Y. Open
+   **Pattern and tint** for advanced controls. **Next pattern** advances the seed
+   in the draft and wraps after 4294967295.
 3. Open **Clear mist** and select **Draw Clear mist on canvas**. Use a brush or
    rectangle. For keyboard entry, set **Inward feather**, enter `x0,y0,x1,y1` in
    the rectangle field and activate **Add Clear mist rectangle**. Select a shape
@@ -880,6 +882,17 @@ diagnostics keep their existing pixels.
 | Coverage softness | 72% | 5–100% of the radius feathers inward |
 | Pattern seed | 1 | Whole number from 0 to 4294967295 |
 | Clear mist | Empty | Up to 64 shapes and 8192 brush points total. Brush radius starts at 10 px, capped by the longer native axis, and ranges from 1 px to that axis. Inward feather starts at 0 px and ranges up to that axis. |
+
+For **Vapor**, Strength starts at 85% and has the same 0–100% range and precision
+as Density. Clear focus starts at the native image midpoint. The field is fully
+clear within 12% of the shorter native axis from the focus and feathers out to
+29%. Its default tint is `#343937`, bank direction is 55° clockwise from native
+X and seed is 1. The wisp size, stretch and coverage ellipse controls apply to
+the Mist style. A dense dark bank can subdue subject contrast as it crosses
+the frame. Pair it with [Fade into background](#fade-into-background) when a stem
+or selected petal needs to recede farther. Clear mist shapes are shared when
+switching styles. Apply saves the selected style. An earlier style remains
+available through its saved revision.
 
 A fully cleared point preserves the incoming Result exactly. Saved locks are
 fully clear, including locks on partially transparent or zero-alpha pixels. A stale

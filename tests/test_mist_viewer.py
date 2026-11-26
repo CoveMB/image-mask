@@ -263,6 +263,48 @@ assert(paths.some(path=>path.startsWith('/image/result/rev-002/') && path.endsWi
     )
 
 
+def test_page_vapor_places_focus_saves_and_preserves_clear_shapes():
+    run_page(
+        MIST_PAGE
+        + r"""
+await ready();
+$('mistRectangle').value = '10,20,30,40';
+$('mistFeather').value = '0';
+await $('mistAddRectangle').onclick();
+editMistDensity(39.5);
+$('mistStyle').value = 'vapor';
+await $('mistStyle').onchange();
+assert.equal($('mistPlaceCentre').textContent, 'Place clear focus on canvas');
+$('mistEnabled').checked = true;
+$('mistEnabled').oninput();
+$('mistDensityRange').value = '82.5';
+$('mistDensityRange').oninput();
+$('mistCenterX').value = '27.25';
+$('mistCenterX').oninput();
+$('mistStyle').value = 'mist';
+await $('mistStyle').onchange();
+assert.equal(Number($('mistDensity').value), 39.5);
+$('mistStyle').value = 'vapor';
+await $('mistStyle').onchange();
+await $('mistApply').onclick();
+const submission = posts.at(-1).mist;
+assert.equal(submission.settings.style, 'vapor');
+assert.equal(submission.settings.density, .825);
+assert.equal(submission.settings.focus_xy[0], 27.25);
+assert.equal(submission.settings.coverage, undefined);
+assert.equal(submission.clear_area.regions.length, 1);
+completeMist(submission, baseRow);
+await refresh();
+await viewWorking();
+assert.equal($('mistStyle').value, 'vapor');
+assert.equal(Number($('mistCenterX').value), 27.25);
+$('mistCompare').checked = true;
+await $('mistCompare').onchange();
+assert(paths.some(path => path.startsWith('/image/result/rev-002/') && path.endsWith('/mist-off')));
+"""
+    )
+
+
 def test_page_mist_rebinds_only_same_saved_state_and_own_disable_only_retargets_bound_form():
     run_page(
         MIST_PAGE
