@@ -836,11 +836,14 @@ def test_shading_exact_single_round_renderer_and_straight_preview():
 
 @pytest.mark.parametrize("opacity", [0, 0.12, 0.24, 0.65, 0.9, 1.0])
 @pytest.mark.parametrize("peak_alpha", [65535, 60000])
-def test_inward_shading_soft_ramp_has_no_native_rim(opacity, peak_alpha):
+@pytest.mark.parametrize("exponent", [1, 2])
+def test_inward_shading_soft_ramp_has_no_native_rim(opacity, peak_alpha, exponent):
     from blackmask.effects import make_shadow_weight
     from blackmask.export import render_background
 
-    ramp = np.rint(np.clip((np.arange(256) - 48) / 32, 0, 1) * peak_alpha).astype(np.uint16)
+    ramp = np.rint(np.clip((np.arange(256) - 48) / 32, 0, 1) ** exponent * peak_alpha).astype(
+        np.uint16
+    )
     alpha = np.tile(ramp, (160, 1))
     source = np.full((*alpha.shape, 3), 100 * 257, dtype=np.uint16)
     weight = make_shadow_weight(
@@ -906,6 +909,26 @@ def test_inward_shading_does_not_add_a_seam_between_opaque_areas():
     # material between them must not inherit a brightness step at that point.
     middle = pixels[77, 89:95, 0].astype(np.int32)
     assert np.max(np.abs(np.diff(middle))) < 257
+
+
+def test_inward_shading_preserves_thin_translucent_appendage():
+    from blackmask.effects import make_shadow_weight
+    from blackmask.export import render_background
+
+    alpha = np.zeros((180, 260), np.uint16)
+    alpha[25:155, 25:125] = 65535
+    alpha[88:92, 125:225] = np.rint(np.linspace(65535, 0, 101)[1:]).astype(np.uint16)
+    source = np.full((*alpha.shape, 3), 100 * 257, dtype=np.uint16)
+    background = np.full_like(source, 7 * 257)
+    settings = {"enabled": True, "opacity": 0.65, "width_px": 48, "direction_degrees": 0}
+    weight = make_shadow_weight(
+        source, alpha, np.full_like(alpha, 65535), settings, protection=np.zeros_like(alpha, bool)
+    )
+    assert weight[70, 123] > 0
+    assert 0 < alpha[90, 195] < alpha[90, 140] < 65535
+    actual = render_background(source, alpha, background, weight, 0.65)
+    unshaded = render_background(source, alpha, background)
+    np.testing.assert_array_equal(actual[90, [140, 195]], unshaded[90, [140, 195]])
 
 
 def test_shadow_weight_unbaked_protection_band_and_thin_features():

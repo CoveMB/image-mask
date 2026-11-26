@@ -14,7 +14,7 @@ import numpy as np
 import tifffile
 import tomli_w
 from PIL import Image
-from scipy.ndimage import binary_erosion, distance_transform_edt, gaussian_filter
+from scipy.ndimage import binary_erosion, distance_transform_edt, gaussian_filter, map_coordinates
 from scipy.ndimage import label as label_components
 from scipy.spatial import cKDTree
 
@@ -527,27 +527,41 @@ def _shadow_points_by_component(selection: np.ndarray, labels: np.ndarray) -> di
 
 
 def _shadow_anchor_fraction(
-    alpha16: np.ndarray, points: np.ndarray, nearest: np.ndarray
+    alpha16: np.ndarray,
+    labels: np.ndarray,
+    points: np.ndarray,
+    nearest: np.ndarray,
+    width: float,
 ) -> np.ndarray:
-    # A real feather rises toward an interior anchor. Keep local geometry when
-    # the closest anchor lies across flat material or across the alpha gradient.
-    rows, columns = points.T
-    peak_rows, peak_columns = nearest.T
-    top = np.maximum(rows - 1, 0)
-    bottom = np.minimum(rows + 1, alpha16.shape[0] - 1)
-    left = np.maximum(columns - 1, 0)
-    right = np.minimum(columns + 1, alpha16.shape[1] - 1)
-    dy = (alpha16[bottom, columns].astype(float) - alpha16[top, columns]) / np.maximum(
-        bottom - top, 1
+    start = points.T
+    offset = nearest.T.astype(np.float64) - start
+    local_alpha = alpha16[tuple(start)]
+    remaining = alpha16[tuple(nearest.T)] - local_alpha
+    midpoint = map_coordinates(
+        alpha16, start + offset * 0.5, order=1, prefilter=False, output=np.float64
     )
-    dx = (alpha16[rows, right].astype(float) - alpha16[rows, left]) / np.maximum(right - left, 1)
-    rise = dy * (peak_rows - rows) + dx * (peak_columns - columns)
-    remaining = alpha16[peak_rows, peak_columns] - alpha16[rows, columns]
-    ratio = np.clip(rise / remaining, 0, 1)
-    return ratio * ratio * (3 - 2 * ratio)
+    # A soft feather grows appreciably on the way to the anchor, even with
+    # zero slope at its outer end. A flat or slowly varying bridge need not.
+    progress = np.clip(((midpoint - local_alpha) / remaining - 0.125) / 0.1, 0, 1)
+    mix = progress * progress * (3 - 2 * progress)
+
+    # A narrow appendage can grow toward a thick object without sharing its
+    # thickness. Require neighboring coverage across the direction of transfer.
+    distance = np.hypot(offset[0], offset[1])
+    probe_radius = float(np.clip(width / 12, 1, 8))
+    tangent = np.stack((offset[1], -offset[0])) * np.minimum(1, probe_radius / distance)
+    component = labels[tuple(start)]
+    for side in (-1, 1):
+        flank = start + side * tangent
+        covered = map_coordinates(alpha16, flank, order=1, prefilter=False, output=np.float64)
+        same_subject = map_coordinates(labels, flank, order=0, prefilter=False) == component
+        mix *= np.clip(2 * covered / local_alpha, 0, 1) * same_subject
+    return mix
 
 
-def _extend_shadow_weight(weight: np.ndarray, alpha16: np.ndarray, soft: np.ndarray) -> None:
+def _extend_shadow_weight(
+    weight: np.ndarray, alpha16: np.ndarray, soft: np.ndarray, width: float
+) -> None:
     if not soft.any():
         return
 
@@ -574,7 +588,7 @@ def _extend_shadow_weight(weight: np.ndarray, alpha16: np.ndarray, soft: np.ndar
         _, nearest = cKDTree(candidates).query(points)
         nearest_anchors = candidates[nearest]
         selected = tuple(points.T)
-        mix = _shadow_anchor_fraction(alpha16, points, nearest_anchors)
+        mix = _shadow_anchor_fraction(alpha16, labels, points, nearest_anchors, width)
         weight[selected] += mix * (weight[tuple(nearest_anchors.T)] - weight[selected])
 
 
@@ -609,7 +623,7 @@ def make_shadow_weight(
     eligible = inside & (support16 != 0) & (alpha16 != 0) & ~protection
     # The compositor already increases the subject contribution with alpha.
     # The edge's relative shadow must not ramp up independently with coverage.
-    _extend_shadow_weight(weight, alpha16, eligible & (alpha16 < 65535))
+    _extend_shadow_weight(weight, alpha16, eligible & (alpha16 < 65535), width)
     weight *= support16.astype(np.float64) / 65535
     weight[~eligible] = 0
     return np.rint(np.clip(weight, 0, 1) * 65535).astype(np.uint16)

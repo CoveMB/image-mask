@@ -236,8 +236,9 @@ are centred on a canvas at least 360px wide without photographic enlargement.
 Project-local `preview.json` uses independent schema1 and kind `result-preview`.
 Its encoding is `native-result-jpeg-v1` or `native-result-jpeg-backdrop-dither-v2`.
 An owned v1 gallery for a varied backdrop is pending refresh. The existing repair
-path validates and replaces it using the saved revision. It binds photo/folder/source/developed identities,
-revision/raw manifest hash, label, dimensions, photo rectangle and JPEG hash. A JPEG
+path validates and replaces it using the saved revision. The record binds
+photo/folder/source/developed identities, revision/raw manifest hash, label,
+dimensions, photo rectangle and JPEG hash. A JPEG
 comment repeats ownership/layout except its own hash, allowing recovery after JPEG
 publication without a receipt. Neither record selects pointers or grants acceptance.
 Inspection is bounded to 16KiB records/16MiB JPEG, without native rendering. Foreign,
@@ -862,9 +863,11 @@ The inward smoothstep uses the alpha >= 0.5 silhouette, an explicitly empty
 padded exterior, thickness and directional-normal attenuation and source luminance.
 On a new build, the weight across a soft outer edge tends toward the nearby
 opaque boundary in the same connected subject. For a component that never reaches
-full opacity, its highest-alpha pixels provide that boundary. The local alpha
-gradient limits the transfer across translucent interiors. Components below the
-silhouette threshold receive zero weight. Matte opacity still controls how much
+full opacity, its highest-alpha pixels provide that boundary. The transfer depends
+on rising alpha toward the boundary and neighboring coverage across that direction.
+This retains local shading where thin details or translucent interiors lack the
+support of a broad feather. Components below the silhouette threshold receive
+zero weight. Matte opacity still controls how much
 of the shaded subject is visible. The reference thickness/smoothing ratios scale
 with the chosen band. The reference 48/88px widths and tentative 24% opacity never
 become global defaults.
