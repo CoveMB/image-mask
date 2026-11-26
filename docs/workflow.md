@@ -871,18 +871,26 @@ and `#251913`. Enter two custom `#RRGGBB` colours to set your own targets.
    radii start at 0.5 px. Those distances go up to twice the longer native side.
    A wave has 1–4 alternating bands, with feather from 0.5 px to its spacing.
    Oval softness runs from 0.05 to 1. Shape extents can cross the image boundary.
-2. To start from a generated layout, choose **Waves**, **Ovals** or **Mixed** and
-   click **Generate pattern**. The first seed depends on the current photo and
-   style. **Next variation** advances the seed. **Use this pattern** replaces the
-   draft shapes and preserves the chosen colours, strength and ON/OFF switch.
-   **Cancel** keeps the current draft. Edit any generated shape as you would a
-   manually added shape.
-3. Select **Pattern ON** with at least one enabled shape. **Preview pattern**
+2. Use **Irregularity** or the numeric **Irregularity (%)** to change the
+   geometry of waves and ovals. The 0–100% control starts at 0%, which gives the
+   original geometry. Higher values vary the spacing of wave bands and let
+   portions fade into the backdrop. Oval centres remain editable anchors.
+   **Strength** sets the amount of colour applied by the pattern.
+3. Choose **Waves**, **Ovals**, **Mixed** or **Abstract** and click **Generate
+   pattern**. The first seed depends on the current photo and style. **Next
+   variation** advances the seed. **Use this pattern** replaces the draft shapes
+   and preserves the colours, strength, irregularity and ON/OFF switch.
+   **Cancel** keeps the current draft. Abstract starts with one **Contours**
+   shape. Its centre, rotation, radii and softness are editable. The outline
+   shows the soft ellipse that contains the tonal regions. Preview shows the
+   actual regions. Both tones come from the existing palette. Add waves or ovals
+   to combine them with the contours.
+4. Select **Pattern ON** with at least one enabled shape. **Preview pattern**
    shows the current native crop as a separate temporary RGB8 image, capped at
    1024 pixels on the long side. **Apply pattern** saves the controls in a new
    working revision or reuses the identical revision. For an unaccepted base,
    check **Explicitly compare pattern on an unaccepted candidate** first.
-4. In **Result**, use **Compare pattern OFF** to view the saved revision without
+5. In **Result**, use **Compare pattern OFF** to view the saved revision without
    its pattern. The comparison retains Background light, fade and Mist, and
    leaves your draft available. **Turn pattern OFF** saves only the switch while
    retaining the saved geometry, colours and weight field. **Reload saved pattern**

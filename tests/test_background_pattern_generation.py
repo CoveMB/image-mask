@@ -18,6 +18,7 @@ def test_pattern_generation_reference_seeds_and_style_members():
         ("waves", ["lower-wave", "side-wave"]),
         ("ovals", ["upper-oval", "side-oval"]),
         ("mixed", ["lower-wave", "side-wave", "upper-oval"]),
+        ("abstract", ["abstract-contours"]),
     ):
         for width, height in ((1, 1), (9, 61), (3072, 4080)):
             layout = generator.generate_background_pattern(style, 17, width, height)
@@ -39,6 +40,17 @@ def test_pattern_generation_uses_distinct_editable_geometry():
     assert generator.generate_background_pattern("mixed", 450512810, 3072, 4080) != (
         generator.generate_background_pattern("mixed", 3022267830, 3072, 4080)
     )
+
+
+def test_abstract_generation_keeps_its_seed_on_the_resolved_shape():
+    first = generator.default_pattern_seed("1" * 64, "abstract")
+    second = generator.default_pattern_seed("2" * 64, "abstract")
+    assert first != second
+    layout = generator.generate_background_pattern("abstract", first, 121, 101)
+    assert layout == generator.generate_background_pattern("abstract", first, 121, 101)
+    assert layout != generator.generate_background_pattern("abstract", second, 121, 101)
+    (shape,) = layout
+    assert shape["type"] == "contour" and shape["seed"] == first
 
 
 @pytest.mark.parametrize(

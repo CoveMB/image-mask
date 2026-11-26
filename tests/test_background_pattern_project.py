@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from test_background import background_request, legacy_project
 from test_background_light import light_request
-from test_background_pattern import oval, pattern_settings
+from test_background_pattern import contour, oval, pattern_settings, wave
 from test_effects import fixture_project
 from test_matte_operations import run_matte
 from test_operations import request
@@ -14,6 +14,7 @@ from test_spatial_fade_target import lit_project
 
 from blackmask import effects, operations
 from blackmask.assets import revision_asset, revision_hashes
+from blackmask.background_pattern import read_background_pattern
 from blackmask.export import render_background, render_saved_result, saved_layers
 from blackmask.project import ProjectError, read_project, read_revision
 
@@ -114,6 +115,66 @@ def test_pattern_inheritance_restore_and_field_reuse(tmp_path):
     assert inherited["settings"] == disabled
     operations.restore_revision(project, revision, replace_drafts=True)
     assert tomllib.loads((project / "recipe.toml").read_text())["background_pattern"] == settings
+    assert read_project(project)["accepted_revision"] == accepted["revision"]
+
+
+def test_abstract_and_warped_pattern_revisions_reuse_only_matching_geometry(tmp_path):
+    project, _, accepted = fixture_project(tmp_path)
+    master = accepted["developed_id"]
+    settings = pattern_settings(
+        shapes=[
+            wave(
+                center_xy=[2.125, 1.7],
+                bend_px=0.8,
+                wavelength_px=3.2,
+                spacing_px=1.2,
+                feather_px=0.7,
+            )
+        ],
+        generator={"version": 1, "style": "mixed", "seed": 7},
+    )
+
+    def apply(draft):
+        result = operations.apply_operation(project, pattern_request(project, draft))
+        revision = result["revision"]
+        return revision, read_revision(project, revision, master)
+
+    classic, classic_manifest = apply(settings)
+    classic_record = classic_manifest["background_pattern"]
+    assert classic_record["algorithm"] == "signed-background-pattern-v1"
+    legacy_recipe = project / "revisions" / classic / "recipe.toml"
+    frozen = legacy_recipe.read_bytes()
+    assert apply(dict(settings, irregularity=0))[0] == classic
+
+    warped, warped_manifest = apply(dict(settings, irregularity=0.8))
+    warped_record = warped_manifest["background_pattern"]
+    assert warped_record["algorithm"] == "signed-background-pattern-v2"
+    assert warped_record["weight_sha256"] != classic_record["weight_sha256"]
+    forged = dict(
+        warped_manifest,
+        background_pattern=dict(warped_record, algorithm=classic_record["algorithm"]),
+    )
+    with pytest.raises(ProjectError, match="algorithm"):
+        read_background_pattern(project, project / "revisions" / warped, forged)
+
+    reseeded = dict(settings, irregularity=0.8, generator=dict(settings["generator"], seed=8))
+    _, seed_manifest = apply(reseeded)
+    seeded_record = seed_manifest["background_pattern"]
+    assert seeded_record["weight_sha256"] != warped_record["weight_sha256"]
+    _, recoloured_manifest = apply(
+        dict(reseeded, strength=0.4, enabled=False, tones_srgb=["#010203", "#152020"])
+    )
+    assert (
+        recoloured_manifest["background_pattern"]["weight_sha256"] == seeded_record["weight_sha256"]
+    )
+    _, contour_manifest = apply(pattern_settings(shapes=[contour()]))
+    assert contour_manifest["background_pattern"]["algorithm"] == "signed-background-pattern-v2"
+    operations.restore_revision(project, warped, replace_drafts=True)
+    assert (
+        tomllib.loads((project / "recipe.toml").read_text())["background_pattern"]
+        == warped_record["settings"]
+    )
+    assert legacy_recipe.read_bytes() == frozen
     assert read_project(project)["accepted_revision"] == accepted["revision"]
 
 

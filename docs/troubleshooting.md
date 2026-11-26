@@ -354,6 +354,12 @@ accepted dependencies, failed stages or recovery material automatically.
 
 ## Background pattern recovery
 
+- **The outline differs from the rendered pattern.** The outline shows the
+  editable shape. Use **Preview pattern** to see the irregular waves and ovals
+  or the soft tonal regions inside an Abstract contour.
+- **An earlier app version cannot open the revision.** Open it with a version
+  that supports Irregularity and Abstract. Use an earlier compatible revision
+  or delivery with the older version.
 - **Preview or Apply reports stale.** Select the current working Result and use
   **Reload saved pattern** before re-entering the intended changes. Reload
   replaces this control's draft. A generated proposal is temporary until you

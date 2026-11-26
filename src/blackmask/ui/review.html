@@ -48,6 +48,9 @@
       display: block;
       margin: 6px 0;
     }
+    #patternShapeToneControl[hidden] {
+      display: none;
+    }
     input,
     select,
     button,
@@ -535,6 +538,8 @@
         <label><input id="patternEnabled" type="checkbox" /> Pattern ON</label>
         <label>Strength <input id="patternRange" type="range" min="0" max="100" step="1" value="28" /></label>
         <label>Strength (%) <input id="patternStrength" type="number" min="0" max="100" step="any" value="28" /></label>
+        <label>Irregularity <input id="patternIrregularityRange" type="range" min="0" max="100" step="any" value="0" /></label>
+        <label>Irregularity (%) <input id="patternIrregularity" type="number" min="0" max="100" step="any" value="0" /></label>
         <label>Palette <select id="patternPalette"><option value="neutral">Neutral gray</option><option value="cool">Cool charcoal</option><option value="warm">Warm charcoal</option><option value="custom" disabled>Custom</option></select></label>
         <label>Tone 1 <input id="patternColor1" type="color" value="#010101" /></label>
         <label>Tone 1 #RRGGBB <input id="patternTone1" type="text" maxlength="7" value="#010101" /></label>
@@ -542,7 +547,7 @@
         <label>Tone 2 #RRGGBB <input id="patternTone2" type="text" maxlength="7" value="#202020" /></label>
         <label><input id="patternReverse" type="checkbox" /> Reverse tones</label>
         <div>
-          <label>Generator style <select id="patternStyle"><option value="mixed">Mixed</option><option value="waves">Waves</option><option value="ovals">Ovals</option></select></label>
+          <label>Generator style <select id="patternStyle"><option value="mixed">Mixed</option><option value="waves">Waves</option><option value="ovals">Ovals</option><option value="abstract">Abstract</option></select></label>
           <button id="patternGenerate">Generate pattern</button>
           <div id="patternProposal" hidden>
             <span id="patternSeed" role="status"></span>
@@ -572,10 +577,10 @@
             <label>Vertical radius (native pixels) <input id="patternRadiusY" type="number" min="0.5" step="any" /></label>
             <label>Softness (0.05–1) <input id="patternSoftness" type="number" min="0.05" max="1" step="any" /></label>
           </div>
-          <label><span id="patternShapeToneLabel">Shape tone</span> <select id="patternShapeTone"><option value="tone1">Tone 1</option><option value="tone2">Tone 2</option></select></label>
+          <label id="patternShapeToneControl"><span id="patternShapeToneLabel">Shape tone</span> <select id="patternShapeTone"><option value="tone1">Tone 1</option><option value="tone2">Tone 2</option></select></label>
           <button id="patternRemove">Remove selected shape</button>
         </div>
-        <p class="small">Choose Background pattern in Canvas authoring mode. Click to place the selected shape and drag its rotation handle to turn it. Numeric controls work by keyboard.</p>
+        <p class="small">Irregularity reshapes waves and ovals. In Background pattern canvas mode, click to place the selected shape and drag its rotation handle. Use Preview pattern to see the rendered effect.</p>
         <button id="patternPreview">Preview pattern</button>
         <label><input id="patternCandidate" type="checkbox" /> Explicitly compare pattern on an unaccepted candidate</label>
         <button id="patternApply">Apply pattern</button>
@@ -3653,13 +3658,15 @@
       const distance = value => within(value, .5, limit);
       if (!within(settings.strength, 0, 1) || !settings.tones_srgb.every(tone => /^#[0-9A-F]{6}$/.test(tone)))
         throw Error("Use strength from 0 to 100% and two #RRGGBB tones");
+      if ("irregularity" in settings && !within(settings.irregularity, 0, 1))
+        throw Error("Set Irregularity from 0 to 100%");
       if (settings.enabled && !settings.shapes.some(shape => shape.enabled))
-        throw Error("Enable a wave or oval before turning the pattern ON");
+        throw Error("Enable a shape before turning the pattern ON");
       for (const shape of settings.shapes) {
         if (!within(shape.center_xy[0], 0, width) || !within(shape.center_xy[1], 0, height) || !angle(shape.rotation_degrees))
           throw Error("Set each shape centre within the native image and rotation from 0 to below 360");
-        if (shape.type === "oval" && (!shape.radii_xy.every(distance) || !within(shape.softness, .05, 1)))
-          throw Error("Set oval radii from 0.5 to " + limit + " px and softness from 0.05 to 1");
+        if (shape.type !== "wave" && (!shape.radii_xy.every(distance) || !within(shape.softness, .05, 1)))
+          throw Error("Set radii from 0.5 to " + limit + " px and softness from 0.05 to 1");
         if (shape.type === "wave" && (!within(shape.bend_px, 0, limit) || !distance(shape.wavelength_px)
           || !distance(shape.spacing_px) || !within(shape.feather_px, .5, shape.spacing_px)
           || !angle(shape.phase_degrees) || !Number.isInteger(shape.band_count) || !within(shape.band_count, 1, 4)))
@@ -3700,6 +3707,9 @@
       $("patternEnabled").checked = settings.enabled;
       $("patternStrength").value = String(backgroundPercentage(settings.strength));
       $("patternRange").value = $("patternStrength").value;
+      $("patternIrregularity").value = settings.irregularity === null
+        ? "" : String(backgroundPercentage(settings.irregularity ?? 0));
+      $("patternIrregularityRange").value = $("patternIrregularity").value;
       $("patternReverse").checked = settings.reverse;
       renderPatternPalette();
       const list = $("patternShape");
@@ -3707,7 +3717,8 @@
       for (const shape of settings.shapes) {
         const option = document.createElement("option");
         option.value = shape.id;
-        option.textContent = (shape.type === "wave" ? "Wave" : "Oval") + " · " + shape.id + (shape.enabled ? "" : " (OFF)");
+        const label = {wave:"Wave", oval:"Oval", contour:"Contours"}[shape.type];
+        option.textContent = label + " · " + shape.id + (shape.enabled ? "" : " (OFF)");
         list.append(option);
       }
       list.value = selectedPatternShape;
@@ -3716,9 +3727,12 @@
       if (shape) {
         $("patternShapeEnabled").checked = shape.enabled;
         $("patternWave").hidden = shape.type !== "wave";
-        $("patternOval").hidden = shape.type !== "oval";
-        $("patternShapeToneLabel").textContent = shape.type === "wave" ? "First band tone" : "Oval tone";
-        $("patternShapeTone").value = shape.type === "wave" ? shape.first_tone : shape.tone;
+        $("patternOval").hidden = shape.type === "wave";
+        $("patternShapeToneControl").hidden = shape.type === "contour";
+        if (shape.type !== "contour") {
+          $("patternShapeToneLabel").textContent = shape.type === "wave" ? "First band tone" : "Oval tone";
+          $("patternShapeTone").value = shape.type === "wave" ? shape.first_tone : shape.tone;
+        }
         for (const [id, [field, index]] of Object.entries(patternNumberFields)) {
           const value = index === undefined ? shape[field] : shape[field]?.[index];
           $(id).value = value === undefined || value === null ? "" : String(value);
@@ -3833,7 +3847,7 @@
         ctx.lineWidth = 1.25 / scale;
         if (patternProposal) ctx.setLineDash([5 / scale, 5 / scale]);
         ctx.beginPath();
-        if (shape.type === "oval" && shape.radii_xy.every(radius => radius > 0)) {
+        if (shape.type !== "wave" && shape.radii_xy.every(radius => radius > 0)) {
           ctx.ellipse(0, 0, ...shape.radii_xy, 0, 0, Math.PI * 2);
         } else if (shape.type === "wave" && shape.wavelength_px > 0 && Number.isInteger(shape.band_count)
           && shape.band_count >= 1 && shape.band_count <= 4) {
@@ -3891,13 +3905,20 @@
     }
     $("patternEnabled").oninput = () => {patternDraft.settings.enabled = $("patternEnabled").checked; markPatternDirty();};
     $("patternReverse").oninput = () => {patternDraft.settings.reverse = $("patternReverse").checked; markPatternDirty();};
-    for (const [control, paired] of [["patternStrength", "patternRange"], ["patternRange", "patternStrength"]]) {
-      $(control).oninput = () => {
-        const text = $(control).value;
-        $(paired).value = text;
-        patternDraft.settings.strength = text === "" ? null : Number(text) / 100;
-        markPatternDirty();
-      };
+    for (const [field, numeric, range] of [
+      ["strength", "patternStrength", "patternRange"],
+      ["irregularity", "patternIrregularity", "patternIrregularityRange"],
+    ]) {
+      for (const [control, paired] of [[numeric, range], [range, numeric]]) {
+        $(control).oninput = () => {
+          const text = $(control).value;
+          $(paired).value = text;
+          const value = text === "" ? null : Number(text) / 100;
+          if (field === "irregularity" && value === 0) delete patternDraft.settings.irregularity;
+          else patternDraft.settings[field] = value;
+          markPatternDirty();
+        };
+      }
     }
     $("patternPalette").onchange = () => {
       const tones = PATTERN_PALETTES[$("patternPalette").value];
@@ -3927,6 +3948,7 @@
     };
     $("patternShapeTone").oninput = () => {
       const shape = currentPatternShape();
+      if (!shape || shape.type === "contour") return;
       shape[shape.type === "wave" ? "first_tone" : "tone"] = $("patternShapeTone").value;
       markPatternDirty();
     };

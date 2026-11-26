@@ -3,19 +3,21 @@
 import re
 from hashlib import sha256
 
-from .background_pattern import MAX_SEED, STYLES, OvalShape, PatternShape, WaveShape
+from .background_pattern import MAX_SEED, STYLES, ContourShape, OvalShape, PatternShape, WaveShape
 from .project import ProjectError
 
 _STYLE_SHAPES = {
     "waves": ("lower-wave", "side-wave"),
     "ovals": ("upper-oval", "side-oval"),
     "mixed": ("lower-wave", "side-wave", "upper-oval"),
+    "abstract": ("abstract-contours",),
 }
 _PLACEMENTS = {
     "lower-wave": ((0.40, 0.58), (0.77, 0.87), (-12, 16)),
     "side-wave": ((0.12, 0.24), (0.43, 0.59), (68, 104)),
     "upper-oval": ((0.60, 0.80), (0.15, 0.32), (-30, 25)),
     "side-oval": ((0.14, 0.30), (0.48, 0.77), (-40, 35)),
+    "abstract-contours": ((0.42, 0.58), (0.43, 0.61), (0, 360)),
 }
 
 
@@ -55,7 +57,22 @@ def generate_background_pattern(
         x, y, angle = _PLACEMENTS[identifier]
         center = [_draw(key + "center_x", x) * width, _draw(key + "center_y", y) * height]
         rotation = _draw(key + "rotation", angle) % 360
-        if identifier.endswith("-wave"):
+        if style == "abstract":
+            contour: ContourShape = {
+                "id": identifier,
+                "type": "contour",
+                "enabled": True,
+                "center_xy": center,
+                "rotation_degrees": rotation,
+                "radii_xy": [
+                    max(0.5, _draw(key + "radius_x", (0.72, 0.94)) * width),
+                    max(0.5, _draw(key + "radius_y", (0.72, 0.94)) * height),
+                ],
+                "softness": _draw(key + "softness", (0.65, 0.90)),
+                "seed": seed,
+            }
+            shapes.append(contour)
+        elif identifier.endswith("-wave"):
             lower = identifier == "lower-wave"
             spacing = max(
                 0.5, _draw(key + "spacing", (0.085, 0.16) if lower else (0.10, 0.20)) * short

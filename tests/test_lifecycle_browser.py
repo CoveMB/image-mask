@@ -176,7 +176,9 @@ def test_browser_background_pattern_keyboard_generation_preview_and_reopen(tmp_p
         page.locator("#patternCenterY").fill("17.5")
         page.locator("#patternTone1").fill("#090A0B")
         page.locator("#patternStrength").fill("23.625")
+        page.locator("#patternIrregularity").fill("62.5")
         page.locator("#patternReverse").check()
+        page.locator("#patternStyle").select_option("abstract")
         page.locator("#patternGenerate").press("Enter")
         expect(page.locator("#patternSeed")).to_contain_text("Proposed seed")
         seed = int(page.locator("#patternSeed").inner_text().split()[-1])
@@ -186,8 +188,15 @@ def test_browser_background_pattern_keyboard_generation_preview_and_reopen(tmp_p
         expect(page.locator("#patternCenterY")).to_have_value("17.5")
         page.locator("#patternGenerate").press("Enter")
         expect(page.locator("#patternUse")).to_be_visible()
+        page.locator("#patternNext").press("Enter")
+        next_seed = (seed + 1) % 2**32
+        expect(page.locator("#patternSeed")).to_have_text(f"Proposed seed {next_seed}")
         page.locator("#patternUse").press("Enter")
+        expect(page.locator("#patternShapeToneControl")).to_be_hidden()
         page.locator("#patternCenterX").fill("29.375")
+        page.locator("#patternRadiusX").fill("74.125")
+        page.locator("#patternAddWave").press("Enter")
+        expect(page.locator("#patternShapeToneControl")).to_be_visible()
         page.locator("#patternEnabled").check()
         page.locator("#patternPreview").press("Enter")
         expect(page.locator("#patternPreviewImage")).to_be_visible()
@@ -195,9 +204,13 @@ def test_browser_background_pattern_keyboard_generation_preview_and_reopen(tmp_p
         applied = submit(page, "#patternApply", "effects", keyboard=True)
         revision = applied["revision"]
         settings = applied["background_pattern"]["settings"]
-        assert settings["generator"] == {"version": 1, "style": "mixed", "seed": seed}
+        assert settings["generator"] == {"version": 1, "style": "abstract", "seed": next_seed}
         assert settings["shapes"][0]["center_xy"][0] == 29.375
+        assert settings["shapes"][0]["type"] == "contour"
+        assert settings["shapes"][0]["radii_xy"][0] == 74.125
+        assert settings["shapes"][1]["type"] == "wave"
         assert settings["strength"] == 0.23625
+        assert settings["irregularity"] == 0.625
         np.testing.assert_array_equal(alpha(project, base), alpha(project, revision))
         with page.expect_response(
             lambda response: response.url.endswith("/background-pattern-off")
@@ -208,6 +221,8 @@ def test_browser_background_pattern_keyboard_generation_preview_and_reopen(tmp_p
         ready(page)
         expect(page.locator("#patternCenterX")).to_have_value("29.375")
         expect(page.locator("#patternStrength")).to_have_value("23.625")
+        expect(page.locator("#patternIrregularity")).to_have_value("62.5")
+        expect(page.locator("#patternStyle")).to_have_value("abstract")
         expect(page.locator("#patternStatus")).to_contain_text("Saved pattern ON")
 
 

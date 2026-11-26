@@ -389,6 +389,11 @@ developed identity, base revision and inputs digest. Replace the identity
 placeholders and example scope with verified values. This example is for a
 96×64 image and an unaccepted revision explicitly chosen for comparison.
 
+When the requested look uses warped waves or ovals, use the optional
+`irregularity` fraction in [0, 1]. For an Abstract proposal, use the resolved
+contour shape and its seed from Generate. Keep the generator origin for
+reproducibility and the two tone targets for colour control.
+
 ```json
 {
   "schema_version": 2,

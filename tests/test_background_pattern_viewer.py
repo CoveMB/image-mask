@@ -4,7 +4,9 @@ import json
 from http.client import HTTPConnection
 
 import numpy as np
+import pytest
 from PIL import Image
+from test_background_pattern import wave
 from test_background_pattern_project import pattern_request, target_settings
 from test_spatial_fade_target import lit_project
 from test_viewer import http, running
@@ -16,7 +18,8 @@ def png_pixels(payload):
         return np.asarray(image).copy()
 
 
-def test_pattern_generate_preview_and_saved_comparison(tmp_path):
+@pytest.mark.parametrize("style, shape_count", [("mixed", 3), ("abstract", 1)])
+def test_pattern_generate_preview_and_saved_comparison(tmp_path, style, shape_count):
     project, _, _, lit, _ = lit_project(tmp_path)
     before = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
     with running(project) as server:
@@ -30,12 +33,12 @@ def test_pattern_generate_preview_and_saved_comparison(tmp_path):
         }
         generate_route = "/api/background-pattern-generate"
         preview_route = "/api/background-pattern-preview"
-        generation = dict(binding, style="mixed", seed=None)
+        generation = dict(binding, style=style, seed=None)
         status, payload, _ = http(server, generate_route, "POST", generation)
         assert status == 200, payload
         proposal = json.loads(payload)
         assert {key: proposal[key] for key in binding} == binding
-        assert proposal["version"] == 1 and len(proposal["shapes"]) == 3
+        assert proposal["version"] == 1 and len(proposal["shapes"]) == shape_count
         assert (
             http(server, generate_route, "POST", dict(generation, seed=proposal["seed"]))[1]
             == payload
@@ -60,8 +63,24 @@ def test_pattern_generate_preview_and_saved_comparison(tmp_path):
         )
         assert connection.getresponse().status == 400
         connection.close()
+        settings = target_settings()
+        if style == "abstract":
+            next_seed = (proposal["seed"] + 1) % 2**32
+            status, payload, _ = http(
+                server, generate_route, "POST", dict(generation, seed=next_seed)
+            )
+            assert status == 200, payload
+            next_proposal = json.loads(payload)
+            assert next_proposal["seed"] == next_seed
+            assert next_proposal["shapes"] != proposal["shapes"]
+            assert next_proposal["shapes"][0]["type"] == "contour"
+            settings = target_settings(
+                irregularity=0.625,
+                shapes=[*next_proposal["shapes"], wave(center_xy=[3, 2])],
+                generator={"version": 1, "style": style, "seed": next_seed},
+            )
         crop = [1, 0, 6, 4]
-        preview_request = dict(binding, crop_xyxy=crop, background_pattern=target_settings())
+        preview_request = dict(binding, crop_xyxy=crop, background_pattern=settings)
         status, payload, _ = http(server, preview_route, "POST", preview_request)
         assert status == 200, payload
         preview = json.loads(payload)
@@ -82,7 +101,7 @@ def test_pattern_generate_preview_and_saved_comparison(tmp_path):
         )
         assert {path: path.read_bytes() for path in project.rglob("*") if path.is_file()} == before
 
-        operation = pattern_request(project)
+        operation = pattern_request(project, settings)
         operation.pop("kind")
         operation.pop("schema_version")
         operation.update(
@@ -106,6 +125,7 @@ def test_pattern_generate_preview_and_saved_comparison(tmp_path):
         )
         assert row["revision_manifest_sha256"] == result["revision_manifest_sha256"]
         assert row["background_pattern"]["settings_sha256"] == preview["settings_sha256"]
+        assert row["background_pattern"]["settings"] == settings
         url = f"/image/result/{result['revision']}/1,0,6,4"
         status, pixels, _ = http(server, url)
         assert status == 200
@@ -131,7 +151,10 @@ globalThis.fetch = async (path, options) => {
     const request = JSON.parse(options.body);
     const response = {ok:true, json:async()=>({
       ...request, version:1, seed:request.seed ?? 5,
-      shapes:[{id:'lower-wave',type:'wave',enabled:true,center_xy:[25,72+(request.seed ?? 5)],
+      shapes:request.style === 'abstract' ? [
+        {id:'abstract-contours',type:'contour',enabled:true,center_xy:[41,57],rotation_degrees:20,
+         radii_xy:[80,82],softness:.72,seed:request.seed ?? 5}
+      ] : [{id:'lower-wave',type:'wave',enabled:true,center_xy:[25,72+(request.seed ?? 5)],
                rotation_degrees:5,bend_px:8,wavelength_px:90,phase_degrees:1,
                spacing_px:9,band_count:3,feather_px:4,first_tone:'tone1'}],
     })};
@@ -206,7 +229,7 @@ def test_page_pattern_late_generation_cannot_replace_newer_draft():
         + r"""
 await ready();
 await $('patternAddOval').onclick();
-$('patternStyle').value = 'mixed';
+$('patternStyle').value = 'abstract';
 deferGeneration = true;
 const pending = $('patternGenerate').onclick();
 change('patternCenterX', '12.125');
@@ -235,13 +258,14 @@ def test_page_pattern_preview_and_saved_only_off_preserve_newer_edits():
         + r"""
 await ready();
 await $('patternAddOval').onclick();
+change('patternIrregularity', '37.5');
 $('patternEnabled').checked = true;
 $('patternEnabled').oninput();
 const base = servedState.revisions[0];
 base.background_pattern = {settings:structuredClone(patternDraft.settings)};
 await refresh(true);
 const preview = $('patternPreview').onclick();
-change('patternCenterX', '13.125');
+change('patternIrregularity', '74.25');
 latePreview();
 await preview;
 assert.equal($('patternPreviewPanel').hidden, true);
@@ -261,6 +285,48 @@ assert.deepEqual(patternDraft.settings, pending);
 assert.match($('patternStatus').textContent, /stale/i);
 await $('patternReload').onclick();
 assert.deepEqual(patternDraft.settings, row.background_pattern.settings);
+"""
+    )
+
+
+def test_page_irregularity_and_abstract_geometry_share_the_pattern_draft():
+    run_page(
+        PATTERN_PAGE
+        + r"""
+await ready();
+assert.equal($('patternIrregularity').value, '0');
+await $('patternAddWave').onclick();
+change('patternIrregularity', '62.5');
+assert.equal(patternDraft.settings.irregularity, .625);
+assert.equal($('patternIrregularityRange').value, '62.5');
+const original = structuredClone(patternDraft.settings);
+$('patternStyle').value = 'abstract';
+await $('patternGenerate').onclick();
+await $('patternNext').onclick();
+assert.equal(patternProposal.seed, 6);
+await $('patternCancel').onclick();
+assert.deepEqual(patternDraft.settings, original);
+await $('patternGenerate').onclick();
+await $('patternNext').onclick();
+await $('patternUse').onclick();
+assert.equal(patternDraft.settings.generator.seed, 6);
+assert.equal(patternDraft.settings.shapes[0].type, 'contour');
+assert.equal(patternDraft.settings.irregularity, .625);
+assert.equal($('patternOval').hidden, false);
+assert.equal($('patternShapeToneControl').hidden, true);
+change('patternRadiusX', '74.125');
+change('patternSoftness', '0.68');
+assert.equal(patternDraft.settings.shapes[0].radii_xy[0], 74.125);
+assert.equal(patternDraft.settings.shapes[0].softness, .68);
+change('patternIrregularity', '101');
+await $('patternApply').onclick();
+assert.match($('message').textContent, /irregularity/i);
+assert.equal(posts.length, 0);
+change('patternIrregularityRange', '0');
+assert.equal($('patternIrregularity').value, '0');
+assert.equal(Object.hasOwn(patternDraft.settings, 'irregularity'), false);
+await $('patternApply').onclick();
+assert.deepEqual(posts.at(-1).background_pattern, patternDraft.settings);
 """
     )
 

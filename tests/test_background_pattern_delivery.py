@@ -7,6 +7,7 @@ import pytest
 from PIL import Image
 from test_background import legacy_project
 from test_background_light import light_settings, scalar_decode, scalar_encode
+from test_background_pattern import contour, pattern_settings, wave
 from test_background_pattern_project import pattern_request
 from test_export import mode_arguments
 from test_series_framing import scalar_background_blend
@@ -14,6 +15,7 @@ from test_spatial_fade import delivered_spatial, operands, spatial_request, spat
 from test_spatial_fade_target import lit_project
 
 from blackmask import operations
+from blackmask.background_pattern import make_background_pattern
 from blackmask.export import export_project, read_rgb16, render_saved_result
 from blackmask.framing import frame_result, validate_margins
 from blackmask.project import ProjectError, _json_bytes, digest, read_revision
@@ -101,6 +103,54 @@ def test_editable_pattern_delivers_native_backdrop_and_unchanged_diagnostics(tmp
         )
         with Image.open(output / "result_RGB8_VIEW.png") as pixels:
             np.testing.assert_array_equal(preview, np.asarray(pixels))
+
+
+@pytest.mark.parametrize("mode", ["add-margins", "match-series"])
+def test_v2_pattern_delivery_matches_preview_and_keeps_opaque_lit_fade(tmp_path, mode):
+    project, _, _, lit, _ = lit_project(tmp_path)
+    settings = pattern_settings(
+        irregularity=0.68,
+        shapes=[
+            contour(center_xy=[1.5, 2], radii_xy=[5, 4]),
+            wave(center_xy=[3, 2], rotation_degrees=20, bend_px=0.8),
+        ],
+    )
+    saved = operations.apply_operation(project, pattern_request(project, settings))
+    revision, master = saved["revision"], saved["developed_id"]
+    manifest = read_revision(project, revision, master)
+    record = manifest["background_pattern"]
+    assert record["algorithm"] == "signed-background-pattern-v2"
+    output = delivery(project, revision, mode)
+    folder = Path(output["directory"])
+    native = Path(output["editable_companion"]["directory"])
+    for member, role in (
+        ("background_pattern_weight16.png", "weight_sha256"),
+        ("background_pattern_settings.json", "settings_sha256"),
+    ):
+        assert digest((native / member).read_bytes()) == record[role]
+    np.testing.assert_array_equal(
+        scalar16(native / "background_pattern_weight16.png"),
+        make_background_pattern(settings, (6, 4)),
+    )
+    result = read_rgb16(native / "result_rgb16.tif")
+    np.testing.assert_array_equal(result, render_saved_result(project, revision, master))
+    alpha = scalar16(native / "alpha16.png")
+    off = render_saved_result(project, lit["revision"], master)
+    assert np.any(alpha == 65535) and np.any(alpha == 0)
+    np.testing.assert_array_equal(result[alpha == 65535], off[alpha == 65535])
+    assert np.any(result[alpha == 0] != off[alpha == 0])
+    arguments = mode_arguments(mode)
+    presentation = (
+        {"mode": mode, "margins": arguments["framing"]}
+        if mode == "add-margins"
+        else {"mode": mode, "settings": arguments["series"]}
+    )
+    preview, _ = render_presentation_preview(project, revision, master, manifest, presentation)
+    with Image.open(folder / "result_RGB8_VIEW.png") as actual:
+        np.testing.assert_array_equal(preview, np.asarray(actual))
+    base_folder = Path(delivery(project, lit["revision"], mode)["directory"])
+    for member in ("black_rgb16.tif", "transparent_RGBA8_VIEW.png"):
+        assert (folder / member).read_bytes() == (base_folder / member).read_bytes()
 
 
 def test_series_samples_pattern_outside_native_and_bypass_is_exact():

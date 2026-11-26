@@ -4,6 +4,7 @@ import math
 import re
 import tomllib
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict
 
@@ -16,7 +17,8 @@ from .project import ProjectError, _json_bytes, digest, read_revision
 from .repair import scalar16
 
 ALGORITHM = "signed-background-pattern-v1"
-STYLES = ("waves", "ovals", "mixed")
+ALGORITHM_V2 = "signed-background-pattern-v2"
+STYLES = ("waves", "ovals", "mixed", "abstract")
 MAX_SEED = 2**32 - 1
 ZERO_WEIGHT = 32768
 _WEIGHT_SCALE = 32767
@@ -50,7 +52,14 @@ class OvalShape(_Placement):
     tone: Tone
 
 
-PatternShape = WaveShape | OvalShape
+class ContourShape(_Placement):
+    type: Literal["contour"]
+    radii_xy: list[float]
+    softness: float
+    seed: int
+
+
+PatternShape = WaveShape | OvalShape | ContourShape
 
 
 class PatternOrigin(TypedDict):
@@ -66,6 +75,7 @@ class PatternSettings(TypedDict):
     reverse: bool
     shapes: list[PatternShape]
     generator: NotRequired[PatternOrigin]
+    irregularity: NotRequired[float]
 
 
 def _number(value: object, minimum: float, maximum: float, name: str) -> float:
@@ -112,11 +122,13 @@ def _shape(value: object, width: int, height: int) -> PatternShape:
         "feather_px",
         "first_tone",
     }
-    oval = {"radii_xy", "softness", "tone"}
+    rounded = {"radii_xy", "softness"}
+    fields = {"wave": wave, "oval": rounded | {"tone"}, "contour": rounded | {"seed"}}
     kind = value.get("type")
     if (
-        (kind != "wave" and kind != "oval")
-        or set(value) != common | (wave if kind == "wave" else oval)
+        not isinstance(kind, str)
+        or kind not in fields
+        or set(value) != common | fields[kind]
         or type(value["enabled"]) is not bool
         or re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", value["id"]) is None
     ):
@@ -128,13 +140,26 @@ def _shape(value: object, width: int, height: int) -> PatternShape:
         "center_xy": _pair(value["center_xy"], 0, (width, height), "centre"),
         "rotation_degrees": _angle(value["rotation_degrees"], "rotation"),
     }
-    if kind == "oval":
+    if kind != "wave":
+        radii = _pair(value["radii_xy"], 0.5, (limit, limit), "radii")
+        softness = _number(value["softness"], 0.05, 1, "softness")
+        if kind == "oval":
+            return {
+                **placement,
+                "type": "oval",
+                "radii_xy": radii,
+                "softness": softness,
+                "tone": _tone(value["tone"]),
+            }
+        seed = value["seed"]
+        if type(seed) is not int or not 0 <= seed <= MAX_SEED:
+            raise ProjectError("Invalid Background pattern contour seed")
         return {
             **placement,
-            "type": "oval",
-            "radii_xy": _pair(value["radii_xy"], 0.5, (limit, limit), "radii"),
-            "softness": _number(value["softness"], 0.05, 1, "softness"),
-            "tone": _tone(value["tone"]),
+            "type": "contour",
+            "radii_xy": radii,
+            "softness": softness,
+            "seed": seed,
         }
     count = value["band_count"]
     if type(count) is not int or not 1 <= count <= 4:
@@ -161,7 +186,7 @@ def normalize_background_pattern(settings: object, width: int, height: int) -> P
         or type(height) is not int
         or min(width, height) < 1
         or not isinstance(settings, dict)
-        or set(settings) - {"generator"} != required
+        or set(settings) - {"generator", "irregularity"} != required
         or type(settings["enabled"]) is not bool
         or type(settings["reverse"]) is not bool
     ):
@@ -190,6 +215,9 @@ def normalize_background_pattern(settings: object, width: int, height: int) -> P
         "reverse": settings["reverse"],
         "shapes": layout,
     }
+    irregularity = _number(settings.get("irregularity", 0), 0, 1, "irregularity")
+    if irregularity:
+        normalized["irregularity"] = irregularity
     if "generator" in settings:
         origin = settings["generator"]
         if (
@@ -211,20 +239,97 @@ def _smooth(position: np.ndarray) -> np.ndarray:
     return fraction * fraction * (3 - 2 * fraction)
 
 
-def _sample(shapes: list[PatternShape], x: np.ndarray, y: np.ndarray) -> np.ndarray:
+def pattern_algorithm(settings: PatternSettings) -> str:
+    if settings.get("irregularity") or any(
+        shape["type"] == "contour" for shape in settings["shapes"]
+    ):
+        return ALGORITHM_V2
+    return ALGORITHM
+
+
+def _warp_parameters(settings: PatternSettings) -> tuple[float, int]:
+    amount = settings.get("irregularity", 0.0)
+    if not amount or not any(
+        shape["enabled"] and shape["type"] != "contour" for shape in settings["shapes"]
+    ):
+        return 0.0, 0
+    origin = settings.get("generator")
+    return amount, origin["seed"] if origin is not None else 0
+
+
+def _geometry_key(settings: PatternSettings) -> tuple[list[PatternShape], tuple[float, int]]:
+    return settings["shapes"], _warp_parameters(settings)
+
+
+def _phase_angles(purpose: str, seed: int, shape_id: str) -> tuple[float, ...]:
+    digest_bytes = sha256(
+        f"background-pattern-v2/{purpose}/{seed}/{shape_id}".encode("ascii")
+    ).digest()
+    return tuple(
+        int.from_bytes(digest_bytes[index : index + 4], "big") * (math.tau / 2**32)
+        for index in range(0, 20, 4)
+    )
+
+
+def _warp_coordinates(
+    along: np.ndarray, across: np.ndarray, span: int, amount: float, phases: tuple[float, ...]
+) -> tuple[np.ndarray, np.ndarray]:
+    first, second, third, fourth, _ = phases
+    local_x, local_y = along / span, across / span
+    amplitude = 0.09 * span * amount
+    # Subtract the centre values so the editable anchor stays fixed.
+    along_offset = (
+        np.sin(math.tau * (0.55 * local_x + 0.30 * local_y) + first)
+        - math.sin(first)
+        + 0.30 * (np.sin(math.tau * (0.21 * local_x - 0.79 * local_y) + second) - math.sin(second))
+    )
+    across_offset = (
+        np.sin(math.tau * (-0.34 * local_x + 0.56 * local_y) + third)
+        - math.sin(third)
+        + 0.30 * (np.sin(math.tau * (0.81 * local_x - 0.24 * local_y) + fourth) - math.sin(fourth))
+    )
+    return along + amplitude * along_offset, across + amplitude * across_offset
+
+
+def _contour_weight(shape: ContourShape, local_x: np.ndarray, local_y: np.ndarray) -> np.ndarray:
+    first, second, third, _, _ = _phase_angles("contour", shape["seed"], shape["id"])
+    surface = (
+        0.55 * np.sin(math.tau * (0.31 * local_x + 0.13 * local_y) + first)
+        + 0.30 * np.sin(math.tau * (-0.19 * local_x + 0.42 * local_y) + second)
+        + 0.15 * np.sin(math.tau * (0.53 * local_x - 0.37 * local_y) + third)
+    )
+    return np.sign(surface) * _smooth((np.abs(surface) - 0.18) / 0.58)
+
+
+def _sample(
+    settings: PatternSettings, native_wh: tuple[int, int], x: np.ndarray, y: np.ndarray
+) -> np.ndarray:
     signed = np.zeros_like(x, dtype=np.float64)
-    for shape in shapes:
+    amount, seed = _warp_parameters(settings)
+    span = min(native_wh)
+    for shape in settings["shapes"]:
         if not shape["enabled"]:
             continue
         radians = math.radians(shape["rotation_degrees"])
         cosine, sine = math.cos(radians), math.sin(radians)
         dx, dy = x - shape["center_xy"][0], y - shape["center_xy"][1]
         along, across = cosine * dx + sine * dy, -sine * dx + cosine * dy
-        if shape["type"] == "oval":
+        taper = None
+        if amount and shape["type"] != "contour":
+            phases = _phase_angles("warp", seed, shape["id"])
+            along, across = _warp_coordinates(along, across, span, amount, phases)
+            if shape["type"] == "wave":
+                cycle = math.tau * (0.37 * (along / span) + 0.21 * (across / span)) + phases[4]
+                taper = 1 - amount * (1 - _smooth(0.48 + 0.72 * np.cos(cycle)))
+        if shape["type"] != "wave":
             radius_x, radius_y = shape["radii_xy"]
-            distance = np.hypot(along / radius_x, across / radius_y)
-            sign = -1 if shape["tone"] == "tone1" else 1
-            signed += sign * _smooth((1 - distance) / shape["softness"])
+            local_x, local_y = along / radius_x, across / radius_y
+            envelope = _smooth((1 - np.hypot(local_x, local_y)) / shape["softness"])
+            if shape["type"] == "oval":
+                sign = -1 if shape["tone"] == "tone1" else 1
+                signed += sign * envelope
+            else:
+                signed += _contour_weight(shape, local_x, local_y) * envelope
             continue
         cycle = along / shape["wavelength_px"] + shape["phase_degrees"] / 360
         warped = across - shape["bend_px"] * np.sin(math.tau * cycle)
@@ -232,10 +337,12 @@ def _sample(shapes: list[PatternShape], x: np.ndarray, y: np.ndarray) -> np.ndar
         sign = -1 if shape["first_tone"] == "tone1" else 1
         for band in range(count):
             lower = (band - count / 2) * spacing
-            signed += sign * (
-                _smooth((warped - lower) / feather + 0.5)
-                - _smooth((warped - lower - spacing) / feather + 0.5)
+            band_weight = _smooth((warped - lower) / feather + 0.5) - _smooth(
+                (warped - lower - spacing) / feather + 0.5
             )
+            if taper is not None:
+                band_weight *= taper
+            signed += sign * band_weight
             sign = -sign
     return np.rint(ZERO_WEIGHT + _WEIGHT_SCALE * np.clip(signed, -1, 1)).astype(np.uint16)
 
@@ -247,7 +354,7 @@ def sample_background_pattern(
     x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
     if x.shape != y.shape or not np.isfinite(x).all() or not np.isfinite(y).all():
         raise ProjectError("Background pattern requires matching finite sample coordinates")
-    return _sample(normalized["shapes"], x, y)
+    return _sample(normalized, native_wh, x, y)
 
 
 def make_background_pattern(
@@ -270,7 +377,7 @@ def make_background_pattern(
         stop = min(start + _ROWS, y1)
         rows = np.arange(start, stop, dtype=np.float64)[:, None]
         x, y = np.broadcast_arrays(columns, rows)
-        result[start - y0 : stop - y0] = _sample(normalized["shapes"], x, y)
+        result[start - y0 : stop - y0] = _sample(normalized, native_wh, x, y)
     return result
 
 
@@ -387,12 +494,13 @@ def read_background_pattern(
         }
         or type(record["schema_version"]) is not int
         or record["schema_version"] != 1
-        or record["algorithm"] != ALGORITHM
         or record["developed_id"] != manifest["developed_id"]
     ):
         raise ProjectError("Invalid saved Background pattern identity or algorithm")
     width, height = record["width"], record["height"]
     settings = normalize_background_pattern(record["settings"], width, height)
+    if record["algorithm"] != pattern_algorithm(settings):
+        raise ProjectError("Invalid saved Background pattern algorithm for geometry")
     encoded = _json_bytes(dict(settings))
     hashes = revision_hashes(manifest)
     settings_path = revision_asset(project, directory, manifest, PATTERN_FILES[1])
@@ -433,7 +541,7 @@ def stage_background_pattern(
     if (
         previous is not None
         and parent is not None
-        and previous["settings"]["shapes"] == settings["shapes"]
+        and _geometry_key(previous["settings"]) == _geometry_key(settings)
     ):
         inherit_revision_files(project, parent, stage, assets, (PATTERN_FILES[0],))
         checksum = previous["weight_sha256"]
@@ -444,7 +552,7 @@ def stage_background_pattern(
     (stage / PATTERN_FILES[1]).write_bytes(encoded)
     return {
         "schema_version": 1,
-        "algorithm": ALGORITHM,
+        "algorithm": pattern_algorithm(settings),
         "developed_id": developed_id,
         "width": native_wh[0],
         "height": native_wh[1],

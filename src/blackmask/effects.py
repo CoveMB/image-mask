@@ -1270,13 +1270,11 @@ def run_effects(
 ) -> dict[str, Any]:
     """Caller holds the canonical writer lock; preserve all prior complete revisions."""
     from .background_pattern import (
-        ALGORITHM as PATTERN_ALGORITHM,
-    )
-    from .background_pattern import (
         PATTERN_FILES,
         PatternOperands,
         display_background,
         normalize_background_pattern,
+        pattern_algorithm,
         pattern_resource_bytes,
         pattern_visible,
         saved_pattern,
@@ -2312,7 +2310,11 @@ def run_effects(
     if identity["execution"] is not None and (texture_changed or "local_texture" in manifest):
         identity["execution"]["algorithms"]["local_texture"] = TEXTURE_ALGORITHM
     if identity["execution"] is not None and (pattern_changed or "background_pattern" in manifest):
-        identity["execution"]["algorithms"]["background_pattern"] = PATTERN_ALGORITHM
+        identity["execution"]["algorithms"]["background_pattern"] = (
+            pattern_algorithm(pattern_settings)
+            if pattern_settings is not None
+            else manifest["background_pattern"]["algorithm"]
+        )
     if identity["execution"] is not None and (mist_changed or parent_mist is not None):
         if mist_apply:
             assert mist_request is not None

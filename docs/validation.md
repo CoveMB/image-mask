@@ -1888,6 +1888,38 @@ across variants. The RGB8 exports and gallery displayed the broad low-contrast
 bands and soft transitions. RGB8 views and JPEGs remain approximate, and
 synthetic imagery cannot establish the photographic result for a specific photo.
 
+### Irregularity and Abstract contours
+
+The focused checks preserve the original v1 field byte for byte at zero
+Irregularity. They exercise deterministic v2 sampling across crops, different
+seeds, neutral and signed tonal areas, saved weight reuse, algorithm validation,
+and editable native, Add margins and Match series delivery. The Lit backdrop
+cases preserve opaque subject samples and independent diagnostic exports.
+
+The relevant suite covered 803 passing tests and two optional Python browser
+cases skipped. The geometry group passed 326 tests and exited zero. The initial
+integration group produced 476 passes, two skips and one failure. A CLI child
+imported the main checkout through the shared Python environment and failed the
+source identity assertion. Six subprocess cases, including that one, passed
+with this worktree bound in `PYTHONPATH`. Ruff, mypy, five local links and the
+maintained request example passed their checks.
+
+Independent implementation review and Chrome reproduced an extra tone selector
+on the contour shape. Chrome 158.0.8127.37 verified that the fixed control is
+hidden for Abstract contours and visible for a wave. The same synthetic loopback
+journey exercised fractional Irregularity, Abstract Generate and Next variation,
+shape edits, Preview, Apply, Compare pattern OFF and reopening saved values.
+Chrome reported no page errors. This installed-browser check supplements the
+optional locked Python browser lane.
+
+A synthetic 480×640 subject compared Mixed at 0% and 80% Irregularity, and
+Abstract seeds 17 and 18. All four samples shared 42% Strength and the Cool
+charcoal palette. The rendered samples preserved opaque RGB16 and showed
+changes in the exposed background. An eight-shape, 2,048×64 strip used
+20,978,224 peak traced allocation bytes against a 25,165,824-byte scratch
+allowance in that measurement. The synthetic appearance check supplies no
+photographic acceptance for a specific photo.
+
 ## Mist
 
 The synthetic checks compare the deterministic field with an independent scalar

@@ -1,9 +1,11 @@
 from copy import deepcopy
+from hashlib import sha256
 
 import numpy as np
 import pytest
 
 from blackmask import background_pattern
+from blackmask.background_pattern_generation import generate_background_pattern
 from blackmask.project import ProjectError
 
 
@@ -35,6 +37,20 @@ def oval(**changes):
         "radii_xy": [2, 2],
         "softness": 0.5,
         "tone": "tone1",
+        **changes,
+    }
+
+
+def contour(**changes):
+    return {
+        "id": "contour",
+        "type": "contour",
+        "enabled": True,
+        "center_xy": [4, 3],
+        "rotation_degrees": 0,
+        "radii_xy": [8, 7],
+        "softness": 0.7,
+        "seed": 17,
         **changes,
     }
 
@@ -83,6 +99,56 @@ def test_pattern_oval_feather_cancel_and_crop():
     )
 
 
+def test_pattern_irregularity_preserves_v1_and_crops():
+    baseline = pattern_settings(shapes=[wave(), oval()])
+    legacy = "2aed1a8ce116623cfe3873c04660da1c4bb37167c9be7fd917a74d6eaca1e06c"
+    for settings in (baseline, dict(baseline, irregularity=0)):
+        field = background_pattern.make_background_pattern(settings, (9, 7))
+        assert sha256(field.astype("<u2").tobytes()).hexdigest() == legacy
+        assert "irregularity" not in background_pattern.normalize_background_pattern(settings, 9, 7)
+    size = (121, 101)
+    settings = pattern_settings(
+        shapes=[
+            wave(center_xy=[64, 65], bend_px=8, wavelength_px=108, spacing_px=11, feather_px=5),
+            oval(center_xy=[71, 28], radii_xy=[24, 31]),
+        ],
+        generator={"version": 1, "style": "mixed", "seed": 17},
+    )
+    field = background_pattern.make_background_pattern(settings, size)
+    warped = dict(settings, irregularity=0.8)
+    result = background_pattern.make_background_pattern(warped, size)
+    assert not np.array_equal(result, field)
+    np.testing.assert_array_equal(result, background_pattern.make_background_pattern(warped, size))
+    assert not np.array_equal(
+        result,
+        background_pattern.make_background_pattern(
+            dict(warped, generator=dict(settings["generator"], seed=18)), size
+        ),
+    )
+    np.testing.assert_array_equal(
+        background_pattern.make_background_pattern(warped, size, crop_xyxy=[2, 7, 98, 85]),
+        result[7:85, 2:98],
+    )
+
+
+def test_abstract_contours_have_both_tones_and_quiet_space():
+    size = (121, 101)
+    settings = pattern_settings(shapes=generate_background_pattern("abstract", 17, *size))
+    field = background_pattern.make_background_pattern(settings, size)
+    assert field.min() >= 1
+    assert np.any(field < 32768) and np.any(field > 32768) and np.any(field == 32768)
+    different = pattern_settings(shapes=generate_background_pattern("abstract", 18, *size))
+    assert not np.array_equal(field, background_pattern.make_background_pattern(different, size))
+    np.testing.assert_array_equal(
+        background_pattern.make_background_pattern(settings, size, crop_xyxy=[5, 11, 84, 85]),
+        field[11:85, 5:84],
+    )
+    yy, xx = np.mgrid[-5:10, -7:128]
+    extended = background_pattern.sample_background_pattern(settings, size, xx, yy)
+    assert np.any(extended[:5] != 32768)
+    np.testing.assert_array_equal(extended[5:, 7:128], field[:10])
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -94,6 +160,14 @@ def test_pattern_oval_feather_cancel_and_crop():
         {"shapes": [wave(bend_px=float("nan"))]},
         {"generator": {"version": 2, "style": "mixed", "seed": 17}},
         {"tones_srgb": ["#ffffff", "no"]},
+        {"irregularity": True},
+        {"irregularity": float("nan")},
+        {"irregularity": 1.01},
+        {"irregularity": -0.01},
+        {"shapes": [{k: v for k, v in contour().items() if k != "seed"}]},
+        {"shapes": [contour(seed=True)]},
+        {"shapes": [contour(seed=2**32)]},
+        {"shapes": [contour(tone="tone1")]},
     ],
 )
 def test_pattern_validation_and_exact_identity(changes):

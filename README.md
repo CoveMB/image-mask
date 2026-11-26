@@ -105,11 +105,11 @@ and participates in the opt-in **Lit backdrop** fade target. Native editable
 exports retain its separate field,
 including OFF. See the [light and gentle exposure walkthrough](docs/workflow.md#background-light).
 
-**Background pattern** adds soft waves and ovals behind the saved matte. Draw an
-arrangement or generate editable Waves, Ovals or Mixed variations for the photo.
-Adjust strength and two tone colours, then preview the draft or compare the
-saved Result with the pattern OFF. The [pattern workflow](docs/workflow.md#background-pattern)
-covers placement and editable delivery.
+**Background pattern** adds soft waves, ovals and free-form Abstract contours
+behind the saved matte. Draw an arrangement or generate an editable variation
+for the photo. Use Irregularity to reshape waves and ovals, then adjust strength
+and the two tone colours. The [pattern workflow](docs/workflow.md#background-pattern)
+covers preview, placement and editable delivery.
 
 **Mist** adds an optional textured layer across the saved subject and backdrop
 in Result. Its **Vapor** style draws uneven wisps through a charcoal bank around
