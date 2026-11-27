@@ -1632,9 +1632,11 @@ IDs are invalid even OFF. An exclusive schema-2 effects request binds full
 native `scope_xyxy`, `developed_id`, `base_revision`, `inputs_digest` and boolean
 `candidate_comparison`. A base that has not been accepted requires explicit
 candidate comparison. Viewer Apply adds the raw revision-manifest SHA-256.
-The bound Generate and Preview POSTs use the current working revision and
-draft digest. Preview also selects a validated native crop and returns a
-temporary RGB8 image with its crop, scale and normalized settings digest.
+The bound Generate and Preview POSTs use the complete working revision with
+current enabled effects and the current draft digest. Preview also selects a
+validated native crop and rejects requests whose estimated render memory
+exceeds 2 GiB before composing the crop. The temporary RGB8 image reports its
+crop, scale and normalized settings digest.
 
 The version-1 revision record binds `algorithm`, `developed_id`, `width`,
 `height`, normalized `settings`, `weight_sha256` and `settings_sha256` in

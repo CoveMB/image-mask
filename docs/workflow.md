@@ -887,14 +887,19 @@ and `#251913`. Enter two custom `#RRGGBB` colours to set your own targets.
    to combine them with the contours.
 4. Select **Pattern ON** with at least one enabled shape. **Preview pattern**
    shows the current native crop as a separate temporary RGB8 image, capped at
-   1024 pixels on the long side. **Apply pattern** saves the controls in a new
-   working revision or reuses the identical revision. For an unaccepted base,
-   check **Explicitly compare pattern on an unaccepted candidate** first.
+   1024 pixels on the long side. If the preview exceeds its 2 GiB estimated
+   render budget, select a smaller crop. **Generate pattern**, **Preview
+   pattern** and **Apply pattern** require a complete working Result with
+   current enabled effects. **Apply pattern** saves the controls in a new
+   working revision or reuses the identical revision. For an unaccepted
+   working Result, check **Explicitly compare pattern on an unaccepted
+   candidate** before applying or turning the pattern off.
 5. In **Result**, use **Compare pattern OFF** to view the saved revision without
-   its pattern. The comparison retains Background light, fade and Mist, and
-   leaves your draft available. **Turn pattern OFF** saves only the switch while
-   retaining the saved geometry, colours and weight field. **Reload saved pattern**
-   reloads this section from the working revision. Use it when the draft is stale
+   its pattern, including while working from prepared guidance. The comparison
+   retains Background light, fade and Mist, and leaves your draft available.
+   **Turn pattern OFF** saves only the switch while retaining the saved
+   geometry, colours and weight field. **Reload saved pattern** reloads this
+   section from the working revision. Use it when the draft is stale
    after a change to the working inputs.
 
 Opaque subject pixels receive no pattern. At partial alpha, the backdrop shows

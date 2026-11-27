@@ -6,7 +6,6 @@ import io
 import json
 import re
 import secrets
-import sys
 import threading
 import tomllib
 import webbrowser
@@ -70,6 +69,8 @@ from .series_framing import (
     save_series_settings,
 )
 from .texture import TEXTURE_DEFAULTS, TEXTURE_PREFIX, parse_texture_json
+
+_PATTERN_PREVIEW_MAX_BYTES = 2 * 1024**3
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -523,8 +524,20 @@ class ReviewServer(ThreadingHTTPServer):
                 raise ValueError(str(error)) from error
             x0, y0, x1, y1 = crop
             width, height = x1 - x0, y1 - y0
-            if pattern_resource_bytes(width, height) + 128 * width * height > sys.maxsize:
-                raise ValueError("Background pattern preview exceeds allocation bounds")
+            # Account for decoded source, matte, backdrop and effect layers at
+            # native size, then float64 review planes at crop size and RGB8 encoding.
+            native_width, native_height = native_wh
+            estimated_peak_bytes = (
+                40 * native_width * native_height
+                + 160 * width * height
+                + pattern_resource_bytes(width, height)
+                + 16 * 1024**2
+            )
+            if estimated_peak_bytes > _PATTERN_PREVIEW_MAX_BYTES:
+                raise ValueError(
+                    "Background pattern preview exceeds the 2 GiB render budget. "
+                    "Select a smaller crop and try again."
+                )
             limit = min(1024, max(width, height))
             size = (
                 max(1, width * limit // max(width, height)),

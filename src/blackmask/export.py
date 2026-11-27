@@ -516,6 +516,7 @@ def _export_execution_identity() -> dict[str, Any]:
 
 def _delivery_notes(record: dict[str, Any]) -> bytes:
     mode = record["mode"]
+    has_pattern = "background_pattern" in record
     lit_fade_target = uses_lit_fade_target(record.get("spatial_fade"))
     has_curve = "local_tone_curve" in record["effects"]
     has_texture = "local_texture" in record["effects"]
@@ -540,7 +541,7 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         text += f"Background light is separate from the unlit base B0. Native editable deliveries retain background_rgb16.tif as B0 (missing means zero), background_light_rgb16.tif as L16, and background_light_settings.json, including OFF. When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)); encode to RGB16 with float64 ties-to-even and copy zero-light pixels exactly. OFF uses B1=B0. Native replay reads saved L16 without generating it. {light_effect} can clip a bright backdrop, so lower brightness to retain variation. Black/transparent diagnostics never display light.\n"
     elif lit_fade_target:
         text += "Fade target is Lit backdrop. B1 equals B0 when Background light is absent.\n"
-    if "background_pattern" in record:
+    if has_pattern:
         text += (
             "Background pattern changes only the displayed backdrop B2. Use B1 (the base B0 "
             "when light is absent) as the starting backdrop. Decode the native signed weights "
@@ -573,14 +574,35 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         else:
             text += "Editable layers were not requested.\n"
     if "editable" in record["requested_variants"] and mode == "native":
-        if "background_light" in record:
+        if has_pattern:
+            text += (
+                "Reconstruct native Result from the saved compositing formula below. "
+                "F is the saved foreground before shading and spatial fade. A and W divide "
+                "scalar16 by 65535. Use opacity 0 when shading is disabled or absent, otherwise "
+                "use saved shading.opacity. Missing W or B0 means zero. Scalar16 masks have no "
+                "ICC/gamma.\n"
+            )
+        elif "background_light" in record:
             text += "Native editable F/A/W/opacity/B0/L16 reconstruct Result: round(F*A*(1-opacity*W)+B1*(1-A)), float64 ties-to-even after the separate B0/L16 combination above. A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise saved shading.opacity. Missing W or B0 means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
         else:
             text += "Native editable F/A/W/opacity/B reconstruct Result: round(F*A*(1-opacity*W)+B*(1-A)), float64 ties-to-even; A and W divide scalar16 by 65535; use opacity 0 when shading is disabled or absent, otherwise use saved shading.opacity. Missing W or B means zero. Foreground is pre-shading, already sharpened/exposed/faded; unexposed/unfaded/source and independent settings retain recovery. Scalar16 masks have no ICC/gamma.\n"
         if record.get("shadow_fade", {}).get("schema_version") == 3:
             text += "Retain shadow_fade_reduction16.png and shadow_fade_reduction.json, including when Shadow fade is OFF. To edit/replay Shadow fade, start from unfaded_foreground_rgb16.tif: multiply its support/highlight exponent weight by (1-reduction16/65535) exactly once before gain=2**(-6*amount*weight). Alpha gates eligibility; explicit protection copies unfaded RGB exactly. Disabled Shadow fade copies unfaded RGB. Selected foreground_rgb16.tif already includes this result: never fade it again. Then recompute downstream spatial highlights from that selected RGB, retaining spatial reduction independently.\n"
         if "spatial_fade" in record:
-            if lit_fade_target:
+            if has_pattern:
+                target = "B1" if lit_fade_target else "B0"
+                text += (
+                    "With enabled Fade into background, derive q from saved geometry, alpha "
+                    "eligibility, protection, highlights and any local reduction. For Result, "
+                    f"blend F toward {target} in linear sRGB, encode without intermediate "
+                    "rounding and composite once over B2 with unchanged A. Disabled Fade "
+                    "uses q=0. Black and transparent retain B0 as the fade target. For Match "
+                    "series, sample premultiplied P=R(A*F), a=R(A) and Q=R(A*q). Clamp Q "
+                    f"to [0,a], blend P/a toward output-coordinate {target} using Q/a where a "
+                    "is positive, then composite once over output-coordinate B2. Use B0 for "
+                    "transparent and zero its RGB wherever alpha8 rounds to zero.\n"
+                )
+            elif lit_fade_target:
                 text += "With enabled Fade into background, F is pre-spatial and q comes from saved geometry, alpha eligibility, protection, highlights and any local reduction. For Result, blend F toward B1 in linear sRGB. Encode without intermediate rounding and composite once over B1 with unchanged A. Disabled Fade uses q=0. Black and transparent retain B0 as the fade target. For Match series, sample premultiplied P=R(A*F), a=R(A), Q=R(A*q). Clamp Q to [0,a], blend P/a toward output-coordinate B1 using Q/a where a is positive, then composite once over B1. Use B0 for transparent and zero its RGB wherever alpha8 rounds to zero.\n"
             elif "background_light" in record:
                 text += "With enabled spatial Fade into background, F is pre-spatial: derive q from saved weight/protection/highlight settings, blend decode_srgb(F) toward decode_srgb(B0) in linear light, encode without intermediate rounding, then composite once against B1 with unchanged A. Disabled spatial settings mean q=0; retain all operands. Black/transparent diagnostics keep B0 as Fade target. For series, sample P=R(A*F), a=R(A), Q=R(A*q), clamp Q to [0,a], blend P/a toward final-coordinate B0 using Q/a, then composite once against B1; zero transparent RGB where output alpha8 rounds to zero. Opaque pixels and protected underlying RGB remain unchanged by light; partial-alpha flattened colour changes naturally.\n"
@@ -1249,16 +1271,29 @@ def _delivery_request_record(
             if manifest.get("spatial_fade", {}).get("enabled")
             else "encoded-sRGB float64 round ties-to-even(F*A*H+B*(1-A)); H=1-p*W16/65535, A=alpha16/65535; p is saved opacity only when shading is enabled, otherwise zero; B is saved background RGB16 or zero"
         ) + "; F already includes Local sharpening, local exposure and Shadow fade"
-        if "background_light" in manifest:
+        has_light = "background_light" in manifest
+        has_pattern = "background_pattern" in manifest
+        if has_light or has_pattern:
             target = "B1" if lit_fade_target else "B0"
+            backdrop = "B2" if has_pattern else "B1"
+            light = (
+                "enabled B1=RGB16(encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1))), OFF B1=B0"
+                if has_light
+                else "B1=B0 when Background light is absent"
+            )
             record["result_compositing"] = (
                 (
-                    f"round(blend_linear_srgb(F,{target},q)*A+B1*(1-A)); spatial q retains all saved protection/highlight/reduction operands"
+                    f"round(blend_linear_srgb(F,{target},q)*A+{backdrop}*(1-A)); spatial q retains all saved protection/highlight/reduction operands"
                     if manifest.get("spatial_fade", {}).get("enabled")
-                    else "encoded-sRGB float64 round ties-to-even(F*A*H+B1*(1-A)); H=1-p*W16/65535; p is saved opacity only when shading is enabled, otherwise zero"
+                    else f"encoded-sRGB float64 round ties-to-even(F*A*H+{backdrop}*(1-A)); H=1-p*W16/65535; p is saved opacity only when shading is enabled, otherwise zero"
                 )
-                + "; B0 is saved unlit background or zero; enabled B1=RGB16(encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1))), OFF B1=B0; A=alpha16/65535; F already includes Local sharpening, local exposure and Shadow fade"
+                + f"; B0 is saved unlit background or zero; {light}; A=alpha16/65535; F already includes Local sharpening, local exposure and Shadow fade"
             )
+            if has_pattern:
+                record["result_compositing"] += (
+                    ". B2 is the RGB16 backdrop after applying the saved Background pattern. "
+                    "B2 equals B1 when the pattern is OFF or the mix amount is zero."
+                )
         elif lit_fade_target:
             record["result_compositing"] += (
                 ". Lit backdrop equals the base backdrop when Background light is absent."
