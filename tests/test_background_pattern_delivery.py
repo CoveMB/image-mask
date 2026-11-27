@@ -50,6 +50,11 @@ def test_editable_pattern_delivers_native_backdrop_and_unchanged_diagnostics(tmp
     shutil.copytree(on.get("editable_companion", on)["directory"], detached)
     record = json.loads((detached / "manifest.json").read_bytes())
     pattern = record["background_pattern"]
+    assert "blend_linear_srgb(F,B1,q)*A+B2*(1-A)" in record["result_compositing"]
+    notes = (detached / "README.txt").read_text()
+    assert "blend F toward B1" in notes
+    assert "composite once over B2" in notes
+    assert "B1*(1-A)" not in notes
     for filename, role in (
         ("background_pattern_weight16.png", "weight_sha256"),
         ("background_pattern_settings.json", "settings_sha256"),
@@ -208,6 +213,13 @@ def test_margins_pattern_preview_keeps_legacy_black_fade_target(tmp_path):
         manifest,
         {"mode": "add-margins", "margins": mode_arguments("add-margins")["framing"]},
     )
-    output = Path(delivery(project, revision, "add-margins")["directory"])
+    framed = delivery(project, revision, "add-margins")
+    native = Path(framed["editable_companion"]["directory"])
+    record = json.loads((native / "manifest.json").read_bytes())
+    assert "blend_linear_srgb(F,B0,q)*A+B2*(1-A)" in record["result_compositing"]
+    notes = (native / "README.txt").read_text()
+    assert "blend F toward B0" in notes
+    assert "composite once over B2" in notes
+    output = Path(framed["directory"])
     with Image.open(output / "result_RGB8_VIEW.png") as pixels:
         np.testing.assert_array_equal(preview, np.asarray(pixels))

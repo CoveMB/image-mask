@@ -117,6 +117,30 @@ def test_pattern_generate_preview_and_saved_comparison(tmp_path):
         assert http(server, generate_route, "POST", generation)[0] == 409
 
 
+def test_pattern_preview_checks_native_allocation_before_render(tmp_path, monkeypatch):
+    project, _, _, lit, _ = lit_project(tmp_path)
+    native_wh = (8000, 5000)
+    rendered = []
+    with running(project) as server:
+        binding = {"revision": lit["revision"]}
+        monkeypatch.setattr(server, "_pattern_target", lambda data, fields: (binding, native_wh))
+
+        def render(path, **options):
+            rendered.append(path)
+            return b"preview"
+
+        monkeypatch.setattr(server, "_image_png", render)
+        route = "/api/background-pattern-preview"
+        request = dict(binding, background_pattern=target_settings(), crop_xyxy=[0, 0, *native_wh])
+        status, payload, _ = http(server, route, "POST", request)
+        assert status == 400, payload
+        assert "smaller crop" in json.loads(payload)["error"]
+        assert rendered == []
+        status, _, _ = http(server, route, "POST", dict(request, crop_xyxy=[0, 0, 512, 512]))
+        assert status == 200
+        assert rendered == [f"/image/result/{lit['revision']}/0,0,512,512"]
+
+
 PATTERN_PAGE = r"""
 function change(id, value) {
   const control = $(id);
@@ -265,6 +289,35 @@ assert.deepEqual(patternDraft.settings, row.background_pattern.settings);
     )
 
 
+def test_page_disables_pattern_authoring_for_stale_enabled_effects():
+    run_page(
+        PATTERN_PAGE
+        + r"""
+await ready();
+await $('patternAddOval').onclick();
+const current = servedState.revisions[0];
+current.local_texture = {enabled:true, stale:true};
+await refresh();
+const controls = ['patternGenerate', 'patternPreview', 'patternApply'];
+for (const id of controls) assert.equal($(id).disabled, true, id);
+assert.match($('patternStatus').textContent, /rebuild or disable.*stale/i);
+const originalFetch = fetch, patternRequests = [];
+globalThis.fetch = (path, options) => {
+  if (path.startsWith('/api/background-pattern-') || path === '/api/action') {
+    patternRequests.push(path);
+    throw Error('Unexpected authoring request');
+  }
+  return originalFetch(path, options);
+};
+for (const id of controls) await $(id).onclick();
+assert.deepEqual(patternRequests, []);
+current.local_texture.enabled = false;
+await refresh();
+for (const id of controls) assert.equal($(id).disabled, false, id);
+"""
+    )
+
+
 def test_page_pattern_rotation_handle_tracks_pixel_centres_at_high_zoom():
     run_page(
         PATTERN_PAGE
@@ -273,6 +326,8 @@ await ready();
 await $('patternAddOval').onclick();
 change('patternCenterX', '42');
 change('patternCenterY', '50');
+servedState.revisions[0].background_pattern = {settings:structuredClone(patternDraft.settings)};
+await refresh(true);
 $('authorMode').value = 'background-pattern';
 zoom = 8;
 draw();
@@ -293,5 +348,12 @@ assert.deepEqual(shape.center_xy, [42, 50]);
 assert.equal(shape.rotation_degrees, 90);
 canvas.onpointerdown(pointer(49.25, 51.125));
 assert.deepEqual(shape.center_xy, [49.25, 51.125]);
+await $('patternReload').onclick();
+canvas.onpointerdown(pointer(42 + radius, 50));
+assert.equal(gesture?.patternRotation, shape.id);
+await $('patternReload').onclick();
+canvas.onpointermove(pointer(42, 52));
+assert.equal(currentPatternShape().rotation_degrees, 0);
+assert.equal(patternDraft.dirty, false);
 """
     )

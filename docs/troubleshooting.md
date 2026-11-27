@@ -354,13 +354,17 @@ accepted dependencies, failed stages or recovery material automatically.
 
 ## Background pattern recovery
 
-- **Preview or Apply reports stale.** Select the current working Result and use
+- **Generate, Preview or Apply is unavailable.** Use a complete working Result
+  and rebuild or disable stale enabled effects. If the pattern draft is stale, use
   **Reload saved pattern** before re-entering the intended changes. Reload
   replaces this control's draft. A generated proposal is temporary until you
   select **Use this pattern** and then **Apply pattern**.
-- **Turn the effect off while keeping the layout.** Use **Turn pattern OFF**.
-  Pending edits remain available. To reopen the saved layout, use **Reload
-  saved pattern**. **Compare pattern OFF** is a read-only view of the saved result.
+- **Preview exceeds its render budget.** Select a smaller native crop and retry.
+- **Turn the effect off while keeping the layout.** If the working Result is
+  unaccepted, first check **Explicitly compare pattern on an unaccepted
+  candidate**. Use **Turn pattern OFF**. Pending edits remain available. To
+  reopen the saved layout, use **Reload saved pattern**. **Compare pattern OFF**
+  is a read-only view of the saved Result.
 - **Reopen or recover an earlier layout.** **Restore saved revision** recovers
   the pattern from that revision, including an OFF state or legacy absence.
   Acceptance stays separate. For missing or damaged saved assets, restore an
