@@ -1,0 +1,69 @@
+# Soft edges in protected inward shading implementation plan
+
+> **For agentic workers** Use `superpowers:executing-plans` or `superpowers:subagent-driven-development` according to the execution method the user selects. Track the steps below.
+
+**Goal** Prevent inward shading from creating a light rim followed by a dark dip as a soft subject edge becomes more opaque.
+
+**Architecture** Correct the native shading-weight calculation in `make_shadow_weight`. Continue saving W16 independently of opacity and rendering from the existing source, alpha, shading and backdrop operands. Introduce the revised weight on a newly enabled effect or an explicit scoped rebuild. Immutable revisions retain their recorded native appearance.
+
+**Tech stack** Python, NumPy, SciPy ndimage, Pillow, tifffile and pytest from the existing environment.
+
+**Spec** [Design and acceptance below](#design-and-acceptance), [protected inward shading contract](../../file-contract.md#optional-protected-inward-shading) and [existing photographer controls](../../workflow.md#protected-inward-shading). Evaluate native RGB16 independently of the [RGB8 viewing-copy plan](2026-11-25-dark-gradient-rgb8.md).
+
+## Design and acceptance
+
+The current weight multiplies geometry, thickness, direction and highlight attenuation by `smooth(alpha / 0.35)`. While alpha rises across a soft edge, that last factor can turn the shadow on faster than the foreground becomes visible. On the reported left petal, opacity rose from 19% to 34%. Holding the other effects and backdrop fixed, brightness rose by 2.94 gray levels with inward shading off and fell by 1.16 with the saved 65% strength. Those are native measurements expressed in 8-bit-equivalent units.
+
+Use a synthetic straight edge to distinguish the introduced rim from a real photographic highlight. With uniform F, B and local geometric weight W, the existing composite is `B + A × (F × (1 − pW) − B)`. It moves continuously between the two endpoints as A changes. Its direction can legitimately be darker when the shaded foreground is darker than the backdrop. The regression is an extra **reversal** within that transition. Textured photos and deliberate variations in shade do not have a global monotonicity requirement. [Project compositing contract](../../file-contract.md#optional-protected-inward-shading) · [W3C source-over compositing](https://www.w3.org/TR/compositing-1/#simplealphacompositing)
+
+**Proposed calculation.** Keep the existing directional shadow on the opaque interior. Across the soft edge, use the geometric shadow weight at the adjacent interior boundary and let the existing alpha composite introduce the shaded subject gradually. A small numerical trial on the straight-edge fixture below illustrates the distinction. Across the four pixels from 25% to 37.5% alpha, the current result fell by 0.91 gray levels at 65% strength. Holding the weight at the adjacent opaque boundary made each step of the entire 32-pixel transition rise, including at 90% and 100% strength on this fixture. Merely dropping the low-alpha multiplier still produced reversals at full strength. The trial covers a straight synthetic edge. Task 1 qualifies the two-dimensional rule on curved and translucent shapes before it can ship.
+
+**Compatibility proposal.** A background edit, restore, or global shading-opacity adjustment on an existing photo continues to use its saved weight. **Enable / rebuild shading within declared support** creates a new draft with the corrected calculation in the photographer's chosen area. This lets the photographer compare an old and new draft on the same crop. Automatic adoption during an unrelated edit would change both the requested setting and the petal edge in a single comparison.
+
+## Global constraints
+
+- Preserve source/master RGB, accepted alpha, locked and protected pixels, saved support, bounds, and the original photograph. Apply shading once in encoded sRGB with the current final rounding. No matting, color cleanup, decontamination, blur or mask erosion is part of this fix.
+- Keep W16 independent of opacity. Zero strength, disabled shading, stale/base views, explicit protection and fractional support retain their documented semantics. An explicit rebuild changes only the requested support.
+- Use existing local controls and dependencies. Synthetic fixtures belong in tests. Photographic trials require the user's selected photos and applicable authorization. Preserve accepted results and old exports. Git writes require separate authorization.
+
+## Review focus
+
+| Risk | Verification |
+| --- | --- |
+| A fix works at 65% but introduces another reversal at 90–100% | Native signed differences across the entire ramp, including darker endpoints, in Task 1 |
+| Shading crosses a transparent gap, paints a fine tip or flattens a photographed detail | Disconnected, thin, curved and protected partial-alpha fixtures in Task 1 and photographic check in Task 3 |
+| A legacy or partial rebuild silently changes shading outside its scope | Mixed-generation support and parent replay tests in Task 2 |
+| An opacity change or warm request regenerates old W, or returns a previous algorithm's output | Actual effects-operation and saved-reuse tests in Task 2 |
+| A preview looks improved but the saved native master or editable export disagrees | RGB16 TIFF reconstruction, same-crop review and restore in Task 3 |
+
+### Task 1 — Remove the reversal at native precision
+
+**Files** Modify `src/blackmask/effects.py`. Add regression cases in `tests/test_effects.py`. Exercise `render_background` and `render_black` from `src/blackmask/export.py` as the existing renderers.
+
+**Interface** Preserve `make_shadow_weight(source16, alpha16, support16, settings, *, protection) -> np.ndarray`. It returns a native scalar uint16 array. The complete alpha and source supply geometry. Support and protection constrain the output.
+
+- [ ] Write `test_inward_shading_soft_ramp_has_no_native_rim`. Use a 160 × 256 frame, every row with `alpha = rint(65535 × clip((x−48)/32, 0, 1))`, neutral foreground `100 × 257`, backdrop `7 × 257`, full support, empty protection, width 96 and direction 180°. Measure row 80 from x=48 through x=80 inclusive. Parameterize p over 0, 0.12, 0.24, 0.65, 0.90 and 1.0. For each p, derive the expected straight transition from the actual shaded interior endpoint and background using an independent scalar formula. Compare native RGB to within one RGB16 unit and check signed differences in the expected direction. Use signed arithmetic. Include black and a brighter backdrop that makes the transition descend. Run `rtk proxy .venv/bin/python -m pytest -q tests/test_effects.py -k soft_ramp_has_no_native_rim`. Observe failure on the existing 65% case.
+- [ ] Keep existing geometry, direction, thickness and highlight attenuation at the reference interior pixels. For each 8-connected nonzero-alpha subject component, use its fully opaque pixels as interior anchors. Extend their geometric weight to partial pixels using the nearest anchor in the same component with deterministic tie handling. For a component whose maximum lies in [0.5, 1), use its maximum-alpha plateau as the anchors. Give a component entirely below the existing 0.5 silhouette threshold zero geometric weight. Apply each destination pixel's fractional support and hard protection exactly once. An empty alpha frame returns zeros. Never copy foreground colors or alpha from an anchor. This is a proposed rule for ambiguous translucent structures and must pass the following checks.
+- [ ] Add curved soft edges in opposing directions, a thin opaque tip, an isolated faint strand, a component peaking just below full opacity, adjacent objects separated by a one-pixel transparent gap, an all-transparent crop and protected partial-alpha pixels. Vary the neighboring object's weight and verify the gap prevents transfer. Verify exact opaque-interior weights against the legacy calculation, reduced weight on a thin tip, no discontinuity on a flat straight fringe, exact zero on protected/empty pixels, correct fractional support, and identical W for all p. Test equidistant anchors with different weights for a visible seam on a smooth curved fixture. If nearest-anchor assignment produces a seam or unjustified shading on fine detail, reject that candidate and compare a locally interpolated boundary weight within the same component before proceeding.
+- [ ] Keep original image dimensions as the memory bound. Use existing SciPy operations with bounded scratch, avoid an all-pixel/all-anchor distance matrix and avoid a whole-image transform per small component. Measure peak memory and runtime on a representative large frame and a fragmented matte against the old builder. Update resource preflight if new scratch requires it. Run `rtk proxy .venv/bin/python -m pytest -q tests/test_effects.py -k 'soft_ramp or shadow_weight or shading_exact'` and the new geometry cases. All native assertions and current protection checks must pass.
+
+### Task 2 — Adopt the new weight without changing old editions of a photo
+
+**Files** Modify `src/blackmask/effects.py`. Extend `tests/test_effects.py` and applicable reuse coverage in `tests/test_library_storage_journey.py`. Inspect the assets inherited by `src/blackmask/operations.py` and the existing inputs reader before changing any persistence path.
+
+**Interfaces** Retain the existing effects request, `opacity_only`, saved W16 file, `saved_shading`, and explicit enable/rebuild controls. Give new geometry writes a distinct algorithm identifier, e.g. `inward-interior-edge-weight-v2`. Keep the actual encoded algorithm identity consistent across the record, execution identity and scoped write.
+
+- [ ] Create a small frozen **synthetic v1** revision in temporary test storage with genuine saved W and version metadata. Assert read, restore, unrelated background edit, explicit disable, and opacity-only adjustment preserve its W bytes. Re-render its RGB16 from saved operands with the builder patched to fail if invoked. For opacity-only, expect only the requested scalar's legitimate effect on appearance.
+- [ ] Issue the existing explicit shading rebuild on part of that revision. Require v2 inside declared writable support, byte-exact old W and dependency/protection samples outside, and zero W at previously or newly protected pixels in scope. Verify another region of nonzero legacy weight and a protected partially transparent pixel actually exist in the fixture. The parent remains usable and retains the original result. Rebuild the remaining support and compare with a fresh full v2 rebuild under identical settings.
+- [ ] In the effects operation, record the version of the geometry actually written. Inherit that provenance for opacity-only, disable and unrelated edits. For a partial rebuild, document the identifier as the algorithm of the scoped write. Bind its parent and exact write support through the saved revision/request/inputs so inherited regions can be traced. Never label the entire inherited map as freshly calculated. Preserve the current stale-alpha decisions and acceptance rules.
+- [ ] Update `_effects_execution_identity` and the per-algorithm reuse comparison to distinguish new v2 work from inherited v1 W. Preserve the separate Mist and Vapor execution-version selections and verify the shading algorithm identity survives both. Identical valid v2 rebuilds should reuse the complete current result. Opening or changing opacity on a v1 photo must not force v2 generation. Simulate an interrupted rebuild with the current publication checks and verify the previous working and accepted pointers recover intact. Run `rtk proxy .venv/bin/python -m pytest -q tests/test_effects.py tests/test_assets.py tests/test_previews.py tests/test_library_storage_journey.py -k 'shading or shadow_weight or effects_reuse'`.
+
+### Task 3 — Verify the photographer's workflow and native delivery
+
+**Files** Extend `tests/test_effects.py` and `tests/test_background.py` using their viewer/export fixtures. Update `docs/workflow.md` and `docs/file-contract.md`. Check `README.md`, `docs/assistant-workflow.md` and the existing wording in `src/blackmask/ui/review.html` for drift.
+
+**Interfaces** Use the existing save, same-crop viewer, restore, export and editable-layer contracts. The native result is the reference regardless of which RGB8 encoder is installed.
+
+- [ ] Drive the documented rebuild on a synthetic saved revision. Compare the same coordinates in the Result viewer and the saved review, and verify the actual `result_rgb16.tif` against an independent single-round reconstruction from exported F, A, W, p and B. Include a nonzero partial edge, protected partial edge and an opaque subject detail. Restore v1 and repeat the native comparison against its original baseline. Retain both editions and their editable operands.
+- [ ] Compare the reported flower crop under the old and proposed shading at matched scale, with the same source, alpha, backdrop, fade and opacity. Use a separate candidate or authorized read-only comparison. Inspect the marked edge at 100%, the full flower, fine tips and genuine shadows. If a second photo is selected, repeat on its marked edge. Keep original-background color spill and broad RGB8 backdrop bands separate during visual assessment. Record the measured native profile and the photographer's verdict independently.
+- [ ] Document when older photos adopt the fix, how to compare or restore editions, and what a scoped rebuild did to its support. Replace the obsolete low-alpha formula description. Explain explicit protection and the remaining limits on semi-transparent structures. Run the repository's [verification commands](../../../README.md) on the settled implementation, including pytest, Ruff and mypy. Report native test results, legacy replay and photographic acceptance separately.
