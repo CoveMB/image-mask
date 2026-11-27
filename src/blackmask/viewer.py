@@ -6,7 +6,6 @@ import io
 import json
 import re
 import secrets
-import sys
 import threading
 import tomllib
 import webbrowser
@@ -32,6 +31,7 @@ from .background_pattern import (
     pattern_visible,
     saved_pattern,
 )
+from .cloud import cloud_resource_bytes, cloud_visible
 from .cloud_store import parse_cloud_json, read_cloud_area, saved_cloud, validate_cloud_request
 from .export import export_project, saved_layers
 from .framing import (
@@ -71,6 +71,8 @@ from .series_framing import (
     save_series_settings,
 )
 from .texture import TEXTURE_DEFAULTS, TEXTURE_PREFIX, parse_texture_json
+
+_PATTERN_PREVIEW_MAX_BYTES = 2 * 1024**3
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -502,7 +504,7 @@ class ReviewServer(ThreadingHTTPServer):
     def generate_background_pattern(self, data: Any) -> dict[str, Any]:
         from .background_pattern_generation import default_pattern_seed, generate_background_pattern
 
-        binding, native_wh = self._pattern_target(data, {"style", "seed"})
+        binding, native_wh, _ = self._pattern_target(data, {"style", "seed"})
         style = data["style"]
         seed = data["seed"]
         try:
@@ -520,7 +522,7 @@ class ReviewServer(ThreadingHTTPServer):
             raise ProjectError("Background pattern preview busy; retry after the current preview")
         try:
             fields = {"crop_xyxy", "background_pattern"}
-            binding, native_wh = self._pattern_target(data, fields)
+            binding, native_wh, manifest = self._pattern_target(data, fields)
             crop = coordinates(data["crop_xyxy"], *native_wh, box=True)
             try:
                 settings = normalize_background_pattern(data["background_pattern"], *native_wh)
@@ -528,8 +530,22 @@ class ReviewServer(ThreadingHTTPServer):
                 raise ValueError(str(error)) from error
             x0, y0, x1, y1 = crop
             width, height = x1 - x0, y1 - y0
-            if pattern_resource_bytes(width, height) + 128 * width * height > sys.maxsize:
-                raise ValueError("Background pattern preview exceeds allocation bounds")
+            # Account for decoded source, matte, backdrop and effect layers at
+            # native size, then float64 review planes at crop size and RGB8 encoding.
+            native_width, native_height = native_wh
+            estimated_peak_bytes = (
+                40 * native_width * native_height
+                + 160 * width * height
+                + pattern_resource_bytes(width, height)
+                + 16 * 1024**2
+            )
+            if cloud_visible(manifest.get("cloud", {}).get("settings")):
+                estimated_peak_bytes += cloud_resource_bytes(*native_wh)
+            if estimated_peak_bytes > _PATTERN_PREVIEW_MAX_BYTES:
+                raise ValueError(
+                    "Background pattern preview exceeds the 2 GiB render budget. "
+                    "Select a smaller crop and try again."
+                )
             limit = min(1024, max(width, height))
             size = (
                 max(1, width * limit // max(width, height)),
@@ -552,7 +568,7 @@ class ReviewServer(ThreadingHTTPServer):
 
     def _pattern_target(
         self, data: Any, fields: set[str]
-    ) -> tuple[dict[str, str], tuple[int, int]]:
+    ) -> tuple[dict[str, str], tuple[int, int], dict[str, Any]]:
         from .effects import effects_stale
 
         keys = ("developed_id", "revision", "revision_manifest_sha256", "inputs_digest")
@@ -588,7 +604,7 @@ class ReviewServer(ThreadingHTTPServer):
         master, _ = _validate_assets(self.project, state, validate_drafts=False)
         if state_file.read_bytes() != state_bytes or source_file.read_bytes() != source_bytes:
             raise ProjectError("Stale Background pattern working inputs; reload saved pattern")
-        return {key: data[key] for key in keys}, (master.shape[1], master.shape[0])
+        return {key: data[key] for key in keys}, (master.shape[1], master.shape[0]), manifest
 
     @_validation_scope()
     def preview_framing(self, data: Any, *, series_mode: bool = False) -> dict[str, Any]:

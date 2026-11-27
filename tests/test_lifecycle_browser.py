@@ -225,6 +225,17 @@ def test_browser_background_pattern_keyboard_generation_preview_and_reopen(tmp_p
         expect(page.locator("#patternStyle")).to_have_value("abstract")
         expect(page.locator("#patternStatus")).to_contain_text("Saved pattern ON")
 
+        submit(page, "#prepare", "prepare")
+        expect(page.locator("#patternGenerate")).to_be_disabled()
+        page.locator("#viewRevision").select_option(revision)
+        page.locator("#panel").select_option("result")
+        expect(page.locator("#patternCompare")).to_be_enabled()
+        with page.expect_response(
+            lambda response: response.url.endswith("/background-pattern-off")
+        ) as comparison:
+            page.locator("#patternCompare").check()
+        assert comparison.value.status == 200
+
 
 def test_browser_cloud_colour_geometry_compare_and_reopen(tmp_path):
     require_browser_lane()

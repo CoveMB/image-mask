@@ -590,13 +590,13 @@
         <button id="patternApply">Apply pattern</button>
         <button id="patternOff">Turn pattern OFF</button>
         <button id="patternReload">Reload saved pattern</button>
-        <label><input id="patternCompare" type="checkbox" /> Compare pattern OFF</label>
         <p id="patternStatus" role="status" class="small"></p>
         <figure id="patternPreviewPanel" hidden>
           <figcaption id="patternPreviewLabel"></figcaption>
           <img id="patternPreviewImage" alt="Temporary Result with the unapplied background pattern" style="max-width:100%;height:auto" />
         </figure>
       </fieldset>
+      <label><input id="patternCompare" type="checkbox" disabled /> Compare pattern OFF</label>
       <fieldset id="cloudControls">
         <legend>Cloud</legend>
         <label><input id="cloudEnabled" type="checkbox" /> Cloud ON</label>
@@ -2424,13 +2424,16 @@
       if(decoded.width!==requestedCrop[2]-requestedCrop[0] || decoded.height!==requestedCrop[3]-requestedCrop[1]) {decoded.close();throw Error("Spatial preview dimensions differ from the bound native crop");}
       return decoded;
     }
+    function hasStaleEffects(record) {
+      return ["color_cleanup", "shading", "local_sharpening", "local_exposure", "local_tone_curve", "local_texture", "shadow_fade", "spatial_fade"]
+        .some(name => record?.[name]?.enabled && record[name].stale);
+    }
     function previewLabel(panel, revision, base, comparison) {
       if (panel === "source") return "Source RGB8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       if (panel === "alpha") return "Alpha8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       const viewed = state.revisions.find(r => r.revision === revision),
         working = state.revisions.find(r => r.revision === state.working_revision);
-      const stale = record => ["color_cleanup", "shading", "local_sharpening", "local_exposure", "local_tone_curve", "local_texture", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
-      const isStale = stale(viewed) || stale(working);
+      const isStale = hasStaleEffects(viewed) || hasStaleEffects(working);
       if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · Local sharpening OFF · local exposure OFF · Local tone curve OFF · Local texture OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
       const sharpening = $("sharpeningCompare").checked ? "OFF comparison" : viewed?.local_sharpening?.enabled ? "ON" : "OFF";
@@ -3956,6 +3959,7 @@
       patternSpacing: ["spacing_px"], patternBands: ["band_count"], patternFeather: ["feather_px"],
       patternRadiusX: ["radii_xy", 0], patternRadiusY: ["radii_xy", 1], patternSoftness: ["softness"],
     };
+    const PATTERN_STALE_EFFECTS_MESSAGE = "Rebuild or disable stale enabled effects before generating, previewing or applying a pattern";
     function patternWorkingRow() {
       return state?.revisions.find(row => row.revision === state.working_revision);
     }
@@ -3982,6 +3986,7 @@
       draw();
     }
     function reloadPattern(current = patternWorkingRow()) {
+      if (gesture?.patternRotation) gesture = null;
       const saved = current?.background_pattern?.settings;
       const settings = structuredClone(saved || {
         enabled:false, strength:.28, tones_srgb:PATTERN_PALETTES.neutral, reverse:false, shapes:[],
@@ -4042,9 +4047,11 @@
       const busy = authoringBusy();
       const unavailable = !current?.final_acceptable || !current?.revision_manifest_sha256 || !state.inputs_digest;
       const stale = patternDraft.identity !== patternIdentity();
+      const effectsAreStale = hasStaleEffects(current);
       const saved = current?.background_pattern?.settings;
       $("patternControls").disabled = busy || unavailable;
-      for (const id of ["patternGenerate", "patternPreview", "patternApply"]) $(id).disabled = busy || unavailable || stale;
+      for (const id of ["patternGenerate", "patternPreview", "patternApply"])
+        $(id).disabled = busy || unavailable || stale || effectsAreStale;
       for (const id of ["patternAddWave", "patternAddOval"]) $(id).disabled = patternDraft.settings.shapes.length >= 8;
       $("patternOff").disabled = busy || unavailable || !saved?.enabled;
       $("patternProposal").hidden = !patternProposal;
@@ -4053,6 +4060,7 @@
       const source = saved ? "Saved pattern " + (saved.enabled ? "ON" : "OFF")
         + (saved.generator ? " · seed " + saved.generator.seed : "") : "No saved pattern";
       $("patternStatus").textContent = unavailable ? "A complete working Result is needed for Background pattern"
+        : effectsAreStale ? PATTERN_STALE_EFFECTS_MESSAGE
         : stale ? "Stale pattern draft · Reload saved pattern before Preview or Apply"
         : source + (patternDraft.dirty ? " · Unapplied edits" : "");
     }
@@ -4132,6 +4140,8 @@
       const current = patternWorkingRow();
       if (!current?.final_acceptable || !current.revision_manifest_sha256 || !state.inputs_digest)
         throw Error("Load a complete working Result for Background pattern");
+      if (!savedOnly && hasStaleEffects(current))
+        throw Error(PATTERN_STALE_EFFECTS_MESSAGE);
       if (!savedOnly && patternDraft.identity !== patternIdentity())
         throw Error("Stale pattern draft · Reload saved pattern");
       return current;
