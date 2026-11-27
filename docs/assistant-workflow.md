@@ -381,6 +381,72 @@ editable and retain the native companion for margins/series; native replay uses
 saved fields, while series analytically evaluates light through its saved transform.
 Human photographic acceptance remains separate from completed processing.
 
+## Explicit Background pattern
+
+Use [Background pattern](workflow.md#background-pattern) for an explicitly
+requested effect behind the matte. Use the native dimensions and current
+developed identity, base revision and inputs digest. Replace the identity
+placeholders and example scope with verified values. This example is for a
+96×64 image and an unaccepted revision explicitly chosen for comparison.
+
+When the requested look uses warped waves or ovals, use the optional
+`irregularity` fraction in [0, 1]. For an Abstract proposal, use the resolved
+contour shape and its seed from Generate. Keep the generator origin for
+reproducibility and the two tone targets for colour control.
+
+```json
+{
+  "schema_version": 2,
+  "kind": "effects",
+  "developed_id": "<current developed identity>",
+  "base_revision": "<working revision>",
+  "inputs_digest": "<current inputs digest>",
+  "scope_xyxy": [0, 0, 96, 64],
+  "candidate_comparison": true,
+  "background_pattern": {
+    "enabled": true,
+    "strength": 0.28,
+    "tones_srgb": ["#010101", "#202020"],
+    "reverse": false,
+    "shapes": [
+      {
+        "id": "lower-wave", "type": "wave", "enabled": true,
+        "center_xy": [49, 50], "rotation_degrees": 6, "bend_px": 5,
+        "wavelength_px": 60, "spacing_px": 8, "phase_degrees": 15,
+        "band_count": 3, "feather_px": 4, "first_tone": "tone2"
+      },
+      {
+        "id": "upper-oval", "type": "oval", "enabled": true,
+        "center_xy": [67, 13], "rotation_degrees": 12,
+        "radii_xy": [21, 19], "softness": 0.82, "tone": "tone1"
+      }
+    ]
+  }
+}
+```
+
+Submit the pattern as an exclusive full-frame effects request. Viewer actions
+also bind the raw revision manifest. Use the saved pattern settings for a
+switch-only OFF request. Keep the previous candidate for comparison and request
+native editable operands or the paired native companion for delivery. Preserve
+the [saved fade target and matte](file-contract.md#saved-background-pattern).
+
+## Explicit Cloud
+
+Use Cloud for an explicitly requested colour bank across the composed Result.
+Apply or disable it locally with the exclusive schema-2 effects request and the
+current source, working revision and draft identities. Preserve the current
+source, matte, hard locks, other effects and acceptance. Use native Coverage
+and Clear shapes or a clear focal ellipse when the requested placement needs
+them. [Cloud request and saved operands](file-contract.md#saved-cloud)
+
+Compare the saved Result and **Compare Cloud OFF** at matching coordinates with
+outlines hidden. Black can darken the subject or a lit backdrop. On pure black,
+use a nonblack tint when the request calls for visible billows. Inspect the
+actual Result for photographic acceptance. Keep the project for continued app
+editing, and use editable delivery for detached replay. Retain both folders
+with either framing mode. [Cloud controls and editable handoff](workflow.md#cloud)
+
 ## Explicit Mist
 
 Use Mist for an explicitly requested atmosphere across the saved subject and

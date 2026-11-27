@@ -132,7 +132,7 @@ def browser_session(playwright, server, workspace, name, receipt):
             context.tracing.stop(path=str(workspace / f"{name}-trace.zip"))
 
 
-def test_browser_controls_restart_and_offline_recovery(tmp_path):
+def require_browser_lane():
     if os.environ.get("BLACKMASK_BROWSER") != "1":
         pytest.skip("Real browser evidence not selected; use tests/run_browser.py after setup")
     missing_variables = [
@@ -145,9 +145,6 @@ def test_browser_controls_restart_and_offline_recovery(tmp_path):
             + ". Use tests/run_browser.py.",
             pytrace=False,
         )
-    # Explicit browser runs fail, rather than skip, if setup or isolation is missing.
-    from playwright.sync_api import expect, sync_playwright
-
     with socket.socket() as connection:
         connection.settimeout(1)
         with pytest.raises(PermissionError):
@@ -155,6 +152,199 @@ def test_browser_controls_restart_and_offline_recovery(tmp_path):
     outside = Path("/private/tmp") / ("im-browser-denied-" + uuid.uuid4().hex)
     with pytest.raises(PermissionError):
         outside.write_bytes(b"must be denied")
+
+
+def test_browser_background_pattern_keyboard_generation_preview_and_reopen(tmp_path):
+    require_browser_lane()
+    from playwright.sync_api import expect, sync_playwright
+
+    config_file, _, project, _ = imported_project(tmp_path)
+    receipt = {}
+    with (
+        sync_playwright() as playwright,
+        running_process(project, config_file, tmp_path) as server,
+        browser_session(playwright, server, tmp_path, "pattern", receipt) as page,
+    ):
+        base = submit(page, "#matte", "matte")["revision"]
+        page.locator("#photoReviewed").check()
+        submit(page, "#accept", "accept")
+        page.locator("#panel").select_option("result")
+        ready(page)
+        page.locator("#patternAddWave").press("Enter")
+        page.locator("#patternCenterX").fill("31.125")
+        page.locator("#patternAddOval").press("Enter")
+        page.locator("#patternCenterY").fill("17.5")
+        page.locator("#patternTone1").fill("#090A0B")
+        page.locator("#patternStrength").fill("23.625")
+        page.locator("#patternIrregularity").fill("62.5")
+        page.locator("#patternReverse").check()
+        page.locator("#patternStyle").select_option("abstract")
+        page.locator("#patternGenerate").press("Enter")
+        expect(page.locator("#patternSeed")).to_contain_text("Proposed seed")
+        seed = int(page.locator("#patternSeed").inner_text().split()[-1])
+        page.locator("#patternNext").press("Enter")
+        expect(page.locator("#patternSeed")).to_have_text(f"Proposed seed {(seed + 1) % 2**32}")
+        page.locator("#patternCancel").press("Enter")
+        expect(page.locator("#patternCenterY")).to_have_value("17.5")
+        page.locator("#patternGenerate").press("Enter")
+        expect(page.locator("#patternUse")).to_be_visible()
+        page.locator("#patternNext").press("Enter")
+        next_seed = (seed + 1) % 2**32
+        expect(page.locator("#patternSeed")).to_have_text(f"Proposed seed {next_seed}")
+        page.locator("#patternUse").press("Enter")
+        expect(page.locator("#patternShapeToneControl")).to_be_hidden()
+        page.locator("#patternCenterX").fill("29.375")
+        page.locator("#patternRadiusX").fill("74.125")
+        page.locator("#patternAddWave").press("Enter")
+        expect(page.locator("#patternShapeToneControl")).to_be_visible()
+        page.locator("#patternEnabled").check()
+        page.locator("#patternPreview").press("Enter")
+        expect(page.locator("#patternPreviewImage")).to_be_visible()
+        page.wait_for_function("document.getElementById('patternPreviewImage').naturalWidth === 96")
+        applied = submit(page, "#patternApply", "effects", keyboard=True)
+        revision = applied["revision"]
+        settings = applied["background_pattern"]["settings"]
+        assert settings["generator"] == {"version": 1, "style": "abstract", "seed": next_seed}
+        assert settings["shapes"][0]["center_xy"][0] == 29.375
+        assert settings["shapes"][0]["type"] == "contour"
+        assert settings["shapes"][0]["radii_xy"][0] == 74.125
+        assert settings["shapes"][1]["type"] == "wave"
+        assert settings["strength"] == 0.23625
+        assert settings["irregularity"] == 0.625
+        np.testing.assert_array_equal(alpha(project, base), alpha(project, revision))
+        with page.expect_response(
+            lambda response: response.url.endswith("/background-pattern-off")
+        ) as comparison:
+            page.locator("#patternCompare").check()
+        assert comparison.value.status == 200
+        page.reload()
+        ready(page)
+        expect(page.locator("#patternCenterX")).to_have_value("29.375")
+        expect(page.locator("#patternStrength")).to_have_value("23.625")
+        expect(page.locator("#patternIrregularity")).to_have_value("62.5")
+        expect(page.locator("#patternStyle")).to_have_value("abstract")
+        expect(page.locator("#patternStatus")).to_contain_text("Saved pattern ON")
+
+        submit(page, "#prepare", "prepare")
+        expect(page.locator("#patternGenerate")).to_be_disabled()
+        page.locator("#viewRevision").select_option(revision)
+        page.locator("#panel").select_option("result")
+        expect(page.locator("#patternCompare")).to_be_enabled()
+        with page.expect_response(
+            lambda response: response.url.endswith("/background-pattern-off")
+        ) as comparison:
+            page.locator("#patternCompare").check()
+        assert comparison.value.status == 200
+
+
+def test_browser_cloud_colour_geometry_compare_and_reopen(tmp_path):
+    require_browser_lane()
+    from playwright.sync_api import expect, sync_playwright
+
+    from blackmask.export import render_saved_result
+
+    config_file, _, project, _ = imported_project(tmp_path)
+    receipt = {}
+    with sync_playwright() as playwright:
+        with (
+            running_process(project, config_file, tmp_path) as server,
+            browser_session(playwright, server, tmp_path, "cloud", receipt) as page,
+        ):
+            base = submit(page, "#matte", "matte")["revision"]
+            page.locator("#photoReviewed").check()
+            submit(page, "#accept", "accept")
+            page.locator("#panel").select_option("result")
+            ready(page)
+            expect(page.locator("#cloudEnabled")).not_to_be_checked()
+            expect(page.locator("#cloudColor")).to_have_value("#282828")
+            page.locator("#cloudColor").fill("#6c7884")
+            hex_input = page.locator("#cloudHex")
+            expect(hex_input).to_have_value("#6C7884")
+            hex_input.fill("")
+            hex_input.press_sequentially("#3a4B")
+            expect(page.locator("#cloudApply")).to_be_disabled()
+            expect(page.locator("#cloudValidation")).to_contain_text("six-digit #RRGGBB")
+            hex_input.press_sequentially("5c")
+            expect(page.locator("#cloudColor")).to_have_value("#3a4b5c")
+
+            page.get_by_text("Cloud shape and light", exact=True).click()
+            page.locator("#native").click()
+            page.locator("#cloudPlaceCentre").press("Enter")
+            canvas = page.locator("#canvas").bounding_box()
+            assert canvas is not None
+            page.mouse.click(
+                canvas["x"] + canvas["width"] / 2 - 19, canvas["y"] + canvas["height"] / 2 - 14
+            )
+            centre = [
+                float(page.locator("#cloudCenter" + axis).input_value()) for axis in ("X", "Y")
+            ]
+            assert centre == pytest.approx([29, 18], abs=0.6)
+            page.get_by_text("Clear focal area", exact=True).click()
+            page.locator("#cloudFocusEnabled").check()
+            page.locator("#cloudFocusX").fill("55.25")
+            page.locator("#cloudFocusRadiusX").fill("9.125")
+            page.get_by_text("Cloud coverage and clear shapes", exact=True).click()
+            page.locator("#cloudRectangle").fill("2,2,94,62")
+            page.locator("#cloudAddRectangle").press("Enter")
+            expect(page.locator("#cloudRegions option")).to_contain_text("Coverage · Rectangle")
+            page.locator("#cloudAmount").fill("46.25")
+            page.locator("#cloudEnabled").check()
+            expect(page.locator("#cloudDraftStatus")).to_contain_text("Unapplied changes")
+            applied = submit(page, "#cloudApply", "effects", keyboard=True)
+            saved = applied["cloud"]["settings"]
+            assert saved["tint_srgb"] == "#3A4B5C"
+            assert saved["amount"] == 0.4625
+            assert saved["center_xy"] == centre
+            np.testing.assert_array_equal(alpha(project, applied["revision"]), alpha(project, base))
+            with page.expect_response(
+                lambda response: (
+                    f"/image/result/{applied['revision']}/" in response.url
+                    and response.url.endswith("/cloud-off")
+                )
+            ) as comparison:
+                page.locator("#cloudCompare").check()
+            assert comparison.value.status == 200
+            expect(page.locator("#viewRevision")).to_have_value(applied["revision"])
+            expect(page.locator("#cloudSavedStatus")).to_contain_text("Saved Cloud ON")
+            expect(hex_input).to_have_value("#3A4B5C")
+            off = submit(page, "#cloudDisable", "effects", keyboard=True)
+            assert off["cloud"]["settings"] == dict(saved, enabled=False)
+            expect(page.locator("#cloudCompare")).not_to_be_checked()
+            page.locator("#cloudEnabled").check()
+            page.locator("#cloudCandidate").check()
+            restored = submit(page, "#cloudApply", "effects", keyboard=True)
+            assert restored["cloud"] == applied["cloud"]
+
+        with (
+            running_process(project, config_file, tmp_path) as server,
+            browser_session(playwright, server, tmp_path, "cloud-reopen", receipt) as page,
+        ):
+            expect(page.locator("#cloudSavedStatus")).to_contain_text("Saved Cloud ON")
+            expect(page.locator("#cloudHex")).to_have_value("#3A4B5C")
+            expect(page.locator("#cloudAmount")).to_have_value("46.25")
+            expect(page.locator("#cloudFocusRadiusX")).to_have_value("9.125")
+            expect(page.locator("#cloudRegions option")).to_contain_text("2, 2, 94, 62")
+            page.locator("#panel").select_option("result")
+            ready(page)
+            page.locator("#exportEditable").check()
+            exported = submit(page, "#exportDraft", "export")
+            manifest = json.loads(Path(exported["manifest_file"]).read_bytes())
+            assert manifest["cloud"] == restored["cloud"]
+            assert manifest["revision"] == restored["revision"]
+            developed_id = read_project(project)["developed_id"]
+            pixels = tifffile.imread(Path(exported["directory"]) / "result_rgb16.tif")
+            np.testing.assert_array_equal(
+                pixels, render_saved_result(project, restored["revision"], developed_id)
+            )
+            assert np.any(pixels != render_saved_result(project, base, developed_id))
+            assert read_project(project)["accepted_revision"] == base
+
+
+def test_browser_controls_restart_and_offline_recovery(tmp_path):
+    require_browser_lane()
+    # Explicit browser runs fail, rather than skip, if setup or isolation is missing.
+    from playwright.sync_api import expect, sync_playwright
+
     config_file, _config, project, pixels = imported_project(tmp_path)
     originals = inventory(project.parent / "original")
     source_assets = inventory(project / "assets")

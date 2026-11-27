@@ -352,6 +352,55 @@ in recovery storage and selects that revision's background; acceptance is unchan
 Export collisions preserve the existing delivery. Do not delete original projects,
 accepted dependencies, failed stages or recovery material automatically.
 
+## Background pattern recovery
+
+- **The outline differs from the rendered pattern.** The outline shows the
+  editable shape. Use **Preview pattern** to see the irregular waves and ovals
+  or the soft tonal regions inside an Abstract contour.
+- **An earlier app version cannot open the revision.** Open it with a version
+  that supports Irregularity and Abstract. Use an earlier compatible revision
+  or delivery with the older version.
+- **Generate, Preview or Apply is unavailable.** Use a complete working Result
+  and rebuild or disable stale enabled effects. If the pattern draft is stale, use
+  **Reload saved pattern** before re-entering the intended changes. Reload
+  replaces this control's draft. A generated proposal is temporary until you
+  select **Use this pattern** and then **Apply pattern**.
+- **Preview exceeds its render budget.** Select a smaller native crop and retry.
+- **Turn the effect off while keeping the layout.** If the working Result is
+  unaccepted, first check **Explicitly compare pattern on an unaccepted
+  candidate**. Use **Turn pattern OFF**. Pending edits remain available. To
+  reopen the saved layout, use **Reload saved pattern**. **Compare pattern OFF**
+  is a read-only view of the saved Result.
+- **Reopen or recover an earlier layout.** **Restore saved revision** recovers
+  the pattern from that revision, including an OFF state or legacy absence.
+  Acceptance stays separate. For missing or damaged saved assets, restore an
+  intact backup. Keep both the presentation and its native editable companion.
+
+## Cloud recovery
+
+- **The Cloud is hard to see against black.** Use a nonblack swatch such as
+  **Charcoal**, confirm **Cloud ON** and a positive **Cloud amount (%)**, then
+  apply. Compare the saved Result with **Compare Cloud OFF** at the same zoom.
+- **Apply Cloud or Turn Cloud OFF is unavailable.** Load the matching complete
+  working revision. For Apply on an unaccepted base, select **Explicitly compare
+  Cloud on an unaccepted candidate**. Check the field feedback for invalid colour
+  or geometry.
+- **Stale Unapplied changes.** On the working view, use **Rebind pending Cloud**
+  when the source, dimensions, saved Cloud record and hard protection still
+  match the draft's former base. Otherwise, **Reload saved Cloud** replaces the
+  pending form with the current saved settings and area. **Turn Cloud OFF**
+  uses the saved working record and keeps any pending edits.
+- **Publication interrupted or durability unconfirmed.** Reload project status
+  and inspect the complete visible revision named in the message. Use **Restore
+  saved revision** to continue from it. A successful native Apply can
+  still have a pending gallery derivative, which has its own retry controls.
+  The accepted revision remains separate.
+- **A revision or editable delivery cannot be opened.** Open Cloud revisions
+  with a version that supports revision schema 3, including when Cloud is OFF.
+  Recover missing or damaged saved operands from an intact backup. For an
+  editable framed pair, restore the matching native companion before retrying
+  the export. [Cloud file bindings](file-contract.md#saved-cloud)
+
 ## Mist recovery
 
 - **The Vapor bank covers the wrong part of the frame.** Reposition **Clear

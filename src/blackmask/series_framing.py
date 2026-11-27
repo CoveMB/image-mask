@@ -14,6 +14,14 @@ import numpy as np
 from PIL import Image
 
 from .assets import saved_asset
+from .cloud import (
+    CloudOperands,
+    CloudProjector,
+    cloud_projection_bounds,
+    cloud_projection_bytes,
+    cloud_resource_bytes,
+    cloud_visible,
+)
 from .framing import validate_presentation_size
 from .mist import ROWS_PER_CHUNK, MistOperands, blend_mist_into_result, sample_mist_density
 from .project import (
@@ -348,7 +356,9 @@ def estimate_series_resources(
     native_export_peak_bytes: int = 0,
     black_background: bool = False,
     background_light: bool = False,
+    background_pattern: bool = False,
     mist_native_shape: tuple[int, int] | None = None,
+    cloud_native_shape: tuple[int, int] | None = None,
     backdrop_selection: bool = False,
 ) -> dict[str, int]:
     if (
@@ -357,6 +367,7 @@ def estimate_series_resources(
         or type(transparent) is not bool
         or type(black_background) is not bool
         or type(background_light) is not bool
+        or type(background_pattern) is not bool
         or type(backdrop_selection) is not bool
         or type(spatial_fade_pixels) is not int
         or spatial_fade_pixels < 0
@@ -402,6 +413,11 @@ def estimate_series_resources(
             background_light_base_rgb16_bytes=6 * width * height,
             background_light_strip_bytes=min(64, height) * width * 198,
         )
+    if background_pattern:
+        values.update(
+            background_pattern_display_rgb16_bytes=6 * width * height,
+            background_pattern_strip_bytes=min(64, height) * width * 192,
+        )
     if mist_native_shape is not None:
         native_height, native_width = mist_native_shape
         values.update(
@@ -409,6 +425,14 @@ def estimate_series_resources(
             mist_projection_bytes=min(ROWS_PER_CHUNK, height) * width * 288
             + (min(ROWS_PER_CHUNK, native_height) + 40) * native_width
             + 32 * (width + height),
+        )
+    if cloud_native_shape is not None:
+        native_height, native_width = cloud_native_shape
+        values.update(
+            cloud_native_and_coverage_bytes=cloud_resource_bytes(
+                native_width, native_height, rebuild_coverage=True
+            ),
+            cloud_projection_bytes=cloud_projection_bytes(width, height),
         )
     series_peak = sum(value for key, value in values.items() if key != "output_rgba8_bytes")
     if native_export_peak_bytes:
@@ -497,7 +521,7 @@ def _plane_tiles(
         del intermediate
 
 
-def _mist_support_bounds(
+def _subject_support_bounds(
     axis: SamplingAxis, origin: int, extent: int
 ) -> tuple[np.ndarray, np.ndarray]:
     first, last = (float(np.float32(value)) for value in axis.box)
@@ -549,8 +573,8 @@ def _apply_series_mist(
         clip_x = np.clip(xi, 0, native_width - 1)
     if not sampling.identity:
         core_x, core_y, _, _ = sampling.layout.subject_bounds_xyxy
-        x_lo, x_hi = _mist_support_bounds(sampling.x, core_x, native_width)
-        y_lo, y_hi = _mist_support_bounds(sampling.y, core_y, native_height)
+        x_lo, x_hi = _subject_support_bounds(sampling.x, core_x, native_width)
+        y_lo, y_hi = _subject_support_bounds(sampling.y, core_y, native_height)
         output_columns = slice(
             sampling.x.output_start, sampling.x.output_start + sampling.x.output_length
         )
@@ -605,6 +629,65 @@ def _apply_series_mist(
     return result
 
 
+def _cloud_series_axes(
+    sampling: SeriesSamplingPlan,
+) -> tuple[np.ndarray, np.ndarray, tuple[float, float]]:
+    width, height = sampling.display_dimensions_wh
+    full_width, full_height = sampling.layout.output_dimensions_wh
+    scale = sampling.layout.scale
+    tx, ty = sampling.layout.translation_xy
+    source_dx, source_dy = full_width / (width * scale), full_height / (height * scale)
+    native_x = (np.arange(width) + 0.5) * source_dx - tx / scale
+    native_y = (np.arange(height) + 0.5) * source_dy - ty / scale
+    return native_x, native_y, (max(1, source_dx), max(1, source_dy))
+
+
+def validate_series_cloud_work(
+    sampling: SeriesSamplingPlan, native_wh: tuple[int, int], settings: dict[str, Any]
+) -> None:
+    if cloud_visible(settings):
+        cloud_projection_bounds(settings, native_wh, *_cloud_series_axes(sampling))
+
+
+def _apply_series_atmosphere(
+    result: np.ndarray,
+    sampling: SeriesSamplingPlan,
+    cloud: CloudOperands | None,
+    mist: MistOperands | None,
+) -> np.ndarray:
+    if cloud is not None:
+        width, height = sampling.display_dimensions_wh
+        native_x, native_y, footprint = _cloud_series_axes(sampling)
+        support = None
+        if not sampling.identity:
+            x0, y0, x1, y1 = sampling.layout.subject_bounds_xyxy
+
+            def subject_bounds(
+                axis: SamplingAxis, start: int, stop: int, length: int
+            ) -> tuple[np.ndarray, np.ndarray]:
+                low, high = _subject_support_bounds(axis, start, stop)
+                support_low = np.zeros(length, dtype=np.intp)
+                support_high = np.zeros_like(support_low)
+                output = slice(axis.output_start, axis.output_start + axis.output_length)
+                support_low[output], support_high[output] = (
+                    low.clip(start, stop),
+                    high.clip(start, stop),
+                )
+                return support_low, support_high
+
+            x_low, x_high = subject_bounds(sampling.x, x0, x1, width)
+            y_low, y_high = subject_bounds(sampling.y, y0, y1, height)
+            support = x_low, y_low, x_high, y_high
+        CloudProjector(cloud).blend(
+            result,
+            native_x,
+            native_y,
+            footprint,
+            subject_support_xyxy=support,
+        )
+    return _apply_series_mist(result, sampling, mist)
+
+
 def render_series(
     foreground: np.ndarray,
     alpha16: np.ndarray,
@@ -614,10 +697,12 @@ def render_series(
     opacity: float = 0,
     background_settings: dict[str, Any] | None = None,
     background_light_settings: dict[str, Any] | None = None,
+    background_pattern_settings: dict[str, Any] | None = None,
     transparent: bool = False,
     spatial_fade: SpatialFadeOperands | None = None,
     black_background: bool = False,
     mist: MistOperands | None = None,
+    cloud: CloudOperands | None = None,
     backdrop_only: np.ndarray | None = None,
 ) -> np.ndarray:
     from .background import LEGACY_BACKGROUND, make_background, sample_background
@@ -625,6 +710,12 @@ def render_series(
         combine_background_light,
         sample_background_light,
         validate_background_light,
+    )
+    from .background_pattern import (
+        combine_background_pattern,
+        normalize_background_pattern,
+        pattern_visible,
+        sample_background_pattern,
     )
     from .export import _foreground_contribution
 
@@ -663,6 +754,14 @@ def render_series(
         validate_background_light(
             background_light_settings, foreground.shape[1], foreground.shape[0]
         )
+    if cloud is not None:
+        if transparent or black_background or not cloud_visible(cloud.settings):
+            cloud = None
+        elif cloud.clear16.shape != alpha16.shape or cloud.native_size_wh != (
+            foreground.shape[1],
+            foreground.shape[0],
+        ):
+            raise ValueError("Series Cloud requires aligned full-native maps")
     light_enabled = bool(
         background_light_settings is not None
         and background_light_settings["enabled"]
@@ -671,6 +770,14 @@ def render_series(
         and not transparent
         and not black_background
     )
+    native_wh = (foreground.shape[1], foreground.shape[0])
+    pattern = (
+        normalize_background_pattern(background_pattern_settings, *native_wh)
+        if background_pattern_settings is not None and not (transparent or black_background)
+        else None
+    )
+    if pattern is not None and not pattern_visible(pattern):
+        pattern = None
     if sampling != series_sampling_plan(
         sampling.layout,
         display_dimensions_wh=None
@@ -683,6 +790,8 @@ def render_series(
         != sampling.layout.subject_bounds_xyxy
     ):
         raise ValueError("Series sampling mask bounds are stale")
+    if cloud is not None:
+        validate_series_cloud_work(sampling, native_wh, cloud.settings)
     _foreground_contribution(
         foreground[:1, :1], alpha16[:1, :1], None if weight16 is None else weight16[:1, :1], opacity
     )
@@ -708,8 +817,10 @@ def render_series(
         transparent=transparent,
         black_background=black_background,
         background_light=light_enabled,
+        background_pattern=pattern is not None,
         spatial_fade_pixels=alpha16.size if active_spatial else 0,
         mist_native_shape=(alpha16.shape[0], alpha16.shape[1]) if mist is not None else None,
+        cloud_native_shape=(alpha16.shape[0], alpha16.shape[1]) if cloud is not None else None,
         backdrop_selection=backdrop_only is not None,
     )
     if backdrop_only is not None:
@@ -741,32 +852,35 @@ def render_series(
         else:
             output_width, output_height = sampling.layout.output_dimensions_wh
             target = sample_background((output_height, output_width), settings, (width, height))
-    if light_enabled and background_light_settings is not None:
-        # Keep the base operand available until the displayed backdrop is built.
-        base = result
-        result = np.empty_like(base)
+    if light_enabled or pattern is not None:
         output_width, output_height = sampling.layout.output_dimensions_wh
         full_x = (2 * np.arange(width) + 1) * output_width // (2 * width)
         full_y = (2 * np.arange(height) + 1) * output_height // (2 * height)
         scale = sampling.layout.scale
         tx, ty = sampling.layout.translation_xy
         native_x = (full_x.astype(np.float64) + 0.5 - tx) / scale - 0.5
-        for start in range(0, height, 64):
-            native_y = (full_y[start : start + 64].astype(np.float64) + 0.5 - ty) / scale - 0.5
-            light_x, light_y = np.broadcast_arrays(native_x[None, :], native_y[:, None])
-            light = sample_background_light(
-                alpha16.shape, background_light_settings, light_x, light_y
-            )
-            result[start : start + 64] = combine_background_light(
-                base[start : start + 64], light, enabled=True
-            )
-        del base
-        if (
+        lit_target = (
             target is not None
             and spatial_fade is not None
             and uses_lit_fade_target(spatial_fade.record)
-        ):
-            target = result
+        )
+        if target is result and (pattern is not None or not lit_target):
+            result = result.copy()
+        for start in range(0, height, 64):
+            rows = slice(start, start + 64)
+            native_y = (full_y[rows].astype(np.float64) + 0.5 - ty) / scale - 0.5
+            grid_x, grid_y = np.broadcast_arrays(native_x[None, :], native_y[:, None])
+            if light_enabled and background_light_settings is not None:
+                light = sample_background_light(
+                    alpha16.shape, background_light_settings, grid_x, grid_y
+                )
+                result[rows] = combine_background_light(result[rows], light, enabled=True)
+                if lit_target and target is not result:
+                    assert target is not None
+                    target[rows] = result[rows]
+            if pattern is not None:
+                pattern_weight = sample_background_pattern(pattern, native_wh, grid_x, grid_y)
+                result[rows] = combine_background_pattern(result[rows], pattern_weight, pattern)
     x, y = sampling.x, sampling.y
     x0, y0, x1, y1 = sampling.layout.subject_bounds_xyxy
     if sampling.identity:
@@ -804,7 +918,7 @@ def render_series(
                 result[rows, columns] = np.rint(
                     contribution + result[rows, columns].astype(np.float64) * (1 - alpha[..., None])
                 ).astype(np.uint16)
-        return _apply_series_mist(result, sampling, mist)
+        return _apply_series_atmosphere(result, sampling, cloud, mist)
     alpha = np.empty((y.output_length, x.output_length), np.float32)
     for rows, columns, tile in _plane_tiles(foreground, alpha16, sampling, -1, weight16, opacity):
         if not np.isfinite(tile).all():
@@ -880,7 +994,7 @@ def render_series(
         for start in range(0, height, 64):
             rgba_rows = result[start : start + 64]
             rgba_rows[rgba_rows[..., 3] == 0, :3] = 0
-    return _apply_series_mist(result, sampling, mist)
+    return _apply_series_atmosphere(result, sampling, cloud, mist)
 
 
 def read_series_settings(

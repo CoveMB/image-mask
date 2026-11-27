@@ -890,6 +890,15 @@ def _validate_mist_semantics(
     validate_mist_revision(project, directory, json.loads(manifest_bytes), size)
 
 
+@lru_cache(maxsize=128)
+def _validate_cloud_semantics(
+    project: Path, directory: Path, manifest_bytes: bytes, size: tuple[int, int]
+) -> None:
+    from .cloud_store import validate_cloud_revision
+
+    validate_cloud_revision(project, directory, json.loads(manifest_bytes), size)
+
+
 def _validate_revision_directory(
     project: Path, revision: str, developed_id: str, directory: str
 ) -> dict[str, Any]:
@@ -897,7 +906,7 @@ def _validate_revision_directory(
     manifest = _read_json(project, f"{directory}/manifest.json")
     if (
         type(manifest.get("schema_version")) is not int
-        or manifest["schema_version"] != 2
+        or manifest["schema_version"] != (3 if "cloud" in manifest else 2)
         or manifest.get("revision") != revision
         or manifest.get("developed_id") != developed_id
         or manifest.get("complete") is not True
@@ -929,6 +938,8 @@ def _validate_revision_directory(
         raise ProjectError("Unbound saved Local sharpening authored area")
     from .background import validate_background_bindings
     from .background_light import validate_background_light_bindings
+    from .background_pattern import read_background_pattern, validate_background_pattern_bindings
+    from .cloud_store import parse_cloud_json, validate_cloud_bindings, validate_cloud_revision
     from .mist import parse_mist_json, validate_mist_bindings, validate_mist_revision
     from .shadow_fade import validate_shadow_fade_bindings
     from .spatial_fade import validate_spatial_bindings
@@ -979,7 +990,14 @@ def _validate_revision_directory(
 
     validate_background_bindings(project, _asset(project, directory), manifest)
     validate_background_light_bindings(project, _asset(project, directory), manifest)
+    pattern_directory = _asset(project, directory)
+    validate_background_pattern_bindings(pattern_directory, manifest)
     validate_mist_bindings(_asset(project, directory), manifest)
+    validate_cloud_bindings(pattern_directory, manifest)
+    if "cloud" in manifest and _json_bytes(
+        parse_cloud_json(_asset(project, f"{directory}/manifest.json").read_bytes(), bounded=False)
+    ) != _json_bytes(manifest):
+        raise ProjectError("Saved Cloud manifest changed during validation")
     if "mist" in manifest and _json_bytes(
         parse_mist_json(_asset(project, f"{directory}/manifest.json").read_bytes())
     ) != _json_bytes(manifest):
@@ -1000,6 +1018,13 @@ def _validate_revision_directory(
             record.get(name) != metadata[name] for name in ("width", "height")
         ):
             raise ProjectError("Saved background light dimensions differ from master")
+    if "background_pattern" in manifest:
+        record = manifest["background_pattern"]
+        metadata = _read_json(project, "source.json")["metadata"]
+        if not isinstance(record, dict) or any(
+            record.get(name) != metadata[name] for name in ("width", "height")
+        ):
+            raise ProjectError("Saved Background pattern dimensions differ from master")
     validation = _read_validation.get()
     key = (str(project), directory)
     signature = (
@@ -1055,6 +1080,7 @@ def _validate_revision_directory(
         raise ProjectError("Incomplete repair operands")
     _validate_background_semantics(project, _asset(project, directory), _json_bytes(manifest))
     _validate_background_light_semantics(project, _asset(project, directory), _json_bytes(manifest))
+    read_background_pattern(project, pattern_directory, manifest)
     if "mist" in manifest:
         metadata = _read_json(project, "source.json")["metadata"]
         _validate_mist_semantics(
@@ -1065,6 +1091,16 @@ def _validate_revision_directory(
         )
     else:
         validate_mist_revision(project, _asset(project, directory), manifest)
+    if "cloud" in manifest:
+        metadata = _read_json(project, "source.json")["metadata"]
+        _validate_cloud_semantics(
+            project,
+            pattern_directory,
+            _json_bytes(manifest),
+            (metadata["width"], metadata["height"]),
+        )
+    else:
+        validate_cloud_revision(project, pattern_directory, manifest)
     if "local_exposure" in manifest:
         record = manifest["local_exposure"]
         from .exposure import EXPOSURE_FILES

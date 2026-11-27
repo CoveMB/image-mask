@@ -24,10 +24,11 @@ native-crop review assets, accepted full-size Result RGB16 TIFF exports and
 same-size PNG8 viewing copies. Run matting directly after preparation to review
 the actual masked photograph.
 
-New projects use storage schema 2 and developed-image identities. Immutable masks,
-RGB16 layers and effect operands are shared within the project; revisions retain
-text and a small overview. Old schema-1 projects are preserved and rejected without
-migration. Effective revision recipes and consumed draft snapshots are separate.
+New projects use developed-image identities and schema-2 state and recipes.
+Cloud-bearing revisions use schema 3. Immutable masks, RGB16 layers and effect
+operands are shared within the project. Revisions retain text and a small
+overview. Old schema-1 projects are preserved and rejected without migration.
+Effective revision recipes and consumed draft snapshots are separate.
 Latest generated result history survives restore and acceptance changes.
 
 An optional [configured photo library](docs/library.md) safely creates Inbox,
@@ -104,6 +105,18 @@ behind the saved matte. It starts OFF. When enabled, it illuminates the backdrop
 and participates in the opt-in **Lit backdrop** fade target. Native editable
 exports retain its separate field,
 including OFF. See the [light and gentle exposure walkthrough](docs/workflow.md#background-light).
+
+**Background pattern** adds soft waves, ovals and free-form Abstract contours
+behind the saved matte. Draw an arrangement or generate an editable variation
+for the photo. Use Irregularity to reshape waves and ovals, then adjust strength
+and the two tone colours. The [pattern workflow](docs/workflow.md#background-pattern)
+covers preview, placement and editable delivery.
+
+**Cloud** adds a spatially lit bank of colour across the composed Result. Set the
+colour, amount and shape, then add a clear focal area or feathered clearance
+around detail. Use **Apply Cloud** and **Compare Cloud OFF** in the local viewer.
+Native editable deliveries retain the Cloud settings, maps and protection.
+[Cloud workflow](docs/workflow.md#cloud)
 
 **Mist** adds an optional textured layer across the saved subject and backdrop
 in Result. Its **Vapor** style draws uneven wisps through a charcoal bank around
@@ -266,6 +279,8 @@ The skill applies no photo edits.
 | Bounded, editable local fade reduction geometry | `src/blackmask/fade_reduction.py` |
 | Independent native RGB16 backdrop and saved settings | `src/blackmask/background.py` |
 | Independent backdrop light field, bindings and B0/B1 composition | `src/blackmask/background_light.py` |
+| Editable backdrop patterns, saved weight field and seeded layouts | `src/blackmask/background_pattern.py`, `src/blackmask/background_pattern_generation.py` |
+| Spatial-light Cloud, framed projection and immutable operands | `src/blackmask/cloud.py`, `src/blackmask/cloud_store.py` |
 | Deterministic post-composite Mist, Clear mist and saved operands | `src/blackmask/mist.py` |
 | Shared immutable raster references and role validation | `src/blackmask/assets.py` |
 | Typed editable recipe/groups | `src/blackmask/recipe.py` |
