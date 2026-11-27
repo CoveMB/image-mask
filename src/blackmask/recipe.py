@@ -1,9 +1,12 @@
 """Typed editable draft contract, shared by all future interfaces."""
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .guidance import identifier
+
+if TYPE_CHECKING:
+    from .background_pattern import PatternSettings
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,8 @@ class Recipe:
     )
     local_texture: dict[str, Any] | None = None
     mist: dict[str, Any] | None = None
+    background_pattern: "PatternSettings | None" = None
+    cloud: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -66,6 +71,12 @@ class Recipe:
             ),
             **({"local_texture": self.local_texture} if self.local_texture is not None else {}),
             **({"mist": self.mist} if self.mist is not None else {}),
+            **({"cloud": self.cloud} if self.cloud is not None else {}),
+            **(
+                {"background_pattern": self.background_pattern}
+                if self.background_pattern is not None
+                else {}
+            ),
         }
 
     @classmethod
@@ -90,6 +101,8 @@ class Recipe:
                 "local_tone_curve",
                 "local_texture",
                 "mist",
+                "cloud",
+                "background_pattern",
             }
             != set(expected)
             - {
@@ -133,6 +146,15 @@ class Recipe:
             if dimensions_wh is None:
                 raise ValueError("Native dimensions required to validate background light recipe")
             validate_background_light(value["background_light"], *dimensions_wh)
+        background_pattern = None
+        if "background_pattern" in value:
+            from .background_pattern import normalize_background_pattern
+
+            if dimensions_wh is None:
+                raise ValueError("Native dimensions required to validate Background pattern recipe")
+            background_pattern = normalize_background_pattern(
+                value["background_pattern"], *dimensions_wh
+            )
         mist = None
         if "mist" in value:
             from .mist import validate_mist_settings
@@ -140,6 +162,13 @@ class Recipe:
             if dimensions_wh is None:
                 raise ValueError("Native dimensions required to validate Mist recipe")
             mist = validate_mist_settings(value["mist"], *dimensions_wh)
+        cloud = None
+        if "cloud" in value:
+            from .cloud import validate_cloud_settings
+
+            if dimensions_wh is None:
+                raise ValueError("Native dimensions required to validate Cloud recipe")
+            cloud = validate_cloud_settings(value["cloud"], *dimensions_wh)
         if "spatial_fade" in value:
             from .spatial_fade import validate_spatial_fade
 
@@ -217,4 +246,6 @@ class Recipe:
             dict(tone_curve),
             dict(value["local_texture"]) if "local_texture" in value else None,
             mist,
+            background_pattern,
+            cloud,
         )

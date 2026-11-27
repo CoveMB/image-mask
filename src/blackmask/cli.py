@@ -428,7 +428,11 @@ def main() -> int:
             request = json.loads(raw_request)
             if not isinstance(request, dict):
                 raise ProjectError("Operation request must be a JSON object")
-            if "mist" in request:
+            if "cloud" in request:
+                from .cloud_store import parse_cloud_json
+
+                request = parse_cloud_json(raw_request)
+            elif "mist" in request:
                 from .mist import parse_mist_json
 
                 request = parse_mist_json(raw_request, request=True)

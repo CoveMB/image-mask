@@ -48,6 +48,9 @@
       display: block;
       margin: 6px 0;
     }
+    #patternShapeToneControl[hidden] {
+      display: none;
+    }
     input,
     select,
     button,
@@ -115,6 +118,10 @@
     }
     #toneCurveControls button[aria-disabled="true"] {
       opacity: 0.5;
+    }
+    #cloudControls button[aria-pressed="true"] {
+      border-color: #73c5ff;
+      box-shadow: inset 0 0 0 1px #73c5ff;
     }
     .view {
       display: flex;
@@ -461,7 +468,7 @@
       <fieldset>
         <legend>Local exposure</legend>
         <p class="small">One reversible adjustment. Brighten or darken existing detail; alpha stays unchanged. An area replacement replaces this adjustment, including its previous area. No model or internet needed.</p>
-        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="edge">Refine edge</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option><option value="mist-placement">Mist coverage</option><option value="mist">Clear mist</option></select></label>
+        <label>Canvas authoring mode <select id="authorMode"><option value="guides">Matting guides</option><option value="edge">Refine edge</option><option value="sharpening">Local sharpening area</option><option value="exposure">Local exposure area</option><option value="toneCurve">Tone curve area</option><option value="texture">Local texture area</option><option value="fade">Shadow fade area</option><option value="spatial">Fade shapes</option><option value="reduction">Fade reduction</option><option value="background-light">Background light</option><option value="background-pattern">Background pattern</option><option value="cloud-placement">Cloud placement</option><option value="cloud-focus">Cloud clear focus</option><option value="cloud-coverage">Cloud coverage</option><option value="cloud-clear">Clear Cloud</option><option value="mist-placement">Mist coverage</option><option value="mist">Clear mist</option></select></label>
         <label>Exposure drawing <select id="exposureRole"><option value="regions">Apply area</option><option value="protection">Protect area</option></select></label>
         <label>Exposure shape <select id="exposureShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
         <label>Brush radius (native pixels) <input id="exposureRadius" type="number" min="1" step="1" value="10" /></label>
@@ -529,6 +536,125 @@
         <label><input id="backgroundLightCompare" type="checkbox" /> Compare Background light OFF</label>
         <p id="backgroundLightStatus" role="status" class="small"></p>
         <p id="backgroundLightDraftStatus" role="status" class="small"></p>
+      </fieldset>
+      <fieldset id="patternControls" disabled>
+        <legend>Background pattern</legend>
+        <label><input id="patternEnabled" type="checkbox" /> Pattern ON</label>
+        <label>Strength <input id="patternRange" type="range" min="0" max="100" step="1" value="28" /></label>
+        <label>Strength (%) <input id="patternStrength" type="number" min="0" max="100" step="any" value="28" /></label>
+        <label>Irregularity <input id="patternIrregularityRange" type="range" min="0" max="100" step="any" value="0" /></label>
+        <label>Irregularity (%) <input id="patternIrregularity" type="number" min="0" max="100" step="any" value="0" /></label>
+        <label>Palette <select id="patternPalette"><option value="neutral">Neutral gray</option><option value="cool">Cool charcoal</option><option value="warm">Warm charcoal</option><option value="custom" disabled>Custom</option></select></label>
+        <label>Tone 1 <input id="patternColor1" type="color" value="#010101" /></label>
+        <label>Tone 1 #RRGGBB <input id="patternTone1" type="text" maxlength="7" value="#010101" /></label>
+        <label>Tone 2 <input id="patternColor2" type="color" value="#202020" /></label>
+        <label>Tone 2 #RRGGBB <input id="patternTone2" type="text" maxlength="7" value="#202020" /></label>
+        <label><input id="patternReverse" type="checkbox" /> Reverse tones</label>
+        <div>
+          <label>Generator style <select id="patternStyle"><option value="mixed">Mixed</option><option value="waves">Waves</option><option value="ovals">Ovals</option><option value="abstract">Abstract</option></select></label>
+          <button id="patternGenerate">Generate pattern</button>
+          <div id="patternProposal" hidden>
+            <span id="patternSeed" role="status"></span>
+            <button id="patternNext">Next variation</button>
+            <button id="patternUse">Use this pattern</button>
+            <button id="patternCancel">Cancel</button>
+          </div>
+        </div>
+        <button id="patternAddWave">Add wave</button>
+        <button id="patternAddOval">Add oval</button>
+        <label>Selected shape <select id="patternShape"></select></label>
+        <div id="patternShapeControls" hidden>
+          <label><input id="patternShapeEnabled" type="checkbox" /> Shape enabled</label>
+          <label>Centre X (native pixels) <input id="patternCenterX" type="number" min="0" step="any" /></label>
+          <label>Centre Y (native pixels) <input id="patternCenterY" type="number" min="0" step="any" /></label>
+          <label>Rotation (clockwise degrees) <input id="patternRotation" type="number" min="0" step="any" /></label>
+          <div id="patternWave" hidden>
+            <label>Bend (native pixels) <input id="patternBend" type="number" min="0" step="any" /></label>
+            <label>Wavelength (native pixels) <input id="patternWavelength" type="number" min="0.5" step="any" /></label>
+            <label>Phase (degrees) <input id="patternPhase" type="number" min="0" step="any" /></label>
+            <label>Spacing (native pixels) <input id="patternSpacing" type="number" min="0.5" step="any" /></label>
+            <label>Band count <input id="patternBands" type="number" min="1" max="4" step="1" /></label>
+            <label>Feather (native pixels) <input id="patternFeather" type="number" min="0.5" step="any" /></label>
+          </div>
+          <div id="patternOval" hidden>
+            <label>Horizontal radius (native pixels) <input id="patternRadiusX" type="number" min="0.5" step="any" /></label>
+            <label>Vertical radius (native pixels) <input id="patternRadiusY" type="number" min="0.5" step="any" /></label>
+            <label>Softness (0.05–1) <input id="patternSoftness" type="number" min="0.05" max="1" step="any" /></label>
+          </div>
+          <label id="patternShapeToneControl"><span id="patternShapeToneLabel">Shape tone</span> <select id="patternShapeTone"><option value="tone1">Tone 1</option><option value="tone2">Tone 2</option></select></label>
+          <button id="patternRemove">Remove selected shape</button>
+        </div>
+        <p class="small">Irregularity reshapes waves and ovals. In Background pattern canvas mode, click to place the selected shape and drag its rotation handle. Use Preview pattern to see the rendered effect.</p>
+        <button id="patternPreview">Preview pattern</button>
+        <label><input id="patternCandidate" type="checkbox" /> Explicitly compare pattern on an unaccepted candidate</label>
+        <button id="patternApply">Apply pattern</button>
+        <button id="patternOff">Turn pattern OFF</button>
+        <button id="patternReload">Reload saved pattern</button>
+        <p id="patternStatus" role="status" class="small"></p>
+        <figure id="patternPreviewPanel" hidden>
+          <figcaption id="patternPreviewLabel"></figcaption>
+          <img id="patternPreviewImage" alt="Temporary Result with the unapplied background pattern" style="max-width:100%;height:auto" />
+        </figure>
+      </fieldset>
+      <label><input id="patternCompare" type="checkbox" disabled /> Compare pattern OFF</label>
+      <fieldset id="cloudControls">
+        <legend>Cloud</legend>
+        <label><input id="cloudEnabled" type="checkbox" /> Cloud ON</label>
+        <label>Cloud amount (%) <input id="cloudAmount" type="number" min="0" max="100" step="any" value="22" /></label>
+        <label>Cloud colour <input id="cloudColor" type="color" value="#282828" /></label>
+        <label>Cloud colour #RRGGBB <input id="cloudHex" type="text" value="#282828" spellcheck="false" aria-describedby="cloudValidation" /></label>
+        <button id="cloudBlack" aria-pressed="false" style="background:#000000">Black</button>
+        <button id="cloudDarkCharcoal" aria-pressed="false" style="background:#141414">Dark charcoal</button>
+        <button id="cloudCharcoal" aria-pressed="true" style="background:#282828">Charcoal</button>
+        <button id="cloudCoolCharcoal" aria-pressed="false" style="background:#20242A">Cool charcoal</button>
+        <p id="cloudBlackHelp" class="small" hidden>Black clouds darken the image. Choose charcoal to see cloud detail against a black background. Cloud light variation is retained and has no visible effect with Black.</p>
+        <label>Cloud size (% of shorter side) <input id="cloudSize" type="number" min="12" max="100" step="any" value="28" /></label>
+        <details>
+          <summary>Clear focal area</summary>
+          <label><input id="cloudFocusEnabled" type="checkbox" /> Use clear focal area</label>
+          <label>Focus centre X (native pixels) <input id="cloudFocusX" type="number" min="0" step="any" /></label>
+          <label>Focus centre Y (native pixels) <input id="cloudFocusY" type="number" min="0" step="any" /></label>
+          <label>Focus horizontal radius (native pixels) <input id="cloudFocusRadiusX" type="number" min="0.5" step="any" /></label>
+          <label>Focus vertical radius (native pixels) <input id="cloudFocusRadiusY" type="number" min="0.5" step="any" /></label>
+          <button id="cloudDrawFocus">Drag clear focal area on canvas</button>
+        </details>
+        <details>
+          <summary>Cloud shape and light</summary>
+          <label>Cloud centre X (native pixels) <input id="cloudCenterX" type="number" min="0" step="any" /></label>
+          <label>Cloud centre Y (native pixels) <input id="cloudCenterY" type="number" min="0" step="any" /></label>
+          <button id="cloudPlaceCentre">Place Cloud centre on canvas</button>
+          <label>Cloud horizontal radius (native pixels) <input id="cloudRadiusX" type="number" min="0.5" step="any" /></label>
+          <label>Cloud vertical radius (native pixels) <input id="cloudRadiusY" type="number" min="0.5" step="any" /></label>
+          <label>Billow irregularity (%) <input id="cloudWarp" type="number" min="0" max="75" step="any" value="62" /></label>
+          <label>Cloud light variation (%) <input id="cloudLight" type="number" min="0" max="100" step="any" value="55" /></label>
+          <label>Pattern seed <input id="cloudSeed" type="number" min="0" max="4294967295" step="1" value="13" /></label>
+          <button id="cloudNextPattern">Next Cloud pattern</button>
+        </details>
+        <details>
+          <summary>Cloud coverage and clear shapes</summary>
+          <label>Cloud area <select id="cloudAreaRole"><option value="coverage">Coverage</option><option value="clear">Clear</option></select></label>
+          <label>Canvas shape <select id="cloudShape"><option value="stroke">Brush</option><option value="rectangle">Rectangle</option></select></label>
+          <button id="cloudDrawShape">Draw selected Cloud shape on canvas</button>
+          <label>Brush radius (native pixels) <input id="cloudRadius" type="number" min="1" step="1" value="10" /></label>
+          <label>Inward feather (native pixels) <input id="cloudFeather" type="number" min="0" step="1" value="0" /></label>
+          <label>Rectangle x0,y0,x1,y1 <input id="cloudRectangle" class="wide" /></label>
+          <button id="cloudAddRectangle">Add Cloud rectangle</button>
+          <label>Brush coordinates x,y separated by spaces <input id="cloudStroke" class="wide" /></label>
+          <button id="cloudAddStroke">Add Cloud brush</button>
+          <label>Cloud shapes <select id="cloudRegions" class="wide" size="4"></select></label>
+          <button id="cloudRemove">Remove Cloud shape</button>
+        </details>
+        <label><input id="cloudHide" type="checkbox" /> Hide Cloud outlines</label>
+        <label><input id="cloudCandidate" type="checkbox" /> Explicitly compare Cloud on an unaccepted candidate</label>
+        <button id="cloudApply">Apply Cloud</button>
+        <button id="cloudDisable">Turn Cloud OFF</button>
+        <button id="cloudReload">Reload saved Cloud</button>
+        <button id="cloudRebind">Rebind pending Cloud</button>
+        <label><input id="cloudCompare" type="checkbox" /> Compare Cloud OFF</label>
+        <p id="cloudSavedStatus" role="status" class="small"></p>
+        <p id="cloudDraftStatus" role="status" class="small"></p>
+        <p id="cloudValidation" role="status" class="small"></p>
+        <p id="cloudApproximation" class="small" hidden>Reduced RGB8 view is approximate.</p>
       </fieldset>
       <fieldset id="mistControls">
         <legend>Mist</legend>
@@ -860,14 +986,17 @@
     let exposureArea = {regions: [], protection: []}, exposureDirty = false, exposureAreaPublished = false;
     let backgroundDirty = false, backgroundPublished = false;
     let backgroundLightDraft = null, backgroundLightSubmitted = null;
+    let patternDraft = null, patternProposal = null, patternSubmission = null;
+    let patternRequest = 0, patternPreviewCrop = null, patternPreviewURL = null, selectedPatternShape = "";
     const backgroundLightGeometries = new Map();
     const backgroundLightControlIds = ["backgroundLightEnabled", "backgroundLightRange", "backgroundLightBrightness", "backgroundLightColor", "backgroundLightHex", "backgroundLightShape", "backgroundLightCenterX", "backgroundLightCenterY", "backgroundLightRotation", "backgroundLightRadiusX", "backgroundLightRadiusY", "backgroundLightSoftness", "backgroundLightTransition", "backgroundLightReverse", "backgroundLightCandidate", "backgroundLightApply", "backgroundLightOff", "backgroundLightReload"];
     let fadeArea = {regions: [], protection: []}, fadeDirty = false, fadeAreaPublished = false;
     let sharpeningArea = {regions: [], protection: []}, sharpeningDirty = false, sharpeningAreaPublished = false;
     const nativeAreaModes = ["exposure", "fade", "sharpening", "toneCurve", "texture", "mist"];
-    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "textureCompare", "spatialCompare", "backgroundLightCompare", "mistCompare"];
+    const comparisonIds = ["cleanupBase", "exposureCompare", "fadeCompare", "sharpeningCompare", "toneCurveCompare", "textureCompare", "spatialCompare", "backgroundLightCompare", "patternCompare", "mistCompare", "cloudCompare"];
     const mistSettingsIds = ["mistEnabled", "mistDensityRange", "mistDensity", "mistColor", "mistHex", "mistSize", "mistCenterX", "mistCenterY", "mistRadiusX", "mistRadiusY", "mistSoftness", "mistStretch", "mistRotation", "mistSeed"];
     let mistDraft = null, mistSubmission = null, mistVersion = 0, loadedNativeView = null;
+    let cloudDraft = null, cloudSubmission = null, cloudVersion = 0;
     let toneCurveArea = {regions: [], protection: []}, toneCurvePointRows = [];
     let toneCurvePointsIdentity = null, toneCurveAreaIdentity = null;
     let toneCurvePointsVersion = 0, toneCurveAreaVersion = 0;
@@ -1980,11 +2109,14 @@
           .join("\n");
       }
       const completed = !actionSubmitting && actionWasRunning && !a.running;
-      const retainedMistView = completed && mistSubmission && viewedBeforeRefresh !== mistSubmission.base.base_revision
+      const retainedEffect = mistSubmission || cloudSubmission;
+      const retainedEffectView = completed && retainedEffect && viewedBeforeRefresh !== retainedEffect.base.base_revision
         && state.revisions.some(row => row.revision === viewedBeforeRefresh) ? viewedBeforeRefresh : undefined;
       syncToneCurve(current, a, completed);
       syncTexture(current, a, completed);
       syncMist(current, a, completed);
+      syncCloud(current, a, completed);
+      syncPattern(current, a, completed, reload);
       const reductionSubmission = fadeReductionSubmitted;
       const reductionCompleted = completed && !a.error && reductionSubmission && a.name === "effects"
         && (a.result?.reused ? a.result.revision === reductionSubmission.base_revision : a.result?.parent === reductionSubmission.base_revision)
@@ -2147,7 +2279,7 @@
       select(
         "viewRevision",
         revisions,
-        retainedMistView || (state.working_revision && !$("viewRevision").value
+        retainedEffectView || (state.working_revision && !$("viewRevision").value
           ? state.working_revision
           : undefined),
       );
@@ -2259,6 +2391,8 @@
       updateToneCurveControls();
       updateTextureControls();
       updateMistControls();
+      updateCloudControls();
+      updatePatternControls();
       updateEdgeControls();
       $("previewRepair").disabled = authoringBusy() || !state?.preview || ["not_applicable","no_result"].includes(state.preview.status) || state.preview.reason === "configuration_required";
       for (const id of ["seriesName","seriesWidth","seriesHeight","seriesSide","seriesSideRange","seriesVertical","seriesSave","seriesReload","seriesLoad","seriesFile","seriesDownload","seriesPreview","seriesTransparent"])
@@ -2290,13 +2424,16 @@
       if(decoded.width!==requestedCrop[2]-requestedCrop[0] || decoded.height!==requestedCrop[3]-requestedCrop[1]) {decoded.close();throw Error("Spatial preview dimensions differ from the bound native crop");}
       return decoded;
     }
+    function hasStaleEffects(record) {
+      return ["color_cleanup", "shading", "local_sharpening", "local_exposure", "local_tone_curve", "local_texture", "shadow_fade", "spatial_fade"]
+        .some(name => record?.[name]?.enabled && record[name].stale);
+    }
     function previewLabel(panel, revision, base, comparison) {
       if (panel === "source") return "Source RGB8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       if (panel === "alpha") return "Alpha8 preview · local exposure unaffected · cleanup OFF · shading OFF";
       const viewed = state.revisions.find(r => r.revision === revision),
         working = state.revisions.find(r => r.revision === state.working_revision);
-      const stale = record => ["color_cleanup", "shading", "local_sharpening", "local_exposure", "local_tone_curve", "local_texture", "shadow_fade", "spatial_fade"].some(name => record?.[name]?.enabled && record[name].stale);
-      const isStale = stale(viewed) || stale(working);
+      const isStale = hasStaleEffects(viewed) || hasStaleEffects(working);
       if (base || isStale) return "Viewed " + revision + (isStale ? " · STALE appearance" : "") + " · BASE on pure black · cleanup OFF · Local sharpening OFF · local exposure OFF · Local tone curve OFF · Local texture OFF · Shadow fade OFF · shading OFF; rebuild or disable each stale enabled effect before appearance acceptance/export";
       const exposure = $("exposureCompare").checked || !viewed?.local_exposure?.enabled ? "OFF" : "ON " + viewed.local_exposure.settings.ev + " EV";
       const sharpening = $("sharpeningCompare").checked ? "OFF comparison" : viewed?.local_sharpening?.enabled ? "ON" : "OFF";
@@ -2305,14 +2442,19 @@
       const fade = $("fadeCompare").checked ? "OFF comparison" : viewed?.shadow_fade?.enabled ? "ON" : "OFF";
       const lightLabel = " · Background light " + (["black", "gray", "white"].includes(panel) ? "excluded from diagnostic" : $("backgroundLightCompare").checked ? "OFF comparison" : viewed?.background_light?.settings?.enabled ? "ON" : "OFF");
       const mistLabel = panel === "result" && viewed?.mist ? " · Mist " + ($("mistCompare").checked ? "OFF comparison" : viewed.mist.settings.enabled ? "ON" : "OFF") : "";
+      const cloudLabel = panel === "result" && viewed?.cloud ? " · Cloud " + ($("cloudCompare").checked ? "OFF comparison" : viewed.cloud.settings.enabled ? "ON" : "OFF") : "";
+      const patternLabel = panel === "result" && viewed?.background_pattern
+        ? " · Background pattern " + ($("patternCompare").checked ? "OFF comparison" : viewed.background_pattern.settings.enabled ? "ON" : "OFF") : "";
       const spatialTarget = spatialTargetLabel(panel === "result" && !$("backgroundLightCompare").checked ? viewed?.spatial_fade?.settings : null);
       const cleanup = (viewed?.color_cleanup?.enabled ? "ON" : "OFF") + " · Local sharpening " + sharpening + " · local exposure " + exposure + " · Local tone curve " + toneCurve + " · Local texture " + texture + " · Shadow fade " + fade + " · Fade into background " + ($("spatialCompare").checked ? "OFF comparison" : viewed?.spatial_fade?.enabled ? "ON · " + spatialTarget : "OFF") + ($("exposureCompare").checked ? " · curve, texture and fade recalculated from exposure-OFF RGB" : "");
-      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel + mistLabel;
+      if (!viewed?.shading?.enabled) return "Viewed " + revision + " · RGB8 preview · cleanup " + cleanup + " · shading OFF" + lightLabel + cloudLabel + mistLabel + patternLabel;
       const shading = viewed.shading,
         opacity = comparison === "" || $("exposureCompare").checked ? shading.opacity : Number(comparison);
-      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup + lightLabel + mistLabel;
+      return "Viewed " + revision + " · encoded-sRGB · baked shading RGB8 preview · native width " + shading.settings.width_px + " px · direction " + shading.settings.direction_degrees + "° · opacity " + opacity + " · cleanup " + cleanup + lightLabel + cloudLabel + mistLabel + patternLabel;
     }
     async function loadImage() {
+      if (patternPreviewCrop !== null && patternPreviewCrop !== crop?.join(",")) clearPatternPreview();
+      updatePatternControls();
       if (!state || !crop) return;
       framingStatus();
       syncSeries();
@@ -2323,6 +2465,7 @@
       const edgePanel = panel === "result" ? "black" : panel;
       const spatialMap=$("spatialMap").value || "none", viewed=state.revisions.find(r=>r.revision===revision);
       if (!viewed?.mist?.settings.enabled) $("mistCompare").checked = false;
+      if (!viewed?.cloud?.settings.enabled) $("cloudCompare").checked = false;
       const reductionView = $("reductionView").value || "none";
       const selectedSaved=selectedSpatialId==="oval" || viewed?.spatial_fade?.settings?.arcs.some(arc=>arc.id===selectedSpatialId);
       const requestedCrop = [...crop],
@@ -2344,7 +2487,9 @@
         $("fadeCompare").checked,
         $("spatialCompare").checked,
         $("backgroundLightCompare").checked,
+        $("patternCompare").checked,
         $("mistCompare").checked,
+        $("cloudCompare").checked,
         spatialMap,
         reductionView,
         reductionTarget(),
@@ -2367,6 +2512,7 @@
       gesture = null;
       updateEdgeControls();
       updateMistControls();
+      updateCloudControls();
       $("coordinate").textContent = "Loading native view…";
       $("shadingStatus").textContent = "Loading selected native view…";
       draw();
@@ -2377,7 +2523,7 @@
         const path =
           panel === "source"
             ? `/image/source/${state.developed_id}/${requestedCrop.join(",")}`
-            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("mistCompare").checked && panel === "result" ? "/mist-off" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("textureCompare").checked ? "/texture-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
+            : `/image/${panel}/${revision}/${requestedCrop.join(",")}${$("cleanupBase").checked ? "/base" : $("patternCompare").checked && panel === "result" ? "/background-pattern-off" : $("mistCompare").checked && panel === "result" ? "/mist-off" : $("cloudCompare").checked && panel === "result" ? "/cloud-off" : $("backgroundLightCompare").checked ? "/background-light-off": $("sharpeningCompare").checked ? "/sharpening-off" : $("exposureCompare").checked ? "/exposure-off" : $("toneCurveCompare").checked ? "/tone-curve-off" : $("textureCompare").checked ? "/texture-off" : $("fadeCompare").checked ? "/shadow-fade-off" : $("shadingPreview").value ? "/p" + $("shadingPreview").value : ""}`;
         next = edgePath ? await bitmap(`${edgePath}/${edgePanel}`)
           : reductionView === "off" && !["source", "alpha"].includes(panel)
           ? await spatialBitmap("off", revision, requestedCrop, panel, true)
@@ -2427,6 +2573,7 @@
         nextOverlay?.close();
         updateEdgeControls();
         updateMistControls();
+        updateCloudControls();
       }
     }
     function draw() {
@@ -2436,8 +2583,10 @@
       canvas.height = Math.max(1, Math.round(rect.height));
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       transform = null;
+      $("cloudApproximation").hidden = true;
       if (imageLoading || !image || !crop) return;
       transform = viewTransform([canvas.width, canvas.height], crop, zoom, pan);
+      $("cloudApproximation").hidden = transform.scale >= 1;
       const { scale, x, y } = transform;
       ctx.imageSmoothingEnabled = false;
       ctx.save();
@@ -2461,13 +2610,15 @@
         ctx.globalAlpha = 1;
       }
       const mode = $("authorMode").value;
-      const showMist = mode !== "mist" || !$("mistHide").checked && mistViewReady(workingMistRevision());
+      const showMist = mode !== "mist" || !$("mistHide").checked && matchingWorkingView(workingEffectRevision());
       const area = nativeAreaModes.includes(mode) && showMist ? effectArea(mode) : null;
-      if (mode === "edge" || $("overlay").value === "guides" || area || mode === "reduction") {
-        const drawnRegions = mode === "edge" ? edgeOutlines() : mode === "reduction"
+      const cloudRole = cloudShapeRole(mode);
+      const cloudRegions = cloudRole && cloudOutlinesReady() ? cloudDraft.area[cloudRole] : null;
+      if (mode === "edge" || $("overlay").value === "guides" || area || cloudRegions || mode === "reduction") {
+        const drawnRegions = cloudRegions || (mode === "edge" ? edgeOutlines() : mode === "reduction"
           ? (reductionDraft()?.area.regions || []).map(region => region.shape)
           : area
-          ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions;
+          ? [...area.regions.map(r => ({...r, role: "support"})), ...area.protection.map(r => ({...r, role: "lock"}))] : regions);
         for (const region of drawnRegions) {
           ctx.strokeStyle = {
             keep: "#6f6",
@@ -2479,6 +2630,8 @@
             lock: "#f6f",
           }[region.role];
           if (mode === "mist" && $("mistRegions").value === "regions:" + region.id) ctx.strokeStyle = "#ffcb72";
+          if (cloudRegions && $("cloudRegions").value === cloudRole + ":" + region.id) ctx.strokeStyle = "#ffcb72";
+          else if (cloudRegions && cloudRole === "clear") ctx.strokeStyle = "#f6f";
           ctx.fillStyle = ctx.strokeStyle;
           ctx.lineWidth = 2 / scale;
           ctx.beginPath();
@@ -2521,6 +2674,8 @@
       if (!activeEdgePreview()) {
         drawSpatialShapes(scale);
         drawBackgroundLight(scale);
+        drawPattern(scale);
+        drawCloudEllipse(scale);
         drawMistCoverage(scale);
         if (appearanceLayoutProposal) drawSpatialShapes(scale, appearanceLayoutProposal.settings, true);
       }
@@ -2657,19 +2812,14 @@
         throw Error("Choose the working revision before authoring a texture area");
       if (prefix === "mist") {
         requireMistView();
-        if (!mistSameSource(mistDraft.base, mistBinding(workingMistRevision())))
+        if (!sameNativeSource(mistDraft.base, mistBinding(workingEffectRevision())))
           throw Error("Reload saved Mist before drawing on this source");
         if (!["rectangle", "stroke"].includes(shape) || String($("mistFeather").value).trim() === "")
           throw Error("Use a brush or rectangle with a native inward feather");
       }
-      const kind = prefix === "mist" ? "regions" : $(prefix + "Role").value, [w, h] = state.dimensions_wh;
+      const kind = prefix === "mist" ? "regions" : $(prefix + "Role").value;
       const feather = kind === "protection" ? 0 : Number($(prefix + "Feather").value);
-      const radius = Number($(prefix + "Radius").value);
-      if (!Number.isInteger(feather) || feather < 0 || feather > Math.max(w,h)) throw Error("Use a valid native inward feather");
-      if (shape === "stroke" && (!Number.isInteger(radius) || radius < 1 || radius > Math.max(w,h))) throw Error("Use a valid native brush radius");
-      const region = {id: prefix + "-" + crypto.randomUUID().slice(0,8), role: "support", shape, feather_px: feather};
-      if (shape === "rectangle") region.xyxy = geometry;
-      else { region.points = geometry; region.radius_px = radius; }
+      const region = supportRegion(prefix, geometry, shape, feather);
       const area = effectArea(prefix);
       if (prefix === "mist" && (area.regions.length >= 64 ||
         area.regions.reduce((total, item) => total + (item.points?.length || 0), region.points?.length || 0) > 8192))
@@ -2681,6 +2831,15 @@
       else if (prefix === "mist") { renderEffectAreaRegions("mist", area); markMistDirty(); }
       else markEffectAreaDirty(prefix);
       draw();
+    }
+    function supportRegion(prefix, geometry, shape, feather) {
+      const axis = Math.max(...state.dimensions_wh), radius = Number($(prefix + "Radius").value);
+      if (!Number.isInteger(feather) || feather < 0 || feather > axis) throw Error("Use a valid native inward feather");
+      if (shape === "stroke" && (!Number.isInteger(radius) || radius < 1 || radius > axis)) throw Error("Use a valid native brush radius");
+      const region = {id: prefix + "-" + crypto.randomUUID().slice(0,8), role: "support", shape, feather_px: feather};
+      if (shape === "rectangle") region.xyxy = geometry;
+      else { region.points = geometry; region.radius_px = radius; }
+      return region;
     }
     function addExposureRegion(geometry, shape = $("exposureShape").value) { addEffectRegion("exposure", geometry, shape); }
     function addFadeRegion(geometry, shape = $("fadeShape").value) { addEffectRegion("fade", geometry, shape); }
@@ -3087,7 +3246,7 @@
     $("textureDisable").onclick = guarded(() => localTexture("disable"));
     $("textureCompare").onchange = guarded(() => compareChanged("textureCompare"));
 
-    function workingMistRevision() {
+    function workingEffectRevision() {
       return state?.revisions.find(row => row.revision === state.working_revision);
     }
     function mistBinding(current) {
@@ -3097,28 +3256,28 @@
         settings: current?.mist ? fadeReductionAreaIdentity(current.mist.settings) : null,
         area_sha256: current?.mist?.area_sha256 ?? null};
     }
-    function mistSameSource(first, second) {
+    function sameNativeSource(first, second) {
       return first.developed_id === second.developed_id && first.dimensions_wh.every((axis, index) => axis === second.dimensions_wh[index]);
     }
     function mistCanRebind(first, second) {
-      return mistSameSource(first, second) && !!first.protection && first.protection === second.protection
+      return sameNativeSource(first, second) && !!first.protection && first.protection === second.protection
         && first.settings === second.settings && first.area_sha256 === second.area_sha256;
     }
     function mistDraftStale(target) {
       return mistDraft?.dirty && fadeReductionAreaIdentity(mistDraft.base) !== fadeReductionAreaIdentity(target);
     }
-    function mistViewReady(current) {
+    function matchingWorkingView(current) {
       return !!(current?.final_acceptable && image && transform && !imageLoading
         && $("viewRevision").value === current.revision && loadedNativeView?.revision === current.revision
         && loadedNativeView.developed_id === state.developed_id && current.revision_manifest_sha256
         && loadedNativeView.sha256 === current.revision_manifest_sha256 && !activeEdgePreview());
     }
     function requireMistView() {
-      const current = workingMistRevision();
-      if (authoringBusy() || !mistViewReady(current)) throw Error("Load the matching complete working view before changing Mist");
+      const current = workingEffectRevision();
+      if (authoringBusy() || !matchingWorkingView(current)) throw Error("Load the matching complete working view before changing Mist");
       return current;
     }
-    function mistNumber(id, label, minimum, maximum, {whole = false, percent = false, exclusiveMax = false} = {}) {
+    function effectNumber(id, label, minimum, maximum, {whole = false, percent = false, exclusiveMax = false} = {}) {
       const text = String($(id).value).trim(), value = Number(text);
       if (!text || !Number.isFinite(value) || value < minimum || value > maximum
         || exclusiveMax && value === maximum || whole && !Number.isInteger(value))
@@ -3133,21 +3292,21 @@
       const tint = $("mistHex").value.trim().toUpperCase();
       if (!/^#[0-9A-F]{6}$/.test(tint)) throw Error("Use a Mist tint in #RRGGBB format");
       const positionLabel = vapor ? "Clear focus" : "Centre";
-      const point = [mistNumber("mistCenterX", positionLabel + " X", 0, width),
-        mistNumber("mistCenterY", positionLabel + " Y", 0, height)];
+      const point = [effectNumber("mistCenterX", positionLabel + " X", 0, width),
+        effectNumber("mistCenterY", positionLabel + " Y", 0, height)];
       const common = {enabled: $("mistEnabled").checked, tint_srgb: tint,
-        density: mistNumber("mistDensity", vapor ? "Strength (%)" : "Density (%)", 0, 100, {percent: true}),
-        rotation_degrees: mistNumber("mistRotation", "Direction", 0, 360, {exclusiveMax: true}),
-        seed: mistNumber("mistSeed", "Pattern seed", 0, 4294967295, {whole: true}),
+        density: effectNumber("mistDensity", vapor ? "Strength (%)" : "Density (%)", 0, 100, {percent: true}),
+        rotation_degrees: effectNumber("mistRotation", "Direction", 0, 360, {exclusiveMax: true}),
+        seed: effectNumber("mistSeed", "Pattern seed", 0, 4294967295, {whole: true}),
       };
       if (vapor) return {...common, style: "vapor", pattern_version: 2, focus_xy: point};
       return {...common,
-        wisp_size: mistNumber("mistSize", "Wisp size (%)", 4, 60, {percent: true}),
-        stretch: mistNumber("mistStretch", "Wisp stretch", 1, 5),
+        wisp_size: effectNumber("mistSize", "Wisp size (%)", 4, 60, {percent: true}),
+        stretch: effectNumber("mistStretch", "Wisp stretch", 1, 5),
         coverage: {
           center_xy: point,
-          radii_xy: [mistNumber("mistRadiusX", "Radius along direction", .5, limit), mistNumber("mistRadiusY", "Radius across direction", .5, limit)],
-          softness: mistNumber("mistSoftness", "Coverage softness (%)", 5, 100, {percent: true}),
+          radii_xy: [effectNumber("mistRadiusX", "Radius along direction", .5, limit), effectNumber("mistRadiusY", "Radius across direction", .5, limit)],
+          softness: effectNumber("mistSoftness", "Coverage softness (%)", 5, 100, {percent: true}),
         }};
     }
     function defaultMistSettings(style, width, height) {
@@ -3199,10 +3358,10 @@
     }
     function updateMistControls() {
       if (!state || !mistDraft) return;
-      const current = workingMistRevision(), viewed = state.revisions.find(row => row.revision === $("viewRevision").value);
-      const matching = !!mistViewReady(current), writable = matching && !authoringBusy();
+      const current = workingEffectRevision(), viewed = state.revisions.find(row => row.revision === $("viewRevision").value);
+      const matching = !!matchingWorkingView(current), writable = matching && !authoringBusy();
       const target = mistBinding(current), stale = mistDraftStale(target);
-      const rebind = stale && mistCanRebind(mistDraft.base, target), sameSource = mistSameSource(mistDraft.base, target);
+      const rebind = stale && mistCanRebind(mistDraft.base, target), sameSource = sameNativeSource(mistDraft.base, target);
       for (const id of [...mistSettingsIds, "mistStyle", "mistNextPattern", "mistShape", "mistRadius", "mistFeather", "mistRectangle",
         "mistAddRectangle", "mistRemove", "mistPlaceCentre", "mistDrawClear"]) $(id).disabled = !writable || !sameSource;
       $("mistCandidate").disabled = !writable || current?.revision === state.accepted_revision;
@@ -3271,7 +3430,7 @@
       }
     }
     function drawMistCoverage(scale) {
-      if ($("authorMode").value !== "mist-placement" || $("mistHide").checked || !mistViewReady(workingMistRevision())) return;
+      if ($("authorMode").value !== "mist-placement" || $("mistHide").checked || !matchingWorkingView(workingEffectRevision())) return;
       let settings;
       try { settings = mistFormSettings(); } catch { return; }
       const [x, y] = settings.focus_xy ?? settings.coverage.center_xy;
@@ -3313,7 +3472,7 @@
     };
     $("mistNextPattern").onclick = guarded(() => {
       requireMistView();
-      const seed = mistNumber("mistSeed", "Pattern seed", 0, 4294967295, {whole: true});
+      const seed = effectNumber("mistSeed", "Pattern seed", 0, 4294967295, {whole: true});
       $("mistSeed").value = String((seed + 1) % 4294967296);
       markMistDirty();
     });
@@ -3355,6 +3514,286 @@
     $("mistCompare").onchange = guarded(() => {
       if ($("mistCompare").checked) $("panel").value = "result";
       return compareChanged("mistCompare");
+    });
+
+    const cloudSettingsIds = ["cloudEnabled", "cloudAmount", "cloudHex", "cloudColor", "cloudSize", "cloudWarp",
+      "cloudLight", "cloudSeed", "cloudCenterX", "cloudCenterY", "cloudRadiusX", "cloudRadiusY",
+      "cloudFocusEnabled", "cloudFocusX", "cloudFocusY", "cloudFocusRadiusX", "cloudFocusRadiusY"];
+    const cloudSwatches = {cloudBlack: "#000000", cloudDarkCharcoal: "#141414",
+      cloudCharcoal: "#282828", cloudCoolCharcoal: "#20242A"};
+    function cloudBinding(current) {
+      return {...effectCurrentIdentity(), dimensions_wh: [...state.dimensions_wh],
+        revision_manifest_sha256: current?.revision_manifest_sha256 ?? null,
+        protection: current?.hard_protection_sha256 ?? null,
+        record: fadeReductionAreaIdentity(current?.cloud ?? null)};
+    }
+    function cloudCanRebind(from, to) {
+      return sameNativeSource(from, to) && !!from.protection && from.protection === to.protection && from.record === to.record;
+    }
+    function cloudDraftStale(target) {
+      return cloudDraft.dirty && fadeReductionAreaIdentity(cloudDraft.base) !== fadeReductionAreaIdentity(target);
+    }
+    function requireCloudView({draft = false} = {}) {
+      const current = workingEffectRevision();
+      if (authoringBusy() || !matchingWorkingView(current)) throw Error("Load the matching complete working view before changing Cloud");
+      if (draft && cloudDraftStale(cloudBinding(current))) throw Error("Rebind pending Cloud or reload saved Cloud first");
+      return current;
+    }
+    function cloudTint() {
+      const color = $("cloudHex").value.trim().toUpperCase();
+      return /^#[0-9A-F]{6}$/.test(color) ? color : null;
+    }
+    function syncCloudColour() {
+      const color = cloudTint();
+      if (color) $("cloudColor").value = color.toLowerCase();
+      for (const [id, swatch] of Object.entries(cloudSwatches)) $(id).ariaPressed = String(color === swatch);
+      $("cloudHex").ariaInvalid = String(!color);
+      $("cloudBlackHelp").hidden = color !== "#000000";
+    }
+    function cloudEllipse(focus = false) {
+      const [width, height] = state.dimensions_wh, limit = 2 * Math.max(width, height);
+      const prefix = focus ? "cloudFocus" : "cloudCenter", radius = focus ? "cloudFocusRadius" : "cloudRadius";
+      const label = focus ? "Focus" : "Cloud";
+      return {center_xy: [effectNumber(prefix + "X", label + " centre X", 0, width),
+        effectNumber(prefix + "Y", label + " centre Y", 0, height)],
+        radii_xy: [effectNumber(radius + "X", label + " horizontal radius", .5, limit),
+          effectNumber(radius + "Y", label + " vertical radius", .5, limit)]};
+    }
+    function setCloudEllipse(geometry, focus = false) {
+      const prefix = focus ? "cloudFocus" : "cloudCenter", radius = focus ? "cloudFocusRadius" : "cloudRadius";
+      for (const [index, axis] of ["X", "Y"].entries()) {
+        $(prefix + axis).value = String(geometry.center_xy[index]);
+        $(radius + axis).value = String(geometry.radii_xy[index]);
+      }
+    }
+    function cloudFormSettings() {
+      const tint = cloudTint();
+      if (!tint) throw Error("Enter a Cloud colour in six-digit #RRGGBB format");
+      const percent = {percent: true};
+      return {enabled: $("cloudEnabled").checked, tint_srgb: tint,
+        amount: effectNumber("cloudAmount", "Cloud amount (%)", 0, 100, percent),
+        size: effectNumber("cloudSize", "Cloud size (%)", 12, 100, percent),
+        warp: effectNumber("cloudWarp", "Billow irregularity (%)", 0, 75, percent),
+        light_amount: effectNumber("cloudLight", "Cloud light variation (%)", 0, 100, percent),
+        seed: effectNumber("cloudSeed", "Cloud pattern seed", 0, 4294967295, {whole: true}), ...cloudEllipse()};
+    }
+    function checkCloudArea(focus, extra = null) {
+      const shapes = [...cloudDraft.area.coverage, ...cloudDraft.area.clear];
+      if (extra) shapes.push(extra);
+      if (shapes.length + Number(focus) > 64 || shapes.reduce((count, shape) => count + (shape.points?.length || 0), 0) > 8192)
+        throw Error("Cloud allows up to 64 combined shapes and 8192 stroke points");
+    }
+    function cloudFormArea() {
+      const focused = $("cloudFocusEnabled").checked;
+      checkCloudArea(focused);
+      return {...cloudDraft.area, focus: focused ? cloudEllipse(true) : null};
+    }
+    function renderCloudRegions() {
+      select("cloudRegions", ["coverage", "clear"].flatMap(role => cloudDraft.area[role].map(shape => [role + ":" + shape.id,
+        (role === "coverage" ? "Coverage" : "Clear") + " · " + (shape.xyxy ? "Rectangle " + shape.xyxy.join(", ") : `Brush (${shape.points.length} points)`)])));
+    }
+    function loadSavedCloud(current) {
+      const [width, height] = state.dimensions_wh, axis = Math.max(width, height);
+      const saved = current?.cloud?.settings || {enabled: false, tint_srgb: "#282828", amount: .22, size: .28, warp: .62,
+        light_amount: .55, seed: 13, center_xy: [width * .6, height * .62], radii_xy: [width, height]};
+      const area = structuredClone(current?.cloud_area || {coverage: [], clear: [], focus: null});
+      cloudDraft = {base: cloudBinding(current), area, dirty: false};
+      cloudVersion++;
+      $("cloudEnabled").checked = saved.enabled;
+      $("cloudFocusEnabled").checked = area.focus !== null;
+      $("cloudCandidate").checked = false;
+      for (const [id, value] of Object.entries({cloudAmount: backgroundPercentage(saved.amount), cloudSize: backgroundPercentage(saved.size),
+        cloudWarp: backgroundPercentage(saved.warp), cloudLight: backgroundPercentage(saved.light_amount), cloudSeed: saved.seed,
+        cloudHex: saved.tint_srgb})) $(id).value = String(value);
+      setCloudEllipse(saved);
+      setCloudEllipse(area.focus || {center_xy: [width / 2, height / 2], radii_xy: [Math.max(.5, width * .15), Math.max(.5, height * .15)]}, true);
+      for (const [id, value] of Object.entries({cloudCenterX: width, cloudCenterY: height, cloudFocusX: width, cloudFocusY: height,
+        cloudRadiusX: 2 * axis, cloudRadiusY: 2 * axis, cloudFocusRadiusX: 2 * axis, cloudFocusRadiusY: 2 * axis,
+        cloudRadius: axis, cloudFeather: axis})) $(id).max = String(value);
+      if (!$("cloudRadius").value || Number($("cloudRadius").value) > axis) $("cloudRadius").value = String(Math.min(10, axis));
+      if (!$("cloudFeather").value || Number($("cloudFeather").value) > axis) $("cloudFeather").value = "0";
+      syncCloudColour();
+      renderCloudRegions();
+    }
+    function updateCloudControls() {
+      if (!state || !cloudDraft) return;
+      const current = workingEffectRevision(), viewed = state.revisions.find(row => row.revision === $("viewRevision").value);
+      const target = cloudBinding(current), stale = cloudDraftStale(target), canRebind = stale && cloudCanRebind(cloudDraft.base, target);
+      const matching = matchingWorkingView(current), writable = matching && !authoringBusy();
+      const editing = matching && !stale && (writable || !!cloudSubmission);
+      let validation = "";
+      try { cloudFormSettings(); cloudFormArea(); } catch (error) { validation = error.message; }
+      for (const id of [...cloudSettingsIds, ...Object.keys(cloudSwatches), "cloudNextPattern"]) $(id).disabled = !editing;
+      for (const id of ["cloudAreaRole", "cloudShape", "cloudRadius", "cloudFeather", "cloudRectangle", "cloudStroke",
+        "cloudDrawShape", "cloudAddRectangle", "cloudAddStroke", "cloudRegions", "cloudRemove", "cloudPlaceCentre", "cloudDrawFocus"])
+        $(id).disabled = !writable || stale;
+      $("cloudCandidate").disabled = !writable || stale || current?.revision === state.accepted_revision;
+      $("cloudApply").disabled = !writable || stale || !!validation || current?.revision !== state.accepted_revision && !$("cloudCandidate").checked;
+      $("cloudDisable").disabled = !writable || !current?.cloud?.settings.enabled;
+      $("cloudReload").disabled = !writable || !cloudDraft.dirty;
+      $("cloudRebind").disabled = !writable || !canRebind;
+      $("cloudCompare").disabled = !viewed?.cloud?.settings.enabled || !!activeEdgePreview();
+      const location = !viewed ? "Load the complete working view to edit · " : viewed === current ? "Working view · " : "Historical view · ";
+      const saved = location + (viewed ? viewed.revision + " · " : "")
+        + "Saved Cloud " + (viewed?.cloud?.settings.enabled ? "ON" : "OFF");
+      const draft = stale ? `Stale · Unapplied changes · ${canRebind ? "Rebind pending Cloud on the working view." : "Reload saved Cloud before applying."}`
+        : cloudDraft.dirty ? "Unapplied changes · Result shows the selected saved revision" : "";
+      for (const [id, value] of Object.entries({cloudSavedStatus: saved, cloudDraftStatus: draft, cloudValidation: validation}))
+        if ($(id).textContent !== value) $(id).textContent = value;
+    }
+    function markCloudDirty() {
+      if (!cloudDraft) return;
+      cloudDraft.dirty = true;
+      cloudVersion++;
+      updateCloudControls();
+      draw();
+    }
+    function syncCloud(current, actionState, completed) {
+      const submission = cloudSubmission, result = actionState.result;
+      const target = cloudBinding(current), base = submission?.base;
+      const verified = completed && submission && !actionState.error && actionState.name === "effects"
+        && base.developed_id === state.developed_id && result?.developed_id === state.developed_id
+        && result.revision === current?.revision && result.revision_manifest_sha256 === target.revision_manifest_sha256
+        && result.base_manifest_sha256 === base.revision_manifest_sha256
+        && (result.reused === true ? result.revision : result.parent) === base.base_revision
+        && current.cloud && target.record === fadeReductionAreaIdentity(result.cloud)
+        && target.protection === base.protection && sameNativeSource(base, target)
+        && fadeReductionAreaIdentity(current.cloud.settings) === submission.settings
+        && fadeReductionAreaIdentity(current.cloud_area) === submission.area;
+      const stillBound = verified && fadeReductionAreaIdentity(cloudDraft.base) === fadeReductionAreaIdentity(base);
+      const applied = stillBound && submission.action === "apply" && cloudVersion === submission.version;
+      if (stillBound && !applied && cloudDraft.dirty) {
+        cloudDraft.base = target;
+        if (target.base_revision !== base.base_revision) $("cloudCandidate").checked = false;
+      }
+      if (completed) cloudSubmission = null;
+      if (applied || !cloudDraft || !cloudDraft.dirty && !cloudSubmission
+        && fadeReductionAreaIdentity(cloudDraft.base) !== fadeReductionAreaIdentity(target)) loadSavedCloud(current);
+      updateCloudControls();
+    }
+    async function submitCloud(actionName) {
+      const apply = actionName === "apply";
+      const current = requireCloudView({draft: apply});
+      requireSaved();
+      if (!apply && !current.cloud?.settings.enabled) return;
+      const candidate = apply && $("cloudCandidate").checked;
+      if (apply && current.revision !== state.accepted_revision && !candidate)
+        throw Error("Choose an accepted base or explicitly compare Cloud on this candidate");
+      const base = cloudBinding(current);
+      const settings = apply ? cloudFormSettings() : {...current.cloud.settings, enabled: false};
+      const area = apply ? cloudFormArea() : current.cloud_area;
+      if (apply && !cloudDraft.dirty) markCloudDirty();
+      cloudSubmission = {action: actionName, base, version: cloudVersion,
+        settings: fadeReductionAreaIdentity(settings), area: fadeReductionAreaIdentity(area)};
+      try {
+        await action("effects", {...effectCurrentIdentity(), revision_manifest_sha256: base.revision_manifest_sha256,
+          scope_xyxy: [0, 0, ...state.dimensions_wh], candidate_comparison: candidate,
+          cloud: apply ? {action: "apply", settings, area} : {action: "disable"}});
+      } catch (error) {
+        cloudSubmission = null;
+        throw error;
+      }
+    }
+    function cloudShapeRole(mode) {
+      return mode === "cloud-coverage" ? "coverage" : mode === "cloud-clear" ? "clear" : null;
+    }
+    function cloudOutlinesReady() {
+      const current = workingEffectRevision();
+      return cloudDraft && !$("cloudHide").checked && matchingWorkingView(current) && !cloudDraftStale(cloudBinding(current));
+    }
+    function addCloudRegion(role, geometry, shape) {
+      requireCloudView({draft: true});
+      const feather = effectNumber("cloudFeather", "Inward feather", 0, Math.max(...state.dimensions_wh), {whole: true});
+      const region = supportRegion("cloud", geometry, shape, feather);
+      checkCloudArea($("cloudFocusEnabled").checked, region);
+      cloudDraft.area[role].push(region);
+      renderCloudRegions();
+      $("cloudRegions").value = role + ":" + region.id;
+      markCloudDirty();
+    }
+    function cloudStrokeCoordinates() {
+      const text = $("cloudStroke").value.trim(), tokens = text.split(/\s+/, 8193);
+      const [width, height] = state.dimensions_wh;
+      if (tokens.length > 8192) throw Error("Cloud allows up to 8192 stroke points");
+      return tokens.map(token => {
+        if (!/^\d+,\d+$/.test(token)) throw Error("Enter brush coordinates as native integer x,y pairs separated by spaces");
+        const [x, y] = token.split(",").map(Number);
+        if (x >= width || y >= height) throw Error("Cloud brush coordinates must be inside the native image");
+        return [x, y];
+      });
+    }
+    function drawCloudEllipse(scale) {
+      const mode = $("authorMode").value, focus = mode === "cloud-focus";
+      if (!(focus || mode === "cloud-placement") || !cloudOutlinesReady()) return;
+      if (focus && !$("cloudFocusEnabled").checked) return;
+      let geometry;
+      try { geometry = cloudEllipse(focus); } catch { return; }
+      const [x, y] = geometry.center_xy.map((value, axis) => value - crop[axis]);
+      ctx.strokeStyle = focus ? "#f6f" : "#6af";
+      ctx.lineWidth = 2 / scale;
+      ctx.beginPath(); ctx.ellipse(x, y, ...geometry.radii_xy, 0, 0, 2 * Math.PI); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 4 / scale, 0, 2 * Math.PI); ctx.stroke();
+    }
+    for (const id of cloudSettingsIds) $(id).oninput = markCloudDirty;
+    function editCloudColour(value) {
+      $("cloudHex").value = value;
+      syncCloudColour(); markCloudDirty();
+    }
+    $("cloudColor").oninput = () => editCloudColour($("cloudColor").value.toUpperCase());
+    $("cloudHex").oninput = () => editCloudColour($("cloudHex").value);
+    for (const [id, color] of Object.entries(cloudSwatches)) $(id).onclick = () => editCloudColour(color);
+    $("cloudNextPattern").onclick = guarded(() => {
+      const seed = effectNumber("cloudSeed", "Cloud pattern seed", 0, 4294967295, {whole: true});
+      $("cloudSeed").value = String((seed + 1) % 4294967296); markCloudDirty();
+    });
+    for (const [id, mode] of [["cloudPlaceCentre", "cloud-placement"], ["cloudDrawFocus", "cloud-focus"], ["cloudDrawShape", null]])
+      $(id).onclick = guarded(() => {
+        requireCloudView({draft: true});
+        $("authorMode").value = mode ?? "cloud-" + $("cloudAreaRole").value;
+        draw(); canvas.focus?.();
+      });
+    function cloudRectangleCoordinates() {
+      if ($("cloudRectangle").value.split(",").some(value => !value.trim())) throw Error("Use four native integer coordinates");
+      return bounds("cloudRectangle");
+    }
+    for (const [id, shape, geometry] of [["cloudAddRectangle", "rectangle", cloudRectangleCoordinates],
+      ["cloudAddStroke", "stroke", cloudStrokeCoordinates]]) $(id).onclick = guarded(() => {
+      const role = $("cloudAreaRole").value;
+      $("authorMode").value = "cloud-" + role;
+      addCloudRegion(role, geometry(), shape);
+    });
+    $("cloudRegions").onchange = () => {
+      const [role] = $("cloudRegions").value.split(":");
+      if (role) $("authorMode").value = "cloud-" + role;
+      draw();
+    };
+    $("cloudRemove").onclick = guarded(() => {
+      requireCloudView({draft: true});
+      const [role, id] = $("cloudRegions").value.split(":");
+      if (!id) return;
+      cloudDraft.area[role] = cloudDraft.area[role].filter(shape => shape.id !== id);
+      renderCloudRegions(); markCloudDirty();
+    });
+    $("cloudHide").onchange = draw;
+    $("cloudCandidate").onchange = updateCloudControls;
+    $("cloudApply").onclick = guarded(() => submitCloud("apply"));
+    $("cloudDisable").onclick = guarded(() => submitCloud("disable"));
+    $("cloudReload").onclick = guarded(() => {
+      const current = requireCloudView();
+      if (cloudDraft.dirty && !confirm("Replace pending Cloud settings and shapes with the saved form?")) return;
+      loadSavedCloud(current); updateCloudControls(); draw();
+    });
+    $("cloudRebind").onclick = guarded(() => {
+      const target = cloudBinding(requireCloudView());
+      if (!cloudDraftStale(target) || !cloudCanRebind(cloudDraft.base, target))
+        throw Error("Saved Cloud, protection or source changed. Reload saved Cloud before editing this revision.");
+      cloudDraft.base = target;
+      $("cloudCandidate").checked = false;
+      markCloudDirty();
+    });
+    $("cloudCompare").onchange = guarded(() => {
+      if ($("cloudCompare").checked) $("panel").value = "result";
+      return compareChanged("cloudCompare");
     });
     function backgroundLightIdentity() {
       const revision = state?.revisions.find(row => row.revision === state.working_revision);
@@ -3508,6 +3947,408 @@
     $("backgroundLightCandidate").oninput = markBackgroundLightDirty;
     $("backgroundLightHide").onchange = draw;
     $("backgroundLightApply").onclick = guarded(() => applyBackgroundLight());
+    const PATTERN_PALETTES = {
+      neutral: ["#010101", "#202020"],
+      cool: ["#010205", "#141D27"],
+      warm: ["#040201", "#251913"],
+    };
+    const patternNumberFields = {
+      patternCenterX: ["center_xy", 0], patternCenterY: ["center_xy", 1],
+      patternRotation: ["rotation_degrees"], patternBend: ["bend_px"],
+      patternWavelength: ["wavelength_px"], patternPhase: ["phase_degrees"],
+      patternSpacing: ["spacing_px"], patternBands: ["band_count"], patternFeather: ["feather_px"],
+      patternRadiusX: ["radii_xy", 0], patternRadiusY: ["radii_xy", 1], patternSoftness: ["softness"],
+    };
+    const PATTERN_STALE_EFFECTS_MESSAGE = "Rebuild or disable stale enabled effects before generating, previewing or applying a pattern";
+    function patternWorkingRow() {
+      return state?.revisions.find(row => row.revision === state.working_revision);
+    }
+    function patternBinding(row = patternWorkingRow()) {
+      return {
+        developed_id: state?.developed_id, revision: row?.revision,
+        revision_manifest_sha256: row?.revision_manifest_sha256, inputs_digest: state?.inputs_digest,
+      };
+    }
+    function patternIdentity() { return JSON.stringify(patternBinding()); }
+    function currentPatternShape() {
+      return patternDraft?.settings.shapes.find(shape => shape.id === selectedPatternShape);
+    }
+    function clearPatternPreview() {
+      if (patternPreviewURL !== null) URL.revokeObjectURL(patternPreviewURL);
+      patternPreviewURL = null;
+      patternPreviewCrop = null;
+      $("patternPreviewPanel").hidden = true;
+    }
+    function cancelPatternProposal() {
+      patternRequest++;
+      patternProposal = null;
+      updatePatternControls();
+      draw();
+    }
+    function reloadPattern(current = patternWorkingRow()) {
+      if (gesture?.patternRotation) gesture = null;
+      const saved = current?.background_pattern?.settings;
+      const settings = structuredClone(saved || {
+        enabled:false, strength:.28, tones_srgb:PATTERN_PALETTES.neutral, reverse:false, shapes:[],
+      });
+      patternDraft = {settings, identity:patternIdentity(), dirty:false, version:(patternDraft?.version || 0) + 1};
+      selectedPatternShape = settings.shapes[0]?.id || "";
+      $("patternCandidate").checked = false;
+      $("patternStyle").value = settings.generator?.style || "mixed";
+      clearPatternPreview();
+      cancelPatternProposal();
+      renderPatternControls();
+    }
+    function syncPattern(current, actionState, completed, reload) {
+      const submission = patternSubmission, result = actionState.result;
+      const acknowledged = completed && !actionState.error && actionState.name === "effects" && submission
+        && !submission.preserveDraft && patternDraft.version === submission.version
+        && patternDraft.identity === submission.identity && result?.developed_id === state.developed_id
+        && result.base_manifest_sha256 === submission.binding.revision_manifest_sha256
+        && result.revision_manifest_sha256 === current?.revision_manifest_sha256
+        && result.revision === current?.revision
+        && (result.reused ? result.revision : result.parent) === submission.binding.revision
+        && fadeReductionAreaIdentity(result.background_pattern?.settings) === submission.settings
+        && fadeReductionAreaIdentity(current?.background_pattern?.settings) === submission.settings;
+      if (completed || reload) patternSubmission = null;
+      if (reload || !patternDraft || acknowledged || (!patternDraft.dirty && patternDraft.identity !== patternIdentity())) {
+        reloadPattern(current);
+      } else if (patternDraft.identity !== patternIdentity()) {
+        patternProposal = null;
+        clearPatternPreview();
+      }
+      updatePatternControls();
+    }
+    function validPatternDraft(settings) {
+      const [width, height] = state.dimensions_wh, limit = 2 * Math.max(width, height);
+      const within = (value, low, high) => Number.isFinite(value) && value >= low && value <= high;
+      const angle = value => within(value, 0, 360) && value < 360;
+      const distance = value => within(value, .5, limit);
+      if (!within(settings.strength, 0, 1) || !settings.tones_srgb.every(tone => /^#[0-9A-F]{6}$/.test(tone)))
+        throw Error("Use strength from 0 to 100% and two #RRGGBB tones");
+      if ("irregularity" in settings && !within(settings.irregularity, 0, 1))
+        throw Error("Set Irregularity from 0 to 100%");
+      if (settings.enabled && !settings.shapes.some(shape => shape.enabled))
+        throw Error("Enable a shape before turning the pattern ON");
+      for (const shape of settings.shapes) {
+        if (!within(shape.center_xy[0], 0, width) || !within(shape.center_xy[1], 0, height) || !angle(shape.rotation_degrees))
+          throw Error("Set each shape centre within the native image and rotation from 0 to below 360");
+        if (shape.type !== "wave" && (!shape.radii_xy.every(distance) || !within(shape.softness, .05, 1)))
+          throw Error("Set radii from 0.5 to " + limit + " px and softness from 0.05 to 1");
+        if (shape.type === "wave" && (!within(shape.bend_px, 0, limit) || !distance(shape.wavelength_px)
+          || !distance(shape.spacing_px) || !within(shape.feather_px, .5, shape.spacing_px)
+          || !angle(shape.phase_degrees) || !Number.isInteger(shape.band_count) || !within(shape.band_count, 1, 4)))
+          throw Error("Use valid wave distances, feather up to the spacing, phase below 360 and 1–4 bands");
+      }
+    }
+    function updatePatternControls() {
+      if (!patternDraft) return;
+      const current = patternWorkingRow();
+      const busy = authoringBusy();
+      const unavailable = !current?.final_acceptable || !current?.revision_manifest_sha256 || !state.inputs_digest;
+      const stale = patternDraft.identity !== patternIdentity();
+      const effectsAreStale = hasStaleEffects(current);
+      const saved = current?.background_pattern?.settings;
+      $("patternControls").disabled = busy || unavailable;
+      for (const id of ["patternGenerate", "patternPreview", "patternApply"])
+        $(id).disabled = busy || unavailable || stale || effectsAreStale;
+      for (const id of ["patternAddWave", "patternAddOval"]) $(id).disabled = patternDraft.settings.shapes.length >= 8;
+      $("patternOff").disabled = busy || unavailable || !saved?.enabled;
+      $("patternProposal").hidden = !patternProposal;
+      $("patternSeed").textContent = patternProposal ? "Proposed seed " + patternProposal.seed : "";
+      $("patternCompare").disabled = !$("viewRevision").value || $("panel").value !== "result";
+      const source = saved ? "Saved pattern " + (saved.enabled ? "ON" : "OFF")
+        + (saved.generator ? " · seed " + saved.generator.seed : "") : "No saved pattern";
+      $("patternStatus").textContent = unavailable ? "A complete working Result is needed for Background pattern"
+        : effectsAreStale ? PATTERN_STALE_EFFECTS_MESSAGE
+        : stale ? "Stale pattern draft · Reload saved pattern before Preview or Apply"
+        : source + (patternDraft.dirty ? " · Unapplied edits" : "");
+    }
+    function renderPatternPalette() {
+      const tones = patternDraft.settings.tones_srgb;
+      $("patternPalette").value = Object.keys(PATTERN_PALETTES).find(
+        key => PATTERN_PALETTES[key].every((tone, i) => tone === tones[i])) || "custom";
+      for (let i = 0; i < 2; i++) {
+        $("patternTone" + (i + 1)).value = tones[i];
+        if (/^#[0-9A-F]{6}$/.test(tones[i])) $("patternColor" + (i + 1)).value = tones[i].toLowerCase();
+      }
+    }
+    function renderPatternControls() {
+      const settings = patternDraft.settings;
+      $("patternEnabled").checked = settings.enabled;
+      $("patternStrength").value = String(backgroundPercentage(settings.strength));
+      $("patternRange").value = $("patternStrength").value;
+      $("patternIrregularity").value = settings.irregularity === null
+        ? "" : String(backgroundPercentage(settings.irregularity ?? 0));
+      $("patternIrregularityRange").value = $("patternIrregularity").value;
+      $("patternReverse").checked = settings.reverse;
+      renderPatternPalette();
+      const list = $("patternShape");
+      list.replaceChildren();
+      for (const shape of settings.shapes) {
+        const option = document.createElement("option");
+        option.value = shape.id;
+        const label = {wave:"Wave", oval:"Oval", contour:"Contours"}[shape.type];
+        option.textContent = label + " · " + shape.id + (shape.enabled ? "" : " (OFF)");
+        list.append(option);
+      }
+      list.value = selectedPatternShape;
+      const shape = currentPatternShape();
+      $("patternShapeControls").hidden = !shape;
+      if (shape) {
+        $("patternShapeEnabled").checked = shape.enabled;
+        $("patternWave").hidden = shape.type !== "wave";
+        $("patternOval").hidden = shape.type === "wave";
+        $("patternShapeToneControl").hidden = shape.type === "contour";
+        if (shape.type !== "contour") {
+          $("patternShapeToneLabel").textContent = shape.type === "wave" ? "First band tone" : "Oval tone";
+          $("patternShapeTone").value = shape.type === "wave" ? shape.first_tone : shape.tone;
+        }
+        for (const [id, [field, index]] of Object.entries(patternNumberFields)) {
+          const value = index === undefined ? shape[field] : shape[field]?.[index];
+          $(id).value = value === undefined || value === null ? "" : String(value);
+        }
+      }
+      updatePatternControls();
+      draw();
+    }
+    function markPatternDirty() {
+      patternDraft.dirty = true;
+      patternDraft.version++;
+      clearPatternPreview();
+      cancelPatternProposal();
+    }
+    function addPatternShape(type) {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const shapes = patternDraft.settings.shapes;
+      if (shapes.length >= 8) throw Error("A pattern can contain at most eight shapes");
+      const [width, height] = state.dimensions_wh, short = Math.min(width, height);
+      let index = 1;
+      while (shapes.some(shape => shape.id === type + "-" + index)) index++;
+      const id = type + "-" + index;
+      const placement = {id, type, enabled:true, center_xy:[width / 2, height * .65], rotation_degrees:0};
+      const spacing = Math.max(.5, short * .13);
+      shapes.push(type === "wave" ? {...placement, bend_px:short * .07, wavelength_px:Math.max(.5, short * .8),
+        phase_degrees:0, spacing_px:spacing, band_count:3, feather_px:Math.max(.5, spacing / 2), first_tone:"tone2"}
+        : {...placement, radii_xy:[Math.max(.5, width * .27), Math.max(.5, height * .26)], softness:.8, tone:"tone1"});
+      selectedPatternShape = id;
+      markPatternDirty();
+      renderPatternControls();
+    }
+    function requirePatternTarget(savedOnly = false) {
+      if (authoringBusy()) throw Error("Wait for the active writer");
+      const current = patternWorkingRow();
+      if (!current?.final_acceptable || !current.revision_manifest_sha256 || !state.inputs_digest)
+        throw Error("Load a complete working Result for Background pattern");
+      if (!savedOnly && hasStaleEffects(current))
+        throw Error(PATTERN_STALE_EFFECTS_MESSAGE);
+      if (!savedOnly && patternDraft.identity !== patternIdentity())
+        throw Error("Stale pattern draft · Reload saved pattern");
+      return current;
+    }
+    async function requestPattern(route, extra) {
+      requirePatternTarget();
+      const identity = patternIdentity(), binding = patternBinding(), version = patternDraft.version;
+      const request = ++patternRequest;
+      const current = () => request === patternRequest && version === patternDraft.version
+        && identity === patternIdentity() && !authoringBusy();
+      try {
+        const result = await (await api(route, {...binding, ...extra})).json();
+        return current() && Object.entries(binding).every(([key, value]) => result[key] === value) ? result : null;
+      } catch (error) {
+        if (current()) throw error;
+        return null;
+      }
+    }
+    async function generatePattern(next = false) {
+      const style = $("patternStyle").value || "mixed";
+      const seed = next && patternProposal ? (patternProposal.seed + 1) >>> 0 : null;
+      const proposal = await requestPattern("/api/background-pattern-generate", {style, seed});
+      if (!proposal) return;
+      patternProposal = proposal;
+      updatePatternControls();
+      draw();
+    }
+    async function previewPattern() {
+      requirePatternTarget();
+      const settings = structuredClone(patternDraft.settings);
+      validPatternDraft(settings);
+      const rectangle = [...crop], cropKey = rectangle.join(",");
+      const preview = await requestPattern("/api/background-pattern-preview", {crop_xyxy:rectangle, background_pattern:settings});
+      if (!preview || cropKey !== crop.join(",") || preview.crop_xyxy.join(",") !== cropKey) return;
+      clearPatternPreview();
+      const bytes = Uint8Array.from(atob(preview.png_base64), value => value.charCodeAt(0));
+      patternPreviewURL = URL.createObjectURL(new Blob([bytes], {type:"image/png"}));
+      patternPreviewCrop = cropKey;
+      $("patternPreviewImage").src = patternPreviewURL;
+      $("patternPreviewLabel").textContent = preview.label + " · native crop " + cropKey;
+      $("patternPreviewPanel").hidden = false;
+    }
+    async function applyPattern(savedOnly = false) {
+      const current = requirePatternTarget(savedOnly);
+      const saved = current.background_pattern?.settings;
+      if (savedOnly && !saved?.enabled) return;
+      if (dirty) throw Error("Save or reload pending matting guides before Apply pattern");
+      const settings = savedOnly ? {...structuredClone(saved), enabled:false} : structuredClone(patternDraft.settings);
+      validPatternDraft(settings);
+      if (!$("patternCandidate").checked && current.revision !== state.accepted_revision)
+        throw Error("Check explicit candidate comparison to change this unaccepted Result");
+      const binding = patternBinding(current);
+      patternSubmission = {binding, version:patternDraft.version, identity:patternDraft.identity,
+        settings:fadeReductionAreaIdentity(settings), preserveDraft:savedOnly && patternDraft.dirty};
+      if (!savedOnly) patternDraft.dirty = true;
+      clearPatternPreview();
+      cancelPatternProposal();
+      try {
+        await action("effects", {scope_xyxy:[0, 0, ...state.dimensions_wh], background_pattern:settings,
+          candidate_comparison:$("patternCandidate").checked, revision_manifest_sha256:binding.revision_manifest_sha256});
+      } catch (error) {
+        patternSubmission = null;
+        throw error;
+      }
+    }
+    function drawPattern(scale) {
+      if (!patternDraft || patternDraft.identity !== patternIdentity() || $("viewRevision").value !== state.working_revision
+        || (!patternProposal && $("authorMode").value !== "background-pattern")) return;
+      const shapes = patternProposal?.shapes || patternDraft.settings.shapes;
+      for (const shape of shapes) {
+        if (!shape.enabled || !shape.center_xy.every(Number.isFinite) || !Number.isFinite(shape.rotation_degrees)) continue;
+        ctx.save();
+        ctx.translate(shape.center_xy[0] - crop[0] + .5, shape.center_xy[1] - crop[1] + .5);
+        ctx.rotate(shape.rotation_degrees * Math.PI / 180);
+        ctx.strokeStyle = patternProposal || shape.id === selectedPatternShape ? "#55E4E3" : "#D2E3E3";
+        ctx.lineWidth = 1.25 / scale;
+        if (patternProposal) ctx.setLineDash([5 / scale, 5 / scale]);
+        ctx.beginPath();
+        if (shape.type !== "wave" && shape.radii_xy.every(radius => radius > 0)) {
+          ctx.ellipse(0, 0, ...shape.radii_xy, 0, 0, Math.PI * 2);
+        } else if (shape.type === "wave" && shape.wavelength_px > 0 && Number.isInteger(shape.band_count)
+          && shape.band_count >= 1 && shape.band_count <= 4) {
+          const length = Math.hypot(...state.dimensions_wh);
+          for (let band = 0; band <= shape.band_count; band++) {
+            const offset = (band - shape.band_count / 2) * shape.spacing_px;
+            for (let step = 0; step <= 128; step++) {
+              const x = length * (step / 64 - 1);
+              const y = offset + shape.bend_px * Math.sin(2 * Math.PI * (x / shape.wavelength_px + shape.phase_degrees / 360));
+              if (step) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+            }
+          }
+        }
+        ctx.stroke();
+        if (!patternProposal && shape.id === selectedPatternShape) {
+          const radius = patternRotationRadius();
+          ctx.beginPath(); ctx.arc(0, 0, 4 / scale, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(6 / scale, 0); ctx.lineTo(radius - 5 / scale, 0); ctx.stroke();
+          ctx.beginPath(); ctx.arc(radius, 0, 5 / scale, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+    function patternRotationRadius() { return Math.max(1, Math.hypot(...state.dimensions_wh) * .09); }
+    function patternPixelCentre(point) {
+      // The canvas displays the first sample at half a pixel from the image edge.
+      return [point[0] - .5, point[1] - .5];
+    }
+    function beginPatternPlacement(event, point) {
+      requirePatternTarget();
+      const shape = currentPatternShape();
+      if ($("viewRevision").value !== state.working_revision || !shape)
+        throw Error("Select a pattern shape and load the working native view");
+      const position = patternPixelCentre(point), radius = patternRotationRadius();
+      const [handleX, handleY] = spatialToNative([radius, 0], shape);
+      const tolerance = Math.min(radius / 2, 9 / transform.scale);
+      if (!patternProposal && shape.enabled && Number.isFinite(shape.rotation_degrees)
+        && Math.hypot(position[0] - handleX, position[1] - handleY) <= tolerance) {
+        gesture = {patternRotation:shape.id, patternIdentity:patternIdentity()};
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
+      shape.center_xy = position.map((value, axis) => Math.max(0, Math.min(state.dimensions_wh[axis], value)));
+      markPatternDirty();
+      renderPatternControls();
+    }
+    function rotatePattern(point) {
+      if (authoringBusy() || gesture.patternIdentity !== patternIdentity()) return;
+      const shape = currentPatternShape();
+      if (!shape || shape.id !== gesture.patternRotation) return;
+      const [x, y] = patternPixelCentre(point);
+      shape.rotation_degrees = (Math.atan2(y - shape.center_xy[1], x - shape.center_xy[0]) * 180 / Math.PI + 360) % 360;
+      $("patternRotation").value = String(shape.rotation_degrees);
+      markPatternDirty();
+    }
+    $("patternEnabled").oninput = () => {patternDraft.settings.enabled = $("patternEnabled").checked; markPatternDirty();};
+    $("patternReverse").oninput = () => {patternDraft.settings.reverse = $("patternReverse").checked; markPatternDirty();};
+    for (const [field, numeric, range] of [
+      ["strength", "patternStrength", "patternRange"],
+      ["irregularity", "patternIrregularity", "patternIrregularityRange"],
+    ]) {
+      for (const [control, paired] of [[numeric, range], [range, numeric]]) {
+        $(control).oninput = () => {
+          const text = $(control).value;
+          $(paired).value = text;
+          const value = text === "" ? null : Number(text) / 100;
+          if (field === "irregularity" && value === 0) delete patternDraft.settings.irregularity;
+          else patternDraft.settings[field] = value;
+          markPatternDirty();
+        };
+      }
+    }
+    $("patternPalette").onchange = () => {
+      const tones = PATTERN_PALETTES[$("patternPalette").value];
+      if (tones) { patternDraft.settings.tones_srgb = [...tones]; markPatternDirty(); renderPatternPalette(); }
+    };
+    for (let i = 0; i < 2; i++) {
+      for (const id of ["patternColor" + (i + 1), "patternTone" + (i + 1)]) {
+        $(id).oninput = () => {
+          patternDraft.settings.tones_srgb[i] = $(id).value.toUpperCase();
+          markPatternDirty(); renderPatternPalette();
+        };
+      }
+    }
+    for (const [id, [field, index]] of Object.entries(patternNumberFields)) {
+      $(id).oninput = () => {
+        const shape = currentPatternShape(), text = $(id).value;
+        if (!shape) return;
+        const number = text === "" ? null : Number(text);
+        if (index === undefined) shape[field] = number; else shape[field][index] = number;
+        markPatternDirty();
+      };
+    }
+    $("patternShape").onchange = () => {selectedPatternShape = $("patternShape").value; renderPatternControls();};
+    $("patternShapeEnabled").oninput = () => {
+      currentPatternShape().enabled = $("patternShapeEnabled").checked;
+      markPatternDirty(); renderPatternControls();
+    };
+    $("patternShapeTone").oninput = () => {
+      const shape = currentPatternShape();
+      if (!shape || shape.type === "contour") return;
+      shape[shape.type === "wave" ? "first_tone" : "tone"] = $("patternShapeTone").value;
+      markPatternDirty();
+    };
+    $("patternAddWave").onclick = guarded(() => addPatternShape("wave"));
+    $("patternAddOval").onclick = guarded(() => addPatternShape("oval"));
+    $("patternRemove").onclick = guarded(() => {
+      patternDraft.settings.shapes = patternDraft.settings.shapes.filter(shape => shape.id !== selectedPatternShape);
+      selectedPatternShape = patternDraft.settings.shapes[0]?.id || "";
+      markPatternDirty(); renderPatternControls();
+    });
+    $("patternStyle").onchange = cancelPatternProposal;
+    $("patternGenerate").onclick = guarded(() => generatePattern());
+    $("patternNext").onclick = guarded(() => generatePattern(true));
+    $("patternCancel").onclick = guarded(cancelPatternProposal);
+    $("patternUse").onclick = guarded(() => {
+      requirePatternTarget();
+      if (!patternProposal) return;
+      const {version, style, seed, shapes} = patternProposal;
+      patternDraft.settings.shapes = structuredClone(shapes);
+      patternDraft.settings.generator = {version, style, seed};
+      selectedPatternShape = shapes[0]?.id || "";
+      markPatternDirty(); renderPatternControls();
+    });
+    $("patternPreview").onclick = guarded(previewPattern);
+    $("patternApply").onclick = guarded(() => applyPattern());
+    $("patternOff").onclick = guarded(() => applyPattern(true));
+    $("patternReload").onclick = guarded(() => reloadPattern());
     $("backgroundLightOff").onclick = guarded(() => applyBackgroundLight(true));
     $("backgroundLightReload").onclick = guarded(() => {if (!authoringBusy()) reloadBackgroundLight();});
     $("backgroundLightControls").onkeydown = event => {if (event.key === "Escape" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight();}};
@@ -3608,6 +4449,7 @@
     $("fadeCompare").onchange = guarded(() => compareChanged("fadeCompare"));
     $("spatialCompare").onchange = guarded(() => compareChanged("spatialCompare"));
     $("backgroundLightCompare").onchange = guarded(() => compareChanged("backgroundLightCompare"));
+    $("patternCompare").onchange = guarded(() => compareChanged("patternCompare"));
     $("exposureAddRectangle").onclick = guarded(() => addExposureRegion(bounds("exposureRectangle"), "rectangle"));
     $("exposureRemove").onclick = guarded(() => {
       if (authoringBusy()) throw Error("Wait for the active writer");
@@ -4328,8 +5170,8 @@
       return refresh(true);
     });
     $("previewRepair").onclick = guarded(() => action("preview-repair", {}));
-    for (const id of ["panel", "viewRevision"])
-      $(id).onchange = guarded(loadImage);
+    $("panel").onchange = guarded(loadImage);
+    $("viewRevision").onchange = guarded(loadImage);
     $("overlay").onchange = guarded(() => {
       $("candidate").value = "";
       return loadImage();
@@ -4376,12 +5218,16 @@
     canvas.onpointerdown = (event) => {
       const spatialMode=$("authorMode").value==="spatial";
       const lightMode = $("authorMode").value === "background-light";
+      const patternMode = $("authorMode").value === "background-pattern";
       const mode = $("authorMode").value;
       const edgeMode = mode === "edge";
       const mistPlacement = mode === "mist-placement";
+      const cloudPlacement = mode === "cloud-placement", cloudFocus = mode === "cloud-focus", cloudRole = cloudShapeRole(mode);
+      const cloudMode = cloudPlacement || cloudFocus || cloudRole;
+      const cloudShape = cloudRole ? $("cloudShape").value : null;
       const effectMode = nativeAreaModes.includes(mode) || mode === "reduction" ? mode : null;
-      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && !edgeMode && !mistPlacement && $("shape").value === "pan");
-      const point = nativePosition(event, spatialMode || lightMode || mistPlacement);
+      const panMode = event.shiftKey || (!effectMode && !spatialMode && !lightMode && !patternMode && !edgeMode && !mistPlacement && !cloudMode && $("shape").value === "pan");
+      const point = nativePosition(event, spatialMode || lightMode || patternMode || mistPlacement || cloudPlacement || cloudFocus || cloudShape === "rectangle");
       if (!panMode && (authoringBusy() || imageLoading)) {
         message(
           "Guide not started while a writer is active or the native view is loading",
@@ -4389,10 +5235,29 @@
         return;
       }
       if (!panMode && !point) return;
+      if (patternMode && !panMode) {
+        try { beginPatternPlacement(event, point); }
+        catch (error) { message(error.message); }
+        return;
+      }
+      if (cloudMode && !panMode) {
+        try {
+          requireCloudView({draft: true});
+          if (cloudPlacement) {
+            $("cloudCenterX").value = String(point[0]);
+            $("cloudCenterY").value = String(point[1]);
+            markCloudDirty();
+          } else {
+            gesture = {cloudFocus, cloudRole, shape: cloudShape, points: [point], view: loadedNativeView};
+            canvas.setPointerCapture(event.pointerId);
+          }
+        } catch (error) { message(error.message); }
+        return;
+      }
       if ((mistPlacement || mode === "mist") && !panMode) {
         try {
           const current = requireMistView();
-          if (!mistSameSource(mistDraft.base, mistBinding(current))) throw Error("Reload saved Mist before drawing on this source");
+          if (!sameNativeSource(mistDraft.base, mistBinding(current))) throw Error("Reload saved Mist before drawing on this source");
           if (mistPlacement) {
             $("mistCenterX").value = String(point[0]);
             $("mistCenterY").value = String(point[1]);
@@ -4440,7 +5305,7 @@
       canvas.setPointerCapture(event.pointerId);
     };
     canvas.onpointermove = (event) => {
-      const point = nativePosition(event,!!gesture?.spatialId || !!gesture?.lightHandle);
+      const point = nativePosition(event,!!gesture?.spatialId || !!gesture?.lightHandle || !!gesture?.patternRotation);
       $("coordinate").textContent = point
         ? "Native " + point.map(Math.floor).join(", ")
         : "Outside image";
@@ -4460,13 +5325,17 @@
           if (gesture.points.length >= 1024) { gesture = null; message("Use a shorter edge stroke"); }
           draw();
         }
-      } else if (point && gesture.lightHandle) dragBackgroundLight(gesture, point);
+      } else if (point && gesture.patternRotation) rotatePattern(point);
+      else if (point && gesture.lightHandle) dragBackgroundLight(gesture, point);
       else if(point && gesture.spatialId) dragSpatialHandle(gesture,point);
       else if (point && gesture.shape === "stroke") {
-        if (gesture.effectMode === "mist") {
+        if (gesture.effectMode === "mist" || gesture.cloudRole) {
           const last = gesture.points.at(-1);
           if (point.every((value, axis) => Math.floor(value) === Math.floor(last[axis]))) return;
-          if (gesture.points.length >= 8192) { gesture = null; message("Clear mist allows up to 8192 stroke points"); return; }
+          if (gesture.points.length >= 8192) {
+            message(`${gesture.cloudRole ? "Cloud" : "Clear mist"} allows up to 8192 stroke points`);
+            gesture = null; return;
+          }
         }
         gesture.points.push(point);
       }
@@ -4476,19 +5345,33 @@
       const g = gesture;
       gesture = null;
       if (g.panMode) return;
-      if(g.spatialId || g.lightHandle) return;
+      if(g.spatialId || g.lightHandle || g.patternRotation) return;
       if (authoringBusy() || imageLoading) {
         message(
           "Guide cancelled because a writer or native view changed; nothing saved",
         );
         return;
       }
-      const end = nativePosition(event, !g.edgeRole && !(g.effectMode === "mist" && g.shape === "stroke"));
+      const boundedStroke = (g.effectMode === "mist" || g.cloudRole) && g.shape === "stroke";
+      const end = nativePosition(event, !g.edgeRole && !boundedStroke);
       if (!end) {
         message("Guide ended outside displayed native crop; nothing saved");
         return;
       }
       try {
+        if (g.cloudFocus || g.cloudRole) {
+          requireCloudView({draft: true});
+          if (g.view !== loadedNativeView) throw Error("Cloud gesture cancelled because its native view changed");
+        }
+        if (g.cloudFocus) {
+          const radii = end.map((value, axis) => Math.abs(value - g.points[0][axis]) / 2);
+          if (radii.some(radius => radius < .5)) throw Error("Drag across a clear focal area at least one native pixel wide and high");
+          checkCloudArea(true);
+          setCloudEllipse({center_xy: end.map((value, axis) => (value + g.points[0][axis]) / 2), radii_xy: radii}, true);
+          $("cloudFocusEnabled").checked = true;
+          markCloudDirty();
+          return;
+        }
         if (g.edgeRole) {
           const pixel = end.map(Math.floor), last = g.points.at(-1);
           if (g.edgeRadius > 0 && (pixel[0] !== last[0] || pixel[1] !== last[1])) g.points.push(pixel);
@@ -4497,7 +5380,8 @@
         }
         const shape = g.shape,
           start = g.points[0];
-        const add = geometry => g.effectMode === "reduction" ? addFadeReductionRegion(geometry, shape) : g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
+        const add = geometry => g.cloudRole ? addCloudRegion(g.cloudRole, geometry, shape)
+          : g.effectMode === "reduction" ? addFadeReductionRegion(geometry, shape) : g.effectMode ? addEffectRegion(g.effectMode, geometry, shape) : addRegion(geometry);
         if (shape === "rectangle") {
           const rectangle = nativeBox(start, end);
           if (rectangle[0] === rectangle[2] || rectangle[1] === rectangle[3])
@@ -4505,7 +5389,7 @@
           add(rectangle);
         } else if (shape === "point") add(start.map(Math.floor));
         else {
-          if (g.effectMode === "mist" && end.some((value, axis) => Math.floor(value) !== Math.floor(g.points.at(-1)[axis])))
+          if (boundedStroke && end.some((value, axis) => Math.floor(value) !== Math.floor(g.points.at(-1)[axis])))
             g.points.push(end);
           add(g.points.map((p) => p.map(Math.floor)));
         }
@@ -4515,7 +5399,7 @@
     };
     canvas.onpointercancel = () => { const edge = gesture?.edgeRole; gesture = null; if (edge) draw(); };
     canvas.onkeydown = (event) => {
-      if (event.key === "Escape" && ["mist", "mist-placement"].includes($("authorMode").value)) { event.preventDefault(); gesture = null; draw(); return; }
+      if (event.key === "Escape" && (["mist", "mist-placement"].includes($("authorMode").value) || $("authorMode").value.startsWith("cloud-"))) { event.preventDefault(); gesture = null; draw(); return; }
       if (event.key === "Escape" && $("authorMode").value === "background-light" && !authoringBusy()) {event.preventDefault(); gesture = null; reloadBackgroundLight(); return;}
       if (event.key === "Escape" && $("authorMode").value === "reduction") {event.preventDefault(); gesture = null; reloadFadeReduction(); return;}
       if(event.key==="Escape" && $("authorMode").value==="spatial") {event.preventDefault();gesture=null;if(spatialAdding){spatialAdding=false;spatialDraftStatus();draw();}else resetSpatialFromSaved();return;}

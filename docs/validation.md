@@ -1833,6 +1833,93 @@ loaded modules are not inferred. Node commands and exits are separate JavaScript
 evidence. These checks do not establish real-model, photographic, print,
 accessibility or human usability acceptance.
 
+## Background pattern
+
+The Background pattern regression checks exercise deterministic seed/shape
+generation, native RGB16 field binding, exclusive Apply, preservation of the
+Lit backdrop fade target, revision inheritance and restore, and refusal of
+tampered saved and editable operands. Independent scalar replay matches the
+native editable TIFF. Add margins and Match series tests compare the actual
+RGB8 layout preview to the delivered PNG at equal dimensions. Unit-scale and
+reduced Match series cases exercise native sample coordinates outside the frame.
+HTTP and shipped-page tests cover working revision binding, keyboard-entered
+fractions, proposal cancellation, delayed replies, saved-only OFF, and
+read-only Result comparison. The documented request was applied to a synthetic
+96×64 candidate.
+
+Independent review identified two defects. Add margins preview now supplies
+implicit black to Base backdrop fade on legacy projects with an active
+pattern. Canvas placement, rotation and hit testing now agree on the native
+pixel centre at high zoom. Both defects were reproduced by new regression tests,
+fixed, rerun and independently rechecked.
+
+The first broad run exposed a compatibility problem in the older encoding
+checks. Background pattern now uses a separate visibility predicate and retains
+the single-argument background dither helper. The five affected framing and
+comparison cases passed after the correction. The five standalone storage cases
+install their own macOS sandbox. Their tool-sandbox run could not start the
+nested profile, so they ran separately with their own read and network
+restrictions active and passed.
+
+Final verification on Python 3.12.14 and macOS ARM64 covered all 2,927 collected
+cases. Four isolated groups passed 2,914 tests, with eight optional browser,
+model and live-photo cases skipped for their prerequisites. The separately
+isolated storage run passed five more tests, for 2,919 passes in total. All five
+processes exited zero. Ruff lint and format checks passed across the application
+and tests, and mypy passed on 36 source files.
+
+The real browser runner selects the Background pattern journey in
+`tests/test_lifecycle_browser.py`. The isolated hash-locked Python package target
+was unavailable for this change. The installed Playwright 1.62.1 Node driver
+and Chrome 158.0.8127.37 exercised the same packaged page and real loopback
+handlers on a synthetic project. The keyboard path generated, advanced and
+cancelled a proposal, selected a new proposal, edited and previewed it, applied
+it, compared the pattern OFF, and reopened the saved settings. The application
+requested 34 loopback resources, reported no page errors, and refreshed the
+gallery. Chrome's sandbox was enabled in this run. This is direct browser
+evidence for the new controls. The locked Python runner's separate confinement
+checks were outside this run.
+
+A separate synthetic 480×640 subject was rendered at native scale on
+`#070707` with 55% base variation. The comparison used pattern OFF, Neutral gray
+at 16%, and Cool charcoal at 28%, all with the same Mixed geometry. The native
+TIFF matched saved Result, with identical alpha and opaque subject samples
+across variants. The RGB8 exports and gallery displayed the broad low-contrast
+bands and soft transitions. RGB8 views and JPEGs remain approximate, and
+synthetic imagery cannot establish the photographic result for a specific photo.
+
+### Irregularity and Abstract contours
+
+The focused checks preserve the original v1 field byte for byte at zero
+Irregularity. They exercise deterministic v2 sampling across crops, different
+seeds, neutral and signed tonal areas, saved weight reuse, algorithm validation,
+and editable native, Add margins and Match series delivery. The Lit backdrop
+cases preserve opaque subject samples and independent diagnostic exports.
+
+The relevant suite covered 803 passing tests and two optional Python browser
+cases skipped. The geometry group passed 326 tests and exited zero. The initial
+integration group produced 476 passes, two skips and one failure. A CLI child
+imported the main checkout through the shared Python environment and failed the
+source identity assertion. Six subprocess cases, including that one, passed
+with this worktree bound in `PYTHONPATH`. Ruff, mypy, five local links and the
+maintained request example passed their checks.
+
+Independent implementation review and Chrome reproduced an extra tone selector
+on the contour shape. Chrome 158.0.8127.37 verified that the fixed control is
+hidden for Abstract contours and visible for a wave. The same synthetic loopback
+journey exercised fractional Irregularity, Abstract Generate and Next variation,
+shape edits, Preview, Apply, Compare pattern OFF and reopening saved values.
+Chrome reported no page errors. This installed-browser check supplements the
+optional locked Python browser lane.
+
+A synthetic 480×640 subject compared Mixed at 0% and 80% Irregularity, and
+Abstract seeds 17 and 18. All four samples shared 42% Strength and the Cool
+charcoal palette. The rendered samples preserved opaque RGB16 and showed
+changes in the exposed background. An eight-shape, 2,048×64 strip used
+20,978,224 peak traced allocation bytes against a 25,165,824-byte scratch
+allowance in that measurement. The synthetic appearance check supplies no
+photographic acceptance for a specific photo.
+
 ## Mist
 
 The synthetic checks compare the deterministic field with an independent scalar
@@ -1916,3 +2003,38 @@ their editable operands, with and without Mist. Rehashed substitute settings
 or backdrop/light operands must fail delivery reuse. The V1 checkout produced
 six Base backdrop v5/v6 deliveries across the three modes. The follow-up
 checkout reused those folders and editable companions byte for byte.
+
+## Spatial-light Cloud
+
+The [Cloud unit checks](../tests/test_cloud.py) use independent linear-sRGB
+oracles for literal Black, custom colour, optical averaging, partial clearance
+and combined sampling support. [Work-bound checks](../tests/test_cloud_limits.py)
+exercise an extreme-aspect Match series frame, skip zero-density distant
+exterior and reject oversized visible support before evaluating source tiles.
+[Saved-project checks](../tests/test_cloud_project.py) cover Apply, Disable,
+restore, interrupted repair, inheritance and Cloud's independence from
+Background pattern and Mist. [Detached delivery checks](../tests/test_cloud_delivery.py)
+exercise native, Add margins and Match series, including exact native replay
+and the separately bound categorical hard-protection bitmap.
+
+The pinned pre-Cloud reader opened legacy revisions and rejected active and
+disabled schema-3 revisions. Its export validator accepted a legacy editable
+delivery and rejected a Cloud delivery as a legacy inventory.
+
+Installed Chrome 158.0.8127.37 exercised the packaged loopback page on a
+synthetic project using DevTools. The run entered an incomplete hex value by
+keyboard, applied a custom tint with pointer placement, compared Cloud OFF,
+disabled and re-enabled the effect, reloaded saved settings and exported
+editable RGB16. The export matched a fresh render of the saved revision and
+the accepted revision was preserved. A dedicated macOS sandbox denied outbound
+network and writes outside the test directory. This synthetic run used the
+outer sandbox in place of Chrome's inner sandbox. The optional Python browser
+runner requires a separately installed Playwright target.
+
+A 3072 × 4080 saved project reproduced its approved trial raster exactly, also
+after headless reopen. The 3352 × 4256 Add margins export preserved the full
+native rectangle and replayed exactly. Observed macOS ARM64 timings were about
+44 s for Apply, 42 s for native editable export and 34 s for Add margins with
+the native companion already present. Peak process RSS was about 3.5 GiB,
+2.6 GiB and 2.7 GiB respectively. Timing and memory vary by project and output.
+Human photographic acceptance is a separate step.

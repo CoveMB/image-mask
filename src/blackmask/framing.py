@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .assets import saved_asset
+from .cloud import CloudOperands, CloudProjector, cloud_visible
 from .mist import ROWS_PER_CHUNK, MistOperands, blend_mist_into_result, sample_mist_density
 from .pixel_math import result_rgb8
 from .project import (
@@ -94,6 +95,7 @@ def frame_result(
     margins: Margins,
     *,
     mist: MistOperands | None = None,
+    cloud: CloudOperands | None = None,
 ) -> np.ndarray:
     """Copy the completed native render; extend only the saved backdrop outwards."""
     if (
@@ -126,25 +128,37 @@ def frame_result(
         result[y1:, :x0] = background_rgb16[-1, 0]
         result[y1:, x1:] = background_rgb16[-1, -1]
     result[y0:y1, x0:x1] = native_rgb16
-    if mist is not None and mist.settings["enabled"] and mist.settings["density"]:
-        if (
-            mist.density16.shape != native_rgb16.shape[:2]
-            or mist.clear16.shape != native_rgb16.shape[:2]
-        ):
-            raise ProjectError("Mist maps must align with the native Result")
+    if mist is not None and (not mist.settings["enabled"] or not mist.settings["density"]):
+        mist = None
+    if mist is not None and (
+        mist.density16.shape != native_rgb16.shape[:2]
+        or mist.clear16.shape != native_rgb16.shape[:2]
+    ):
+        raise ProjectError("Mist maps must align with the native Result")
+    projector = (
+        CloudProjector(cloud) if cloud is not None and cloud_visible(cloud.settings) else None
+    )
+    if projector is not None or mist is not None:
         for left, top, right, bottom in (
             (0, 0, width, y0),
             (0, y1, width, height),
             (0, y0, x0, y1),
             (x1, y0, width, y1),
         ):
-            if left == right:
+            if left == right or top == bottom:
                 continue
             native_x = np.arange(left - x0, right - x0)
-            for start in range(top, bottom, ROWS_PER_CHUNK):
-                stop = min(start + ROWS_PER_CHUNK, bottom)
-                native_y = np.arange(start - y0, stop - y0)
-                _blend_margin_mist(result[start:stop, left:right], mist, native_x, native_y)
+            if projector is not None:
+                projector.blend(
+                    result[top:bottom, left:right],
+                    native_x + 0.5,
+                    np.arange(top - y0, bottom - y0) + 0.5,
+                )
+            if mist is not None:
+                for start in range(top, bottom, ROWS_PER_CHUNK):
+                    stop = min(start + ROWS_PER_CHUNK, bottom)
+                    native_y = np.arange(start - y0, stop - y0)
+                    _blend_margin_mist(result[start:stop, left:right], mist, native_x, native_y)
     return result
 
 
@@ -189,6 +203,7 @@ def framing_preview(
     *,
     max_edge: int = 1600,
     mist: MistOperands | None = None,
+    cloud: CloudOperands | None = None,
     dither_alpha16: np.ndarray | None = None,
 ) -> tuple[np.ndarray, dict[str, object]]:
     """Sample the virtual presentation canvas using only bounded display-row scratch."""
@@ -210,7 +225,7 @@ def framing_preview(
     ):
         raise ValueError("Framing preview requires an aligned saved RGB16 backdrop")
     if dither_alpha16 is not None and (
-        background_rgb16 is None
+        (background_rgb16 is None and cloud is None)
         or dither_alpha16.dtype != np.uint16
         or dither_alpha16.shape != native_rgb16.shape[:2]
     ):
@@ -228,6 +243,9 @@ def framing_preview(
         or mist.clear16.shape != native_rgb16.shape[:2]
     ):
         raise ProjectError("Mist maps must align with the native Result")
+    projector = (
+        CloudProjector(cloud) if cloud is not None and cloud_visible(cloud.settings) else None
+    )
     for row_index in range(display_height):
         source_y = (2 * row_index + 1) * height // (2 * display_height) - y0
         row = (
@@ -238,11 +256,21 @@ def framing_preview(
         inside_y = 0 <= source_y < source_height
         if inside_y:
             row[inside_x] = native_rgb16[source_y, source_x[inside_x]]
-        if mist is not None and mist.settings["enabled"] and mist.settings["density"]:
+        if (
+            projector is not None
+            or mist is not None
+            and mist.settings["enabled"]
+            and mist.settings["density"]
+        ):
             exterior = ~(inside_x & inside_y)
             if exterior.any():
                 margin_row = row[exterior][None, ...]
-                _blend_margin_mist(margin_row, mist, source_x[exterior], np.array([source_y]))
+                if projector is not None:
+                    projector.blend(
+                        margin_row, source_x[exterior] + 0.5, np.array([source_y + 0.5])
+                    )
+                if mist is not None and mist.settings["enabled"] and mist.settings["density"]:
+                    _blend_margin_mist(margin_row, mist, source_x[exterior], np.array([source_y]))
                 row[exterior] = margin_row[0]
         backdrop = None
         if dither_alpha16 is not None:
