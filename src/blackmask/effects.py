@@ -25,6 +25,14 @@ from .assets import (
     saved_asset,
     stage_asset,
 )
+from .cloud import CLOUD_ALGORITHM, cloud_resource_bytes
+from .cloud_store import (
+    parse_cloud_json,
+    read_cloud_request_bytes,
+    saved_cloud,
+    stage_cloud,
+    validate_cloud_request,
+)
 from .exposure import (
     EXPOSURE_FILES,
     rasterize_effect_area,
@@ -153,6 +161,7 @@ def _effects_request_identity(
     saved_shading: dict[str, Any] | None,
     *,
     mist_request: dict[str, Any] | None = None,
+    cloud_request: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from .background import normalized_background
 
@@ -176,12 +185,14 @@ def _effects_request_identity(
         "spatial_fade",
         "fade_reduction",
         "mist",
+        "cloud",
     }:
         normalized["color_cleanup"] = settings
-    if mist_request is not None:
-        # The candidate choice is enforced per submission and does not change pixels.
-        normalized.pop("candidate_comparison")
-        normalized["mist"] = mist_request
+    for name, effect_request in (("mist", mist_request), ("cloud", cloud_request)):
+        if effect_request is not None:
+            # The candidate choice is enforced per submission and does not change pixels.
+            normalized.pop("candidate_comparison")
+            normalized[name] = effect_request
     if "background" in normalized:
         normalized["background"] = normalized_background(normalized["background"])
     if "background_pattern" in normalized:
@@ -371,7 +382,14 @@ def _reused_effects_result(
         result = json.loads((directory / "result.json").read_bytes())
         request_path = directory / "request.json"
         mist_request = None
-        if "mist" in identity["request"]:
+        cloud_request = None
+        if "cloud" in identity["request"]:
+            request = parse_cloud_json(read_cloud_request_bytes(request_path))
+            cloud = manifest["cloud"]
+            cloud_request = validate_cloud_request(
+                request["cloud"], manifest["developed_id"], cloud["width"], cloud["height"]
+            )
+        elif "mist" in identity["request"]:
             request = parse_mist_json(read_mist_request_bytes(request_path), request=True)
             mist = manifest["mist"]
             mist_request = validate_mist_request(
@@ -397,6 +415,7 @@ def _reused_effects_result(
                     "local_tone_curve",
                     "local_texture",
                     "mist",
+                    "cloud",
                 )
             )
             or _json_bytes(
@@ -406,6 +425,7 @@ def _reused_effects_result(
                     identity["inputs"]["request_files"],
                     manifest.get("shading"),
                     mist_request=mist_request,
+                    cloud_request=cloud_request,
                 )
             )
             != _json_bytes(identity["request"])
@@ -1307,6 +1327,7 @@ def run_effects(
             "background_light",
             "background_pattern",
             "mist",
+            "cloud",
             "support_file",
             "color_cleanup",
             "shading",
@@ -1343,8 +1364,12 @@ def run_effects(
         raise ProjectError("Invalid schema-2 effects request")
     mist_changed = "mist" in operation
     mist_request = None
+    cloud_changed = "cloud" in operation
+    cloud_request = None
     if mist_changed and set(operation) != required | {"mist"}:
         raise ProjectError("Mist must be an exclusive effects operation")
+    if cloud_changed and set(operation) != required | {"cloud"}:
+        raise ProjectError("Cloud must be an exclusive effects operation")
     tone_fields = {"tone_curve_area", "tone_curve_protection_file", "tone_curve_settings_only"}
     tone_changed = "local_tone_curve" in operation
     tone_replacement = False
@@ -1490,6 +1515,7 @@ def run_effects(
         and not spatial_changed
         and not reduction_changed
         and not mist_changed
+        and not cloud_changed
         and "support_file" not in operation
     ):
         raise ProjectError("Invalid effects support/exposure fields")
@@ -1531,37 +1557,53 @@ def run_effects(
         tone_settings = operation["local_tone_curve"]
     if reduction_changed:
         reduction_request = operation["fade_reduction"]
-    request_bytes = (
-        (read_mist_request_bytes(request_file) if mist_changed else request_file.read_bytes())
-        if request_file
-        else _json_bytes(operation)
-    )
-    if mist_changed:
+
+    def read_request(path: Path) -> bytes:
+        if cloud_changed:
+            return read_cloud_request_bytes(path)
+        if mist_changed:
+            return read_mist_request_bytes(path)
+        return path.read_bytes()
+
+    request_bytes = read_request(request_file) if request_file else _json_bytes(operation)
+    if cloud_changed:
+        request_snapshot = parse_cloud_json(request_bytes)
+    elif mist_changed:
         request_snapshot = parse_mist_json(request_bytes, request=True)
     else:
         request_snapshot = (
             parse_texture_json(request_bytes) if texture_changed else json.loads(request_bytes)
         )
     if request_snapshot != operation or (
-        (tone_changed or texture_changed or mist_changed)
+        (tone_changed or texture_changed or mist_changed or cloud_changed)
         and _json_bytes(request_snapshot) != _json_bytes(operation)
     ):
         raise ProjectError("Stale effects request file")
     project = _root(project)
-    if mist_changed:
+    if mist_changed or cloud_changed:
         source_record = _read_json(project, "source.json")
         metadata = source_record["metadata"]
         native_width, native_height = metadata["width"], metadata["height"]
-        mist_request = validate_mist_request(
-            request_snapshot["mist"], source_record["developed_id"], native_width, native_height
-        )
+        if cloud_changed:
+            cloud_request = validate_cloud_request(
+                request_snapshot["cloud"],
+                source_record["developed_id"],
+                native_width,
+                native_height,
+            )
+        else:
+            mist_request = validate_mist_request(
+                request_snapshot["mist"], source_record["developed_id"], native_width, native_height
+            )
         if coordinates(operation["scope_xyxy"], native_width, native_height, box=True) != [
             0,
             0,
             native_width,
             native_height,
         ]:
-            raise ProjectError("Mist scope must cover the full native image")
+            raise ProjectError(
+                f"{'Cloud' if cloud_changed else 'Mist'} scope must cover the full native image"
+            )
     state = read_project(project)
 
     def recheck_viewer_authoring() -> None:
@@ -1593,6 +1635,7 @@ def run_effects(
         or spatial_changed
         or reduction_changed
         or mist_changed
+        or cloud_changed
     )
     settings = operation.get(
         "color_cleanup",
@@ -1614,12 +1657,15 @@ def run_effects(
     height, width = alpha.shape
     scope = coordinates(operation["scope_xyxy"], width, height, box=True)
     mist_apply = mist_request is not None and mist_request["action"] == "apply"
+    cloud_apply = cloud_request is not None and cloud_request["action"] == "apply"
     if (
-        mist_apply
+        (mist_apply or cloud_apply)
         and parent != state["accepted_revision"]
         and not operation["candidate_comparison"]
     ):
-        raise ProjectError("Mist requires accepted base or explicit candidate comparison")
+        raise ProjectError(
+            f"{'Cloud' if cloud_apply else 'Mist'} requires accepted base or explicit candidate comparison"
+        )
     if light_changed:
         from .background_light import validate_background_light
 
@@ -1741,6 +1787,8 @@ def run_effects(
         or "local_texture" in manifest
         or mist_changed
         or "mist" in manifest
+        or cloud_changed
+        or "cloud" in manifest
     ) and _json_bytes(json.loads(parent_bytes)) != _json_bytes(manifest):
         raise ProjectError("Stale local effect base manifest")
     parent_guides = saved_asset(project, f"revisions/{parent}/guides.json").read_bytes()
@@ -1765,6 +1813,7 @@ def run_effects(
             "background_light",
             "background_pattern",
             "mist",
+            "cloud",
             "notes",
         }
     ):
@@ -2190,10 +2239,7 @@ def run_effects(
             or saved_asset(project, f"revisions/{parent}/manifest.json").read_bytes()
             != parent_bytes
             or request_file
-            and (
-                read_mist_request_bytes(request_file) if mist_changed else request_file.read_bytes()
-            )
-            != request_bytes
+            and read_request(request_file) != request_bytes
         ):
             raise ProjectError("Stale effects support/request/parent")
         read_revision(project, parent, state["developed_id"])
@@ -2208,26 +2254,27 @@ def run_effects(
 
     # saved_layers above validates all inherited effects, including disabled operands.
     parent_mist = manifest.get("mist")
+    parent_cloud = manifest.get("cloud")
     request_inputs: dict[str, bytes] = dict(tone_input_bytes)
-    if (
-        mist_changed
-        and not mist_apply
-        and (parent_mist is None or not parent_mist["settings"]["enabled"])
+    for name, changed, applying, previous in (
+        ("mist", mist_changed, mist_apply, parent_mist),
+        ("cloud", cloud_changed, cloud_apply, parent_cloud),
     ):
-        recheck()
-        return {
-            "revision": parent,
-            "developed_id": state["developed_id"],
-            "kind": "effects",
-            "status": "unchanged",
-            "reused": True,
-            "final_acceptable": True,
-            "inputs_digest": operation["inputs_digest"],
-            "revision_inputs_digest": manifest["draft_digest"],
-            "base_manifest_sha256": digest(parent_bytes),
-            "revision_manifest_sha256": digest(parent_bytes),
-            **({"mist": parent_mist} if parent_mist is not None else {}),
-        }
+        if changed and not applying and (previous is None or not previous["settings"]["enabled"]):
+            recheck()
+            return {
+                "revision": parent,
+                "developed_id": state["developed_id"],
+                "kind": "effects",
+                "status": "unchanged",
+                "reused": True,
+                "final_acceptable": True,
+                "inputs_digest": operation["inputs_digest"],
+                "revision_inputs_digest": manifest["draft_digest"],
+                "base_manifest_sha256": digest(parent_bytes),
+                "revision_manifest_sha256": digest(parent_bytes),
+                **({name: previous} if previous is not None else {}),
+            }
     for name in (
         "sharpening_protection_file",
         "support_file",
@@ -2265,7 +2312,12 @@ def run_effects(
         "schema_version": 1,
         "execution": _effects_execution_identity(),
         "request": _effects_request_identity(
-            operation, settings, input_hashes, shading_record, mist_request=mist_request
+            operation,
+            settings,
+            input_hashes,
+            shading_record,
+            mist_request=mist_request,
+            cloud_request=cloud_request,
         ),
         "inputs": {
             "source": digest(snapshots["source.json"]),
@@ -2287,6 +2339,7 @@ def run_effects(
                     "background_pattern",
                     "spatial_fade",
                     "mist",
+                    "cloud",
                     "notes",
                 }
             },
@@ -2327,21 +2380,30 @@ def run_effects(
             WISPY_VAPOR_ALGORITHM: "validated-effects-v11-vapor",
         }.get(algorithm, "validated-effects-v9-mist")
         identity["execution"]["algorithms"]["mist"] = algorithm
-    if parent_mist is not None and not mist_apply:
-        identity["inputs"]["mist"] = (
-            {
-                **{
-                    key: value
-                    for key, value in parent_mist.items()
-                    if key not in {"settings", "settings_sha256"}
-                },
-                "settings": {
-                    key: value for key, value in parent_mist["settings"].items() if key != "enabled"
-                },
-            }
-            if mist_changed
-            else parent_mist
-        )
+    if identity["execution"] is not None and (cloud_changed or parent_cloud is not None):
+        identity["execution"]["version"] = "validated-effects-v12-cloud"
+        identity["execution"]["algorithms"]["cloud"] = CLOUD_ALGORITHM
+    for name, changed, applying, previous in (
+        ("mist", mist_changed, mist_apply, parent_mist),
+        ("cloud", cloud_changed, cloud_apply, parent_cloud),
+    ):
+        if previous is not None and not applying:
+            identity["inputs"][name] = (
+                {
+                    **{
+                        key: value
+                        for key, value in previous.items()
+                        if key not in {"settings", "settings_sha256"}
+                    },
+                    "settings": {
+                        key: value
+                        for key, value in previous["settings"].items()
+                        if key != "enabled"
+                    },
+                }
+                if changed
+                else previous
+            )
     if mist_changed:
         identity["inputs"]["mist_upstream"] = {
             key: manifest[key]
@@ -2356,6 +2418,25 @@ def run_effects(
                 "spatial_fade",
                 "background",
                 "background_light",
+            )
+            if key in manifest
+        }
+    if cloud_changed:
+        identity["inputs"]["cloud_upstream"] = {
+            key: manifest[key]
+            for key in (
+                "color_cleanup",
+                "shading",
+                "local_sharpening",
+                "local_exposure",
+                "local_tone_curve",
+                "local_texture",
+                "shadow_fade",
+                "spatial_fade",
+                "background",
+                "background_light",
+                "background_pattern",
+                "mist",
             )
             if key in manifest
         }
@@ -2378,6 +2459,7 @@ def run_effects(
                 "shadow_fade", manifest.get("shadow_fade"), revision_hashes(manifest)
             ),
             **({"mist": parent_mist} if parent_mist is not None else {}),
+            **({"cloud": parent_cloud} if parent_cloud is not None else {}),
             **(
                 {"background_pattern": manifest["background_pattern"]}
                 if "background_pattern" in manifest
@@ -2387,7 +2469,7 @@ def run_effects(
     )
     if reused_result is not None:
         recheck()
-        if mist_changed or pattern_changed:
+        if mist_changed or cloud_changed or pattern_changed:
             return dict(
                 reused_result,
                 base_manifest_sha256=digest(parent_bytes),
@@ -2419,6 +2501,22 @@ def run_effects(
                 ),
             )
             if mist_changed or parent_mist is not None
+            else 0
+        )
+        + (
+            cloud_resource_bytes(
+                width,
+                height,
+                rebuild_clear=bool(
+                    cloud_apply
+                    and cloud_request
+                    and (cloud_request["area"]["clear"] or cloud_request["area"]["focus"])
+                ),
+                rebuild_coverage=bool(
+                    cloud_apply and cloud_request and cloud_request["area"]["coverage"]
+                ),
+            )
+            if cloud_changed or parent_cloud is not None
             else 0
         )
         + retained_reduction_bytes
@@ -2904,9 +3002,12 @@ def run_effects(
         (directory / "settings.json").write_bytes(_json_bytes(texture_record))
 
     mist_record = stage_mist(project, parent, stage, assets, manifest, mist_request)
+    cloud_record = stage_cloud(project, parent, stage, assets, manifest, cloud_request)
     effect_records = {}
     if mist_record is not None:
         effect_records["mist"] = mist_record
+    if cloud_record is not None:
+        effect_records["cloud"] = cloud_record
     if light_record is not None:
         effect_records["background_light"] = light_record
     if pattern_record is not None:
@@ -2962,6 +3063,7 @@ def run_effects(
         ("background_light", light_changed),
         ("background_pattern", pattern_changed),
         ("mist", mist_changed),
+        ("cloud", cloud_changed),
     ):
         if changed:
             effective_recipe[name] = dict(effect_records[name]["settings"])
@@ -3082,6 +3184,7 @@ def run_effects(
         alpha,
         revision=revision,
         mist=saved_mist(project, stage, {"assets": assets, **effect_records}, effects_off=stale),
+        cloud=saved_cloud(project, stage, {"assets": assets, **effect_records}, effects_off=stale),
         **overview_options,
     )
     review.update(effect_records)
@@ -3127,7 +3230,7 @@ def run_effects(
             "; BASE comparison: cleanup OFF; shading OFF; stale enabled effects need scoped rebuild or explicit disable"
         )
     (stage / "review/manifest.json").write_bytes(_json_bytes(review))
-    if mist_changed or pattern_changed:
+    if mist_changed or cloud_changed or pattern_changed:
         before_options = dict(overview_options)
         if pattern_changed:
             old_pattern = saved_pattern(
@@ -3147,6 +3250,9 @@ def run_effects(
             alpha,
             revision=parent,
             mist=saved_mist(
+                project, saved_asset(project, f"revisions/{parent}"), manifest, effects_off=stale
+            ),
+            cloud=saved_cloud(
                 project, saved_asset(project, f"revisions/{parent}"), manifest, effects_off=stale
             ),
             align_result=True,
@@ -3201,6 +3307,8 @@ def run_effects(
     )
     if mist_record is not None:
         identity["mist"] = mist_record
+    if cloud_record is not None:
+        identity["cloud"] = cloud_record
     if pattern_record is not None:
         identity["background_pattern"] = pattern_record
     result = {
@@ -3225,6 +3333,7 @@ def run_effects(
         manifest,
         **result,
         complete=True,
+        schema_version=3 if cloud_record is not None else 2,
         files=files,
         assets=assets,
         parent_manifest_sha256=digest(parent_bytes),
@@ -3244,6 +3353,7 @@ def run_effects(
             tone_record,
             texture_record,
             mist_record,
+            cloud_record,
         )
     )
     if validated_appearance:
@@ -3267,11 +3377,13 @@ def run_effects(
         if (
             validated_appearance
             and destination.exists()
-            and (isinstance(error, OSError) or mist_changed)
+            and (isinstance(error, OSError) or mist_changed or cloud_changed)
         ):
             effect_name = (
                 "Mist"
                 if mist_changed
+                else "Cloud"
+                if cloud_changed
                 else "Background light"
                 if light_changed
                 else "Background pattern"
@@ -3289,7 +3401,7 @@ def run_effects(
                 if isinstance(error, ProjectError)
                 else "publication durability unconfirmed"
             )
-            original_diagnosis = f" ({error})" if mist_changed else ""
+            original_diagnosis = f" ({error})" if mist_changed or cloud_changed else ""
             raise ProjectError(
                 f"{effect_name} {publication_status}: visible revision {destination}"
                 f"{original_diagnosis}. "
@@ -3308,7 +3420,7 @@ def run_effects(
                 "base_manifest_sha256": digest(parent_bytes),
                 "revision_manifest_sha256": digest(_json_bytes(new_manifest)),
             }
-            if mist_changed or pattern_changed
+            if mist_changed or cloud_changed or pattern_changed
             else {}
         ),
     )

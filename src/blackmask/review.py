@@ -22,6 +22,8 @@ from .background_pattern import (
     pattern_visible,
     saved_pattern,
 )
+from .cloud import CloudOperands, blend_cloud_into_result, cloud_resource_bytes, cloud_visible
+from .cloud_store import saved_cloud
 from .effects import validate_cleanup
 from .export import (
     _foreground_contribution,
@@ -67,6 +69,7 @@ def review_panels(
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
     mist: MistOperands | None = None,
+    cloud: CloudOperands | None = None,
     dither_background: bool = False,
     origin_xy: tuple[int, int] = (0, 0),
     result_size_wh: tuple[int, int] | None = None,
@@ -112,11 +115,17 @@ def review_panels(
             display_background16=display_background16,
         )
     )
+    if cloud is not None and cloud_visible(cloud.settings):
+        result = blend_cloud_into_result(black.copy() if result is black else result, cloud)
     if mist is not None:
         result = blend_mist_into_result(
             black.copy() if result is black else result, mist.density16, mist.clear16, mist.settings
         )
-    dither = dither_background and (background16 is not None or display_background16 is not None)
+    dither = (
+        cloud is not None
+        and cloud_visible(cloud.settings)
+        or (dither_background and (background16 is not None or display_background16 is not None))
+    )
     if dither and result_size_wh is not None:
         with (
             Image.fromarray(result_rgb8(result)) as image,
@@ -157,6 +166,7 @@ def write_review(
     spatial_fade: SpatialFadeOperands | None = None,
     fade_background16: np.ndarray | None = None,
     mist: MistOperands | None = None,
+    cloud: CloudOperands | None = None,
     dither_background: bool = False,
 ) -> dict[str, Any]:
     height, width = alpha16.shape
@@ -169,7 +179,7 @@ def write_review(
     records = []
     rows = []
     show_result = separate_result_panel(
-        background16 is not None or display_background16 is not None, mist
+        background16 is not None or display_background16 is not None or cloud is not None, mist
     )
     for index, (x0, y0, x1, y1) in enumerate(validated):
         source_crop = source[y0:y1, x0:x1]
@@ -199,6 +209,7 @@ def write_review(
             if fade_background16 is None
             else fade_background16[y0:y1, x0:x1],
             mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
+            cloud=cloud.crop(x0, y0, x1, y1) if cloud is not None else None,
             dither_background=dither_background,
             origin_xy=(x0, y0),
         )
@@ -275,6 +286,7 @@ def write_revision_overview(
     height_limit: int = 1600,
     row_label: str = "Comparison",
     mist: MistOperands | None = None,
+    cloud: CloudOperands | None = None,
     align_result: bool = False,
     dither_background: bool = False,
 ) -> dict[str, Any]:
@@ -292,7 +304,7 @@ def write_revision_overview(
     )
     selected = ["source", "black", "gray", "white", "alpha"]
     if separate_result_panel(
-        background16 is not None or display_background16 is not None, mist
+        background16 is not None or display_background16 is not None or cloud is not None, mist
     ) or (align_result and old_record is not None and "result" in old_record["panel_order"]):
         selected.append("result")
     total_rows = len(boxes) + (len(old_record["crops"]) if old_record is not None else 0)
@@ -369,10 +381,11 @@ def write_revision_overview(
             if fade_background16 is None
             else fade_background16[y0:y1, x0:x1],
             mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
+            cloud=cloud.crop(x0, y0, x1, y1) if cloud is not None else None,
             dither_background=dither_background,
             origin_xy=(x0, y0),
             result_size_wh=_review_panel_size(x1 - x0, y1 - y0, len(selected), row_height_limit)
-            if dither_background
+            if dither_background or cloud is not None
             else None,
         )
         crop: dict[str, Any] = {"crop_xyxy": [x0, y0, x1, y1]}
@@ -416,7 +429,7 @@ def write_revision_overview(
         sheet.save(
             preview,
             format="JPEG",
-            quality=BACKDROP_JPEG_QUALITY if dither_background else 85,
+            quality=BACKDROP_JPEG_QUALITY if dither_background or cloud is not None else 85,
             optimize=True,
             icc_profile=srgb_profile(),
         )
@@ -566,6 +579,7 @@ def _review_project_locked(
             if "background_pattern" in revision_manifest
             else 0
         )
+        + (cloud_resource_bytes(width, height) if "cloud" in revision_manifest else 0)
         + 1024**2,
     )
     root = saved_asset(project, f"reviews/{revision}")
@@ -617,6 +631,12 @@ def _review_project_locked(
         weight16=weight,
         opacity=opacity,
         mist=saved_mist(
+            project,
+            saved_asset(project, prefix),
+            revision_manifest,
+            effects_off=base_comparison or effects_stale(revision_manifest),
+        ),
+        cloud=saved_cloud(
             project,
             saved_asset(project, prefix),
             revision_manifest,
@@ -980,8 +1000,16 @@ def render_presentation_preview(
     series_mode = presentation["mode"] == "match-series"
     background_settings = loaded_manifest.get("background", {}).get("settings")
     pattern_settings = loaded_manifest.get("background_pattern", {}).get("settings")
-    dither_background = uses_backdrop_dither(background_settings) or pattern_visible(
-        pattern_settings
+    if "cloud" in loaded_manifest:
+        check_space(
+            project,
+            cloud_resource_bytes(foreground.shape[1], foreground.shape[0], rebuild_coverage=True),
+        )
+    cloud = saved_cloud(project, directory, loaded_manifest)
+    dither_background = (
+        uses_backdrop_dither(background_settings)
+        or pattern_visible(pattern_settings)
+        or cloud is not None
     )
     if series_mode:
         settings = validate_series_settings(presentation["settings"])
@@ -1003,6 +1031,7 @@ def render_presentation_preview(
                 transparent=False,
                 backdrop_selection=True,
                 background_pattern=pattern_settings is not None,
+                cloud_native_shape=alpha.shape if cloud is not None else None,
             )
             backdrop_only = np.empty(display[::-1], dtype=bool)
         rgb16 = render_series(
@@ -1016,6 +1045,7 @@ def render_presentation_preview(
             background_pattern_settings=pattern_settings,
             spatial_fade=spatial,
             mist=saved_mist(project, directory, loaded_manifest),
+            cloud=cloud,
             backdrop_only=backdrop_only,
         )
         pixels = result_rgb8(rgb16, backdrop_only=backdrop_only)
@@ -1058,6 +1088,8 @@ def render_presentation_preview(
                 display_background16=shown,
             )
         )
+        if cloud is not None:
+            blend_cloud_into_result(native, cloud)
         mist = saved_mist(project, directory, loaded_manifest)
         if mist is not None:
             blend_mist_into_result(native, mist.density16, mist.clear16, mist.settings)
@@ -1067,6 +1099,7 @@ def render_presentation_preview(
             margins,
             mist=mist,
             dither_alpha16=alpha if dither_background else None,
+            cloud=cloud,
         )
         settings_record = dict(margins.to_dict())
     else:
@@ -1375,14 +1408,20 @@ def _comparison_project_locked(
     selected_mist = saved_mist(
         project, selected_directory, manifest, effects_off=effects_stale(manifest)
     )
+    selected_cloud = saved_cloud(
+        project, selected_directory, manifest, effects_off=effects_stale(manifest)
+    )
     has_background = not effects_stale(manifest) and (
         "background" in manifest
         or read_active_background_light(project, selected_directory, manifest) is not None
         or pattern_visible(manifest.get("background_pattern", {}).get("settings"))
     )
-    overview_dither = has_background and (
-        uses_backdrop_dither(manifest.get("background", {}).get("settings"))
-        or pattern_visible(manifest.get("background_pattern", {}).get("settings"))
+    overview_dither = selected_cloud is not None or (
+        has_background
+        and (
+            uses_backdrop_dither(manifest.get("background", {}).get("settings"))
+            or pattern_visible(manifest.get("background_pattern", {}).get("settings"))
+        )
     )
     native_dither = (
         retain_native
@@ -1392,6 +1431,7 @@ def _comparison_project_locked(
             and (
                 uses_backdrop_dither(item.get("background", {}).get("settings"))
                 or pattern_visible(item.get("background_pattern", {}).get("settings"))
+                or cloud_visible(item.get("cloud", {}).get("settings"))
             )
             for item in manifests.values()
         )
@@ -1423,7 +1463,11 @@ def _comparison_project_locked(
         "crops": crops,
         "retain_native": retain_native,
         "panel_order": ["source", "black", "gray", "white", "alpha"]
-        + (["result"] if separate_result_panel(has_background, selected_mist) else []),
+        + (
+            ["result"]
+            if separate_result_panel(has_background or selected_cloud is not None, selected_mist)
+            else []
+        ),
         "presentation": presentation,
         "settings_by_revision": {
             name: _comparison_settings(project, name, item) for name, item in manifests.items()
@@ -1504,6 +1548,11 @@ def _comparison_project_locked(
             if "background_pattern" in manifest
             else 0
         )
+        + (
+            cloud_resource_bytes(source.shape[1], source.shape[0])
+            if selected_cloud is not None
+            else 0
+        )
         + 16 * 1024**2,
     )
     stage = Path(tempfile.mkdtemp(prefix=".comparison-", dir=root))
@@ -1544,6 +1593,7 @@ def _comparison_project_locked(
         if effects_stale(manifest)
         else "Comparison",
         mist=selected_mist,
+        cloud=selected_cloud,
         dither_background=overview_dither,
     )
     intermediate_directories = {path: path.lstat() for path in (stage, stage / "review")}

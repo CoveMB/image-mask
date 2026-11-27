@@ -21,6 +21,13 @@ from PIL import Image
 from .assets import revision_hashes, saved_asset
 from .background import uses_backdrop_dither
 from .background_pattern import PATTERN_FILES, pattern_resource_bytes, pattern_visible
+from .cloud import (
+    blend_cloud_into_result,
+    cloud_projection_bytes,
+    cloud_resource_bytes,
+    cloud_visible,
+)
+from .cloud_store import CLOUD_MEMBERS, saved_cloud
 from .ingest import srgb_profile, write_developed
 from .pixel_math import BACKDROP_DITHER_PNG_SUFFIX, result_rgb8
 from .project import (
@@ -345,7 +352,8 @@ def render_saved_result_with_alpha(
         foreground.nbytes * 8
         + 16 * 1024**2
         + (mist_resource_bytes(width, height) if "mist" in manifest else 0)
-        + (pattern_resource_bytes(width, height) if "background_pattern" in manifest else 0),
+        + (pattern_resource_bytes(width, height) if "background_pattern" in manifest else 0)
+        + (cloud_resource_bytes(width, height) if "cloud" in manifest else 0),
     )
     shown = display_background(
         background, saved_pattern(project, directory, manifest, off=effects_stale(manifest))
@@ -369,6 +377,9 @@ def render_saved_result_with_alpha(
             display_background16=shown,
         )
     )
+    cloud = saved_cloud(project, directory, manifest, effects_off=effects_stale(manifest))
+    if cloud is not None:
+        blend_cloud_into_result(result, cloud)
     mist = saved_mist(project, directory, manifest, effects_off=effects_stale(manifest))
     if mist is not None:
         blend_mist_into_result(result, mist.density16, mist.clear16, mist.settings)
@@ -467,6 +478,11 @@ MIST_EXPORT_VERSION = "requested-result-v6"
 LIT_FADE_EXPORT_VERSION = "requested-result-v7"
 VAPOR_EXPORT_VERSION = "requested-result-v8"
 WISPY_VAPOR_EXPORT_VERSION = "requested-result-v9"
+CLOUD_EXPORT_VERSION = "requested-result-v10"
+_CLOUD_DELIVERY_ROLES = {
+    **{f"cloud_{name}": (f"cloud/{name}", kind) for name, kind in CLOUD_MEMBERS.items()},
+    "cloud_hard_protection.png": ("supports/protection.png", "protection_sha256"),
+}
 
 
 def _delivery_effect_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -631,6 +647,14 @@ def _delivery_notes(record: dict[str, Any]) -> bytes:
         )
     if "result_compositing" in record:
         text += "Saved compositing: " + record["result_compositing"] + "\n"
+    if "cloud" in record:
+        text += "Apply linear-srgb-cloud-v1 after subject and displayed backdrop composition and before Mist or Vapor. Black and transparent variants bypass Cloud.\n"
+        if mode == "native" and "editable" in record["requested_variants"]:
+            text += "Use the three saved cloud scalar16 PNGs and cloud_settings.json. The recorded coverage and clearance geometry is in cloud_area.json. The separately bound cloud_hard_protection.png is the categorical native lock bitmap.\n"
+        elif mode == "add-margins":
+            text += "Copy the native Result exactly. Apply Cloud once on the extended pre-Cloud backdrop, using analytic exterior density and light and edge-clamped authored coverage and clearance.\n"
+        elif mode == "match-series":
+            text += "Use saved Cloud samples in bounds and analytic exterior fields with edge-clamped coverage and clearance. The positive box filter averages opacity and opacity-weighted linear light and enforces exact full-clear bypass on the combined optical and subject support.\n"
     if "mist" in record:
         text += "Mist applies once to Result after foreground and backdrop composition. Black and transparent views bypass Mist.\n"
         if record["export_version"] == VAPOR_EXPORT_VERSION:
@@ -732,6 +756,14 @@ def _delivery_members(
             names.update(
                 "spatial_fade_" + name for name in spatial_fade_files(manifest["spatial_fade"])
             )
+        if "cloud" in manifest:
+            names.update(_CLOUD_DELIVERY_ROLES.keys() - {"cloud_hard_protection.png"})
+            members["cloud_hard_protection.png"] = {
+                "dimensions_wh": [width, height],
+                "precision_bits": 8,
+                "mode": "L",
+                "icc_profile_sha256": None,
+            }
         for name in names:
             members[name] = (
                 dict(rgb)
@@ -834,6 +866,17 @@ def _validate_delivery(
             for name, checksum in mist_hashes.items()
         ):
             raise ValueError("Mist operand binding differs from native editable companion")
+        cloud_record = request_record.get("cloud")
+        cloud_hashes = (
+            {name: cloud_record[key] for name, (_, key) in _CLOUD_DELIVERY_ROLES.items()}
+            if cloud_record is not None
+            else {}
+        )
+        if companion_binding is not None and any(
+            companion_binding["files_sha256"].get(name) != checksum
+            for name, checksum in cloud_hashes.items()
+        ):
+            raise ValueError("Cloud operand binding differs from native editable companion")
         lit_fade_hashes = _lit_fade_operand_hashes(request_record)
         if companion_binding is not None and any(
             companion_binding["files_sha256"].get(name) != checksum
@@ -899,6 +942,8 @@ def _validate_delivery(
                 raise ValueError("Local texture operand binding mismatch")
             if name in mist_hashes and metadata["sha256"] != mist_hashes[name]:
                 raise ValueError("Mist operand binding mismatch")
+            if name in cloud_hashes and metadata["sha256"] != cloud_hashes[name]:
+                raise ValueError("Cloud operand binding mismatch")
             if name in lit_fade_hashes and metadata["sha256"] != lit_fade_hashes[name]:
                 raise ValueError("Lit backdrop operand binding mismatch")
             if name in pattern_hashes and metadata["sha256"] != pattern_hashes[name]:
@@ -949,7 +994,7 @@ def _validate_delivery(
                     or header[:8] != b"\x89PNG\r\n\x1a\n"
                     or header[12:16] != b"IHDR"
                     or header[24] != expected["precision_bits"]
-                    or header[25] != {"RGB": 2, "RGBA": 6, "I;16": 0}[expected["mode"]]
+                    or header[25] != {"RGB": 2, "RGBA": 6, "I;16": 0, "L": 0}[expected["mode"]]
                 ):
                     raise ValueError("Invalid delivery PNG file precision/channel header")
                 with Image.open(path, formats=["PNG"]) as image:
@@ -959,6 +1004,8 @@ def _validate_delivery(
                         else image.mode not in {"I;16", "I;16L", "I;16B"}
                     ):
                         raise ValueError("Invalid delivery PNG precision/dimensions")
+                    if name == "cloud_hard_protection.png" and any(image.histogram()[1:255]):
+                        raise ValueError("Cloud hard protection must be categorical")
                     if expected["icc_profile_sha256"] is None:
                         if "icc_profile" in image.info or "gamma" in image.info:
                             raise ValueError("Scalar PNG must not carry ICC/gamma")
@@ -1325,8 +1372,22 @@ def _delivery_request_record(
     ):
         record["export_version"] = LIT_FADE_EXPORT_VERSION
         record["encoding"]["version"] = LIT_FADE_EXPORT_VERSION
-    if uses_backdrop_dither(manifest.get("background", {}).get("settings")) or pattern_visible(
-        manifest.get("background_pattern", {}).get("settings")
+    cloud = manifest.get("cloud")
+    if cloud is not None:
+        record["export_version"] = record["encoding"]["version"] = CLOUD_EXPORT_VERSION
+        record["cloud"] = cloud
+        record["effects"]["cloud"] = {
+            "enabled": cloud["settings"]["enabled"],
+            "record_sha256": digest(_json_bytes(cloud)),
+        }
+        if mode == "native":
+            record["result_compositing"] += (
+                " Apply the saved linear-sRGB Cloud to the composed Result before any Mist or Vapor."
+            )
+    if (
+        uses_backdrop_dither(manifest.get("background", {}).get("settings"))
+        or pattern_visible(manifest.get("background_pattern", {}).get("settings"))
+        or cloud_visible(cloud["settings"] if cloud is not None else None)
     ):
         record["encoding"]["png"] += BACKDROP_DITHER_PNG_SUFFIX
     record["identity_sha256"] = digest(_json_bytes(record))
@@ -1532,6 +1593,12 @@ def _export_delivery(
             pending += min(ROWS_PER_CHUNK, height) * width * 288 + 32 * (width + height)
         if "editable" in variants and (mode == "native" or binding is None):
             pending += 2 * alpha.nbytes + 2 * 1024**2
+    if "cloud" in manifest:
+        pending += cloud_resource_bytes(*size, rebuild_coverage=mode != "native")
+        if mode != "native":
+            pending += cloud_projection_bytes(width, height)
+        if "editable" in variants and (mode == "native" or binding is None):
+            pending += 7 * alpha.size + 2 * 1024**2
     pending += (16 + (10 if "black" in variants else 0)) * width * height + 2 * 1024**2
     if native_record is not None and binding is None:
         pending += base.nbytes * 22 + 2 * 1024**2
@@ -1546,7 +1613,10 @@ def _export_delivery(
             pending += base.nbytes + 3 * alpha.nbytes + 1024**2
     check_space(project, pending)
     if sampling is not None:
-        from .series_framing import estimate_series_resources
+        from .series_framing import estimate_series_resources, validate_series_cloud_work
+
+        if "cloud" in manifest:
+            validate_series_cloud_work(sampling, size, manifest["cloud"]["settings"])
 
         estimate_series_resources(
             sampling,
@@ -1565,6 +1635,7 @@ def _export_delivery(
             ),
             background_pattern=pattern_record is not None,
             **({"mist_native_shape": alpha.shape} if "mist" in manifest else {}),
+            **({"cloud_native_shape": alpha.shape} if "cloud" in manifest else {}),
         )
     foreground = selected_foreground(project, revision, base, alpha, manifest)
     del base
@@ -1705,6 +1776,7 @@ def _write_delivery(
     spatial = saved_spatial_fade(project, revision, alpha, manifest)
     directory = saved_asset(project, f"revisions/{revision}")
     mist = saved_mist(project, directory, manifest)
+    cloud = saved_cloud(project, directory, manifest)
     base, background = (
         (None, None) if sampling is not None else saved_backgrounds(project, directory, manifest)
     )
@@ -1745,6 +1817,7 @@ def _write_delivery(
                 spatial_fade=spatial,
                 black_background=stem == "black",
                 mist=mist if stem == "result" else None,
+                cloud=cloud if stem == "result" else None,
                 backdrop_only=backdrop_only,
             )
         else:
@@ -1769,6 +1842,9 @@ def _write_delivery(
                     fade_background16=target,
                 )
             )
+            result_cloud = cloud if stem == "result" else None
+            if result_cloud is not None:
+                blend_cloud_into_result(native, result_cloud)
             result_mist = mist if stem == "result" else None
             if result_mist is not None:
                 blend_mist_into_result(
@@ -1780,6 +1856,7 @@ def _write_delivery(
                     (shown if shown is not None else background) if stem == "result" else None,
                     margins_settings,
                     mist=result_mist,
+                    cloud=result_cloud,
                 )
                 if margins_settings is not None
                 else native
@@ -1946,6 +2023,9 @@ def _write_editable(
             shutil.copyfile(
                 saved_asset(project, f"revisions/{revision}/mist/{name}"), stage / f"mist_{name}"
             )
+    if "cloud" in manifest:
+        for name, (role, _) in _CLOUD_DELIVERY_ROLES.items():
+            shutil.copyfile(saved_asset(project, f"revisions/{revision}/{role}"), stage / name)
     write_developed(stage / "foreground_rgb16.tif", foreground)
     master = state["developed_id"]
     if any(name in manifest for name in ("local_sharpening", "local_exposure", "shadow_fade")):

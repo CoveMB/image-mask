@@ -32,6 +32,7 @@ from .background_pattern import (
     pattern_visible,
     saved_pattern,
 )
+from .cloud_store import parse_cloud_json, read_cloud_area, saved_cloud, validate_cloud_request
 from .export import export_project, saved_layers
 from .framing import (
     FramingSaveUncertain,
@@ -270,6 +271,10 @@ class ReviewServer(ThreadingHTTPServer):
                         "background": manifest.get("background"),
                         "background_light": manifest.get("background_light"),
                         "background_pattern": manifest.get("background_pattern"),
+                        "cloud": manifest.get("cloud"),
+                        "cloud_area": read_cloud_area(self.project, path, manifest)
+                        if "cloud" in manifest
+                        else None,
                         "mist": manifest.get("mist"),
                         "mist_area": read_mist_area(self.project, path, manifest)
                         if "mist" in manifest
@@ -763,6 +768,11 @@ class ReviewServer(ThreadingHTTPServer):
                     if data.get("panel", "result") == "result"
                     else None
                 )
+                cloud = (
+                    saved_cloud(self.project, directory, manifest, effects_off=stale)
+                    if data.get("panel", "result") == "result"
+                    else None
+                )
                 pixels = review_panels(
                     foreground[y0:y1, x0:x1],
                     foreground[y0:y1, x0:x1],
@@ -776,6 +786,7 @@ class ReviewServer(ThreadingHTTPServer):
                     ),
                     spatial_fade=comparison_spatial,
                     fade_background16=target if comparison_spatial is not None else None,
+                    cloud=cloud.crop(x0, y0, x1, y1) if cloud is not None else None,
                     mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
                     dither_background=data.get("panel", "result") == "result"
                     and (
@@ -970,7 +981,8 @@ class ReviewServer(ThreadingHTTPServer):
                 "background_light",
                 "background_pattern",
             }
-            fields["effects"] |= set(data) & ({"mist"} if "mist" in data else optional)
+            exclusive = next((field for field in ("mist", "cloud") if field in data), None)
+            fields["effects"] |= {exclusive} if exclusive else set(data) & optional
             if any(
                 field in data
                 for field in (
@@ -981,6 +993,7 @@ class ReviewServer(ThreadingHTTPServer):
                     "local_tone_curve",
                     "local_texture",
                     "mist",
+                    "cloud",
                 )
             ):
                 fields["effects"].add("revision_manifest_sha256")
@@ -1011,13 +1024,18 @@ class ReviewServer(ThreadingHTTPServer):
 
     def execute(self, data: dict[str, Any]) -> dict[str, Any]:
         action = data["action"]
-        if action == "effects" and "mist" in data:
-            # Reject invalid or oversized Clear mist input before reading the master.
-            source = _read_json(self.project, "source.json")
-            metadata = source["metadata"]
-            validate_mist_request(
-                data["mist"], source["developed_id"], metadata["width"], metadata["height"]
-            )
+        if action == "effects":
+            # Reject invalid or oversized geometry before reading the master.
+            for field, validate in (
+                ("mist", validate_mist_request),
+                ("cloud", validate_cloud_request),
+            ):
+                if field in data:
+                    source = _read_json(self.project, "source.json")
+                    metadata = source["metadata"]
+                    validate(
+                        data[field], source["developed_id"], metadata["width"], metadata["height"]
+                    )
         if (
             action in {"export", "series-export"}
             and "variants" in data
@@ -1251,6 +1269,7 @@ class ReviewServer(ThreadingHTTPServer):
                         "background_light",
                         "background_pattern",
                         "mist",
+                        "cloud",
                     )
                     if k in data
                 }
@@ -1272,6 +1291,7 @@ class ReviewServer(ThreadingHTTPServer):
                 "local_tone_curve",
                 "local_texture",
                 "mist",
+                "cloud",
             )
         )
         expected_manifest = data.get("revision_manifest_sha256") if bound_action else None
@@ -1287,7 +1307,7 @@ class ReviewServer(ThreadingHTTPServer):
                 model_cache=self.model_cache,
                 expected_revision_manifest_sha256=expected_manifest,
                 expected_authoring_digest=data["authoring_digest"]
-                if {"local_tone_curve", "local_texture", "mist", "background_pattern"}
+                if {"local_tone_curve", "local_texture", "mist", "cloud", "background_pattern"}
                 & request.keys()
                 else None,
                 storage_config=self.storage_config,
@@ -1348,7 +1368,7 @@ class ReviewServer(ThreadingHTTPServer):
         match = re.fullmatch(
             r"/image/(source|result|black|gray|white|alpha)/([a-f0-9]{64}|rev-[0-9]{3,})/"
             r"([0-9]+,[0-9]+,[0-9]+,[0-9]+)"
-            r"(/base|/background-light-off|/background-pattern-off|/mist-off|/exposure-off|/tone-curve-off|/texture-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
+            r"(/base|/background-light-off|/background-pattern-off|/mist-off|/cloud-off|/exposure-off|/tone-curve-off|/texture-off|/shadow-fade-off|/sharpening-off|/p(?:0|0.12|0.24))?",
             path,
         )
         if not match:
@@ -1430,6 +1450,16 @@ class ReviewServer(ThreadingHTTPServer):
                 if panel == "result"
                 else None
             )
+            cloud = (
+                saved_cloud(
+                    self.project,
+                    directory,
+                    manifest,
+                    effects_off=effects_off or base == "/cloud-off",
+                )
+                if panel == "result"
+                else None
+            )
             target = (
                 base_background
                 if base_background is not None
@@ -1459,6 +1489,7 @@ class ReviewServer(ThreadingHTTPServer):
                     None if spatial.reduction16 is None else spatial.reduction16[y0:y1, x0:x1],
                 ),
                 fade_background16=None if target is None else target[y0:y1, x0:x1],
+                cloud=cloud.crop(x0, y0, x1, y1) if cloud is not None else None,
                 mist=mist.crop(x0, y0, x1, y1) if mist is not None else None,
                 dither_background=panel == "result"
                 and (
@@ -1686,7 +1717,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     json.dumps(self.server.validate_series_preset(data), allow_nan=False).encode(),
                 )
             else:
-                if isinstance(data, dict) and "mist" in data:
+                if isinstance(data, dict) and "cloud" in data:
+                    data = parse_cloud_json(body)
+                elif isinstance(data, dict) and "mist" in data:
                     data = parse_mist_json(body, request=True)
                 elif isinstance(data, dict) and "local_texture" in data:
                     data = parse_texture_json(body)
@@ -1719,7 +1752,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     )
                 self.server.start_action(data)
                 self.reply(202, b'{"started":true}')
-        except (OSError, ValueError, TypeError) as error:
+        except (OSError, ValueError, TypeError, RecursionError) as error:
             conflict = "busy" in str(error).lower() or (
                 self.path
                 in {

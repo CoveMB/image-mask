@@ -431,6 +431,22 @@ switch-only OFF request. Keep the previous candidate for comparison and request
 native editable operands or the paired native companion for delivery. Preserve
 the [saved fade target and matte](file-contract.md#saved-background-pattern).
 
+## Explicit Cloud
+
+Use Cloud for an explicitly requested colour bank across the composed Result.
+Apply or disable it locally with the exclusive schema-2 effects request and the
+current source, working revision and draft identities. Preserve the current
+source, matte, hard locks, other effects and acceptance. Use native Coverage
+and Clear shapes or a clear focal ellipse when the requested placement needs
+them. [Cloud request and saved operands](file-contract.md#saved-cloud)
+
+Compare the saved Result and **Compare Cloud OFF** at matching coordinates with
+outlines hidden. Black can darken the subject or a lit backdrop. On pure black,
+use a nonblack tint when the request calls for visible billows. Inspect the
+actual Result for photographic acceptance. Keep the project for continued app
+editing, and use editable delivery for detached replay. Retain both folders
+with either framing mode. [Cloud controls and editable handoff](workflow.md#cloud)
+
 ## Explicit Mist
 
 Use Mist for an explicitly requested atmosphere across the saved subject and

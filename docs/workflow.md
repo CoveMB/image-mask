@@ -554,13 +554,14 @@ Enabling inward shading switches this feature off. Disabling either does not
 automatically revive the other.
 
 **Fade target** defaults to **Base backdrop**. Choose **Lit backdrop** to let the
-subject fade into the same illumination as the displayed backdrop in Result.
-At full effective fade, the subject matches the backdrop at that point. The fade
-uses the base when Background light is absent, OFF or zero. Black, Gray, White and
-transparent views always use Base backdrop. **Compare Background light OFF**
+subject fade into the base plus saved Background light. At full effective fade,
+the subject reaches that target. Background pattern alters only the displayed
+backdrop. The fade uses the base when Background light is absent, OFF or zero.
+Black, Gray, White and transparent views always use Base backdrop.
+**Compare Background light OFF**
 removes light from the Result backdrop and the Lit backdrop target. **Compare
-Mist OFF** keeps the selected fade and light. These comparisons use the saved
-native view.
+Cloud OFF** and **Compare Mist OFF** keep the selected fade and light. These
+comparisons use the saved native view.
 
 Target edits join the same draft as the shapes. **Apply fade shapes** saves the
 choice. **Disable fade** uses saved settings, and **Cancel / reload saved fade
@@ -891,7 +892,7 @@ and `#251913`. Enter two custom `#RRGGBB` colours to set your own targets.
    working revision or reuses the identical revision. For an unaccepted base,
    check **Explicitly compare pattern on an unaccepted candidate** first.
 5. In **Result**, use **Compare pattern OFF** to view the saved revision without
-   its pattern. The comparison retains Background light, fade and Mist, and
+   its pattern. The comparison retains Background light, fade, Cloud and Mist, and
    leaves your draft available. **Turn pattern OFF** saves only the switch while
    retaining the saved geometry, colours and weight field. **Reload saved pattern**
    reloads this section from the working revision. Use it when the draft is stale
@@ -908,6 +909,70 @@ the transformed output coordinates, including outside the native image.
 Request editable delivery to keep the field and settings, including when OFF.
 Keep the native companion with a framed delivery. See the
 [saved pattern contract](file-contract.md#saved-background-pattern).
+
+## Cloud
+
+Cloud adds one softly shaped bank across the saved **Result**, after the subject
+and backdrop are combined and before Mist or Vapor. It works with the black
+backdrop and with saved Background light and Background pattern. Cloud Apply
+leaves the source, matte, other effects and photographic acceptance intact.
+
+1. Complete the matte and load the matching current working revision. For an
+   unaccepted base, select **Explicitly compare Cloud on an unaccepted candidate**.
+2. In **Cloud**, check **Cloud ON**. Set **Cloud amount (%)**, choose **Cloud colour**
+   or enter **Cloud colour #RRGGBB**, and adjust **Cloud size (% of shorter side)**.
+   Under **Cloud shape and light**, enter native centre and radii or use **Place
+   Cloud centre on canvas**. **Next Cloud pattern** advances the seed in the draft
+   and wraps to 0 after 4294967295.
+3. Use **Clear focal area** to keep a point of detail visible. Check **Use clear
+   focal area** and enter the centre and radii or use **Drag clear focal area on
+   canvas**. Under **Cloud coverage and clear shapes**, choose **Coverage** to
+   confine the bank or **Clear** to clear more detail. Choose **Brush** or
+   **Rectangle**, set **Inward feather** and select **Draw selected Cloud shape
+   on canvas**. For keyboard
+   entry, enter half-open rectangle coordinates or brush points in the labelled
+   fields and select **Add Cloud rectangle** or **Add Cloud brush**. Select an
+   entry under **Cloud shapes** to highlight it or use **Remove Cloud shape**.
+   **Hide Cloud outlines** changes only the canvas overlay.
+4. Select **Apply Cloud**. Until then, **Unapplied changes** identifies the pending
+   form and Result shows the selected saved pixels. Apply can save the settings
+   and area with **Cloud ON** unchecked. A newly applied revision still needs
+   photographic review before acceptance.
+5. Use **Compare Cloud OFF** to bypass Cloud in the viewed Result while keeping
+   the other effects. **Turn Cloud OFF** saves the working revision's Cloud with
+   its switch off and retains its maps and any separate pending form. Both Apply
+   and Turn Cloud OFF require the matching complete working view. Historical
+   revisions remain available for comparison.
+
+| Control | First-use setting | Range and units |
+| --- | --- | --- |
+| Cloud ON | OFF | One saved layer |
+| Cloud amount (%) | 22% | 0–100% peak opacity before the density and clearance fields |
+| Cloud colour | Charcoal `#282828` | Picker, six-digit sRGB hex, or swatch |
+| Cloud size (% of shorter side) | 28% | 12–100% of the shorter native axis |
+| Billow irregularity (%) | 62% | 0–75%. Higher values warp the density field farther. |
+| Cloud light variation (%) | 55% | 0–100%. At 0%, the tint is uniform across the bank. |
+| Pattern seed | 13 | Whole number from 0 to 4294967295 |
+| Cloud centre and radii | Centre at 60% of width and 62% of height. Radii equal width and height. | Continuous native X/Y from 0 to width/height. Radii each run from 0.5 px to twice the longer axis. |
+| Clear focal area | OFF. The initial ellipse is centred at the image midpoint, with radii of 15% of the corresponding axis, at least 0.5 px. | Same native geometry bounds as the Cloud ellipse. |
+| Coverage and Clear shapes | Empty | 64 shapes total including the focal ellipse, and 8192 brush points total. Brush radius starts at 10 px, capped by the longer axis, with a 1 px minimum. Inward feather starts at 0 px. Both controls use whole native pixels up to the longer axis. |
+
+The swatches are **Black** `#000000`, **Dark charcoal** `#141414`,
+**Charcoal** `#282828` and **Cool charcoal** `#20242A`. Custom hex normalizes
+to uppercase. Black can darken the subject or a lit backdrop. Against pure black
+it adds no visible cloud detail, and **Cloud light variation (%)** has no visible
+effect with Black. Fully cleared points, including saved hard locks, bypass Cloud
+exactly even at partial or zero alpha.
+
+Reduced RGB8 views are approximate. For an editable delivery, select **Include
+complete editable layers at original size** for native or **Include native
+editable companion** for either framing mode. **Add margins** copies the native
+Result exactly and extends Cloud outside it. **Match series** composites Cloud
+at the output size with projected clearance. Keep both folders for a framed
+editable handoff and keep the project for later changes in the app. Black and
+transparent delivery variants bypass Cloud. Cloud stays with its source project
+and is outside portable Appearance recipes.
+[Cloud recovery](troubleshooting.md#cloud-recovery) · [Cloud file contract](file-contract.md#saved-cloud)
 
 ## Mist
 
@@ -1027,8 +1092,9 @@ Keep the local project or add `--variant editable` to this same margins command
 for a native editable sibling. The presentation's manifest binds that sibling and
 freezes its margins; the editable operands retain native coordinates.
 
-Margins extend the saved backdrop's edge and corner colours. When enabled, Mist
-continues into the margins using its native field and boundary clearance. Wide margins may
+Margins extend the saved backdrop's edge and corner colours. Enabled Cloud
+extends across the margins before any enabled Mist, which uses its native field
+and boundary clearance. Wide margins may
 show bands; inspect the resulting composition in a suitable colour-managed viewer.
 The photograph is neither resized nor stretched. Original editing coordinates
 stay native: the presentation merely places their origin at `(left, top)`.
@@ -1132,8 +1198,8 @@ editable project, masks, original capture and accepted dependencies independentl
 For an editable handoff, add `--variant editable` to the Match series command or
 select **Include native editable companion**. Keep the native sibling and this
 presentation together; its manifest freezes the chosen settings and byte binding.
-Saved Mist is applied after series composition. The native companion retains both
-Mist maps, the settings and the editable Clear mist shapes.
+Enabled Cloud is applied after series composition, followed by enabled Mist. The
+native companion retains their maps, settings and authored geometry.
 Repeating an intact delivery validates its
 actual files and current source/revision authorization before returning without rendering.
 See [preservation and recovery](troubleshooting.md#series-framing-recovery).

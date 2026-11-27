@@ -326,10 +326,10 @@ def apply_operation(
                     or re.fullmatch(r"[a-f0-9]{64}", expected_revision_manifest_sha256) is None
                 ):
                     raise ProjectError("Invalid expected raw revision manifest identity")
-                # Mist first checks its bounded request before opening native rasters.
+                # Mist and Cloud validate bounded requests before opening native rasters.
                 state = (
                     _read_json(project, "state.json")
-                    if "mist" in operation
+                    if "mist" in operation or "cloud" in operation
                     else read_project(project)
                 )
                 parent = state["working_revision"]
@@ -375,6 +375,8 @@ def apply_operation(
 def _prepare(
     project: Path, operation: dict[str, Any], model_cache: Path | None, request_file: Path | None
 ) -> dict[str, Any]:
+    from .cloud import cloud_resource_bytes
+    from .cloud_store import read_cloud_area, stage_cloud
     from .mist import mist_resource_bytes, read_mist_area, stage_mist
 
     required = {"schema_version", "kind", "base_revision", "developed_id", "inputs_digest"}
@@ -492,6 +494,19 @@ def _prepare(
             ) as prior:
                 rebuild = not np.array_equal(np.asarray(prior) != 0, raster.protection)
         mist_bytes = mist_resource_bytes(width, height, rebuild_clear=rebuild)
+    cloud_bytes = 0
+    if parent and parent_manifest and "cloud" in parent_manifest:
+        parent_directory = saved_asset(project, f"revisions/{parent}")
+        area = read_cloud_area(project, parent_directory, parent_manifest)
+        rebuild = False
+        if area["clear"] or area["focus"]:
+            with Image.open(
+                revision_asset(
+                    project, parent_directory, parent_manifest, "supports/protection.png"
+                )
+            ) as prior:
+                rebuild = not np.array_equal(np.asarray(prior) != 0, raster.protection)
+        cloud_bytes = cloud_resource_bytes(width, height, rebuild_clear=rebuild)
     from .background_pattern import pattern_resource_bytes, stage_background_pattern
 
     prepared_pattern = (parent_manifest or {}).get("background_pattern")
@@ -505,6 +520,7 @@ def _prepare(
             + (2 if recipe.background_light is not None else 0)
         )
         + mist_bytes
+        + cloud_bytes
         + (pattern_resource_bytes(width, height) if prepared_pattern is not None else 0)
         + 1024**2,
     )
@@ -675,6 +691,7 @@ def _prepare(
             if not np.array_equal(np.array(image), expected):
                 raise ProjectError("Prepared asset round trip failed")
     mist_record = stage_mist(project, parent, stage, assets, parent_manifest or {})
+    cloud_record = stage_cloud(project, parent, stage, assets, parent_manifest or {})
     (stage / "result.json").write_bytes(
         _json_bytes(
             {
@@ -704,7 +721,7 @@ def _prepare(
     new_guides = _json_bytes(guides) if external else snapshots["guides.json"]
     new_digest = digest(snapshots["recipe.toml"] + b"\0" + new_guides)
     manifest = {
-        "schema_version": 2,
+        "schema_version": 3 if cloud_record is not None else 2,
         "revision": revision,
         "parent": parent,
         "developed_id": state["developed_id"],
@@ -738,6 +755,7 @@ def _prepare(
         **({"background_light": background_light} if background_light is not None else {}),
         **({"background_pattern": background_pattern} if background_pattern is not None else {}),
         **({"mist": mist_record} if mist_record is not None else {}),
+        **({"cloud": cloud_record} if cloud_record is not None else {}),
     }
     (stage / "manifest.json").write_bytes(_json_bytes(manifest))
     for path in stage.rglob("*"):
@@ -747,6 +765,10 @@ def _prepare(
     for path in sorted((p for p in stage.rglob("*") if p.is_dir()), reverse=True):
         _sync_directory(path)
     _sync_directory(stage)
+    if cloud_record is not None:
+        _validate_revision_directory(
+            project, revision, state["developed_id"], str(stage.relative_to(project))
+        )
     # Publication checks bind to the consumed snapshot, then the explicitly published draft.
     publication_inputs = dict(snapshots)
 
@@ -1445,6 +1467,8 @@ def _matte(
             if ancestor_manifest.get("kind") != "prepare":
                 break
             ancestor = ancestor_manifest["parent"]
+    from .cloud import cloud_resource_bytes
+    from .cloud_store import saved_cloud, stage_cloud
     from .mist import mist_resource_bytes, saved_mist, stage_mist
 
     if preview_identity is None:
@@ -1457,6 +1481,7 @@ def _matte(
             )
             + (min(height, 64) * width * 128 if light_settings is not None else 0)
             + (mist_resource_bytes(width, height) if "mist" in manifest else 0)
+            + (cloud_resource_bytes(width, height) if "cloud" in manifest else 0)
             + (pattern_resource_bytes(width, height) if "background_pattern" in manifest else 0)
             + 1024**2,
         )
@@ -1869,6 +1894,7 @@ def _matte(
         project, parent, stage, state["developed_id"], (width, height), assets
     )
     mist_record = stage_mist(project, parent, stage, assets, manifest)
+    cloud_record = stage_cloud(project, parent, stage, assets, manifest)
     # Preparation snapshots requested drafts. A completed matte applies those
     # guides/matting settings but only inherits the previously generated effects.
     effective_recipe = tomllib.loads(snapshots["recipe.toml"].decode())
@@ -1886,6 +1912,7 @@ def _matte(
         ("background_light", background_light),
         ("background_pattern", background_pattern),
         ("mist", mist_record),
+        ("cloud", cloud_record),
     ):
         if inherited is not None:
             effective_recipe[name] = (
@@ -2049,6 +2076,11 @@ def _matte(
         )
         if mist_record is not None
         else None,
+        cloud=saved_cloud(
+            project, stage, {"assets": assets, "cloud": cloud_record}, effects_off=stale_effects
+        )
+        if cloud_record is not None
+        else None,
     )
     if repairing:
         if parent_alpha is None:
@@ -2093,7 +2125,13 @@ def _matte(
                 manifest,
                 effects_off=stale_effects,
             ),
-            align_result=mist_record is not None,
+            cloud=saved_cloud(
+                project,
+                saved_asset(project, f"revisions/{parent}"),
+                manifest,
+                effects_off=stale_effects,
+            ),
+            align_result=mist_record is not None or cloud_record is not None,
         )
     if cleanup:
         for review_name in ("review", "review-before") if repairing else ("review",):
@@ -2218,6 +2256,7 @@ def _matte(
         **({"background_light": background_light} if background_light is not None else {}),
         **({"background_pattern": background_pattern} if background_pattern is not None else {}),
         **({"mist": mist_record} if mist_record is not None else {}),
+        **({"cloud": cloud_record} if cloud_record is not None else {}),
     }
     (stage / "result.json").write_bytes(_json_bytes(result))
     collect_stage_assets(project, stage, assets)
@@ -2225,7 +2264,7 @@ def _matte(
         str(p.relative_to(stage)): digest(p.read_bytes()) for p in stage.rglob("*") if p.is_file()
     }
     new_manifest = {
-        "schema_version": 2,
+        "schema_version": 3 if cloud_record is not None else 2,
         **result,
         "complete": True,
         "draft_digest": revision_inputs_digest,
@@ -2247,6 +2286,10 @@ def _matte(
     for path in sorted((p for p in stage.rglob("*") if p.is_dir()), reverse=True):
         _sync_directory(path)
     _sync_directory(stage)
+    if cloud_record is not None:
+        _validate_revision_directory(
+            project, revision, state["developed_id"], str(stage.relative_to(project))
+        )
     if recovery:
         _atomic_json(
             recovery[0] / "completion.json",

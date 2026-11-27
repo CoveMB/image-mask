@@ -226,6 +226,109 @@ def test_browser_background_pattern_keyboard_generation_preview_and_reopen(tmp_p
         expect(page.locator("#patternStatus")).to_contain_text("Saved pattern ON")
 
 
+def test_browser_cloud_colour_geometry_compare_and_reopen(tmp_path):
+    require_browser_lane()
+    from playwright.sync_api import expect, sync_playwright
+
+    from blackmask.export import render_saved_result
+
+    config_file, _, project, _ = imported_project(tmp_path)
+    receipt = {}
+    with sync_playwright() as playwright:
+        with (
+            running_process(project, config_file, tmp_path) as server,
+            browser_session(playwright, server, tmp_path, "cloud", receipt) as page,
+        ):
+            base = submit(page, "#matte", "matte")["revision"]
+            page.locator("#photoReviewed").check()
+            submit(page, "#accept", "accept")
+            page.locator("#panel").select_option("result")
+            ready(page)
+            expect(page.locator("#cloudEnabled")).not_to_be_checked()
+            expect(page.locator("#cloudColor")).to_have_value("#282828")
+            page.locator("#cloudColor").fill("#6c7884")
+            hex_input = page.locator("#cloudHex")
+            expect(hex_input).to_have_value("#6C7884")
+            hex_input.fill("")
+            hex_input.press_sequentially("#3a4B")
+            expect(page.locator("#cloudApply")).to_be_disabled()
+            expect(page.locator("#cloudValidation")).to_contain_text("six-digit #RRGGBB")
+            hex_input.press_sequentially("5c")
+            expect(page.locator("#cloudColor")).to_have_value("#3a4b5c")
+
+            page.get_by_text("Cloud shape and light", exact=True).click()
+            page.locator("#native").click()
+            page.locator("#cloudPlaceCentre").press("Enter")
+            canvas = page.locator("#canvas").bounding_box()
+            assert canvas is not None
+            page.mouse.click(
+                canvas["x"] + canvas["width"] / 2 - 19, canvas["y"] + canvas["height"] / 2 - 14
+            )
+            centre = [
+                float(page.locator("#cloudCenter" + axis).input_value()) for axis in ("X", "Y")
+            ]
+            assert centre == pytest.approx([29, 18], abs=0.6)
+            page.get_by_text("Clear focal area", exact=True).click()
+            page.locator("#cloudFocusEnabled").check()
+            page.locator("#cloudFocusX").fill("55.25")
+            page.locator("#cloudFocusRadiusX").fill("9.125")
+            page.get_by_text("Cloud coverage and clear shapes", exact=True).click()
+            page.locator("#cloudRectangle").fill("2,2,94,62")
+            page.locator("#cloudAddRectangle").press("Enter")
+            expect(page.locator("#cloudRegions option")).to_contain_text("Coverage · Rectangle")
+            page.locator("#cloudAmount").fill("46.25")
+            page.locator("#cloudEnabled").check()
+            expect(page.locator("#cloudDraftStatus")).to_contain_text("Unapplied changes")
+            applied = submit(page, "#cloudApply", "effects", keyboard=True)
+            saved = applied["cloud"]["settings"]
+            assert saved["tint_srgb"] == "#3A4B5C"
+            assert saved["amount"] == 0.4625
+            assert saved["center_xy"] == centre
+            np.testing.assert_array_equal(alpha(project, applied["revision"]), alpha(project, base))
+            with page.expect_response(
+                lambda response: (
+                    f"/image/result/{applied['revision']}/" in response.url
+                    and response.url.endswith("/cloud-off")
+                )
+            ) as comparison:
+                page.locator("#cloudCompare").check()
+            assert comparison.value.status == 200
+            expect(page.locator("#viewRevision")).to_have_value(applied["revision"])
+            expect(page.locator("#cloudSavedStatus")).to_contain_text("Saved Cloud ON")
+            expect(hex_input).to_have_value("#3A4B5C")
+            off = submit(page, "#cloudDisable", "effects", keyboard=True)
+            assert off["cloud"]["settings"] == dict(saved, enabled=False)
+            expect(page.locator("#cloudCompare")).not_to_be_checked()
+            page.locator("#cloudEnabled").check()
+            page.locator("#cloudCandidate").check()
+            restored = submit(page, "#cloudApply", "effects", keyboard=True)
+            assert restored["cloud"] == applied["cloud"]
+
+        with (
+            running_process(project, config_file, tmp_path) as server,
+            browser_session(playwright, server, tmp_path, "cloud-reopen", receipt) as page,
+        ):
+            expect(page.locator("#cloudSavedStatus")).to_contain_text("Saved Cloud ON")
+            expect(page.locator("#cloudHex")).to_have_value("#3A4B5C")
+            expect(page.locator("#cloudAmount")).to_have_value("46.25")
+            expect(page.locator("#cloudFocusRadiusX")).to_have_value("9.125")
+            expect(page.locator("#cloudRegions option")).to_contain_text("2, 2, 94, 62")
+            page.locator("#panel").select_option("result")
+            ready(page)
+            page.locator("#exportEditable").check()
+            exported = submit(page, "#exportDraft", "export")
+            manifest = json.loads(Path(exported["manifest_file"]).read_bytes())
+            assert manifest["cloud"] == restored["cloud"]
+            assert manifest["revision"] == restored["revision"]
+            developed_id = read_project(project)["developed_id"]
+            pixels = tifffile.imread(Path(exported["directory"]) / "result_rgb16.tif")
+            np.testing.assert_array_equal(
+                pixels, render_saved_result(project, restored["revision"], developed_id)
+            )
+            assert np.any(pixels != render_saved_result(project, base, developed_id))
+            assert read_project(project)["accepted_revision"] == base
+
+
 def test_browser_controls_restart_and_offline_recovery(tmp_path):
     require_browser_lane()
     # Explicit browser runs fail, rather than skip, if setup or isolation is missing.

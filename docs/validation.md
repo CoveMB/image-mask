@@ -2003,3 +2003,38 @@ their editable operands, with and without Mist. Rehashed substitute settings
 or backdrop/light operands must fail delivery reuse. The V1 checkout produced
 six Base backdrop v5/v6 deliveries across the three modes. The follow-up
 checkout reused those folders and editable companions byte for byte.
+
+## Spatial-light Cloud
+
+The [Cloud unit checks](../tests/test_cloud.py) use independent linear-sRGB
+oracles for literal Black, custom colour, optical averaging, partial clearance
+and combined sampling support. [Work-bound checks](../tests/test_cloud_limits.py)
+exercise an extreme-aspect Match series frame, skip zero-density distant
+exterior and reject oversized visible support before evaluating source tiles.
+[Saved-project checks](../tests/test_cloud_project.py) cover Apply, Disable,
+restore, interrupted repair, inheritance and Cloud's independence from
+Background pattern and Mist. [Detached delivery checks](../tests/test_cloud_delivery.py)
+exercise native, Add margins and Match series, including exact native replay
+and the separately bound categorical hard-protection bitmap.
+
+The pinned pre-Cloud reader opened legacy revisions and rejected active and
+disabled schema-3 revisions. Its export validator accepted a legacy editable
+delivery and rejected a Cloud delivery as a legacy inventory.
+
+Installed Chrome 158.0.8127.37 exercised the packaged loopback page on a
+synthetic project using DevTools. The run entered an incomplete hex value by
+keyboard, applied a custom tint with pointer placement, compared Cloud OFF,
+disabled and re-enabled the effect, reloaded saved settings and exported
+editable RGB16. The export matched a fresh render of the saved revision and
+the accepted revision was preserved. A dedicated macOS sandbox denied outbound
+network and writes outside the test directory. This synthetic run used the
+outer sandbox in place of Chrome's inner sandbox. The optional Python browser
+runner requires a separately installed Playwright target.
+
+A 3072 × 4080 saved project reproduced its approved trial raster exactly, also
+after headless reopen. The 3352 × 4256 Add margins export preserved the full
+native rectangle and replayed exactly. Observed macOS ARM64 timings were about
+44 s for Apply, 42 s for native editable export and 34 s for Add margins with
+the native companion already present. Peak process RSS was about 3.5 GiB,
+2.6 GiB and 2.7 GiB respectively. Timing and memory vary by project and output.
+Human photographic acceptance is a separate step.

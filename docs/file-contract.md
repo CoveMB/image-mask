@@ -1,10 +1,11 @@
 # Photo project contract
 
-Storage schema **2** is the only supported project format. Schema-1 projects are
-rejected without writes, including lock-file creation; retain them for their
-original application version or start a separate new project. No migration or
-compatibility tree is provided. The independent portable series preset remains
-schema 1; it contains settings, not project identity.
+Project state and recipes use schema **2**. Saved revision manifests use
+schema **3** when they contain a [Cloud record](#saved-cloud), including OFF,
+and schema **2** otherwise. Schema-1 projects are rejected without writes,
+including lock-file creation. Keep them for their original application version
+or start a separate new project. The independent portable series preset remains
+schema 1 and carries settings only.
 
 One project contains one untouched source reference and one developed image.
 `source.json` records original locator/SHA-256, detected format, original
@@ -447,8 +448,9 @@ master, draft, manifest and authoritative trimap hashes. Optional proposals rema
 unreviewed. Matting and repair do not require this confirmation. When present, it
 is validated and copied into `trimap_approval.json`; without it, neither an approval
 record nor that revision asset is created. Effects preserve the asset only when
-their parent contains it. Within schema 2, revisions without this optional confirmation remain readable;
-older application versions requiring this asset cannot read new unconfirmed mattes.
+their parent contains it. Revisions without this optional confirmation remain
+readable in the current version. Older versions that required this asset cannot
+read unconfirmed mattes.
 Matte snapshots current inputs and any supplied confirmation, saves scalar16 alpha,
 RGB16 foreground, model/package/backend/padding/tile records and a small same-crop overview. No prepare-only/incomplete/stale candidate can be final-accepted.
 `qa.json` records structural/core/lock counts and pending human photographic review;
@@ -563,7 +565,7 @@ do not make compare-and-unlink atomic against arbitrary hostile writers.
 
 ## Saved scoped repairs and restore
 
-Schema-2 repair revisions extend complete matte revisions; earlier saved matte
+Repair revisions extend complete matte revisions; earlier saved matte
 and prepared revisions remain readable. Preparation carries parental
 `base_alpha16.png` and `foreground_rgb16.tif` unchanged. Ordinary repair requires a current
 prepared revision with a complete same-master parental matte,
@@ -584,7 +586,7 @@ against `base_alpha16.png`; accepted/review/export routes use the same check.
 Context is part of cropped inference cache identity even if repeated image/guide
 bytes would otherwise match a different native crop.
 
-**Refine edge** in the local viewer saves an additive schema-2 repair variant. It
+**Refine edge** in the local viewer saves an additive repair variant. It
 can start from a complete working revision or a prepared working revision that
 carries compatible parent alpha and RGB locks. The `edge_area` field in
 `repair/merge.json` records the authored crop, native brush strokes and rectangles.
@@ -988,8 +990,9 @@ feature's highlight setting, h is cubic linear-sRGB luminance weighting using
 stale or protection gives q=0. Decode F and fade target B, blend
 `(1-q)*F+q*B` in linear sRGB, encode, then compose encoded-sRGB alpha ONCE.
 Exact q=0/q=1 preserves F/B. Result uses B0 by default and B1 for Lit backdrop.
-Composite Result over displayed B1 in either mode, then apply Mist once when
-enabled. Alpha stays saved. Black/Gray/White and transparent use B0 as the fade
+Composite Result over the displayed backdrop in either mode, including any
+Background pattern. Apply saved Cloud, then Mist, when enabled. Alpha stays
+saved. Black/Gray/White and transparent use B0 as the fade
 target and retain their diagnostic backdrops. Transparent
 straight RGB retains that tint; RGBA8 is reduced precision. Match-series RGBA8
 zeros hidden RGB where quantized alpha is zero. Native RGBA8 retains its existing
@@ -1014,8 +1017,8 @@ Alpha, source, background RGB16/settings and other effect operands remain separa
 To reconstruct without the project/models: validate the delivered records and
 select the active rendering mode. With spatial fade enabled, calculate q from
 foreground/W/protection/settings and optional reduction, blend toward the saved
-target B0 or B1 and compose alpha once over the displayed backdrop B1. Apply
-Mist after that composition when present.
+target B0 or B1 and compose alpha once over the displayed backdrop. Apply
+Cloud and Mist in that order when enabled.
 With spatial fade OFF, q is zero; if inward shading is enabled, use delivered
 `shadow_weight16.png` and its opacity to calculate `H=1-opacity*W16/65535` and
 `round(F*A*H+B*(1-A))`. Otherwise H is 1. The native manifest/README formula
@@ -1566,13 +1569,15 @@ authoritative: native reading, comparison and delivery never regenerate L16.
 Keep saved base **B0** and light **L16** separate. Missing B0 means zero.
 When enabled, B1=encode_srgb(clamp(decode_srgb(B0)+decode_srgb(L16),0,1)).
 Zero-light pixels and absent or OFF light use B0 exactly. Native Result is
-`round(P+B1*(1-A))` once in encoded sRGB, before Mist. P uses the existing
+`round(P+B1*(1-A))` once in encoded sRGB with no displayed Background pattern,
+before Cloud and Mist. P uses the existing
 foreground effects and `A` is saved alpha. **Base backdrop** fades toward B0.
 **Lit backdrop** uses B1 to derive P and reaches that same B1 at full effective
 fade for any alpha. At zero effective fade, P is unchanged. Protected
 partial-alpha composites can still show the illuminated backdrop through A.
 **Compare Background light OFF** sets B1 to B0 for both the fade and the
-displayed backdrop. **Compare Mist OFF** keeps both operands and bypasses Mist.
+displayed backdrop. **Compare Cloud OFF** and **Compare Mist OFF** each bypass
+the named effect and preserve both backdrop operands.
 BASE/stale comparisons use all-effects-off black. Foreground-OFF and local
 reduction comparisons retain light. Black, Gray, White and transparent
 diagnostics use B0 as the fade target and omit visible light.
@@ -1659,7 +1664,8 @@ the selected tone to linear sRGB, interpolate using `strength * abs(weight)`
 and store B2 as RGB16 with ties-to-even rounding. Reversal flips the weight
 sign. Zero weight or OFF uses B1 exactly. In the established encoded-sRGB
 Result, keep the original subject contribution P (including its B0 or B1 fade)
-and composite `rint(P + B2 * (1 - alpha))`, then apply Mist if saved. Alpha is
+and composite `rint(P + B2 * (1 - alpha))`, then apply Cloud and Mist in that
+order when enabled. Alpha is
 normalized. Opaque pixels, source data and all diagnostics exclude the pattern.
 The RGB8 Result uses coordinate-stable backdrop dithering when active, limited
 to fully exposed backdrop samples. Native crops retain the same sample phase.
@@ -1672,6 +1678,137 @@ including beyond the transformed native rectangle. Both editable presentation
 paths bind the native companion's exact field and settings. Revision restore
 reopens the saved pattern; a missing or corrupted operand requires intact
 saved bytes for recovery.
+
+## Saved Cloud
+
+The optional schema-2 recipe section `[cloud]` contains exactly `enabled`,
+`amount`, `tint_srgb`, `size`, `warp`, `light_amount`, `seed`, `center_xy`
+and `radii_xy`. The switch is boolean, and the seed is a whole number from
+0 to 4294967295. The other numeric settings are finite and exclude booleans.
+Amount and light variation are fractions in [0,1], size is in [0.12,1] of the
+shorter native axis, and warp is in [0,0.75]. Geometry uses continuous native
+pixel-edge coordinates. The X and Y centres range from 0 to width and height
+respectively. Each radius ranges from 0.5 px to twice the longer axis. The tint
+accepts six hexadecimal digits after `#` and saves uppercase `#RRGGBB`. The
+[viewer workflow](workflow.md#cloud) owns starting values and control labels.
+
+Use `blackmask run PROJECT --request REQUEST.json` with one exclusive,
+schema-2 `effects` request. For example, for a 3072 × 4080 complete working
+revision, use the current developed ID, working revision and draft digest in
+the following request. The digest binds the current `recipe.toml` bytes,
+a zero byte and the current `guides.json` bytes in that order.
+
+```json
+{
+  "schema_version": 2,
+  "kind": "effects",
+  "developed_id": "CURRENT_DEVELOPED_ID",
+  "base_revision": "rev-002",
+  "inputs_digest": "CURRENT_DRAFT_DIGEST",
+  "scope_xyxy": [0, 0, 3072, 4080],
+  "candidate_comparison": false,
+  "cloud": {
+    "action": "apply",
+    "settings": {
+      "enabled": true,
+      "amount": 0.22,
+      "tint_srgb": "#282828",
+      "size": 0.28,
+      "warp": 0.62,
+      "light_amount": 0.55,
+      "seed": 13,
+      "center_xy": [1843.2, 2529.6],
+      "radii_xy": [3072, 4080]
+    },
+    "area": {
+      "coverage": [],
+      "clear": [
+        {"id": "detail", "role": "support", "shape": "rectangle", "xyxy": [1100, 1450, 2000, 2300], "feather_px": 60}
+      ],
+      "focus": null
+    }
+  }
+}
+```
+
+The two area lists accept native support strokes and half-open rectangles.
+Empty coverage gives the full density envelope. Clear shapes feather inward.
+Focus is `null` or an ellipse with exactly `center_xy` and `radii_xy`; its
+clearance joins that of the Clear shapes and hard protection. The combined
+budget is 64 shapes including focus, and 8192 total stroke points. The request
+requires unique JSON keys and at most 2,000,000 bytes. Full native scope is
+required. Apply on an unaccepted base needs `candidate_comparison: true`.
+The viewer also binds the raw revision-manifest SHA-256 and authoring digest
+under the writer lock.
+
+To turn off the saved Cloud, use `"cloud": {"action": "disable"}` with the
+current outer identities. Disable keeps the maps and area and changes only
+the enabled setting. An absent or already disabled record is a no-op. Explicit Apply
+with `enabled: false` saves the supplied settings and area. Neither action
+updates photographic acceptance or applies other pending recipe sections.
+
+The manifest's closed `cloud` record has `schema_version` (1), `algorithm`
+(`linear-srgb-cloud-v1`), `developed_id`, `width`, `height`, `settings` and
+`density_sha256`, `light_sha256`, `clear_sha256`, `settings_sha256`,
+`area_sha256` and `protection_sha256`. The first five hashes bind
+`cloud/density16.png`, `cloud/light16.png`, `cloud/clear16.png`,
+`cloud/settings.json` and `cloud/area.json` respectively. The PNGs are
+immutable native scalar16 operands. The two JSON files are canonical.
+`protection_sha256` binds the categorical native `supports/protection.png`.
+Every hard-protected pixel has clearance 65535. The closed inventory, hashes,
+registration and settings are validated even for OFF revisions. Completed
+revisions bind the effective recipe to the record. Prepare preserves the raw
+recipe draft and inherits previously saved Cloud. Matte and repair inherit
+the saved fields. Protection changes rebuild clearance, and amount, tint or
+light-variation changes alone reuse the maps. Restore reopens saved settings
+and native operands without changing acceptance.
+
+Cloud-bearing effects use `validated-effects-v12-cloud`. Apply keys on the
+normalized replacement, upstream appearance, current hard protection and
+rendering inputs. Disable keys on inherited settings with the switch removed
+and its retained area and map identities. Other effects bind inherited Cloud.
+Result identity includes the exact saved settings and map bindings, including
+colour and light variation when their effect is invisible. Legacy schema-2
+revisions remain readable without migration. Earlier readers reject schema-3
+revisions, including those with Cloud OFF.
+
+**Native replay.** Compose the foreground and displayed backdrop with saved
+alpha. Preserve the selected fade target B0 or B1. Background pattern alters
+only the displayed backdrop. For normalized scalar16 density D, light H and
+clearance G, amount m, light variation q and decoded linear-sRGB tint K, the
+Cloud opacity is
+`a = m*D*(1-G)` and its premultiplied linear light is
+`E = a*K*((1-q)+q*H)`. Decode the incoming RGB16 Result, calculate
+`(1-a)*incoming+E` in linear sRGB, then encode and round to RGB16.
+Absent Cloud, OFF, zero amount, zero density or full clearance preserve
+the incoming samples exactly. Apply any enabled Mist or Vapor afterwards.
+Black, Gray, White and transparent diagnostics bypass Cloud. **Compare Cloud
+OFF** bypasses only Cloud on the viewed Result.
+
+**Delivery and framing.** Cloud-bearing deliveries use `requested-result-v10`
+even when OFF or combined with other effects. Native editable exports and
+the native companion for either framing mode include `cloud_density16.png`,
+`cloud_light16.png`, `cloud_clear16.png`, `cloud_settings.json`,
+`cloud_area.json` and `cloud_hard_protection.png`. The last file is the
+bound native, single-channel categorical 0/255 protection bitmap. These files
+support detached arithmetic replay. Keep the full project for editing in the
+app. Portable Appearance recipes omit Cloud.
+
+Add margins copies the native RGB16 Result rectangle exactly. Outside it,
+Cloud is evaluated once over the extended pre-Cloud backdrop, followed by
+any enabled Mist. Density and light use analytic exterior samples at the
+translated native pixel centres. Authored coverage and the saved clearance map
+clamp to the nearest native edge or corner. Match series uses the saved fields in
+bounds and the same exterior rules elsewhere. Its positive box filter spans
+at least one native pixel on each axis. It integrates opacity and
+premultiplied linear light over the overlapped native pixel cells separately
+and composites both after series subject and backdrop composition. Full
+clearance anywhere in the combined optical footprint and contributing
+subject sampling support gives exact Cloud bypass. The renderer skips
+zero-density exterior beyond the analytic envelope while checking clearance
+over the full footprint. Match series rejects a Cloud sampling rectangle above
+100 million source cells before staging a delivery. Reduce the extent of the
+frame or the Cloud ellipse if it exceeds that bound.
 
 ## Saved Mist
 
@@ -1837,17 +1974,19 @@ thresholds and footprint taper above. Multiply the unquantized field by
 `S((distance_from_focus/s - .12)/.157)` before quantizing to uint16 once.
 The saved Clear mist and hard-lock maps and the blend retain their meanings.
 
-**Replay.** Mist-bearing deliveries use `requested-result-v6` for the top-level
-and encoding versions unless they also save Lit backdrop, which uses v7.
+**Replay.** Without Cloud, Mist-bearing deliveries use `requested-result-v6`
+for the top-level and encoding versions unless they also save Lit backdrop,
+which uses v7.
 Original Vapor records use `requested-result-v8`. Vapor pattern 2 uses
 `requested-result-v9`. The Vapor version also applies when OFF or combined with
 Lit backdrop. Each Vapor delivery requires a reader supporting its algorithm.
 Native editable adds `mist_density16.png`,
 `mist_clear16.png`, `mist_settings.json` and `mist_area.json`, including for
-OFF. Rebuild the existing pre-Mist Result from the native editable operands,
-then apply the saved maps and tint. Use the Result TIFF to check reconstruction.
+OFF. Rebuild the pre-Mist Result from the native editable operands, including
+any enabled Cloud, then apply the saved maps and tint. Use the Result TIFF to
+check reconstruction.
 The native replay can run from the delivery alone without generating density.
-Projects that omit Mist and Lit backdrop retain the existing delivery identity.
+Absent Cloud leaves these delivery version rules in effect.
 
 The framed record freezes the Mist algorithm, normalized settings and all four
 operand hashes. Editable framed replay requires its bound native companion.
@@ -1874,9 +2013,11 @@ transparent variants bypass Mist.
 Default export is exactly five regular files: `result_rgb16.tif`,
 `result_RGB8_VIEW.png`, `recipe.toml`, `manifest.json`, `README.txt`. Native output
 keeps the full original pixel dimensions, without upscaling or print sizing.
-The Result backdrop follows the saved base and optional Background light.
-Absence of both means black before Mist is composited.
-[B0/B1 reconstruction](#saved-background-light), [Mist reconstruction](#saved-mist)
+The Result backdrop follows the saved base, optional Background light and
+optional Background pattern. With those absent, the backdrop is black before
+Cloud and Mist are applied.
+[B0/B1 reconstruction](#saved-background-light), [Cloud reconstruction](#saved-cloud),
+[Mist reconstruction](#saved-mist)
 The TIFF is uncompressed processed sRGB uint16. The same-size PNG is RGB8; all
 delivered RGB/RGBA rasters embed the canonical sRGB ICC. Scalar16 editing masks
 remain exact and carry no ICC/gamma. A larger file container adds no captured detail.
@@ -1905,8 +2046,9 @@ with all four saved spatial operands retained even OFF; use the
 and optional L16 reproduce native Result without the project, original, models or
 cache using the saved float64 ties-to-even renderer and
 [B0/B1 light composition](#saved-background-light). A missing base backdrop means
-zero B0; absent or disabled light uses B1=B0. Apply the saved Mist maps after
-this composition when present. Flattened Result is never editable F.
+zero B0. Absent or disabled light uses B1=B0. Include any enabled Background
+pattern on the displayed backdrop, then apply Cloud and Mist after subject
+composition. Preserve the selected foreground F separately from Result.
 Recovery uses the saved opacity only when the delivered shading record is enabled;
 disabled or absent shading means effective opacity zero, regardless of retained
 nonzero W/opacity. A missing W means zero. Keep retained editing settings unchanged.
@@ -1914,7 +2056,8 @@ nonzero W/opacity. A missing W means zero. Keep retained editing settings unchan
 Schema-2 manifests identify `export_version=requested-result-v5`,
 `requested-result-v6` for Mist, `requested-result-v7` for a saved Lit backdrop
 target, `requested-result-v8` for the original Vapor pattern, or
-`requested-result-v9` for Vapor pattern 2. They also identify the selected revision,
+`requested-result-v9` for Vapor pattern 2. Cloud-bearing revisions use
+`requested-result-v10` in both version fields. They also identify the selected revision,
 raw source/revision-manifest hashes, effective recipe hash, explicit draft status,
 mode/settings/geometry/algorithm, requested variants, native asset/effect identities,
 actual Python/NumPy/Pillow/tifffile encoding versions and profile digest. The
@@ -1932,7 +2075,9 @@ validation and framed companion bindings check the fade settings and its rasters
 the base backdrop pixels and settings, and the saved light pixels and settings
 against the selected revision when those operands exist. Versions 8 and 9 retain
 the inventory and bindings for the selected operands and identify their Vapor
-fields. With Mist or no atmosphere, Base backdrop keeps the v5 or v6 identity and notes.
+fields. With Cloud absent and Mist or no atmosphere, Base backdrop keeps the
+v5 or v6 identity and notes. Version 10 binds the saved Cloud record and the
+[Cloud editable operands](#saved-cloud) when editable is requested.
 Unversioned and v1–v4 files remain preserved at their existing paths; no legacy
 lookup, recreation, migration or rewrite is performed.
 
@@ -1996,12 +2141,12 @@ before staging or expanded raster allocation. Native dimensions, editing
 coordinates, saved layers, acceptance and project schema do not change.
 
 The canonical saved renderer completes the native Result once, including selected
-cleanup/sharpening/exposure/fade, shading and alpha. Framing copies those RGB16 samples without
-resampling at `(left, top)`. Outside that rectangle, only the saved native backdrop's
-nearest edge/corner pixels extend outwards. Legacy backdrop absence means black
-before Mist. Enabled Mist is evaluated over these pixels with clamped native
-clearance.
-No foreground edge is stretched and no larger analytic backdrop is regenerated.
+cleanup/sharpening/exposure/fade, shading, alpha and atmosphere. Framing copies
+those RGB16 samples without resampling at `(left, top)`. Outside that rectangle,
+extend the saved native backdrop's nearest edge/corner pixels. An absent backdrop
+extends as black. Apply any enabled Cloud and Mist over that padding, in that
+order, using clamped native clearance and their field sampling rules.
+[Cloud framing](#saved-cloud), [Mist framing](#saved-mist)
 The optional straight RGBA8 view retains the canonical native viewing samples and
 has zero RGB and alpha outside. All delivered rasters carry the canonical sRGB ICC
 profile; TIFF is uncompressed processed RGB16, PNGs are reduced-precision views.
@@ -2203,6 +2348,9 @@ Pillow version/filter/float-box/rounding policy, encoding/profile and variants.
 Delivered members have exact hashes/dimensions/precision records; no personal paths,
 capture metadata or editable native rasters ship. Notes label resampling,
 enlargement, final-size backdrop regeneration and absent separate composition acceptance.
+Saved Cloud and Mist apply in that order after series composition. The optional
+native editable companion holds the original-size operands.
+[Cloud projection](#saved-cloud), [Mist projection](#saved-mist)
 
 Shared compact export publication retains validation, exclusive no-overwrite
 publication, exact identical reuse, durability diagnostics and the repaired
@@ -2220,7 +2368,8 @@ scratch. They are not RAM reservations or guarantees that every valid size fits.
 `schema_version:1`, `kind:"appearance-recipe"`, `name`, `sections`, `reference`.
 V2 uses the same root keys with `schema_version:2` and permits `spatial_layout`.
 Writing emits v2 only when layout is present; otherwise it emits v1. Reading
-accepts both versions without rewriting existing files.
+accepts both versions without rewriting existing files. Cloud remains with its
+source project and native editable delivery.
 The name is trimmed to 1–80 Unicode characters and rejects controls. Sections
 must be nonempty and contain only the following exact field sets. All numbers
 must be finite, nonboolean JSON numbers; native scalar validators apply.
